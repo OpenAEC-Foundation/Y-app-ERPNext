@@ -1,20 +1,14 @@
-import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { Menu } from "lucide-react";
 import Sidebar, { type Page, type ViewMode, isEmployerRole } from "./components/Sidebar";
-import ExtensionHost from "./components/ExtensionHost";
-import AgentPanel from "./components/AgentPanel";
+import ComingSoon from "./components/ComingSoon";
 import { DataProvider } from "./lib/DataContext";
 import { ToastProvider } from "./components/Toast";
-import LoginPage from "./components/LoginPage";
-import SignupPage from "./components/SignupPage";
-import InstancesPage from "./components/InstancesPage";
-import InstanceTabBar from "./components/InstanceTabBar";
-import { setActiveInstance, type ERPInstance } from "./lib/instances";
-import { BackgroundSyncProvider } from "./lib/BackgroundSyncProvider";
-import { prefetchInbox } from "./lib/webmail-prefetch";
-import { prefetchConversations } from "./lib/messenger-prefetch";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { isFeatureEnabled, isPageEnabled } from "./lib/capabilities";
+import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
 
 // Lazy-load all pages
 const Dashboard = lazy(() => import("./pages/dashboard"));
@@ -61,103 +55,47 @@ const Letters = lazy(() => import("./pages/Letters"));
 const ReleaseNotes = lazy(() => import("./pages/ReleaseNotes"));
 const MailView = lazy(() => import("./pages/MailView"));
 const MessengerView = lazy(() => import("./pages/MessengerView"));
-type AuthState = "checking" | "logged-in" | "logged-out";
+// Iframe-host voor extensies. Lazy (was statisch) zodat de host — inclusief
+// zijn proxy-URL-opbouw — niet in de hoofdbundel belandt zolang extensies uit
+// staan; hij hangt alleen aan de /x/:extId-routes.
+const ExtensionHost = lazy(() => import("./components/ExtensionHost"));
 
-// Y-app account user (Phase 4+)
-interface YAppUser {
-  id: number;
-  email: string;
-}
+/* ── Achtergrondlagen (server-afhankelijk, fase 1 uit) ──
+ * Deze twee draaien op endpoints die alleen de verdwenen Express-server
+ * kende. Ze worden lazy geïmporteerd zodat ze bij een uitgeschakelde
+ * feature noch geladen worden noch in de hoofdbundel belanden. */
+const BackgroundSyncProvider = lazy(() =>
+  import("./lib/BackgroundSyncProvider").then((m) => ({ default: m.BackgroundSyncProvider })),
+);
+const AgentPanel = lazy(() => import("./components/AgentPanel"));
 
-// Tab = an open instance in the in-app tab bar
+/**
+ * Tab in de (verwijderde) multi-instance tabbalk.
+ *
+ * Y-next draait single-tenant: er is geen tabbalk en geen tab-persistentie
+ * meer. Het type blijft geëxporteerd omdat `components/InstanceTabBar.tsx`
+ * — dat als bestand bewaard blijft voor een latere fase, maar nergens meer
+ * geïmporteerd wordt — er nog naar verwijst.
+ */
 export interface OpenTab {
   id: number;
   name: string;
   url: string;
   themeColor: string | null;
-  /** Last in-tab pathname (e.g. "/tasks", "/projects/PROJ-001") so the
-   * tab restores to where the user left it instead of jumping to the
-   * page the previously-active tab was on. */
   lastPath?: string;
 }
 
-// Auth screen toggle (login vs signup)
-type AuthScreen = "login" | "signup";
-
-const TABS_STORAGE_KEY = "y_app_open_tabs";
-const ACTIVE_TAB_STORAGE_KEY = "y_app_active_tab";
-
-function loadOpenTabs(): OpenTab[] {
-  try {
-    const raw = localStorage.getItem(TABS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch { /* ignore */ }
-  return [];
-}
-
-function loadActiveTabId(): number | null {
-  const raw = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-  if (!raw) return null;
-  const n = parseInt(raw, 10);
-  return Number.isNaN(n) ? null : n;
-}
-
 /**
- * Hydrate the active-instance state for popout windows (`/mail/view`,
- * `/messenger/view`). These windows skip the AuthenticatedApp branch where
- * `setActiveInstance()` normally runs, so without this helper the fetch
- * interceptor in lib/instances.ts has `activeInstance === null` and refuses
- * to add the `X-Y-App-Instance` header → server returns 400 (missing_instance).
- *
- * Reads the same localStorage keys that AuthenticatedApp persists to.
+ * Bootstrap-toestand van de shell. Er is precies één sessiebron: de
+ * bestaande ERPNext-sessiecookie van de browser (zie `lib/session.ts`).
  */
-function hydratePopoutActiveInstance(): void {
-  try {
-    const tabsRaw = localStorage.getItem(TABS_STORAGE_KEY);
-    let tabs: OpenTab[] = [];
-    if (tabsRaw) {
-      const parsed = JSON.parse(tabsRaw);
-      if (Array.isArray(parsed)) tabs = parsed;
-    }
-    // Voorkeur: instance ID expliciet meegegeven via URL-parameter
-    // (`?instance=123`). Dat is robuuster dan localStorage raden wanneer
-    // de popout-tab een ander instance kan willen tonen dan de hoofd-tab.
-    const params = new URLSearchParams(window.location.search);
-    const urlInstance = params.get("instance");
-    let chosen: OpenTab | undefined;
-    if (urlInstance) {
-      const idNum = parseInt(urlInstance, 10);
-      chosen = tabs.find(t => t.id === idNum);
-      if (!chosen) {
-        // URL had een instance maar we vinden geen tab-metadata — vul minimaal
-        // in zodat de fetch-interceptor de header alsnog kan zetten.
-        setActiveInstance({ id: urlInstance, name: "Y-App", url: "", color: "#14b8a6" });
-        return;
-      }
-    }
-    if (!chosen) {
-      // Geen URL-parameter → fallback op laatst-actieve tab uit localStorage.
-      const activeRaw = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-      const activeId = activeRaw ? parseInt(activeRaw, 10) : NaN;
-      if (!Number.isNaN(activeId)) {
-        chosen = tabs.find(t => t.id === activeId) || tabs[0];
-      } else {
-        chosen = tabs[0];
-      }
-    }
-    if (!chosen) return;
-    setActiveInstance({
-      id: String(chosen.id),
-      name: chosen.name,
-      url: chosen.url,
-      color: chosen.themeColor || "#14b8a6",
-    });
-  } catch { /* localStorage parse failure — leave activeInstance null */ }
-}
+type BootstrapState =
+  | { status: "checking" }
+  | { status: "ready"; session: ERPNextSession }
+  | { status: "unauthenticated" }
+  | { status: "error"; message: string };
 
-interface InstanceContext {
+interface UserContext {
   username: string;
   fullName: string;
   roles: string[];
@@ -166,289 +104,42 @@ interface InstanceContext {
 
 function App() {
   const { t } = useTranslation();
-  const [authState, setAuthState] = useState<AuthState>("checking");
-  const [user, setUser] = useState<YAppUser | null>(null);
-  const [authScreen, setAuthScreen] = useState<AuthScreen>("login");
-  const [openTabs, setOpenTabs] = useState<OpenTab[]>(() => loadOpenTabs());
-  const [activeTabId, setActiveTabId] = useState<number | null>(() => loadActiveTabId());
-  const [instanceContext, setInstanceContext] = useState<InstanceContext | null>(null);
+  const [state, setState] = useState<BootstrapState>({ status: "checking" });
+  const [retryCount, setRetryCount] = useState(0);
 
+  // Eén bootstrap: haal de ERPNext-sessie op. Guest / 401 / 403 →
+  // "unauthenticated"; al het andere (netwerk, 5xx) → "error" met retry.
   useEffect(() => {
-    fetch("/api/yapp/me", { credentials: "same-origin" })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          if (data?.user) {
-            setUser({ id: data.user.id, email: data.user.email });
-            setAuthState("logged-in");
-            return;
-          }
-        }
-        setAuthState("logged-out");
+    let cancelled = false;
+    loadSession()
+      .then((session) => {
+        if (!cancelled) setState({ status: "ready", session });
       })
-      .catch(() => setAuthState("logged-out"));
-  }, []);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status = err instanceof SessionUnavailableError ? err.status : undefined;
+        if (status === 401 || status === 403) {
+          setState({ status: "unauthenticated" });
+          return;
+        }
+        setState({
+          status: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
+    return () => { cancelled = true; };
+  }, [retryCount]);
 
+  // De fetch-laag stuurt dit event zodra ERPNext een verlopen sessie meldt.
+  // Single-tenant is er niets meer om lokaal op te ruimen: stuur de gebruiker
+  // rechtstreeks naar de standaard Frappe-loginpagina.
   useEffect(() => {
-    const handler = () => {
-      setAuthState("logged-out"); setUser(null);
-      void import("./lib/mail-cache-db").then(m => m.clearAllMailCache()).catch(() => {});
-    };
+    const handler = () => window.location.assign(loginUrl());
     window.addEventListener("y-app:unauthorized", handler);
     return () => window.removeEventListener("y-app:unauthorized", handler);
   }, []);
 
-  // Reset the browser URL whenever the user lands on the logged-out screen.
-  // LoginPage is rendered outside BrowserRouter, so without this the URL
-  // would freeze at whatever path was active when the session ended (e.g.
-  // "/timesheets") and reload to a confusing "logged-out at /timesheets".
-  useEffect(() => {
-    if (authState === "logged-out" && window.location.pathname !== "/") {
-      window.history.replaceState(null, "", "/");
-    }
-  }, [authState]);
-
-  // Persist open tabs to localStorage
-  useEffect(() => {
-    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(openTabs));
-  }, [openTabs]);
-
-  useEffect(() => {
-    if (activeTabId != null) {
-      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, String(activeTabId));
-    } else {
-      localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
-    }
-  }, [activeTabId]);
-
-  // Synced prefs: hydrate van server en start auto-push loop bij active instance.
-  // Stop bij instance-switch / logout. Importeer lazy zodat bundle-grootte niet
-  // omhoog gaat als gebruiker nooit ingelogd is.
-  useEffect(() => {
-    if (activeTabId == null) return;
-    let cancelled = false;
-    (async () => {
-      const mod = await import("./lib/synced-prefs");
-      if (cancelled) return;
-      await mod.hydrateFromServer(activeTabId);
-      if (cancelled) return;
-      mod.startSyncLoop(activeTabId);
-    })();
-    return () => {
-      cancelled = true;
-      void import("./lib/synced-prefs").then(mod => mod.stopSyncLoop());
-    };
-  }, [activeTabId]);
-
-  // Sync active instance state (for the fetch interceptor + theme) SYNCHRONOUSLY
-  // during render — children of AuthenticatedApp mount and start fetching
-  // immediately, and a useEffect here would run AFTER those fetches (parent
-  // effects run after children's), so any first-mount fetch would miss the
-  // X-Y-App-Instance header and return 401 → kick to login.
-  // Module-level mutation during render is fine because it's idempotent.
-  const activeTab = openTabs.find((t) => t.id === activeTabId) || null;
-  if (activeTab) {
-    const inst: ERPInstance = {
-      id: String(activeTab.id),
-      name: activeTab.name,
-      url: activeTab.url,
-      color: activeTab.themeColor || "#14b8a6",
-    };
-    setActiveInstance(inst);
-  } else {
-    setActiveInstance(null);
-  }
-
-  // Whenever the active instance changes, fetch the per-instance ERPNext
-  // user context (full name + roles) so the Sidebar can apply role-based
-  // filtering. Without this, Sidebar sees empty roles → only universal
-  // pages (Email + Calendar + Settings) are visible.
-  useEffect(() => {
-    if (!activeTab) {
-      setInstanceContext(null);
-      return;
-    }
-    let cancelled = false;
-    fetch("/api/auth/me", { credentials: "same-origin" })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (cancelled || !data) return;
-        setInstanceContext({
-          username: data.username || "",
-          fullName: data.fullName || "",
-          roles: data.roles || [],
-          blockedModules: data.blockedModules || [],
-        });
-      })
-      .catch(() => { /* ignore */ });
-    return () => { cancelled = true; };
-  }, [activeTab?.id]);
-
-  function handleLogin(loggedInUser: { id?: number; email?: string }) {
-    if (loggedInUser.id != null && loggedInUser.email) {
-      setUser({ id: loggedInUser.id, email: loggedInUser.email });
-      setAuthState("logged-in");
-    }
-  }
-
-  function handleSignup(newUser: { id: number; email: string }) {
-    setUser(newUser);
-    setAuthState("logged-in");
-  }
-
-  function handleLogout() {
-    setUser(null);
-    setAuthState("logged-out");
-    setAuthScreen("login");
-    setOpenTabs([]);
-    setActiveTabId(null);
-    setActiveInstance(null);
-    // Privacy: wis de lokale mail-cache (volledige bodies + lijsten) bij uitloggen
-    // zodat een volgende gebruiker op dit apparaat de mailinhoud niet kan lezen.
-    void import("./lib/mail-cache-db").then(m => m.clearAllMailCache()).catch(() => {});
-  }
-
-  /**
-   * Save the currently-active tab's URL path to its OpenTab.lastPath, then
-   * restore the new tab's lastPath to the browser URL synchronously via
-   * history.pushState. This must run BEFORE setActiveTabId() because the
-   * new BrowserRouter remounts (key={tab-${id}}) and reads window.location
-   * once on mount.
-   */
-  function switchToTab(newTabId: number | null) {
-    const currentPath = window.location.pathname + window.location.search;
-
-    // Snapshot the current path into the previously-active tab
-    if (activeTabId != null) {
-      setOpenTabs((curr) =>
-        curr.map((t) => (t.id === activeTabId ? { ...t, lastPath: currentPath } : t))
-      );
-    }
-
-    // Restore the new tab's last path (if any) before remount
-    if (newTabId != null) {
-      const target = openTabs.find((t) => t.id === newTabId);
-      const targetPath = target?.lastPath || "/";
-      if (targetPath !== currentPath) {
-        window.history.pushState(null, "", targetPath);
-      }
-    }
-
-    setActiveTabId(newTabId);
-  }
-
-  function handleOpenInstance(inst: { id: number; name: string; url: string; themeColor: string | null }) {
-    // Snapshot current path into the OLD tab before switching
-    const currentPath = window.location.pathname + window.location.search;
-    if (activeTabId != null) {
-      setOpenTabs((curr) =>
-        curr.map((t) => (t.id === activeTabId ? { ...t, lastPath: currentPath } : t))
-      );
-    }
-
-    // Add the new tab if not already open
-    setOpenTabs((curr) => {
-      if (curr.some((t) => t.id === inst.id)) return curr;
-      return [...curr, inst];
-    });
-
-    // Restore the new tab's last path (if it was previously open and closed)
-    const existing = openTabs.find((t) => t.id === inst.id);
-    const targetPath = existing?.lastPath || "/";
-    if (targetPath !== currentPath) {
-      window.history.pushState(null, "", targetPath);
-    }
-
-    setActiveTabId(inst.id);
-  }
-
-  function handleCloseTab(id: number) {
-    setOpenTabs((curr) => {
-      const next = curr.filter((t) => t.id !== id);
-      // If the closed tab was active, fall back to the most recently opened one
-      if (activeTabId === id) {
-        const fallbackId = next.length > 0 ? next[next.length - 1].id : null;
-        const fallback = next.find((t) => t.id === fallbackId);
-        const targetPath = fallback?.lastPath || "/";
-        if (targetPath !== window.location.pathname + window.location.search) {
-          window.history.pushState(null, "", targetPath);
-        }
-        setActiveTabId(fallbackId);
-      }
-      return next;
-    });
-  }
-
-  function handleSwitchTab(id: number) {
-    switchToTab(id);
-  }
-
-  function handleBackToInstances() {
-    // Snapshot the current tab's path before leaving the workspace
-    const currentPath = window.location.pathname + window.location.search;
-    if (activeTabId != null) {
-      setOpenTabs((curr) =>
-        curr.map((t) => (t.id === activeTabId ? { ...t, lastPath: currentPath } : t))
-      );
-    }
-    setActiveTabId(null);
-  }
-
-  // Power-user shortcut: Alt+1..9 jumps to the Nth open tab. We use Alt
-  // (not Ctrl) because Chrome reserves Ctrl+1..9 to switch its own browser
-  // tabs and the page never sees those events. Uses e.code (physical key)
-  // instead of e.key so it works on macOS where Option+1 produces "¡".
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (!e.code.startsWith("Digit")) return;
-      const n = parseInt(e.code.slice(5), 10);
-      if (Number.isNaN(n) || n < 1 || n > 9) return;
-      const target = openTabs[n - 1];
-      if (!target || target.id === activeTabId) return;
-      e.preventDefault();
-      switchToTab(target.id);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // switchToTab closes over openTabs/activeTabId from this render, so
-    // we re-bind whenever those change. eslint-disable because the linter
-    // can't see that switchToTab is intentionally captured fresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTabs, activeTabId]);
-
-  // Called by InstancesPage after a successful DELETE /api/instances/:id.
-  // The server row is already gone; we still need to evict any open tab
-  // that pointed at that instance (otherwise it becomes a ghost tab that
-  // survives in localStorage and renders a dead workspace).
-  function handleInstanceDeleted(deletedId: number) {
-    setOpenTabs((curr) => curr.filter((t) => t.id !== deletedId));
-    if (activeTabId === deletedId) setActiveTabId(null);
-  }
-
-  // On login, reconcile openTabs (which came from localStorage) against the
-  // server's actual instance list. Prunes ghost tabs left behind by the
-  // pre-fix delete bug, and also handles instances deleted from another
-  // browser/session.
-  useEffect(() => {
-    if (authState !== "logged-in") return;
-    let cancelled = false;
-    fetch("/api/instances", { credentials: "same-origin" })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (cancelled || !data || !Array.isArray(data.instances)) return;
-        const validIds = new Set<number>(data.instances.map((i: { id: number }) => i.id));
-        setOpenTabs((curr) => {
-          const pruned = curr.filter((t) => validIds.has(t.id));
-          return pruned.length === curr.length ? curr : pruned;
-        });
-        setActiveTabId((curr) => (curr != null && !validIds.has(curr) ? null : curr));
-      })
-      .catch(() => { /* ignore — next real request will surface any auth issue */ });
-    return () => { cancelled = true; };
-  }, [authState]);
-
-  if (authState === "checking") {
+  if (state.status === "checking") {
     return (
       <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
         <div className="text-slate-400 text-sm">{t("common.loading")}</div>
@@ -456,80 +147,80 @@ function App() {
     );
   }
 
-  if (authState === "logged-out") {
-    return authScreen === "signup"
-      ? <SignupPage onSignup={handleSignup} onSwitchToLogin={() => setAuthScreen("login")} />
-      : <LoginPage onLogin={handleLogin} onSwitchToSignup={() => setAuthScreen("signup")} />;
+  if (state.status === "unauthenticated") {
+    return (
+      <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-xl bg-white shadow-xl p-8 text-center space-y-5">
+          <p className="text-sm text-slate-600">{t("y_next.login_required")}</p>
+          <button
+            onClick={() => window.location.assign(loginUrl())}
+            className="w-full px-4 py-2 rounded-lg bg-y-teal text-white text-sm font-medium hover:opacity-90 cursor-pointer"
+          >
+            {t("y_next.login_button")}
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  if (!user) return null;
+  if (state.status === "error") {
+    return (
+      <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-xl bg-white shadow-xl p-8 text-center space-y-5">
+          <p className="text-sm text-red-600 break-words">{state.message}</p>
+          <button
+            onClick={() => { setState({ status: "checking" }); setRetryCount((n) => n + 1); }}
+            className="w-full px-4 py-2 rounded-lg bg-y-teal text-white text-sm font-medium hover:opacity-90 cursor-pointer"
+          >
+            {t("extensions.retry")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  // Standalone mail-view: rendered OUTSIDE the Y-app shell (no sidebar,
-  // no tab bar) so the user can drag the browser tab to a second monitor
-  // and only see the mail. Triggered by Webmail's message-list double-click
-  // via window.open('/mail/view?uid=...&folder=...&acct=...').
-  //
-  // The X-Y-App-Instance header is injected door de fetch-interceptor in
-  // lib/instances.ts, maar die leest `activeInstance` uit module state.
-  // De popout-tabs draaien NIET door de normale AuthenticatedApp render
-  // die setActiveInstance() aanroept, dus we hydrateren hier handmatig uit
-  // localStorage. Zonder dit krijgt /api/* een 400 (missing_instance).
-  if (typeof window !== "undefined" && (window.location.pathname === "/mail/view" || window.location.pathname === "/messenger/view")) {
-    hydratePopoutActiveInstance();
+  // Losse popout-vensters (`/mail/view`, `/messenger/view`) hingen aan de
+  // Express-server. Ze blijven als bestand bestaan, maar worden pas weer
+  // gerenderd zodra de bijbehorende feature aan staat.
+  const popoutPath = typeof window !== "undefined" ? window.location.pathname : "";
+  if (isFeatureEnabled("webmail") && popoutPath === "/mail/view") {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-        {window.location.pathname === "/mail/view" ? <MailView /> : <MessengerView />}
+        <MailView />
+      </Suspense>
+    );
+  }
+  if (isFeatureEnabled("messenger") && popoutPath === "/messenger/view") {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+        <MessengerView />
       </Suspense>
     );
   }
 
-  // Logged in. Three view states:
-  //   1. No active tab → show InstancesPage (with tab bar showing open tabs)
-  //   2. Active tab + no legacy app integration yet → show AuthenticatedApp
-  //      wrapped in BrowserRouter, behind the tab bar
-  //   3. (Future) close last tab → back to InstancesPage
-  const showWorkspace = activeTabId != null && activeTab != null;
+  const user: UserContext = {
+    username: state.session.user,
+    fullName: state.session.fullName,
+    roles: state.session.roles,
+    // ERPNext-modulevisibiliteit werd door de Express-laag berekend; die
+    // bestaat niet meer, dus blokkeert de shell zelf niets.
+    blockedModules: [],
+  };
 
-  // Standalone view: dubbelklik op een sidebar-item opent /webmail?standalone=1
-  // (of /messenger?standalone=1) in een nieuw browser-tabblad. In dat tabblad
-  // verbergen we de ERP-shell (InstanceTabBar + Sidebar) zodat alleen de
-  // module-content overblijft — multi-monitor / focus-view.
-  const isStandaloneView = typeof window !== "undefined"
-    && new URLSearchParams(window.location.search).get("standalone") === "1";
+  const shell = <AuthenticatedApp user={user} />;
 
   return (
     <div className="flex flex-col h-screen">
-      {!isStandaloneView && (
-        <InstanceTabBar
-          openTabs={openTabs}
-          activeTabId={activeTabId}
-          onSwitchTab={handleSwitchTab}
-          onCloseTab={handleCloseTab}
-          onReorderTabs={setOpenTabs}
-          onBackToInstances={handleBackToInstances}
-          yAppUser={user}
-          onLogout={handleLogout}
-        />
-      )}
-
       <div className="flex-1 min-h-0 overflow-hidden">
-        {showWorkspace ? (
-          <BrowserRouter key={`tab-${activeTab.id}`}>
-            <BackgroundSyncProvider>
-              <AuthenticatedApp
-                user={instanceContext ? {
-                  username: instanceContext.username,
-                  fullName: instanceContext.fullName,
-                  roles: instanceContext.roles,
-                  blockedModules: instanceContext.blockedModules,
-                } as any : { username: user.email, fullName: user.email, roles: [], blockedModules: [] } as any}
-                onLogout={handleLogout}
-              />
-            </BackgroundSyncProvider>
-          </BrowserRouter>
-        ) : (
-          <InstancesPage user={user} onLogout={handleLogout} onOpenInstance={handleOpenInstance} onInstanceDeleted={handleInstanceDeleted} />
-        )}
+        <HashRouter>
+          {isFeatureEnabled("websocket") ? (
+            <Suspense fallback={null}>
+              <BackgroundSyncProvider>{shell}</BackgroundSyncProvider>
+            </Suspense>
+          ) : (
+            shell
+          )}
+        </HashRouter>
       </div>
     </div>
   );
@@ -553,6 +244,16 @@ function DashboardRoute() {
   return <Dashboard onNavigate={(p: Page) => navigate(`/${p === "dashboard" ? "" : p}`)} viewMode={viewMode} />;
 }
 
+/**
+ * Fase-1 routegate: een route die nog niet geactiveerd is (zie
+ * `lib/capabilities.ts`) rendert de ComingSoon-pagina in plaats van het
+ * echte scherm. Voor routes met parameters (`/settings/:tab`, `/x/:extId`)
+ * beslissen we op het statische prefix.
+ */
+function gate(path: string, element: ReactElement): ReactElement {
+  return isPageEnabled(path) ? element : <ComingSoon />;
+}
+
 /* ── Keep-alive Webmail ──
  *
  * Webmail is by far the heaviest page (IMAP list/body caches, iframes, an
@@ -562,8 +263,8 @@ function DashboardRoute() {
  * see the list" the user noticed.
  *
  * Instead we mount Webmail ONCE (lazily, on first visit) and keep it alive for
- * the lifetime of the instance-tab, toggling `display:none` when another page
- * is active. Returning to Mail is then a pure unhide of the already-built DOM
+ * the lifetime of the session, toggling `display:none` when another page is
+ * active. Returning to Mail is then a pure unhide of the already-built DOM
  * (instant), plus a silent background refresh so the saved view is verified
  * against the server ("op de achtergrond checken").
  *
@@ -571,10 +272,8 @@ function DashboardRoute() {
  * extra mounted page is an acceptable memory cost; keeping all pages alive is
  * not.
  *
- * Per-instance isolation is preserved for free: this component lives inside
- * AuthenticatedApp, which is remounted by `<BrowserRouter key={tab-<id>}>` on
- * every instance-switch — so switching tabs tears this Webmail down and the
- * next instance gets a fresh one. No state bleeds across instances.
+ * Alleen gemount wanneer de webmail-feature aan staat; in fase 1 draait er
+ * geen mailserver achter de app.
  *
  * The `/webmail` <Route> becomes an empty placeholder (below): it must stay in
  * the <Routes> so the URL `/webmail` matches something and doesn't fall through
@@ -612,10 +311,7 @@ function KeepAliveWebmail({ active }: { active: boolean }) {
 
 /* ── Main app layout ── */
 
-// Legacy single-instance app shell. Kept around for Phase 5 reintegration
-// when we wire the per-instance proxy into these existing pages.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function AuthenticatedApp({ user }: { user: { username?: string; fullName?: string; roles?: string[]; blockedModules?: string[] } | null; onLogout: () => void }) {
+function AuthenticatedApp({ user }: { user: UserContext }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -639,7 +335,7 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
   // version, independent of any 3BM-specific setup. A user with no roles
   // (or none of these) safely defaults to `isEmployeeOnly = true` — never
   // a crash, never an accidental employer unlock.
-  const isEmployeeOnly = useMemo(() => !isEmployerRole(user?.roles), [user?.roles]);
+  const isEmployeeOnly = useMemo(() => !isEmployerRole(user.roles), [user.roles]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => (localStorage.getItem("view_mode") as ViewMode) || "employer"
@@ -653,7 +349,6 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
       window.dispatchEvent(new Event("y-app:viewmode-changed"));
     }
   }, [isEmployeeOnly, viewMode]);
-  const [instanceKey, setInstanceKey] = useState("default");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem("sidebar_collapsed") === "true"
   );
@@ -663,23 +358,6 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
-
-  // Listen for refresh events from the global tab bar (which lives outside
-  // AuthenticatedApp and can't reach setInstanceKey directly).
-  useEffect(() => {
-    const handler = () => setInstanceKey("default-" + Date.now());
-    window.addEventListener("y-app:refresh-active-tab", handler);
-    return () => window.removeEventListener("y-app:refresh-active-tab", handler);
-  }, []);
-
-  // Same bridge pattern for the mobile hamburger, which now lives in
-  // InstanceTabBar (above BrowserRouter) but needs to toggle this
-  // component's local mobileMenuOpen state.
-  useEffect(() => {
-    const handler = () => setMobileMenuOpen((prev) => !prev);
-    window.addEventListener("y-app:toggle-mobile-menu", handler);
-    return () => window.removeEventListener("y-app:toggle-mobile-menu", handler);
-  }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "k") {
@@ -699,29 +377,16 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
   }, [handleKeyDown]);
 
   useEffect(() => { document.title = t("app.document_title"); }, [t]);
-  useEffect(() => { prefetchInbox(); prefetchConversations(); }, []);
 
-  // Surface "this instance is momentarily unreachable" without logging
-  // the user out — the auth middleware sends 502 + reason for these.
-  // Auto-clear after 30s so the banner doesn't stick around forever.
-  const [instanceUnavailable, setInstanceUnavailable] = useState(false);
-  const unavailableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Prefetch draait op Express-only endpoints — alleen laden (en dus alleen
+  // in de bundel trekken) zodra de bijbehorende feature aan staat.
   useEffect(() => {
-    const handler = () => {
-      setInstanceUnavailable(true);
-      // Rapid repeat fires (e.g. several API calls failing in a row) must
-      // not stack 30s timers — cancel any pending one first.
-      if (unavailableTimerRef.current) clearTimeout(unavailableTimerRef.current);
-      unavailableTimerRef.current = setTimeout(() => {
-        setInstanceUnavailable(false);
-        unavailableTimerRef.current = null;
-      }, 30_000);
-    };
-    window.addEventListener("y-app:instance-unavailable", handler);
-    return () => {
-      window.removeEventListener("y-app:instance-unavailable", handler);
-      if (unavailableTimerRef.current) clearTimeout(unavailableTimerRef.current);
-    };
+    if (isFeatureEnabled("webmail")) {
+      void import("./lib/webmail-prefetch").then((m) => m.prefetchInbox()).catch(() => {});
+    }
+    if (isFeatureEnabled("messenger")) {
+      void import("./lib/messenger-prefetch").then((m) => m.prefetchConversations()).catch(() => {});
+    }
   }, []);
 
   function handleNavigate(page: Page) {
@@ -736,10 +401,15 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
     navigate("/");
   }
 
+  // Standalone view: dubbelklik op een sidebar-item opent dezelfde pagina in
+  // een nieuw browser-tabblad zonder ERP-shell (multi-monitor / focus-view).
+  const isStandaloneView = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("standalone") === "1";
+
   return (
     <ToastProvider>
     <div className="flex flex-col h-full bg-slate-100">
-      <DataProvider key={instanceKey} userRoles={user?.roles}>
+      <DataProvider userRoles={user.roles}>
         <div className="flex flex-1 min-h-0">
           {/* Mobile sidebar overlay backdrop */}
           {mobileMenuOpen && (
@@ -748,10 +418,7 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
               onClick={() => setMobileMenuOpen(false)}
             />
           )}
-          {/* Standalone view (dubbelklik op sidebar-item → ?standalone=1):
-              ERP-sidebar overslaan zodat alleen de module-content zichtbaar
-              is in het popout-tabblad. */}
-          {new URLSearchParams(window.location.search).get("standalone") !== "1" && (
+          {!isStandaloneView && (
             <Sidebar
               activePage={activePage}
               onNavigate={handleNavigate}
@@ -766,15 +433,23 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
               }}
               mobileOpen={mobileMenuOpen}
               onCloseMobile={() => setMobileMenuOpen(false)}
-              userRoles={user?.roles || []}
-              blockedModules={user?.blockedModules || []}
+              userRoles={user.roles}
+              blockedModules={user.blockedModules}
             />
           )}
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
-            {instanceUnavailable && (
-              <div className="flex items-center justify-between gap-3 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
-                <span>{t("app.instance_unavailable")}</span>
-                <button onClick={() => setInstanceUnavailable(false)} className="text-amber-700 hover:text-amber-900 cursor-pointer">×</button>
+            {/* Mobiele hamburger — de sidebar is op < md een overlay en werd
+                voorheen geopend vanuit de (verwijderde) instance-tabbalk. */}
+            {!isStandaloneView && (
+              <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-y-purple-dark text-white">
+                <button
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="p-1.5 rounded-lg hover:bg-y-purple-light cursor-pointer"
+                  title={t("sidebar.expand")}
+                  aria-label={t("sidebar.expand")}
+                >
+                  <Menu size={20} />
+                </button>
               </div>
             )}
             <main className="flex-1 overflow-auto">
@@ -783,70 +458,70 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
                   refresh, instead of a full remount. Hidden via display:none
                   when another page is active (takes no layout space). See
                   KeepAliveWebmail above. */}
-              <KeepAliveWebmail active={activePage === "webmail"} />
+              {isFeatureEnabled("webmail") && <KeepAliveWebmail active={activePage === "webmail"} />}
               {/* Defense-in-depth against issue #103 (a page-level crash
                   used to blank the entire app with no way back): any
                   uncaught render error in the active route now shows a
-                  recoverable message instead, while the sidebar/tab-bar
-                  outside this boundary stay usable. Keyed on the pathname
+                  recoverable message instead, while the sidebar outside
+                  this boundary stays usable. Keyed on the pathname
                   so navigating to a different page always clears a
                   previous error. */}
               <ErrorBoundary resetKey={activePage}>
                 <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  <Route path="/" element={<DashboardRoute />} />
+                  <Route path="/" element={gate("/", <DashboardRoute />)} />
                   <Route path="/dashboard" element={<Navigate to="/" replace />} />
-                  <Route path="/management-dashboard" element={<ManagementDashboard />} />
-                  <Route path="/sales" element={<SalesInvoices />} />
-                  <Route path="/purchase" element={<PurchaseInvoices />} />
-                  <Route path="/quotations" element={<Quotations />} />
-                  <Route path="/salesorders" element={<SalesOrders />} />
-                  <Route path="/projects" element={<Projects />} />
-                  <Route path="/tasks" element={<Tasks />} />
-                  <Route path="/subtasks" element={<Subtasks />} />
-                  <Route path="/planning" element={<Planning />} />
-                  <Route path="/calendar" element={<Agenda />} />
-                  <Route path="/employees" element={<Employees />} />
-                  <Route path="/financieel-dashboard" element={<FinancieelDashboard />} />
-                  <Route path="/revenue" element={<Revenue />} />
-                  <Route path="/outstanding" element={<Outstanding />} />
-                  <Route path="/cost-insight" element={<CostInsight />} />
-                  <Route path="/jaarrekening" element={<Jaarrekening />} />
-                  <Route path="/btw" element={<BTW />} />
-                  <Route path="/loonaangifte" element={<Loonaangifte />} />
-                  <Route path="/expenses" element={<Expenses />} />
-                  <Route path="/deliverynotes" element={<DeliveryNotes />} />
-                  <Route path="/timesheets" element={<Timesheets />} />
-                  <Route path="/leave" element={<Leave />} />
-                  <Route path="/profitability" element={<Profitability />} />
+                  <Route path="/management-dashboard" element={gate("/management-dashboard", <ManagementDashboard />)} />
+                  <Route path="/sales" element={gate("/sales", <SalesInvoices />)} />
+                  <Route path="/purchase" element={gate("/purchase", <PurchaseInvoices />)} />
+                  <Route path="/quotations" element={gate("/quotations", <Quotations />)} />
+                  <Route path="/salesorders" element={gate("/salesorders", <SalesOrders />)} />
+                  <Route path="/projects" element={gate("/projects", <Projects />)} />
+                  <Route path="/tasks" element={gate("/tasks", <Tasks />)} />
+                  <Route path="/subtasks" element={gate("/subtasks", <Subtasks />)} />
+                  <Route path="/planning" element={gate("/planning", <Planning />)} />
+                  <Route path="/calendar" element={gate("/calendar", <Agenda />)} />
+                  <Route path="/employees" element={gate("/employees", <Employees />)} />
+                  <Route path="/financieel-dashboard" element={gate("/financieel-dashboard", <FinancieelDashboard />)} />
+                  <Route path="/revenue" element={gate("/revenue", <Revenue />)} />
+                  <Route path="/outstanding" element={gate("/outstanding", <Outstanding />)} />
+                  <Route path="/cost-insight" element={gate("/cost-insight", <CostInsight />)} />
+                  <Route path="/jaarrekening" element={gate("/jaarrekening", <Jaarrekening />)} />
+                  <Route path="/btw" element={gate("/btw", <BTW />)} />
+                  <Route path="/loonaangifte" element={gate("/loonaangifte", <Loonaangifte />)} />
+                  <Route path="/expenses" element={gate("/expenses", <Expenses />)} />
+                  <Route path="/deliverynotes" element={gate("/deliverynotes", <DeliveryNotes />)} />
+                  <Route path="/timesheets" element={gate("/timesheets", <Timesheets />)} />
+                  <Route path="/leave" element={gate("/leave", <Leave />)} />
+                  <Route path="/profitability" element={gate("/profitability", <Profitability />)} />
                   {/* Placeholder: the real Webmail is rendered persistently by
                       <KeepAliveWebmail> above. This route only exists so the
                       /webmail URL matches (and doesn't hit the "*" redirect). */}
-                  <Route path="/webmail" element={<></>} />
-                  <Route path="/nextcloud-files" element={<NextCloudFiles />} />
-                  <Route path="/nextcloud-talk" element={<NextCloudTalk />} />
-                  <Route path="/ledgers" element={<Ledgers />} />
-                  <Route path="/bank-transactions" element={<BankTransactions />} />
-                  <Route path="/booking-program" element={<BookingProgram />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/settings/:tab" element={<SettingsPage />} />
-                  <Route path="/todo" element={<Todo />} />
-                  <Route path="/wiki" element={<Wiki />} />
-                  <Route path="/passwords" element={<Passwords />} />
-                  <Route path="/contacts" element={<Contacts />} />
-                  <Route path="/messenger" element={<Messenger />} />
-                  <Route path="/meeting-notes" element={<MeetingNotes />} />
-                  <Route path="/leads" element={<Leads />} />
-                  <Route path="/liquidity-planning" element={<LiquidityPlanning />} />
-                  <Route path="/letters" element={<Letters />} />
-                  <Route path="/erpnext-overview" element={<ErpNextOverview />} />
-                  <Route path="/release-notes" element={<ReleaseNotes />} />
-                  {/* Extensions — iframe-hosted, installed per instance
-                      via Settings → Extensions. A stray deep-link to an
-                      uninstalled extension falls back to the dashboard via
-                      the "*" route below. */}
-                  <Route path="/x/:extId" element={<ExtensionHost />} />
-                  <Route path="/x/:extId/*" element={<ExtensionHost />} />
+                  <Route path="/webmail" element={gate("/webmail", <></>)} />
+                  <Route path="/nextcloud-files" element={gate("/nextcloud-files", <NextCloudFiles />)} />
+                  <Route path="/nextcloud-talk" element={gate("/nextcloud-talk", <NextCloudTalk />)} />
+                  <Route path="/ledgers" element={gate("/ledgers", <Ledgers />)} />
+                  <Route path="/bank-transactions" element={gate("/bank-transactions", <BankTransactions />)} />
+                  <Route path="/booking-program" element={gate("/booking-program", <BookingProgram />)} />
+                  <Route path="/settings" element={gate("/settings", <SettingsPage />)} />
+                  <Route path="/settings/:tab" element={gate("/settings", <SettingsPage />)} />
+                  <Route path="/todo" element={gate("/todo", <Todo />)} />
+                  <Route path="/wiki" element={gate("/wiki", <Wiki />)} />
+                  <Route path="/passwords" element={gate("/passwords", <Passwords />)} />
+                  <Route path="/contacts" element={gate("/contacts", <Contacts />)} />
+                  <Route path="/messenger" element={gate("/messenger", <Messenger />)} />
+                  <Route path="/meeting-notes" element={gate("/meeting-notes", <MeetingNotes />)} />
+                  <Route path="/leads" element={gate("/leads", <Leads />)} />
+                  <Route path="/liquidity-planning" element={gate("/liquidity-planning", <LiquidityPlanning />)} />
+                  <Route path="/letters" element={gate("/letters", <Letters />)} />
+                  <Route path="/erpnext-overview" element={gate("/erpnext-overview", <ErpNextOverview />)} />
+                  <Route path="/release-notes" element={gate("/release-notes", <ReleaseNotes />)} />
+                  {/* Extensions — iframe-hosted, installed via Settings →
+                      Extensions. A stray deep-link to an uninstalled
+                      extension falls back to the dashboard via the "*"
+                      route below. */}
+                  <Route path="/x/:extId" element={gate("/x", <ExtensionHost />)} />
+                  <Route path="/x/:extId/*" element={gate("/x", <ExtensionHost />)} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
                 </Suspense>
@@ -854,7 +529,11 @@ function AuthenticatedApp({ user }: { user: { username?: string; fullName?: stri
             </main>
           </div>
           <div className="hidden lg:block">
-            {viewMode === "employer" && <AgentPanel />}
+            {isFeatureEnabled("terminal") && viewMode === "employer" && (
+              <Suspense fallback={null}>
+                <AgentPanel />
+              </Suspense>
+            )}
           </div>
         </div>
       </DataProvider>

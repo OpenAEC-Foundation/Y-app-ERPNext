@@ -14,13 +14,8 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-// Register the service worker (production only — in dev Vite serves
-// modules from /src and SW caching just gets in the way of HMR).
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => { /* offline support is best-effort */ });
-  });
-}
+// Geen service worker in fase 1 — Y-next wordt als ERPNext Web Page
+// geserveerd en registreert niets meer onder /sw.js.
 
 // In dev, actively unregister any previously-installed service worker and
 // wipe its caches. A stale SW from an earlier production-like session will

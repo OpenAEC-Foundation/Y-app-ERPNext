@@ -11,6 +11,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { getActiveInstance, getActiveCompany } from "../lib/instances";
 import { getModuleConfig, isItemEnabled, isSectionEnabled, ALWAYS_VISIBLE, migratePageIdMap } from "../lib/modules";
+import { DISABLED_PAGE_MODE, isFeatureEnabled, isPageEnabled } from "../lib/capabilities";
 import { useRemoteExtensions } from "../extensions/remote";
 import { useLeaves } from "../lib/DataContext";
 import { getAllBadgeCounts, setBadgeCount } from "../lib/badges";
@@ -70,6 +71,11 @@ const UNIVERSAL_PAGES: Set<Page> = new Set([
   "webmail", "messenger", "meeting-notes", "letters", "release-notes",
   "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview",
 ]);
+
+/** Routepad van een nav-item — de router-tegenhanger van `Page`. */
+function pagePathFor(id: Page): string {
+  return id === "dashboard" ? "/" : `/${id}`;
+}
 
 function getAccessiblePages(roles: string[]): Set<Page> | "all" {
   if (roles.includes("System Manager") || roles.includes("Administrator")) return "all";
@@ -273,9 +279,11 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
     };
   }, []);
 
-  // Fetch employer module visibility config from server (applies in employee mode)
+  // Fetch employer module visibility config from server (applies in employee mode).
+  // `/api/user-settings/*` bestond alleen op de Express-server — alleen ophalen
+  // zolang die gedeelde-instellingen-feature aan staat.
   useEffect(() => {
-    if (viewMode !== "employee") { setEmployerModuleConfig(null); return; }
+    if (viewMode !== "employee" || !isFeatureEnabled("shared-settings")) { setEmployerModuleConfig(null); return; }
     fetch("/api/user-settings/employee-visible-modules", { credentials: "same-origin" })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -354,6 +362,15 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
     .map((section) => blockedModules.length === 0 ? section : ({
       ...section,
       items: section.items.filter((item) => ALWAYS_VISIBLE.has(item.id) || !blockedModules.includes(item.id)),
+    }))
+    .filter((section) => section.items.length > 0)
+    // Y-next fase 1: pagina's die nog niet geactiveerd zijn (zie
+    // lib/capabilities.ts). Bij DISABLED_PAGE_MODE "hidden" verdwijnen ze uit
+    // de sidebar; bij "visible" blijven ze staan — gedimd, met een
+    // "volgt later"-badge — en leiden ze naar de ComingSoon-route.
+    .map((section) => DISABLED_PAGE_MODE !== "hidden" ? section : ({
+      ...section,
+      items: section.items.filter((item) => isPageEnabled(pagePathFor(item.id))),
     }))
     .filter((section) => section.items.length > 0)
     .filter((section) => !section.title || isSectionEnabled(moduleConfig, section.title) || section.items.some((i) => ALWAYS_VISIBLE.has(i.id)))
@@ -545,6 +562,9 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
                   {section.items.map((item) => {
                     const Icon = item.icon;
                     const active = activePage === item.id;
+                    // Fase 1: nog niet geactiveerde pagina's blijven zichtbaar
+                    // maar gedimd; klikken leidt naar de ComingSoon-route.
+                    const pageEnabled = isPageEnabled(pagePathFor(item.id));
                     return (
                       <button
                         key={item.id}
@@ -552,26 +572,32 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
                         onDoubleClick={(e) => {
                           // Dubbelklik op een sidebar-item opent dezelfde
                           // pagina in een nieuw browser-tabblad zonder de
-                          // ERP-shell (sidebar + tab-bar). Werkt voor élke
+                          // ERP-shell (sidebar). Werkt voor élke geactiveerde
                           // module — handig voor multi-monitor workflow.
                           // Tweede klik tegen tekstselectie onderdrukken.
                           e.preventDefault();
                           e.stopPropagation();
-                          const path = item.id === "dashboard" ? "/" : `/${item.id}`;
-                          const inst = getActiveInstance();
-                          const params = new URLSearchParams({ standalone: "1" });
-                          if (inst && inst.id !== "default") params.set("instance", inst.id);
-                          window.open(`${path}?${params.toString()}`, "_blank", "noopener");
+                          if (!pageEnabled) return;
+                          // HashRouter: het routepad hoort achter het hekje,
+                          // `?standalone=1` blijft op de document-URL staan
+                          // zodat window.location.search hem ziet.
+                          const path = pagePathFor(item.id);
+                          window.open(`${window.location.pathname}?standalone=1#${path}`, "_blank", "noopener");
                         }}
                         title={!isExpanded ? t(item.labelKey) : t("nav.dblclick_to_popout", "Dubbelklik = nieuw tabblad")}
                         className={`w-full flex items-center ${isExpanded ? "gap-3 px-4" : "justify-center px-2"} py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
                           active
                             ? "bg-y-teal text-white shadow-md shadow-y-teal/20"
                             : "text-slate-300 hover:bg-y-purple-light hover:text-white"
-                        }`}
+                        } ${pageEnabled ? "" : "opacity-50"}`}
                       >
                         <Icon size={18} className="flex-shrink-0" />
                         {isExpanded && <span className="font-medium text-sm flex-1">{t(item.labelKey)}</span>}
+                        {isExpanded && !pageEnabled && (
+                          <span className="ml-auto text-[9px] font-semibold uppercase tracking-wide text-y-teal-light/70 border border-y-teal-light/30 rounded px-1 py-px whitespace-nowrap">
+                            {t("y_next.badge_later")}
+                          </span>
+                        )}
                         {isExpanded && badges[item.id] > 0 && (
                           <span className="ml-auto text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                             {badges[item.id]}

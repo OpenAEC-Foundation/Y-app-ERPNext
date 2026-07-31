@@ -5,6 +5,7 @@ import { DndContext, closestCenter } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { getActiveInstance, getActiveInstanceId } from "../../lib/instances";
+import { isFeatureEnabled } from "../../lib/capabilities";
 import type { Page, ViewMode } from "../../components/Sidebar";
 import UrenBoekenWidget from "../../components/UrenBoekenWidget";
 import { type WidgetPlacement, type WidgetVisibility } from "./types";
@@ -37,9 +38,23 @@ const ALL_WIDGET_DEFS: { id: string; labelKey: string; visibility: WidgetVisibil
   { id: "today-agenda", labelKey: "dashboard.todays_agenda", visibility: "all" },
 ];
 
+/**
+ * Twee widgets hangen aan endpoints die alleen de verdwenen Express-server
+ * kende: de e-mailwidget (`/api/mail/*`) en de vandaag-agenda (`/api/calendar/*`).
+ * Zolang die features uit staan worden ze zowel uit de widgetlijst als uit een
+ * opgeslagen layout gefilterd — anders zou een bestaande layout ze alsnog
+ * mounten en meteen falende calls doen. De overige widgets draaien op
+ * `/api/resource` / `/api/method` en blijven ongemoeid.
+ */
+function isWidgetAvailable(id: string): boolean {
+  if (id === "email") return isFeatureEnabled("webmail");
+  if (id === "today-agenda") return isFeatureEnabled("calendar-bridge");
+  return true;
+}
+
 function getWidgetsForMode(mode: string): { id: string; labelKey: string }[] {
   return ALL_WIDGET_DEFS.filter(
-    (w) => w.visibility === "all" || w.visibility === mode
+    (w) => (w.visibility === "all" || w.visibility === mode) && isWidgetAvailable(w.id)
   );
 }
 
@@ -71,7 +86,8 @@ function getLayoutKey(mode: string): string {
 }
 
 function getDefaultLayout(mode: string): WidgetPlacement[] {
-  return mode === "employee" ? DEFAULT_EMPLOYEE_LAYOUT : DEFAULT_EMPLOYER_LAYOUT;
+  const base = mode === "employee" ? DEFAULT_EMPLOYEE_LAYOUT : DEFAULT_EMPLOYER_LAYOUT;
+  return base.filter((w) => isWidgetAvailable(w.id));
 }
 
 function loadLayout(mode: string): WidgetPlacement[] {
@@ -81,10 +97,11 @@ function loadLayout(mode: string): WidgetPlacement[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const savedIds = new Set(parsed.map((w: WidgetPlacement) => w.id));
+        const saved = (parsed as WidgetPlacement[]).filter((w) => isWidgetAvailable(w.id));
+        const savedIds = new Set(saved.map((w) => w.id));
         const missing = defaults.filter(w => !savedIds.has(w.id));
-        if (missing.length > 0) return [...parsed, ...missing];
-        return parsed;
+        if (missing.length > 0) return [...saved, ...missing];
+        return saved;
       }
     }
   } catch { /* use default */ }
@@ -121,6 +138,10 @@ function WidgetColumn({
   const ids = items.map((w) => w.id);
 
   function renderWidget(widgetId: string) {
+    // Vangnet: een layout uit een eerdere fase kan nog een uitgeschakelde
+    // widget bevatten. Nooit mounten — die zou meteen falende calls doen.
+    if (!isWidgetAvailable(widgetId)) return null;
+
     let content: React.ReactNode;
 
     switch (widgetId) {
@@ -304,7 +325,7 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
                 <>
                   <div className="border-t border-slate-100 my-1" />
                   <p className="px-4 py-1 text-[10px] text-slate-400 uppercase">Reset</p>
-                  <button onClick={() => { const defaults = mode === "employee" ? DEFAULT_EMPLOYEE_LAYOUT : DEFAULT_EMPLOYER_LAYOUT; setLayout(defaults); saveLayout(defaults, mode); setAddOpen(false); }}
+                  <button onClick={() => { const defaults = getDefaultLayout(mode); setLayout(defaults); saveLayout(defaults, mode); setAddOpen(false); }}
                     className="w-full text-left px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 cursor-pointer">
                     {t("dashboard.restore_default_layout")}
                   </button>

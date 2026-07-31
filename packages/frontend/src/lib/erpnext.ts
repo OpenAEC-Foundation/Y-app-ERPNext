@@ -1,6 +1,15 @@
 /**
- * ERPNext API client — all requests go through the backend server.
- * The backend handles authentication via HttpOnly y_session cookie.
+ * ERPNext API-client — praat same-origin met de ERPNext-site zelf.
+ *
+ * Er zit geen eigen backend of proxy meer tussen: de app draait op dezelfde
+ * origin als ERPNext v16 en rijdt mee op de bestaande Frappe-sessiecookie die
+ * de browser al heeft. Alle calls gaan daarom rechtstreeks naar de standaard
+ * Frappe REST/RPC-endpoints (`/api/resource/...`, `/api/method/...`) met
+ * `credentials: "same-origin"`.
+ *
+ * Muterende requests (POST/PUT/DELETE) sturen het Frappe CSRF-token mee via
+ * de `X-Frappe-CSRF-Token`-header; zie `csrf.ts` voor waar dat token vandaan
+ * komt. GET-requests hebben dat niet nodig.
  */
 
 import { getActiveInstance, getActiveInstanceId } from "./instances.ts";

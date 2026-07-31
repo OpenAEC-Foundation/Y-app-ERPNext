@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { getActiveInstanceId } from "../lib/instances";
+import { isFeatureEnabled } from "../lib/capabilities";
 
 export interface RemoteExtension {
   /** Stable, URL-safe machine ID. Used in the route `/x/<id>`. */
@@ -90,11 +91,18 @@ export async function saveRemoteExtensions(
   }));
 }
 
+/** Stabiele lege lijst zodat een uitgeschakelde feature geen render-churn
+ *  veroorzaakt bij consumers die op referentie-identiteit vergelijken. */
+const NO_EXTENSIONS: RemoteExtension[] = [];
+
 export function useRemoteExtensions(): RemoteExtension[] {
+  // Fase 1: extensies zijn uit — geen settings-call, geen cache-hydratie.
+  const enabled = isFeatureEnabled("extensions");
   const instanceId = getActiveInstanceId();
-  const [list, setList] = useState<RemoteExtension[]>(() => readCache(instanceId));
+  const [list, setList] = useState<RemoteExtension[]>(() => (enabled ? readCache(instanceId) : NO_EXTENSIONS));
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     fetchRemoteExtensions(instanceId).then((fresh) => {
       if (!cancelled) setList(fresh);
@@ -108,9 +116,9 @@ export function useRemoteExtensions(): RemoteExtension[] {
       cancelled = true;
       window.removeEventListener(CHANGE_EVENT, onChange);
     };
-  }, [instanceId]);
+  }, [enabled, instanceId]);
 
-  return list;
+  return enabled ? list : NO_EXTENSIONS;
 }
 
 /** Normalise the URL the iframe will load. Appends the bridge query params. */
