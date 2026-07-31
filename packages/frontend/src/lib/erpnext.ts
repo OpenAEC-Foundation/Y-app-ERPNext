@@ -168,13 +168,13 @@ const inflightRequests = new Map<string, Promise<unknown>>();
  * `Field not permitted in query: workflow_state`.
  *
  * Rather than hard-failing every list fetch against that doctype, fetchList
- * drops the named field, remembers the exclusion per doctype for the life
- * of the tab, and retries. Subsequent calls (including via fetchAll's
- * pagination) never even ask for the field again.
+ * (and fetchCount, for fields named in its filters) drops the named field,
+ * remembers the exclusion per doctype for the life of the tab, and retries.
+ * Subsequent calls (including via fetchAll's pagination) never even ask for
+ * the field again.
  */
 const rejectedFieldsCache = new Map<string, Set<string>>();
 const warnedRejectedFields = new Set<string>();
-const MAX_FIELD_SELF_HEAL_ATTEMPTS = 5;
 
 function getRejectedFields(doctype: string): Set<string> {
   let set = rejectedFieldsCache.get(doctype);
@@ -185,14 +185,23 @@ function getRejectedFields(doctype: string): Set<string> {
   return set;
 }
 
+function warnRejectedFieldOnce(doctype: string, field: string): void {
+  const warnKey = `${doctype}::${field}`;
+  if (warnedRejectedFields.has(warnKey)) return;
+  warnedRejectedFields.add(warnKey);
+  console.warn(`[erpnext] "${doctype}" rejected field "${field}" (not permitted in query) — excluding it from future requests.`);
+}
+
 /**
- * Look for Frappe's "Field not permitted in query: <field>" DataError
- * message anywhere in a parsed error response body (exception / exc /
- * message / _server_messages — Frappe is inconsistent about which key
- * carries it depending on version and error path).
+ * Pull every human-readable message string out of a parsed Frappe/ERPNext
+ * error response body. Frappe is inconsistent about which key carries the
+ * actual message depending on version and error path (`exception`, `exc`,
+ * `message`, or the JSON-encoded `_server_messages` array), so callers that
+ * need to pattern-match on the message (self-heal, missing-doctype
+ * detection, …) all search this same combined haystack.
  */
-function extractRejectedField(body: unknown): string | null {
-  if (!body || typeof body !== "object") return null;
+function collectErrorMessageTexts(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
   const b = body as { exception?: string; exc?: string; message?: string; _server_messages?: string };
   const haystacks: string[] = [];
   if (b.exception) haystacks.push(b.exception);
@@ -215,11 +224,63 @@ function extractRejectedField(body: unknown): string | null {
       /* not JSON — ignore */
     }
   }
-  for (const text of haystacks) {
+  return haystacks;
+}
+
+/**
+ * Look for Frappe's "Field not permitted in query: <field>" DataError
+ * message anywhere in a parsed error response body.
+ */
+function extractRejectedField(body: unknown): string | null {
+  for (const text of collectErrorMessageTexts(body)) {
     const m = /Field not permitted in query:\s*([A-Za-z0-9_]+)/.exec(text);
     if (m) return m[1];
   }
   return null;
+}
+
+/**
+ * Missing-doctype detection — some ERPNext instances don't have every app
+ * installed (e.g. no HRMS → no `Leave Application`/`Leave Allocation`, no
+ * Wiki app → no `Wiki Page`). Frappe answers list/count requests against
+ * those doctypes with HTTP 404 and a DoesNotExistError body:
+ * `DocType <name> not found` — a different message shape than "record not
+ * found" (`{Doctype} {docname} not found`), which is what fetchDocument's
+ * single-record lookups should keep surfacing as a normal 404.
+ */
+function extractMissingDoctype(body: unknown): string | null {
+  for (const text of collectErrorMessageTexts(body)) {
+    const m = /^DocType\s+(.+?)\s+not found$/.exec(text.trim());
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Doctypes confirmed missing on the active instance, scoped per instance
+ * (so switching tenants doesn't leak one site's missing-app list onto
+ * another). Once a doctype is known missing, fetchList/fetchAll/fetchCount
+ * short-circuit to an empty result without another network round-trip for
+ * the life of the tab.
+ */
+const missingDoctypesCache = new Set<string>();
+const warnedMissingDoctypes = new Set<string>();
+
+function missingDoctypeKey(doctype: string): string {
+  return `${getActiveInstance().id}::${doctype}`;
+}
+
+function isDoctypeMissing(doctype: string): boolean {
+  return missingDoctypesCache.has(missingDoctypeKey(doctype));
+}
+
+function markDoctypeMissing(doctype: string): void {
+  const key = missingDoctypeKey(doctype);
+  missingDoctypesCache.add(key);
+  if (!warnedMissingDoctypes.has(key)) {
+    warnedMissingDoctypes.add(key);
+    console.warn(`[erpnext] doctype "${doctype}" does not exist on this instance — returning empty results for it from now on.`);
+  }
 }
 
 /**
@@ -272,6 +333,10 @@ export async function fetchList<T = Record<string, unknown>>(
     order_by?: string;
   }
 ): Promise<T[]> {
+  // Doctype confirmed missing on this instance (no app installed for it) —
+  // skip the network round-trip entirely and behave like an empty list.
+  if (isDoctypeMissing(doctype)) return [];
+
   // Drop fields this doctype has already told us it doesn't permit, so
   // repeat calls (including fetchAll's pagination) never re-trigger a 417.
   const rejected = getRejectedFields(doctype);
@@ -321,28 +386,40 @@ export async function fetchList<T = Record<string, unknown>>(
   const promise = (async () => {
     let attemptFields = fields;
     let attemptUrl = url;
-    for (let attempt = 0; ; attempt++) {
+    for (;;) {
       const res = await fetchWithTimeout(attemptUrl, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
       if (!res.ok) {
         // Self-heal: drop a field the instance just told us it doesn't
-        // permit in queries (417 DataError) and retry, bounded so a
-        // persistently broken instance can't loop forever.
-        if (attemptFields && attemptFields.length > 0 && attempt < MAX_FIELD_SELF_HEAL_ATTEMPTS) {
+        // permit in queries (417 DataError) and retry. Naturally bounded —
+        // each retry removes one distinct field from attemptFields, so the
+        // loop can iterate at most `attemptFields.length` times regardless
+        // of how many fields on this doctype turn out to be restricted; a
+        // fixed attempt cap here would cut a legitimate heal short on a
+        // doctype with many restricted fields.
+        if (attemptFields && attemptFields.length > 0) {
           const errBody = await res.clone().json().catch(() => null);
           const badField = extractRejectedField(errBody);
           if (badField && attemptFields.includes(badField)) {
             rejected.add(badField);
             attemptFields = attemptFields.filter((f) => f !== badField);
-            const warnKey = `${doctype}::${badField}`;
-            if (!warnedRejectedFields.has(warnKey)) {
-              warnedRejectedFields.add(warnKey);
-              console.warn(`[erpnext] "${doctype}" rejected field "${badField}" (not permitted in query) — excluding it from future requests.`);
-            }
+            warnRejectedFieldOnce(doctype, badField);
             const retryParams = new URLSearchParams(searchParams);
             if (attemptFields.length > 0) retryParams.set("fields", JSON.stringify(attemptFields));
             else retryParams.delete("fields");
             attemptUrl = buildApiUrl(`/api/resource/${doctype}`, retryParams);
             continue;
+          }
+        }
+        // Doctype not installed on this instance (no app providing it) —
+        // cache that fact and degrade to an empty list instead of a
+        // recurring, unrecoverable error on every page that queries it.
+        if (res.status === 404) {
+          const errBody = await res.clone().json().catch(() => null);
+          const missingDoctype = extractMissingDoctype(errBody);
+          if (missingDoctype) {
+            markDoctypeMissing(doctype);
+            responseCache.set(key, { data: [], ts: Date.now() });
+            return [] as T[];
           }
         }
         handleAuthError(res);
@@ -600,24 +677,66 @@ export async function fetchCount(
   doctype: string,
   filters?: unknown[][]
 ): Promise<number> {
-  // Y-next heeft geen instance-abstractielaag meer om naartoe te routeren —
-  // altijd de directe Frappe REST-aggregate op /api/resource gebruiken.
-  const args: Record<string, string> = {
-    fields: JSON.stringify(["count(name) as total"]),
-    filters: filters ? JSON.stringify(filters) : "[]",
-    limit_page_length: "1",
-  };
-  const url = `/api/resource/${doctype}?${new URLSearchParams(args)}`;
+  // Doctype confirmed missing on this instance — skip the round-trip.
+  if (isDoctypeMissing(doctype)) return 0;
+
+  // Uses Frappe's dedicated frappe.client.get_count RPC rather than the old
+  // /api/resource aggregate-field trick (`fields=["count(name) as total"]`):
+  // current Frappe versions reject raw SQL function strings in `fields` with
+  // HTTP 417 ("SQL functions are not allowed as strings in SELECT"), and
+  // that failure has no field to drop — it fails identically on every retry,
+  // for every doctype, forever. frappe.client.get_count is the documented,
+  // always-available way to get a row count and carries none of that baggage.
+  const rejected = getRejectedFields(doctype);
+  let attemptFilters = filters
+    ? filters.filter((f) => !(Array.isArray(f) && typeof f[0] === "string" && rejected.has(f[0])))
+    : filters;
+
+  function buildUrl(filts?: unknown[][]): string {
+    const args: Record<string, string> = { doctype };
+    if (filts && filts.length > 0) args.filters = JSON.stringify(filts);
+    return buildApiUrl("/api/method/frappe.client.get_count", new URLSearchParams(args));
+  }
+
+  let url = buildUrl(attemptFilters);
   const key = cacheKey(url);
   const cached = responseCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data as number;
-  const res = await fetchWithTimeout(url, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
-  if (!res.ok) {
-    handleAuthError(res);
-    throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
+
+  for (;;) {
+    const res = await fetchWithTimeout(url, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
+    if (!res.ok) {
+      // Self-heal: drop a filter naming a field this doctype doesn't permit
+      // in queries (417 DataError), mirroring fetchList's field self-heal —
+      // get_count validates filter fields the same way list queries do.
+      if (attemptFilters && attemptFilters.length > 0) {
+        const errBody = await res.clone().json().catch(() => null);
+        const badField = extractRejectedField(errBody);
+        if (badField && attemptFilters.some((f) => Array.isArray(f) && f[0] === badField)) {
+          rejected.add(badField);
+          attemptFilters = attemptFilters.filter((f) => !(Array.isArray(f) && f[0] === badField));
+          warnRejectedFieldOnce(doctype, badField);
+          url = buildUrl(attemptFilters);
+          continue;
+        }
+      }
+      // Doctype not installed on this instance — cache that and degrade to
+      // a zero count instead of a recurring, unrecoverable error.
+      if (res.status === 404) {
+        const errBody = await res.clone().json().catch(() => null);
+        const missingDoctype = extractMissingDoctype(errBody);
+        if (missingDoctype) {
+          markDoctypeMissing(doctype);
+          responseCache.set(key, { data: 0, ts: Date.now() });
+          return 0;
+        }
+      }
+      handleAuthError(res);
+      throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
+    }
+    const json = await res.json();
+    const count = typeof json.message === "number" ? json.message : 0;
+    responseCache.set(key, { data: count, ts: Date.now() });
+    return count;
   }
-  const json = await res.json();
-  const count = json.data?.[0]?.total ?? 0;
-  responseCache.set(key, { data: count, ts: Date.now() });
-  return count;
 }

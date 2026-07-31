@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchList, createDocument, fetchCount, ApiError } from "./erpnext.ts";
+import { fetchList, fetchAll, createDocument, fetchCount, ApiError } from "./erpnext.ts";
 import { resetCsrfTokenCache } from "./csrf.ts";
 
 interface RecordedCall {
@@ -82,16 +82,49 @@ test("fetchList: hits /api/resource/<doctype> same-origin without X-Y-App-Instan
   }
 });
 
-test("fetchCount: always hits /api/resource/<doctype> aggregate, never /api/i/<id>/count", async () => {
-  const mock = installFetchMock(() => ({ status: 200, body: { data: [{ total: 3 }] } }));
+test("fetchCount: hits frappe.client.get_count (never /api/i/<id>/count, never the old SQL-string aggregate)", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { message: 3 } }));
   try {
     const count = await fetchCount("FetchCountTestDoctype", [["status", "=", "Open"]]);
     assert.equal(count, 3);
     assert.equal(mock.calls.length, 1);
     const call = mock.calls[0];
-    assert.match(call.url, /^\/api\/resource\/FetchCountTestDoctype\?/);
+    assert.match(call.url, /^\/api\/method\/frappe\.client\.get_count\?/);
+    assert.match(call.url, /doctype=FetchCountTestDoctype/);
     assert.doesNotMatch(call.url, /\/api\/i\//);
+    assert.doesNotMatch(call.url, /count%28name%29|count\(name\)/i);
     assert.equal(call.init?.credentials, "same-origin");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchCount: self-heals on 417 'Field not permitted in query' by dropping the offending filter and retrying", async () => {
+  const doctype = "SelfHealCountDoctype";
+  const badField = "custom_address";
+  let call = 0;
+  const mock = installFetchMock((url) => {
+    call++;
+    const filtersMatch = /filters=([^&]+)/.exec(url);
+    const filters: unknown[][] = filtersMatch ? JSON.parse(decodeURIComponent(filtersMatch[1])) : [];
+    const hasBadField = filters.some((f) => Array.isArray(f) && f[0] === badField);
+    if (hasBadField) {
+      return {
+        status: 417,
+        body: {
+          exc_type: "DataError",
+          exception: `frappe.exceptions.DataError: Field not permitted in query: ${badField}`,
+        },
+      };
+    }
+    return { status: 200, body: { message: 5 } };
+  });
+  try {
+    const count = await fetchCount(doctype, [["status", "=", "Open"], [badField, "=", "x"]]);
+    assert.equal(count, 5);
+    assert.equal(call, 2);
+    assert.match(mock.calls[0].url, new RegExp(badField));
+    assert.doesNotMatch(mock.calls[1].url, new RegExp(badField));
   } finally {
     mock.restore();
   }
@@ -176,5 +209,156 @@ test("fetchList: self-heals on 417 'Field not permitted in query' by dropping th
   } finally {
     mock.restore();
     console.warn = originalWarn;
+  }
+});
+
+test("fetchList: self-heal is not capped — heals through more than 5 rejected fields on one doctype", async () => {
+  const doctype = "ManyBadFieldsDoctype";
+  const badFields = ["custom_a", "custom_b", "custom_c", "custom_d", "custom_e", "custom_f", "custom_g"];
+  let call = 0;
+
+  const mock = installFetchMock((url) => {
+    call++;
+    const fieldsMatch = /fields=([^&]+)/.exec(url);
+    const fields: string[] = fieldsMatch ? JSON.parse(decodeURIComponent(fieldsMatch[1])) : [];
+    const stillBad = badFields.find((f) => fields.includes(f));
+    if (stillBad) {
+      return {
+        status: 417,
+        body: {
+          exc_type: "DataError",
+          exception: `frappe.exceptions.DataError: Field not permitted in query: ${stillBad}`,
+        },
+      };
+    }
+    return { status: 200, body: { data: [{ name: "ROW-0001" }] } };
+  });
+
+  try {
+    const rows = await fetchList<{ name: string }>(doctype, { fields: ["name", ...badFields] });
+    assert.deepEqual(rows, [{ name: "ROW-0001" }]);
+    // One failing request per rejected field, plus the final successful one.
+    assert.equal(call, badFields.length + 1);
+    const lastUrl = mock.calls[mock.calls.length - 1].url;
+    for (const f of badFields) assert.doesNotMatch(lastUrl, new RegExp(f));
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchList: missing doctype (404 DoesNotExistError, 'DocType X not found') resolves to [] and is cached", async () => {
+  const doctype = "Leave Application";
+  let call = 0;
+  const warnCalls: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnCalls.push(args); };
+
+  const mock = installFetchMock(() => {
+    call++;
+    return {
+      status: 404,
+      body: {
+        exc_type: "DoesNotExistError",
+        _server_messages: JSON.stringify([
+          JSON.stringify({ message: `DocType ${doctype} not found`, title: "Message" }),
+        ]),
+      },
+    };
+  });
+
+  try {
+    const rows = await fetchList(doctype, { fields: ["name"] });
+    assert.deepEqual(rows, []);
+    assert.equal(call, 1);
+    assert.equal(warnCalls.length, 1, "should warn exactly once for this missing doctype");
+
+    // Second call: cached as missing — no network call at all.
+    const rows2 = await fetchList(doctype, { fields: ["name", "employee"] });
+    assert.deepEqual(rows2, []);
+    assert.equal(call, 1, "no additional network call once the doctype is known missing");
+    assert.equal(warnCalls.length, 1, "should not warn again");
+  } finally {
+    mock.restore();
+    console.warn = originalWarn;
+  }
+});
+
+test("fetchList: distinguishes a missing doctype from an ordinary 'record not found' 404", async () => {
+  // Doctype name is deliberately unique (not reused by any other test in
+  // this file) so this can't be served from the shared 30s response cache
+  // instead of actually hitting the mock below.
+  const doctype = "RecordNotFoundDoctype";
+  const mock = installFetchMock(() => ({
+    status: 404,
+    body: {
+      exc_type: "DoesNotExistError",
+      _server_messages: JSON.stringify([
+        JSON.stringify({ message: `${doctype} DOES-NOT-EXIST not found`, title: "Message" }),
+      ]),
+    },
+  }));
+  try {
+    // Message shape is "<Doctype> <docname> not found", not "DocType <name>
+    // not found" — this is a missing *record*, not a missing *doctype*, so
+    // it must still surface as a normal error rather than degrading to [].
+    await assert.rejects(fetchList(doctype, { fields: ["name"] }), (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      assert.equal(err.status, 404);
+      return true;
+    });
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchCount: missing doctype (404 DoesNotExistError) resolves to 0 and is cached", async () => {
+  const doctype = "Salary Slip";
+  let call = 0;
+  const mock = installFetchMock(() => {
+    call++;
+    return {
+      status: 404,
+      body: {
+        exc_type: "DoesNotExistError",
+        _server_messages: JSON.stringify([
+          JSON.stringify({ message: `DocType ${doctype} not found`, title: "Message" }),
+        ]),
+      },
+    };
+  });
+  try {
+    const count = await fetchCount(doctype, [["status", "=", "Open"]]);
+    assert.equal(count, 0);
+    assert.equal(call, 1);
+
+    const count2 = await fetchCount(doctype);
+    assert.equal(count2, 0);
+    assert.equal(call, 1, "no additional network call once the doctype is known missing");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchAll: missing doctype resolves to [] via fetchList's cache, with a single network call", async () => {
+  const doctype = "Shift Plan Assignment";
+  let call = 0;
+  const mock = installFetchMock(() => {
+    call++;
+    return {
+      status: 404,
+      body: {
+        exc_type: "DoesNotExistError",
+        _server_messages: JSON.stringify([
+          JSON.stringify({ message: `DocType ${doctype} not found`, title: "Message" }),
+        ]),
+      },
+    };
+  });
+  try {
+    const rows = await fetchAll(doctype, ["name", "employee"]);
+    assert.deepEqual(rows, []);
+    assert.equal(call, 1);
+  } finally {
+    mock.restore();
   }
 });
