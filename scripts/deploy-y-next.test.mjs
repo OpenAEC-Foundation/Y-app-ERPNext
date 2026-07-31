@@ -10,6 +10,8 @@ import {
   buildWebPageFields,
   planUpsert,
   mimeTypeFor,
+  extractBuildTag,
+  addBuildMarker,
 } from "./deploy-y-next.mjs";
 
 test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
@@ -86,6 +88,80 @@ test("mimeTypeFor: geeft het juiste MIME-type per extensie", () => {
 test("mimeTypeFor: onbekende of ontbrekende extensie valt terug op application/octet-stream", () => {
   assert.equal(mimeTypeFor("LICENSE"), "application/octet-stream");
   assert.equal(mimeTypeFor("font.woff3"), "application/octet-stream");
+});
+
+test("extractBuildTag: haalt de tag uit een geprefixte bestandsnaam", () => {
+  assert.equal(extractBuildTag("yms8ngujr-index-kITPrq2w.js"), "ms8ngujr");
+  assert.equal(extractBuildTag("yabc123-AgentPanel-BrP-ENHg.css"), "abc123");
+});
+
+test("extractBuildTag: geeft null zonder herkenbare prefix", () => {
+  assert.equal(extractBuildTag("3BM-Logo.svg"), null);
+  assert.equal(extractBuildTag("manifest.json"), null);
+  assert.equal(extractBuildTag("index.html"), null);
+});
+
+test("addBuildMarker: voegt een JS-commentaarmarker toe aan geprefixte .js/.mjs-bestanden", () => {
+  const tag = "abc123";
+  const original = Buffer.from("console.log(1);");
+  const marked = addBuildMarker(`y${tag}-index-XYZ.js`, original, tag);
+  assert.notEqual(marked.length, original.length);
+  assert.match(marked.toString("utf8"), /\/\* y-next build abc123 \*\/\s*$/);
+  assert.match(marked.toString("utf8"), /^console\.log\(1\);/);
+
+  const markedMjs = addBuildMarker(`y${tag}-chunk-XYZ.mjs`, original, tag);
+  assert.match(markedMjs.toString("utf8"), /\/\* y-next build abc123 \*\/\s*$/);
+});
+
+test("addBuildMarker: voegt een CSS-commentaarmarker toe aan geprefixte .css-bestanden", () => {
+  const tag = "abc123";
+  const original = Buffer.from("body{color:red}");
+  const marked = addBuildMarker(`y${tag}-AgentPanel-BrP-ENHg.css`, original, tag);
+  assert.notEqual(marked.length, original.length);
+  assert.match(marked.toString("utf8"), /\/\* y-next build abc123 \*\/\s*$/);
+});
+
+test("addBuildMarker: voegt een XML-commentaarmarker toe aan geprefixte .svg-bestanden", () => {
+  const tag = "abc123";
+  const original = Buffer.from("<svg></svg>");
+  const marked = addBuildMarker(`y${tag}-icon-XYZ.svg`, original, tag);
+  assert.notEqual(marked.length, original.length);
+  assert.match(marked.toString("utf8"), /<!-- y-next build abc123 -->\s*$/);
+});
+
+test("addBuildMarker: .json/.map krijgen alleen een extra newline, geen commentaar", () => {
+  const tag = "abc123";
+  const originalJson = Buffer.from('{"a":1}');
+  const markedJson = addBuildMarker(`y${tag}-manifest-XYZ.json`, originalJson, tag);
+  assert.equal(markedJson.toString("utf8"), '{"a":1}\n');
+  // Nooit commentaarsyntax in JSON — dat zou het geen geldig JSON meer maken.
+  assert.doesNotMatch(markedJson.toString("utf8"), /\/\*|<!--/);
+
+  const originalMap = Buffer.from('{"version":3}');
+  const markedMap = addBuildMarker(`y${tag}-index-XYZ.js.map`, originalMap, tag);
+  assert.equal(markedMap.toString("utf8"), '{"version":3}\n');
+});
+
+test("addBuildMarker: laat public/-bestanden zonder prefix ongewijzigd (moeten dedupliceren)", () => {
+  const tag = "abc123";
+  const original = Buffer.from("<svg></svg>");
+  const marked = addBuildMarker("y-logo.svg", original, tag);
+  assert.equal(marked, original);
+  assert.equal(marked.toString("utf8"), "<svg></svg>");
+});
+
+test("addBuildMarker: laat overige/binaire bestanden onaangetast, ook met prefix", () => {
+  const tag = "abc123";
+  const original = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]); // PNG-achtige bytes
+  const marked = addBuildMarker(`y${tag}-icon-XYZ.png`, original, tag);
+  assert.equal(marked, original);
+  assert.equal(marked.length, original.length);
+});
+
+test("addBuildMarker: zonder buildTag (null) blijft alles ongewijzigd", () => {
+  const original = Buffer.from("console.log(1);");
+  const marked = addBuildMarker("yabc123-index-XYZ.js", original, null);
+  assert.equal(marked, original);
 });
 
 test("collectAssets: vindt platte bestanden, negeert .vite/ en index.html", () => {

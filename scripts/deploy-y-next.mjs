@@ -150,6 +150,62 @@ export function mimeTypeFor(name) {
 }
 
 /**
+ * Haalt de build-tag uit een bestandsnaam met het patroon "y<tag>-..."
+ * (zoals gegenereerd door build.rolldownOptions.output.* in vite.config.ts).
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function extractBuildTag(name) {
+  const match = /^y([a-z0-9]+)-/.exec(name);
+  return match ? match[1] : null;
+}
+
+/**
+ * Voegt — uitsluitend voor bestanden met de "y<tag>-"-prefix — een kleine
+ * per-build marker toe aan de content van tekst-assets, vóór upload.
+ *
+ * Waarom: Frappe dedupliceert File-uploads op CONTENT. De naam-prefix uit
+ * vite.config.ts maakt chunks met eigen imports vanzelf uniek (hun import-
+ * paden veranderen mee), maar standalone tekst-assets zonder zulke
+ * referenties (CSS, de rolldown-runtime-chunk, source-vrije chunks) kunnen
+ * tussen builds byte-identiek blijven. Zonder marker geeft Frappe dan de
+ * URL van de vorige upload terug — met een ANDERE naam dan deze build
+ * verwacht — wat de hard-abort in de upload-loop triggert.
+ *
+ * public/-bestanden zonder prefix (3BM-Logo.svg, y-logo.svg, manifest.json,
+ * vite.svg, ...) worden NIET aangepast: die moeten juist dedupliceren naar
+ * hun bestaande /files/-URL (zelfde naam, geen probleem).
+ *
+ * @param {string} name
+ * @param {Buffer} data
+ * @param {string | null} buildTag
+ * @returns {Buffer}
+ */
+export function addBuildMarker(name, data, buildTag) {
+  if (!buildTag || !name.startsWith(`y${buildTag}-`)) {
+    return data;
+  }
+  const match = /\.[^./\\]+$/.exec(name);
+  const ext = match ? match[0].toLowerCase() : "";
+
+  let marker;
+  if (ext === ".js" || ext === ".mjs" || ext === ".css") {
+    marker = `\n/* y-next build ${buildTag} */\n`;
+  } else if (ext === ".svg") {
+    marker = `\n<!-- y-next build ${buildTag} -->\n`;
+  } else if (ext === ".json" || ext === ".map") {
+    // Geen commentaarsyntax in JSON — alleen een parse-neutrale newline.
+    marker = "\n";
+  } else {
+    // Overige/binaire bestanden: ongemoeid laten. Het abort-vangnet in de
+    // upload-loop (assert file_url === "/files/" + naam) blijft de vangrail
+    // voor deze randgevallen.
+    return data;
+  }
+  return Buffer.concat([data, Buffer.from(marker, "utf8")]);
+}
+
+/**
  * Bepaalt of de Web Page geüpdatet (PUT) of aangemaakt (POST) moet worden.
  * @param {{ name: string }[]} lookupRows
  */
@@ -196,13 +252,16 @@ async function main() {
   }
   const entryJs = entryChunk.file;
   const cssFiles = entryChunk.css || [];
+  const buildTag = extractBuildTag(entryJs);
 
   const assets = collectAssets(distDir);
-  console.log(`Gevonden ${assets.length} assets in dist/ (entry: ${entryJs}, css: ${cssFiles.length}).`);
+  console.log(
+    `Gevonden ${assets.length} assets in dist/ (entry: ${entryJs}, css: ${cssFiles.length}, build-tag: ${buildTag || "onbekend"}).`
+  );
 
   // 3. Elk asset uploaden als publieke File.
   for (const asset of assets) {
-    const data = readFileSync(asset.path);
+    const data = addBuildMarker(asset.name, readFileSync(asset.path), buildTag);
     const form = new FormData();
     form.append("file", new Blob([data], { type: mimeTypeFor(asset.name) }), asset.name);
     form.append("is_private", "0");
