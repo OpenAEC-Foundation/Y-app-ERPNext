@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { getActiveInstance, getActiveInstanceId } from "../../lib/instances";
+import { getActiveInstanceId } from "../../lib/instances";
 import { isFeatureEnabled } from "../../lib/capabilities";
 import type { Page, ViewMode } from "../../components/Sidebar";
 import UrenBoekenWidget from "../../components/UrenBoekenWidget";
@@ -292,7 +292,7 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 min-w-0 truncate">{getActiveInstance().name} Dashboard</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 min-w-0 truncate">{t("nav.dashboard")}</h2>
         <div ref={addRef} className="relative shrink-0">
           <button
             onClick={() => setAddOpen((o) => !o)}

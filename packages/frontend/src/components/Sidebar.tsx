@@ -9,7 +9,7 @@ import {
   Target, Banknote, PenLine, X, PanelLeftClose, PanelLeftOpen, Puzzle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getActiveInstance, getActiveCompany } from "../lib/instances";
+import { getActiveCompany } from "../lib/instances";
 import { getModuleConfig, isItemEnabled, isSectionEnabled, ALWAYS_VISIBLE, migratePageIdMap } from "../lib/modules";
 import { DISABLED_PAGE_MODE, isFeatureEnabled, isPageEnabled } from "../lib/capabilities";
 import { useRemoteExtensions } from "../extensions/remote";
@@ -467,7 +467,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
                 </button>
                 <button onClick={() => handleNavClick("release-notes" as Page)} className="text-[10px] text-y-teal-light/50 font-medium hover:text-y-teal-light cursor-pointer transition-colors" title="Release notes">v{APP_VERSION}</button>
               </div>
-              <span className="text-[11px] text-y-teal-light/70 font-medium">{getActiveInstance().name}</span>
+              <span className="block text-[11px] leading-tight text-y-teal-light/70 font-medium">{t("y_next.direct_mode")}</span>
             </div>
           )}
           {/* Mobile close button */}

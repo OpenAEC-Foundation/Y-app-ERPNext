@@ -3,9 +3,16 @@
  *
  * - Employer: all Activity Types from ERPNext (for configuration in Settings)
  * - Employee: subset configured by employer via URL-match bridge, default ["Execution"]
+ *
+ * De employee-kant leest `/api/shared-settings/*`, een endpoint dat alleen op
+ * de verdwenen Express-server bestond. De guard zit daarom hier op lib-niveau
+ * en niet bij elke aanroeper (o.a. UrenBoekenWidget op het dashboard): staat
+ * de shared-settings-feature uit, dan wordt meteen de bestaande fallback
+ * geretourneerd zonder één netwerk-call.
  */
 
 import { fetchList } from "./erpnext";
+import { isFeatureEnabled } from "./capabilities";
 
 const DEFAULT_ACTIVITY_TYPES = ["Execution"];
 
@@ -27,6 +34,7 @@ export async function fetchActivityTypes(
   }
 
   // Employee: try employer-configured subset via URL-match bridge
+  if (!isFeatureEnabled("shared-settings")) return DEFAULT_ACTIVITY_TYPES;
   try {
     const res = await fetch("/api/shared-settings/activity-types", {
       credentials: "same-origin",
@@ -54,6 +62,7 @@ export async function fetchActivityTypes(
 export async function fetchEmployeeActivityType(
   employeeId: string,
 ): Promise<string> {
+  if (!isFeatureEnabled("shared-settings")) return "Execution";
   try {
     const res = await fetch("/api/shared-settings/employee-activity-types", {
       credentials: "same-origin",

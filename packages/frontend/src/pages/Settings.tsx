@@ -14,6 +14,8 @@ import { NasSettingsSection } from "../components/NasSettingsSection";
 import { getActiveInstance, getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { getErpNextLinkUrl } from "../lib/erpnext";
 import { getModuleConfig, setModuleConfig, type ModuleConfig, SIDEBAR_MODULES, ALWAYS_VISIBLE } from "../lib/modules";
+import { isFeatureEnabled } from "../lib/capabilities";
+import ComingSoon from "../components/ComingSoon";
 import type { Page } from "../components/Sidebar";
 
 /** All modules that can appear in employee sidebar — used for employer toggle UI */
@@ -76,6 +78,43 @@ const VALID_TABS: readonly SettingsTab[] = [
 ];
 function isValidTab(v: string | undefined): v is SettingsTab {
   return !!v && (VALID_TABS as readonly string[]).includes(v);
+}
+
+/**
+ * Y-next fase 1: welke tabbladen zijn bruikbaar zónder de verdwenen
+ * Express-server?
+ *
+ * Alleen tabs die uitsluitend localStorage of de standaard ERPNext-REST
+ * gebruiken blijven aan. De overige tabs verdwijnen uit de tabbalk én worden
+ * bij een directe URL (`/settings/<tab>`) niet gerenderd — hun panelen doen
+ * hun calls in een mount-effect, dus niet-renderen is wat voorkomt dat er een
+ * request vertrekt.
+ */
+function isSettingsTabEnabled(tab: SettingsTab): boolean {
+  switch (tab) {
+    // localStorage en/of /api/resource — same-origin ERPNext, altijd veilig.
+    case "general":
+    case "companies":
+    case "modules":
+      return true;
+    // /api/status — aggregatie van de server-side cache.
+    case "status":
+      return isFeatureEnabled("stats");
+    // /api/instances/<id>/settings/* en /api/shared-settings/* — de brug
+    // waarmee de werkgever instellingen deelt met medewerkers.
+    case "employee-settings":
+    case "project-settings":
+      return isFeatureEnabled("shared-settings");
+    // /api/instances/<id>/mail-accounts + /api/mail/folders
+    case "email-accounts":
+      return isFeatureEnabled("webmail");
+    // /api/instances/<id>/settings/remote-extensions
+    case "extensions":
+      return isFeatureEnabled("extensions");
+    // /api/vault/*
+    case "credentials":
+      return isFeatureEnabled("vault");
+  }
 }
 
 function getViewMode(): ViewMode {
@@ -179,16 +218,20 @@ export default function SettingsPage() {
     [allEmployees, defaultCompanyVal]
   );
 
+  // `/api/status` bestond alleen op de Express-server. Zonder deze guard vuurt
+  // de enabled route /settings bij elke mount een request af die in fase 1
+  // sowieso niet beantwoord kan worden.
   useEffect(() => {
+    if (!isFeatureEnabled("stats")) return;
     fetch("/api/status")
       .then((r) => r.json())
       .then(setCacheStatus)
       .catch(() => {});
   }, []);
 
-  // Load employer settings from server
+  // Load employer settings from server (Express-only shared-settings-brug).
   useEffect(() => {
-    if (viewMode !== "employer") return;
+    if (viewMode !== "employer" || !isFeatureEnabled("shared-settings")) return;
     const id = getActiveInstanceId();
     fetch(`/api/instances/${id}/settings`)
       .then(r => r.json())
@@ -316,9 +359,7 @@ export default function SettingsPage() {
           <Settings className="text-y-teal" size={24} />
         </div>
         <h2 className="text-2xl font-bold text-slate-800">{t("nav.settings")}</h2>
-        <span className="ml-2 text-sm text-slate-500">
-          Instance: <strong>{activeInstance.name}</strong>
-        </span>
+        <span className="ml-2 text-sm text-slate-500">{t("y_next.direct_mode")}</span>
       </div>
 
       {/* Tabs */}
@@ -334,7 +375,10 @@ export default function SettingsPage() {
             ["companies", t("settings.tab.companies"), Building2],
             ["status", t("settings.tab.status"), Shield],
           ] : []),
-        ] as [SettingsTab, string, typeof Settings][]).map(([tab, label, Icon]) => (
+        ] as [SettingsTab, string, typeof Settings][])
+          // Fase 1: alleen tabs die zonder de Express-server werken.
+          .filter(([tab]) => isSettingsTabEnabled(tab))
+          .map(([tab, label, Icon]) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -349,6 +393,19 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
+
+      {/* Directe URL naar een in fase 1 uitgeschakelde tab (`/settings/<tab>`):
+          het paneel wordt niet gerenderd — dus ook geen mount-effect met een
+          server-only call — en de gebruiker krijgt uitleg terug. */}
+      {!isSettingsTabEnabled(activeTab) && (
+        activeTab === "status" ? (
+          <div className="max-w-2xl bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <p className="text-sm text-slate-500">{t("y_next.direct_mode")}</p>
+          </div>
+        ) : (
+          <ComingSoon />
+        )
+      )}
 
       {activeTab === "companies" && (
         <div className="max-w-4xl">
@@ -406,9 +463,9 @@ export default function SettingsPage() {
 
       {activeTab === "modules" && <ModulesPanel />}
 
-      {activeTab === "email-accounts" && <MailAccountSettings />}
+      {activeTab === "email-accounts" && isSettingsTabEnabled("email-accounts") && <MailAccountSettings />}
 
-      {activeTab === "employee-settings" && viewMode === "employer" && (
+      {activeTab === "employee-settings" && isSettingsTabEnabled("employee-settings") && viewMode === "employer" && (
         <div className="max-w-4xl space-y-6">
           {/* Per-employee activity type assignment */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
@@ -499,18 +556,18 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {activeTab === "project-settings" && viewMode === "employer" && (
+      {activeTab === "project-settings" && isSettingsTabEnabled("project-settings") && viewMode === "employer" && (
         <div className="space-y-6">
           <ProjectSettingsPanel instanceId={instanceId} />
           <InvoiceEmailSettingsPanel />
         </div>
       )}
 
-      {activeTab === "extensions" && viewMode === "employer" && (
+      {activeTab === "extensions" && isSettingsTabEnabled("extensions") && viewMode === "employer" && (
         <ExtensionsPanel instanceId={instanceId} />
       )}
 
-      {activeTab === "credentials" && (
+      {activeTab === "credentials" && isSettingsTabEnabled("credentials") && (
         <div className="max-w-4xl space-y-4">
           {/* Login with username/password — works in both Y-mini and Y-app */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -879,7 +936,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {activeTab === "status" && (
+      {activeTab === "status" && isSettingsTabEnabled("status") && (
         <div className="max-w-4xl space-y-4">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <h3 className="text-lg font-semibold text-slate-700 mb-4">{t("settings.cache_status")}</h3>
@@ -923,14 +980,22 @@ export default function SettingsPage() {
 
       {activeTab === "general" && (
         <div className="max-w-2xl space-y-6">
-          {/* Connection info */}
+          {/* Connection info. Single-tenant heeft geen instance-URL meer (de
+              app draait op dezelfde origin als ERPNext), dus tonen we dan één
+              neutrale regel in plaats van een lege "Verbonden met"-waarde. */}
           <div className="bg-gradient-to-r from-y-purple-dark to-y-purple rounded-xl p-4 text-white">
-            <p className="text-sm font-medium text-y-teal-light/80 mb-1">{t("settings.connected_to")}</p>
-            <p className="text-lg font-bold font-mono">{activeInstance.url}</p>
-            <p className="text-xs text-white/50 mt-2">
-              {t("settings.vault_info")}
-              Instances: <code className="bg-white/10 px-1 rounded">~/.erpnext-level/</code>
-            </p>
+            {activeInstance.url ? (
+              <>
+                <p className="text-sm font-medium text-y-teal-light/80 mb-1">{t("settings.connected_to")}</p>
+                <p className="text-lg font-bold font-mono">{activeInstance.url}</p>
+                <p className="text-xs text-white/50 mt-2">
+                  {t("settings.vault_info")}
+                  Instances: <code className="bg-white/10 px-1 rounded">~/.erpnext-level/</code>
+                </p>
+              </>
+            ) : (
+              <p className="text-sm font-medium">{t("y_next.direct_mode")}</p>
+            )}
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
@@ -990,7 +1055,9 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {/* NextCloud */}
+          {/* NextCloud — de bijbehorende pagina's en proxy draaiden op de
+              Express-server; instellen heeft in fase 1 geen effect. */}
+          {isFeatureEnabled("nextcloud") && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
             <div className="flex items-center gap-3 mb-2">
               <Cloud size={20} className="text-blue-500" />
@@ -1008,10 +1075,17 @@ export default function SettingsPage() {
               <p className="text-xs text-slate-400 mt-1">{t("settings.nextcloud_url_hint")}</p>
             </div>
           </div>
+          )}
 
           {/* E-mail-config staat uitsluitend in de "Email accounts"-tab
               (server-vault). Geen losse e-mail/IMAP-sectie meer in Algemeen. */}
 
+          {/* Messenger-koppelingen (NextCloud Talk / Telegram / MS Teams).
+              De "Test verbinding"-knop hieronder praat met /api/messenger/test
+              — een Express-only endpoint — dus het hele blok hangt aan de
+              messenger-feature. */}
+          {isFeatureEnabled("messenger") && (
+          <>
           {/* NextCloud Talk */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
             <div className="flex items-center gap-3 mb-2">
@@ -1152,6 +1226,8 @@ export default function SettingsPage() {
               <p className="text-xs text-slate-400 mt-1">{t("settings.teams_email_hint")}</p>
             </div>
           </div>
+          </>
+          )}
 
           {/* Save all button (bottom) */}
           <button
@@ -1168,7 +1244,7 @@ export default function SettingsPage() {
               de ingestelde paden voor iedereen zichtbaar zijn. De vroegere
               device-lokale "NAS-map pad per bedrijf" (FSA-handle) is hier
               weggehaald — die keuze gebeurt nu inline in SaveToNasDialog. */}
-          {viewMode !== "employer" && (
+          {viewMode !== "employer" && isFeatureEnabled("shared-settings") && (
             <NasSettingsSection instanceId={instanceId} readOnly />
           )}
 
