@@ -23,3 +23,28 @@ test("serve config: dev server keeps root base", async () => {
   const resolved = await resolveConfig({ command: "serve", mode: "development" });
   assert.equal(resolved.base, "/");
 });
+
+test("build config: output file names carry the YNEXT_BUILD_TAG build tag", async () => {
+  const tag = "testtag123";
+  const previous = process.env.YNEXT_BUILD_TAG;
+  process.env.YNEXT_BUILD_TAG = tag;
+  try {
+    // vite.config.ts reads process.env.YNEXT_BUILD_TAG once at module
+    // top-level, so a plain (cached) re-import would keep the value from
+    // whichever import ran first. A cache-busting query param forces Node
+    // to re-evaluate the module with the env var set beforehand.
+    const mod = await import(`../../vite.config.ts?tag=${tag}`);
+    const freshConfig = mod.default;
+    const resolved =
+      typeof freshConfig === "function"
+        ? await freshConfig({ command: "build", mode: "production" })
+        : freshConfig;
+    const output = resolved.build?.rolldownOptions?.output;
+    assert.match(output.entryFileNames, new RegExp(`^y${tag}-`));
+    assert.match(output.chunkFileNames, new RegExp(`^y${tag}-`));
+    assert.match(output.assetFileNames, new RegExp(`^y${tag}-`));
+  } finally {
+    if (previous === undefined) delete process.env.YNEXT_BUILD_TAG;
+    else process.env.YNEXT_BUILD_TAG = previous;
+  }
+});

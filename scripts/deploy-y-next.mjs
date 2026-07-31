@@ -58,6 +58,7 @@ export function collectAssets(distDir) {
   for (const entry of entries) {
     if (entry.name === "index.html") continue;
     if (entry.name === ".vite") continue; // bevat manifest.json, geen uploadbaar asset
+    if (entry.name === "sw.js") continue; // service worker wordt in fase 1 niet geregistreerd, hoort niet op /files
     if (entry.isDirectory()) {
       throw new Error(
         `Onverwachte submap "${entry.name}" in ${distDir} — de build moet plat zijn ` +

@@ -17,6 +17,14 @@ const erpnextTarget = process.env.VITE_ERPNEXT_URL || "https://open-aec-studio-e
 // tegen ERPNext praat. Komt nooit in client-code of de bundle terecht.
 const devToken = process.env.YNEXT_DEV_TOKEN;
 
+// Elke build krijgt een unieke bestandsnaam-prefix zodat output nooit kan
+// botsen met assets van een eerdere deployment (Frappe dedupliceert
+// File-uploads op naam+content — bij een naamcollisie met ANDERE content
+// hernoemt Frappe de upload, wat in-bundle chunk-verwijzingen breekt).
+// Zet YNEXT_BUILD_TAG voor een reproduceerbare/voorspelbare tag (bv. in CI);
+// standaard een korte tijd-gebaseerde waarde per build.
+const buildTag = process.env.YNEXT_BUILD_TAG || Date.now().toString(36);
+
 const proxyEntry: ProxyOptions = {
   target: erpnextTarget,
   changeOrigin: true,
@@ -47,6 +55,17 @@ export default defineConfig(({ command }) => ({
     // deployscript, dat elk bestand los als publieke File uploadt.
     assetsDir: '',
     manifest: true,
+    // Bestandsnamen krijgen een build-tag-prefix (y<tag>-...) zodat ze nooit
+    // botsen met assets van een eerdere deployment. public/-bestanden lopen
+    // niet door deze pipeline en blijven ongewijzigd (identieke content
+    // dedupliceert toch naar dezelfde /files/-URL).
+    rolldownOptions: {
+      output: {
+        entryFileNames: `y${buildTag}-[name]-[hash].js`,
+        chunkFileNames: `y${buildTag}-[name]-[hash].js`,
+        assetFileNames: `y${buildTag}-[name]-[hash][extname]`,
+      },
+    },
   },
   server: {
     proxy: {

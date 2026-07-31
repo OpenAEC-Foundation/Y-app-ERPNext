@@ -105,6 +105,22 @@ test("collectAssets: vindt platte bestanden, negeert .vite/ en index.html", () =
   }
 });
 
+test("collectAssets: negeert sw.js (service worker wordt in fase 1 niet geregistreerd)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ynext-dist-"));
+  try {
+    writeFileSync(join(dir, "index.html"), "<html></html>");
+    writeFileSync(join(dir, "sw.js"), "self.addEventListener('install', () => {});");
+    writeFileSync(join(dir, "index-abc123.js"), "console.log(1)");
+
+    const assets = collectAssets(dir);
+    const names = assets.map((a) => a.name).sort();
+    assert.deepEqual(names, ["index-abc123.js"]);
+    assert.ok(!names.includes("sw.js"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("collectAssets: gooit bij een subdirectory in dist/", () => {
   const dir = mkdtempSync(join(tmpdir(), "ynext-dist-"));
   try {
