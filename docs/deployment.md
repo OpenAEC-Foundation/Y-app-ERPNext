@@ -88,3 +88,18 @@ npm run dev
   byte-aantallen en de route — nooit headers of de token. Fetch-fouten
   worden geredigeerd voordat ze gelogd worden, voor het geval een
   onderliggende foutmelding een Authorization-header zou bevatten.
+
+## Eerste geverifieerde deployment
+
+- **Datum:** 2026-07-31
+- **Route:** `/y-next` op `https://open-aec-studio-erp.prilk.cloud`
+- **Site-versie:** Frappe 16.19.0 / ERPNext 16.16.0
+- **Assets:** 146 bestanden geüpload als publieke Files, met een gedeeld
+  build-tag-prefix zodat elke deploy zijn eigen assetset heeft en oudere
+  builds niet overschrijft.
+- **Smoke-test:** geslaagd — de route geeft HTTP 200, de root van de pagina
+  is aanwezig, en alle door de Web Page gerefereerde entry-assets
+  (`/files/...`) zijn bereikbaar.
+- **Gast-weergave:** een niet-ingelogde bezoeker krijgt een loginkaart te
+  zien; de standaard ERPNext-navbar en -footer zijn op de `/y-next`-route
+  verborgen.
