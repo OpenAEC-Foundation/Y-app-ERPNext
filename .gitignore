@@ -2,3 +2,4 @@
 .superpowers/
 node_modules/
 .env*
+PROMPTS.md
