@@ -99,8 +99,11 @@ export function buildSettingDoctype() {
       // sessie van bv. een System Manager wordt uitgevoerd — een
       // privilege-escalatiepad. Schrijven/aanmaken/verwijderen is daarom
       // beheerdersactie (System Manager only).
-      { role: "System Manager", read: 1, write: 1, create: 1, delete: 1 },
-      { role: "Projects User", read: 1 },
+      // Expliciete nullen zijn verplicht: Frappe vult ontbrekende
+      // DocPerm-vlaggen met defaults (live waargenomen: een rij met alleen
+      // read:1 werd r1w1c1d1), wat het read-only-oogmerk stil zou breken.
+      { role: "System Manager", read: 1, write: 1, create: 1, delete: 1, submit: 0, cancel: 0, amend: 0 },
+      { role: "Projects User", read: 1, write: 0, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 },
     ],
   };
 }

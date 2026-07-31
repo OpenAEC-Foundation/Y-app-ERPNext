@@ -142,11 +142,13 @@ test("buildSettingDoctype: geen rol All (API weigert die), System Manager heeft 
   // Schrijven/aanmaken is daarom bewust beperkt tot System Manager — een
   // willekeurige Projects User mag alleen lezen, niet zelf een
   // extensie-URL installeren die dan in andermans sessie uitgevoerd wordt.
+  // Expliciete nullen: Frappe vult ontbrekende DocPerm-vlaggen met defaults
+  // (live waargenomen: een rij met alleen read:1 werd volledige CRUD).
   assert.ok(byRole["Projects User"]);
   assert.equal(byRole["Projects User"].read, 1);
-  assert.equal(byRole["Projects User"].write, undefined);
-  assert.equal(byRole["Projects User"].create, undefined);
-  assert.equal(byRole["Projects User"].delete, undefined);
+  assert.equal(byRole["Projects User"].write, 0);
+  assert.equal(byRole["Projects User"].create, 0);
+  assert.equal(byRole["Projects User"].delete, 0);
 });
 
 test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async () => {
