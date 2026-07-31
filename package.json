@@ -38,6 +38,7 @@
     "test": "npm run test -w @y-app/frontend && node --test scripts/deploy-y-next.test.mjs scripts/lib/semver-bump.test.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "playwright-core": "^1.62.1"
   }
 }

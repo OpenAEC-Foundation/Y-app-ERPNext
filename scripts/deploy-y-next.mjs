@@ -81,6 +81,10 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
   );
   const javascript = [
     "(function () {",
+    "  // Verwijder de website-theme-stylesheets: hun ongelayerde utilities",
+    "  // (.hidden, .flex, .hide) overrulen Tailwind-@layer-regels en breken",
+    "  // de app-layout. Y-next is een volledige SPA en heeft ze niet nodig.",
+    '  document.querySelectorAll(\'link[rel="stylesheet"][href*="/assets/frappe/"], link[rel="stylesheet"][href*="/assets/erpnext/"]\').forEach(function (l) { l.remove(); });',
     ...linkLines,
     `  import("/files/${entryJs}").catch(function (err) {`,
     '    console.error("Y-next kon niet laden:", err);',
@@ -111,7 +115,10 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
     full_width: 1,
     show_title: 0,
     insert_style: 0,
+    // Bij content_type "HTML" rendert Frappe main_section_html — beide velden
+    // vullen zodat er nooit een verouderde variant blijft hangen.
     main_section: '<div id="root" data-y-next-router="hash"></div>',
+    main_section_html: '<div id="root" data-y-next-router="hash"></div>',
     javascript,
     css,
   };
