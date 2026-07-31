@@ -31,14 +31,10 @@ export const DISABLED_PAGE_MODE: "visible" | "hidden" = "visible";
  * meeting-JSON-store, iframe-extensies) blijven op "volgt later" staan.
  */
 const DISABLED_PATH_PREFIXES = [
-  "/webmail",
   "/messenger",
   "/nextcloud-files",
   "/nextcloud-talk",
   "/passwords",
-  "/meeting-notes",
-  "/release-notes",
-  "/x",
 ] as const;
 
 export function isPageEnabled(path: string): boolean {
@@ -49,6 +45,7 @@ export function isPageEnabled(path: string): boolean {
 
 export type ServerFeature =
   | "webmail"
+  | "erpnext-mail"
   | "messenger"
   | "websocket"
   | "terminal"
@@ -63,10 +60,18 @@ export type ServerFeature =
   | "desktop";
 
 /**
- * Alle server-afhankelijke features zijn in fase 1 uitgeschakeld — er is
- * geen eigen backend om ze te bedienen.
+ * Features die zonder eigen server werken zijn actief: `erpnext-mail`
+ * (Communication-adapter) en `extensions` (client-side sandbox-bridge met
+ * opslag in het Y Next Setting-doctype). Server-afhankelijke features
+ * (IMAP-webmail, messenger, websocket, terminal, Nextcloud, CalDAV/O365,
+ * stats-aggregatie, vault, synced-prefs, printview, shared-settings,
+ * desktop) blijven uit — er is geen backend die ze kan bedienen.
  */
-export function isFeatureEnabled(_feature: ServerFeature): boolean {
-  void _feature; // signature keeps the parameter for future fases; nothing to check yet
-  return false;
+const ENABLED_FEATURES: ReadonlySet<ServerFeature> = new Set([
+  "erpnext-mail",
+  "extensions",
+]);
+
+export function isFeatureEnabled(feature: ServerFeature): boolean {
+  return ENABLED_FEATURES.has(feature);
 }

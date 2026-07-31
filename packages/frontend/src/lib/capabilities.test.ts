@@ -35,24 +35,21 @@ test("isPageEnabled: gemigreerde ERPNext-pagina's zijn enabled", () => {
   }
 });
 
-test("isPageEnabled: Express-core routes blijven disabled", () => {
-  for (const path of [
-    "/webmail",
-    "/messenger",
-    "/nextcloud-files",
-    "/nextcloud-talk",
-    "/passwords",
-    "/meeting-notes",
-    "/release-notes",
-    "/x",
-    "/x/foo",
-  ]) {
+test("isPageEnabled: fase-2-routes zijn enabled", () => {
+  for (const path of ["/webmail", "/meeting-notes", "/release-notes", "/x", "/x/foo"]) {
+    assert.equal(isPageEnabled(path), true, `${path} zou enabled moeten zijn`);
+  }
+});
+
+test("isPageEnabled: serverloze-onmogelijke routes blijven disabled", () => {
+  for (const path of ["/messenger", "/nextcloud-files", "/nextcloud-talk", "/passwords"]) {
     assert.equal(isPageEnabled(path), false, `${path} zou disabled moeten zijn`);
   }
 });
 
-test("isFeatureEnabled: alle ServerFeature-waarden zijn disabled in fase 1", () => {
-  const features: ServerFeature[] = [
+test("isFeatureEnabled: alleen serverloze features zijn actief", () => {
+  const enabled: ServerFeature[] = ["erpnext-mail", "extensions"];
+  const disabled: ServerFeature[] = [
     "webmail",
     "messenger",
     "websocket",
@@ -61,13 +58,15 @@ test("isFeatureEnabled: alle ServerFeature-waarden zijn disabled in fase 1", () 
     "calendar-bridge",
     "stats",
     "vault",
-    "extensions",
     "synced-prefs",
     "printview",
     "shared-settings",
     "desktop",
   ];
-  for (const feature of features) {
+  for (const feature of enabled) {
+    assert.equal(isFeatureEnabled(feature), true, `${feature} zou enabled moeten zijn`);
+  }
+  for (const feature of disabled) {
     assert.equal(isFeatureEnabled(feature), false, `${feature} zou disabled moeten zijn`);
   }
 });
