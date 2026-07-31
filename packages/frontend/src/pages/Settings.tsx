@@ -108,7 +108,8 @@ function isSettingsTabEnabled(tab: SettingsTab): boolean {
     // /api/instances/<id>/mail-accounts + /api/mail/folders
     case "email-accounts":
       return isFeatureEnabled("webmail");
-    // /api/instances/<id>/settings/remote-extensions
+    // Geïnstalleerde extensies leven op ERPNext-DocType "Y Next Setting"
+    // (resource-CRUD, geen Express-endpoint meer) — zie extensions/remote.ts.
     case "extensions":
       return isFeatureEnabled("extensions");
     // /api/vault/*
@@ -1806,8 +1807,9 @@ function InvoiceEmailSettingsPanel() {
  *   2. Advanced (collapsed) — URL-paste form for dev/testing. Also lists
  *      any remotes whose id isn't in the catalog (legacy or ad-hoc installs).
  *
- * Installed extensions live under the `remote-extensions` key in
- * `instance_settings` (server-side, per-instance). */
+ * Installed extensions live under the `remote-extensions` setting_key on
+ * the ERPNext DocType `Y Next Setting` (resource-CRUD, see
+ * `extensions/remote.ts` — no Express server involved). */
 function ExtensionsPanel({ instanceId }: { instanceId: string }) {
   const { t } = useTranslation();
   const [remotes, setRemotes] = useState<RemoteExtension[]>([]);

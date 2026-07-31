@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchList } from "../lib/erpnext";
+import {
+  fetchList, createDocument, updateDocument, deleteDocument, isDoctypeMissing,
+} from "../lib/erpnext";
+import { sendMail } from "../lib/mail-erpnext";
 import { getActiveInstanceId } from "../lib/instances";
 import {
   FileText, Plus, Search, Calendar, Users, CheckSquare, Trash2, Edit3,
   X, ChevronDown, ChevronRight, Clock, Save, Copy, Send, Eye,
-  ClipboardList, Circle, CheckCircle2,
+  ClipboardList, Circle, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -101,32 +104,145 @@ function formatDateTime(d: string): string {
   }
 }
 
-/* ─── API (server-side JSON storage) ─── */
+/* ─── API (ERPNext resource-CRUD op "Y Meeting Note") ───
+ *
+ * Er is geen eigen server meer (`/api/meetings*` bestond alleen in de
+ * Express-architectuur). Vergadernotities zijn nu een gewoon ERPNext-
+ * document; alle velden hieronder komen 1-op-1 uit het provisioning-
+ * script (scripts/provision-y-next.mjs): title, meeting_date, project,
+ * participants, action_points, notes, linked_doctype, linked_name.
+ *
+ * Het DocType heeft geen apart tijd- of agenda-veld. Twee bewuste
+ * versimpelingen om binnen dat vaste veldenschema te blijven:
+ *  - `meeting_date` is een Date-veld (geen tijd) — de tijdcomponent uit de
+ *    datetime-local-input wordt bij het opslaan afgekapt. Bij het inladen
+ *    komt de tijd terug als 00:00.
+ *  - `agenda` en `content` (verslag) worden samen als JSON in het enkele
+ *    `notes`-veld opgeslagen, net als `participants`/`action_points`.
+ */
 
-async function apiGetMeetings(): Promise<MeetingNote[]> {
-  const r = await fetch("/api/meetings");
-  const j = await r.json();
-  return j.data || [];
+interface MeetingNoteDoc {
+  name: string;
+  title?: string;
+  meeting_date?: string;
+  project?: string;
+  participants?: string;
+  action_points?: string;
+  notes?: string;
+  linked_doctype?: string;
+  linked_name?: string;
+  creation?: string;
+  modified?: string;
 }
 
-async function apiSaveMeeting(m: MeetingNote, isNew: boolean): Promise<void> {
-  if (isNew) {
-    await fetch("/api/meetings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(m),
-    });
-  } else {
-    await fetch(`/api/meetings/${m.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(m),
-    });
+const MEETING_NOTE_DOCTYPE = "Y Meeting Note";
+
+const MEETING_FIELDS = [
+  "name", "title", "meeting_date", "project", "participants",
+  "action_points", "notes", "linked_doctype", "linked_name",
+  "creation", "modified",
+];
+
+function docToNote(doc: MeetingNoteDoc): MeetingNote {
+  let agenda = "";
+  let content = "";
+  if (doc.notes) {
+    try {
+      const parsed = JSON.parse(doc.notes);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        agenda = typeof parsed.agenda === "string" ? parsed.agenda : "";
+        content = typeof parsed.content === "string" ? parsed.content : "";
+      } else {
+        content = doc.notes;
+      }
+    } catch {
+      // Niet-JSON (bv. handmatig aangepast in ERPNext desk) — als verslag tonen.
+      content = doc.notes;
+    }
   }
+
+  let participants: Participant[] = [];
+  if (doc.participants) {
+    try {
+      const parsed = JSON.parse(doc.participants);
+      if (Array.isArray(parsed)) participants = parsed;
+    } catch { /* corrupte JSON — leeg tonen i.p.v. crashen */ }
+  }
+
+  let actionPoints: ActionPoint[] = [];
+  if (doc.action_points) {
+    try {
+      const parsed = JSON.parse(doc.action_points);
+      if (Array.isArray(parsed)) actionPoints = parsed;
+    } catch { /* corrupte JSON — leeg tonen i.p.v. crashen */ }
+  }
+
+  const linkedType: MeetingNote["linkedType"] = doc.project
+    ? "Project"
+    : doc.linked_doctype === "Quotation" || doc.linked_doctype === "Lead"
+      ? doc.linked_doctype
+      : "";
+  const linkedName = doc.project || doc.linked_name || "";
+
+  return {
+    id: doc.name,
+    title: doc.title || "",
+    date: doc.meeting_date ? `${doc.meeting_date}T00:00` : "",
+    linkedType,
+    linkedName,
+    // Geen apart label-veld op het DocType — de docname is de beste
+    // beschikbare weergavenaam na een round-trip via ERPNext.
+    linkedLabel: linkedName,
+    participants,
+    agenda,
+    content,
+    actionPoints,
+    createdAt: doc.creation || "",
+    updatedAt: doc.modified || "",
+  };
+}
+
+function noteToPayload(m: MeetingNote): Record<string, unknown> {
+  const isProject = m.linkedType === "Project";
+  return {
+    title: m.title || "",
+    meeting_date: m.date ? m.date.slice(0, 10) : "",
+    project: isProject ? m.linkedName : "",
+    linked_doctype: !isProject && m.linkedType ? m.linkedType : "",
+    linked_name: !isProject && m.linkedType ? m.linkedName : "",
+    participants: JSON.stringify(m.participants || []),
+    action_points: JSON.stringify(m.actionPoints || []),
+    notes: JSON.stringify({ agenda: m.agenda || "", content: m.content || "" }),
+  };
+}
+
+async function apiGetMeetings(): Promise<MeetingNote[]> {
+  const rows = await fetchList<MeetingNoteDoc>(MEETING_NOTE_DOCTYPE, {
+    fields: MEETING_FIELDS,
+    limit_page_length: 0,
+    order_by: "meeting_date desc",
+  });
+  return rows.map(docToNote);
+}
+
+async function apiCreateMeeting(m: MeetingNote): Promise<MeetingNote> {
+  const created = await createDocument<MeetingNoteDoc>(MEETING_NOTE_DOCTYPE, noteToPayload(m));
+  return docToNote(created);
+}
+
+async function apiUpdateMeeting(m: MeetingNote): Promise<MeetingNote> {
+  const updated = await updateDocument<MeetingNoteDoc>(MEETING_NOTE_DOCTYPE, m.id, noteToPayload(m));
+  return docToNote(updated);
+}
+
+/** isNew bepaalt create vs. update; retourneert de opgeslagen notitie (met
+ *  het door ERPNext toegekende docname als id bij een nieuw record). */
+async function apiSaveMeeting(m: MeetingNote, isNew: boolean): Promise<MeetingNote> {
+  return isNew ? apiCreateMeeting(m) : apiUpdateMeeting(m);
 }
 
 async function apiDeleteMeeting(id: string): Promise<void> {
-  await fetch(`/api/meetings/${id}`, { method: "DELETE" });
+  await deleteDocument(MEETING_NOTE_DOCTYPE, id);
 }
 
 /* ─── Migrate old localStorage notes to server ─── */
@@ -181,11 +297,6 @@ async function apiSendReport(meeting: MeetingNote, t: (key: string, opts?: Recor
   const recipients = meeting.participants.filter((p) => p.email).map((p) => p.email);
   if (recipients.length === 0) return { ok: false, error: t("meeting.no_participants_email") };
 
-  // Get mail account from IMAP config stored in localStorage
-  const id = getActiveInstanceId();
-  const email = localStorage.getItem(`pref_${id}_imap_user`) || "";
-  if (!email) return { ok: false, error: t("meeting.no_mail_account") };
-
   // Build HTML email
   const participantsHtml = meeting.participants.length > 0
     ? `<p><strong>${t("meeting_notes.participants")}:</strong> ${meeting.participants.map((p) => p.name + (p.email ? ` &lt;${p.email}&gt;` : "")).join(", ")}</p>`
@@ -218,21 +329,20 @@ async function apiSendReport(meeting: MeetingNote, t: (key: string, opts?: Recor
     </div>
   `;
 
-  const r = await fetch("/api/mail/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email,
-      from: email,
-      to: recipients,
+  // Er is geen /api/mail/send meer (dat was Express-only) — verzenden loopt
+  // via de ERPNext-mailadapter, die `frappe.core.doctype.communication.email.make`
+  // aanroept en de mail in ERPNexts eigen Email Queue zet.
+  try {
+    await sendMail({
+      to: recipients.join(", "),
       subject: t("meeting_notes.email_subject", { title: meeting.title, date: formatDate(meeting.date) }),
       html,
-    }),
-  });
-
-  const j = await r.json();
-  if (!r.ok) return { ok: false, error: j.error || t("meeting.send_failed") };
-  return { ok: true };
+    });
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    return { ok: false, error: message || t("meeting.send_failed") };
+  }
 }
 
 /* ─── Link search hook ─── */
@@ -281,6 +391,12 @@ export default function MeetingNotes() {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<MeetingNote[]>([]);
   const [loading, setLoading] = useState(true);
+  // "Y Meeting Note" bestaat pas na provisioning (scripts/provision-y-next.mjs).
+  // fetchList degradeert een 404 op het DocType zelf stilzwijgend naar [] —
+  // zonder deze check zou een niet-geprovisionede instance gewoon "nog geen
+  // vergadernotities" tonen, niet te onderscheiden van een lege, wél
+  // beschikbare module.
+  const [moduleUnavailable, setModuleUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"" | "Project" | "Quotation" | "Lead">("");
@@ -314,6 +430,7 @@ export default function MeetingNotes() {
       const migrated = await migrateLocalStorageNotes();
       const data = await apiGetMeetings();
       setNotes(data);
+      setModuleUnavailable(isDoctypeMissing(MEETING_NOTE_DOCTYPE));
       if (migrated) console.log("[meeting-notes] Migrated localStorage notes to server");
     } catch (e) {
       console.error("[meeting-notes] Load error:", e);
@@ -407,9 +524,12 @@ export default function MeetingNotes() {
       if (!updated.title.trim()) {
         updated.title = t("meeting_notes.default_title", { date: formatDate(updated.date) });
       }
-      await apiSaveMeeting(updated, isNewNote);
+      // Bij een nieuw record kent ERPNext (autoname "format:YMN-{YYYY}-{#####}")
+      // zelf het docname toe — dat is niet hetzelfde als het client-side
+      // gegenereerde id waaronder de draft tot nu toe werd bijgehouden.
+      const saved = await apiSaveMeeting(updated, isNewNote);
       await loadData();
-      setSelectedId(updated.id);
+      setSelectedId(saved.id);
       setIsEditing(false);
       setEditDraft(null);
       setIsNewNote(false);
@@ -574,12 +694,19 @@ export default function MeetingNotes() {
             </h1>
             <button
               onClick={handleNew}
-              className="p-2 rounded-lg bg-y-teal text-white hover:bg-y-teal-dark transition-colors cursor-pointer"
+              disabled={moduleUnavailable}
+              className="p-2 rounded-lg bg-y-teal text-white hover:bg-y-teal-dark transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               title={t("meeting.new_note_title")}
             >
               <Plus size={16} />
             </button>
           </div>
+          {moduleUnavailable && (
+            <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2">
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>{t("y_next.module_unavailable")}</span>
+            </div>
+          )}
           <div className="relative mb-2">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -609,7 +736,9 @@ export default function MeetingNotes() {
           )}
           {!loading && filteredNotes.length === 0 && (
             <div className="p-6 text-center text-sm text-slate-400">
-              {searchQuery || filterType ? t("meeting.no_results") : t("meeting.no_notes_yet")}
+              {searchQuery || filterType
+                ? t("meeting.no_results")
+                : moduleUnavailable ? t("y_next.module_unavailable") : t("meeting.no_notes_yet")}
             </div>
           )}
           {filteredNotes.map((note) => {

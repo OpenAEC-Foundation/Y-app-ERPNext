@@ -6,15 +6,21 @@
  * (typically GitHub Pages) and talk to ERPNext through a postMessage
  * bridge in `components/ExtensionHost.tsx`.
  *
- * Stored server-side under the `remote-extensions` key in the existing
- * `instance_settings` table (value: `RemoteExtension[]`). Cached in
- * localStorage per instance so the sidebar renders immediately on page
- * load; revalidated in the background.
+ * Y-next draait zonder eigen server, dus dit slaat niet meer op via
+ * `/api/instances/.../settings` (Express, `instance_settings`-tabel).
+ * De installed-extensions-lijst leeft nu in ERPNext zelf, op één document
+ * van het generieke custom DocType `Y Next Setting` (autoname
+ * "field:setting_key", dus de docname IS de sleutel): key
+ * `remote-extensions`, waarde de JSON-gestringify'de `RemoteExtension[]`
+ * in `setting_value`. Zelfde provisioning-script als "Y Meeting Note"
+ * (scripts/provision-y-next.mjs). localStorage blijft de leescache zodat
+ * de sidebar meteen rendert; revalidatie loopt op de achtergrond.
  */
 
 import { useEffect, useState } from "react";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
+import { fetchDocument, createDocument, updateDocument, ApiError } from "../lib/erpnext";
 
 export interface RemoteExtension {
   /** Stable, URL-safe machine ID. Used in the route `/x/<id>`. */
@@ -29,9 +35,16 @@ export interface RemoteExtension {
   visibility?: "all" | "employer" | "employee";
 }
 
+const SETTING_DOCTYPE = "Y Next Setting";
 const SETTING_KEY = "remote-extensions";
 const LS_PREFIX = "pref_";
 const CHANGE_EVENT = "y-app:remote-extensions-changed";
+
+interface YNextSettingDoc {
+  name: string;
+  setting_key: string;
+  setting_value?: string;
+}
 
 function cacheKey(instanceId: string): string {
   return `${LS_PREFIX}${instanceId}_${SETTING_KEY}`;
@@ -56,18 +69,17 @@ function writeCache(instanceId: string, list: RemoteExtension[]): void {
 
 export async function fetchRemoteExtensions(instanceId: string | number): Promise<RemoteExtension[]> {
   try {
-    const res = await fetch(`/api/instances/${instanceId}/settings/${SETTING_KEY}`, {
-      credentials: "same-origin",
-    });
-    if (res.status === 404) return [];
-    if (!res.ok) return readCache(String(instanceId));
-    const data = await res.json().catch(() => null) as { ok?: boolean; value?: unknown } | null;
-    const value = data?.ok ? data.value : undefined;
+    const doc = await fetchDocument<YNextSettingDoc>(SETTING_DOCTYPE, SETTING_KEY);
+    const value = doc.setting_value ? JSON.parse(doc.setting_value) : [];
     if (!Array.isArray(value)) return readCache(String(instanceId));
     const list = (value as RemoteExtension[]).filter(isValidRemote);
     writeCache(String(instanceId), list);
     return list;
-  } catch {
+  } catch (err) {
+    // Nog geen extensies geïnstalleerd (record bestaat nog niet) of het
+    // DocType zelf is nog niet geprovisioned — beide zijn een gewone 404 in
+    // Frappe's REST API, geen fout die de sidebar moet blokkeren.
+    if (err instanceof ApiError && err.status === 404) return [];
     return readCache(String(instanceId));
   }
 }
@@ -76,14 +88,16 @@ export async function saveRemoteExtensions(
   instanceId: string | number,
   list: RemoteExtension[],
 ): Promise<void> {
-  const res = await fetch(`/api/instances/${instanceId}/settings/${SETTING_KEY}`, {
-    method: "PUT",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: list }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to save remote extensions (HTTP ${res.status})`);
+  const payload = { setting_value: JSON.stringify(list) };
+  try {
+    await updateDocument(SETTING_DOCTYPE, SETTING_KEY, payload);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      // Eerste installatie op deze instance — het record bestaat nog niet.
+      await createDocument(SETTING_DOCTYPE, { setting_key: SETTING_KEY, ...payload });
+    } else {
+      throw err;
+    }
   }
   writeCache(String(instanceId), list);
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, {
