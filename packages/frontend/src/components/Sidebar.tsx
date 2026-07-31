@@ -11,13 +11,21 @@ import {
 import { useNavigate } from "react-router-dom";
 import { getActiveCompany } from "../lib/instances";
 import { getModuleConfig, isItemEnabled, isSectionEnabled, ALWAYS_VISIBLE, migratePageIdMap } from "../lib/modules";
-import { DISABLED_PAGE_MODE, isFeatureEnabled, isPageEnabled } from "../lib/capabilities";
+import { DISABLED_PAGE_MODE, isFeatureEnabled, isPageEnabled, type ServerFeature } from "../lib/capabilities";
+import { unseenCount } from "../lib/mail-erpnext";
 import { useRemoteExtensions } from "../extensions/remote";
 import { useLeaves } from "../lib/DataContext";
 import { getAllBadgeCounts, setBadgeCount } from "../lib/badges";
 import { APP_VERSION, APP_NAME } from "../lib/version";
 import { useTranslation } from "react-i18next";
 import InlineSearch from "./InlineSearch";
+
+/**
+ * Webmail op ERPNext `Communication`. De key staat nog niet in
+ * `ServerFeature` — `capabilities.ts` wordt centraal door de fase-2-controller
+ * omgezet; deze ene cast overbrugt dat tot dan (zie App.tsx / Webmail.tsx).
+ */
+const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
 
 export type Page =
   | "dashboard" | "management-dashboard"
@@ -298,6 +306,24 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
     const handler = () => setBadges(getAllBadgeCounts());
     window.addEventListener("badge-counts-changed", handler);
     return () => window.removeEventListener("badge-counts-changed", handler);
+  }, []);
+
+  // E-mailbadge op de Communication-mail: één `get_count` per minuut. Er is
+  // geen websocket/IMAP-IDLE in Y-next, dus pollen is het enige kanaal — en
+  // 1×/min is goedkoop genoeg om altijd te draaien zolang de mailpagina
+  // daadwerkelijk actief is. Staat de feature uit (of draait de IMAP-brug),
+  // dan gebeurt hier niets: die zet zijn eigen badge vanuit Webmail.
+  useEffect(() => {
+    if (!isFeatureEnabled(ERPNEXT_MAIL)) return;
+    let cancelled = false;
+    const tick = () => {
+      unseenCount()
+        .then((n) => { if (!cancelled) setBadgeCount("webmail", n); })
+        .catch(() => { /* teller mist een ronde; volgende tick probeert opnieuw */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
   // Werkgever-badge op "Verlof & Overuren": aantal openstaande verlofaanvragen.

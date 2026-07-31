@@ -2516,5 +2516,7 @@
   "y_next.badge_later": "folgt später",
   "y_next.login_required": "Melden Sie sich bei ERPNext an, um Y-next zu nutzen.",
   "y_next.login_button": "Anmelden",
-  "y_next.direct_mode": "Direkt mit ERPNext verbunden"
+  "y_next.direct_mode": "Direkt mit ERPNext verbunden",
+  "y_next.mail_setup_required": "E-Mail ist auf dieser ERPNext-Site noch nicht aktiviert. Aktiviere unter Einstellungen → Email Account 'Enable Incoming' und 'Enable Outgoing' mit den Zugangsdaten des Postfachs.",
+  "y_next.mail_direct_note": "Diese Mail-Ansicht läuft direkt auf ERPNext (Communication). Ordner sind virtuell: Posteingang, Gesendet, Ungelesen und die Projekte, zu denen Mails verknüpft sind."
 }

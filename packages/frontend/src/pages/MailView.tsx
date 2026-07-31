@@ -20,9 +20,12 @@ import {
   X, Send, RefreshCw, Bold, Italic, Underline,
   CheckSquare, FileBarChart, Receipt, User, Plus, Check,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
 import { readMailBody, persistMailBody } from "../lib/mail-cache-db";
-import { fetchList } from "../lib/erpnext";
+import { fetchList, fetchDocument, getFileUrl } from "../lib/erpnext";
+import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
+import { getMessageBody, markRead } from "../lib/mail-erpnext";
 import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } from "../lib/email-project-links";
 import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -146,7 +149,21 @@ async function fetchSignature(emailAddress: string): Promise<string> {
   return "";
 }
 
-export default function MailView() {
+/**
+ * Popout-parameters. De Y-next-popout gebruikt een **hash**-route
+ * (`…/y-next#/mail/view?msg=<Communication>`) omdat de app als Frappe Web Page
+ * onder één vast pad draait en er dus geen echte `/mail/view`-URL bestaat; de
+ * klassieke Y-app-popout gebruikt een echt pad met querystring. Deze helper
+ * leest allebei, hash eerst.
+ */
+function readPopoutParams(): URLSearchParams {
+  const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
+  const q = hash.indexOf("?");
+  if (q >= 0) return new URLSearchParams(hash.slice(q + 1));
+  return new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+}
+
+function ImapMailView() {
   const [msg, setMsg] = useState<MailMessageFull | null>(null);
   // Body-iframe groeit mee met de werkelijke inhoud i.p.v. vast op h-full: een
   // iframe schaalt nooit automatisch naar zijn content, dus zonder dit toont
@@ -1144,4 +1161,179 @@ function StandaloneCompose({ draft, fromAddr, acct, account, inReplyTo, referenc
       </div>
     </div>
   );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Y-next — popout op ERPNext `Communication`
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Zie de gelijknamige constante in `Webmail.tsx`: `erpnext-mail` bestaat nog
+ * niet in `ServerFeature` omdat `capabilities.ts` centraal door de
+ * fase-2-controller wordt omgezet. Eén cast per bestand overbrugt dat.
+ */
+const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+
+interface ErpViewDoc {
+  subject?: string;
+  sender?: string;
+  sender_full_name?: string;
+  recipients?: string;
+  cc?: string;
+  communication_date?: string;
+  seen?: number | boolean;
+  reference_doctype?: string;
+  reference_name?: string;
+}
+
+/**
+ * Standalone lezer voor één Communication. Bewust read-only: beantwoorden en
+ * doorsturen gebeuren in de hoofd-Webmail, die de conversatie en de
+ * projectkoppeling in beeld heeft. Zo staan hier geen knoppen die op
+ * Express-endpoints leunen die in Y-next niet bestaan.
+ */
+function ErpNextMailView({ name }: { name: string }) {
+  const { t } = useTranslation();
+  const [doc, setDoc] = useState<ErpViewDoc | null>(null);
+  const [body, setBody] = useState<{ html: string; attachments: { file_url: string; file_name: string }[] } | null>(null);
+  // Zonder `?msg=` valt er niets te laden — dan meteen niet in de laadstand
+  // beginnen (de render hieronder toont de foutkaart).
+  const [loading, setLoading] = useState(Boolean(name));
+  const [error, setError] = useState("");
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [frameHeight, setFrameHeight] = useState(500);
+
+  useEffect(() => {
+    if (!name) return;
+    // Geen `setLoading(true)` hier: de begintoestand staat al op laden en
+    // `name` komt uit de URL van dit tabblad, dus hij verandert niet meer.
+    let cancelled = false;
+    Promise.all([
+      fetchDocument<ErpViewDoc>("Communication", name),
+      getMessageBody(name),
+    ])
+      .then(([headerDoc, loaded]) => {
+        if (cancelled) return;
+        setDoc(headerDoc);
+        setBody(loaded);
+        document.title = headerDoc?.subject || t("webmail.no_subject");
+        // Openen = gelezen. Fire-and-forget: mislukt de schrijfactie, dan blijft
+        // de mail ongelezen in de lijst — geen reden de lezer te blokkeren.
+        const alreadySeen = headerDoc?.seen === 1 || headerDoc?.seen === true;
+        if (!alreadySeen) void markRead(name).catch(() => {});
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [name, t]);
+
+  function handleFrameLoad() {
+    try {
+      const frameDoc = frameRef.current?.contentDocument;
+      if (!frameDoc) return;
+      attachExternalLinkHandler(frameDoc, makeExternalLinkOpener());
+      const h = Math.max(frameDoc.documentElement.scrollHeight, frameDoc.body?.scrollHeight || 0);
+      setFrameHeight(Math.max(500, h + 32));
+    } catch { /* cross-origin edge case — hoogte blijft staan */ }
+  }
+
+  const srcDoc = body
+    ? `<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${getFileUrl("/")}" target="_blank">`
+      + `<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#334155;line-height:1.6;margin:16px 24px;word-wrap:break-word;overflow-wrap:anywhere;}`
+      + `img{max-width:100%}a{color:#2563eb}pre,code{white-space:pre-wrap;word-break:break-word}table{max-width:100%}`
+      + `blockquote{border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569}</style></head><body>`
+      + `${body.html || `<p style="color:#94a3b8">${t("webmail.no_content")}</p>`}</body></html>`
+    : "";
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <Loader2 size={16} className="animate-spin" /> {t("webmail.loading_message")}
+        </div>
+      </div>
+    );
+  }
+
+  if (!name || error) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-xl bg-white shadow p-6 text-center">
+          <p className="text-sm font-medium text-red-700">{t("webmail.load_failed")}</p>
+          {error && <p className="mt-1 text-xs text-red-600 break-words">{error}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-4xl mx-auto bg-white shadow-sm min-h-screen">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h1 className="text-lg font-semibold text-slate-900 break-words">
+            {doc?.subject || t("webmail.no_subject")}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1 break-words">
+            <span className="font-medium text-slate-700">{doc?.sender_full_name || doc?.sender}</span>
+            {doc?.sender_full_name ? ` <${doc.sender}>` : ""}
+            {` · ${formatDate(doc?.communication_date || null)}`}
+          </p>
+          {doc?.recipients && (
+            <p className="text-[11px] text-slate-400 mt-0.5 break-words">
+              Aan: {doc.recipients}{doc.cc ? ` · Cc: ${doc.cc}` : ""}
+            </p>
+          )}
+          {doc?.reference_doctype === "Project" && doc.reference_name && (
+            <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+              <FolderKanban size={11} /> {doc.reference_name}
+            </span>
+          )}
+        </div>
+
+        <iframe
+          ref={frameRef}
+          title="mail-body"
+          srcDoc={srcDoc}
+          onLoad={handleFrameLoad}
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          className="w-full border-0 block"
+          style={{ height: frameHeight }}
+        />
+
+        {body && body.attachments.length > 0 && (
+          <div className="border-t border-slate-200 px-6 py-4">
+            <p className="text-[11px] text-slate-500 mb-2 flex items-center gap-1">
+              <Paperclip size={11} />
+              {body.attachments.length === 1
+                ? t("webmail.one_attachment")
+                : t("webmail.n_attachments", { count: body.attachments.length })}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {body.attachments.map((att) => (
+                <a key={att.file_url} href={getFileUrl(att.file_url)} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 hover:text-blue-700">
+                  <Paperclip size={12} className="text-slate-400" />
+                  <span className="truncate max-w-[220px]">{att.file_name}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Y-next opent de popout met alleen `?msg=<Communication-docname>`; de
+ * IMAP-popout heeft uid/folder/acct/email/account nodig. De feature-key bepaalt
+ * welke van de twee rendert.
+ */
+export default function MailView() {
+  if (isFeatureEnabled(ERPNEXT_MAIL)) {
+    return <ErpNextMailView name={readPopoutParams().get("msg") || ""} />;
+  }
+  return <ImapMailView />;
 }

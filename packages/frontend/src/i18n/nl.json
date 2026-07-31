@@ -2530,5 +2530,7 @@
   "y_next.badge_later": "volgt later",
   "y_next.login_required": "Log in bij ERPNext om Y-next te gebruiken.",
   "y_next.login_button": "Inloggen",
-  "y_next.direct_mode": "Rechtstreeks verbonden met ERPNext"
+  "y_next.direct_mode": "Rechtstreeks verbonden met ERPNext",
+  "y_next.mail_setup_required": "E-mail is nog niet geactiveerd op deze ERPNext-site. Zet bij Instellingen → Email Account 'Enable Incoming' en 'Enable Outgoing' aan met de inloggegevens van de mailbox.",
+  "y_next.mail_direct_note": "Deze mailweergave draait rechtstreeks op ERPNext (Communicatie). Mappen zijn virtueel: Postvak IN, Verzonden, Ongelezen en de projecten waaraan gemaild is."
 }

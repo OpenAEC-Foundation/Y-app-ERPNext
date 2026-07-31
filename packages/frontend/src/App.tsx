@@ -7,9 +7,18 @@ import ComingSoon from "./components/ComingSoon";
 import { DataProvider } from "./lib/DataContext";
 import { ToastProvider } from "./components/Toast";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { isFeatureEnabled, isPageEnabled } from "./lib/capabilities";
+import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
 import { APP_VERSION } from "./lib/version";
+
+/**
+ * Webmail op ERPNext `Communication` (Y-next, geen eigen server).
+ *
+ * De key staat nog niet in `ServerFeature`: `capabilities.ts` wordt centraal
+ * door de fase-2-controller omgezet, samen met het schrappen van `/webmail`
+ * uit de blocklist. Eén cast per bestand overbrugt dat tot dan.
+ */
+const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
 
 // Lazy-load all pages
 const Dashboard = lazy(() => import("./pages/dashboard"));
@@ -238,8 +247,15 @@ function App() {
   // Losse popout-vensters (`/mail/view`, `/messenger/view`) hingen aan de
   // Express-server. Ze blijven als bestand bestaan, maar worden pas weer
   // gerenderd zodra de bijbehorende feature aan staat.
+  //
+  // Twee URL-vormen: de Y-app-popout opent een écht pad (`/mail/view?…`); de
+  // Y-next-popout kan dat niet — de app draait als Frappe Web Page onder één
+  // vast pad — en gebruikt daarom de hash-route (`…#/mail/view?msg=…`). Deze
+  // check draait vóór de <HashRouter>, dus hij moet de hash zelf lezen.
   const popoutPath = typeof window !== "undefined" ? window.location.pathname : "";
-  if (isFeatureEnabled("webmail") && popoutPath === "/mail/view") {
+  const popoutHash = typeof window !== "undefined" ? window.location.hash || "" : "";
+  const isMailPopout = popoutPath === "/mail/view" || popoutHash.startsWith("#/mail/view");
+  if ((isFeatureEnabled("webmail") || isFeatureEnabled(ERPNEXT_MAIL)) && isMailPopout) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
         <MailView />
@@ -328,8 +344,9 @@ function gate(path: string, element: ReactElement): ReactElement {
  * extra mounted page is an acceptable memory cost; keeping all pages alive is
  * not.
  *
- * Alleen gemount wanneer de webmail-feature aan staat; in fase 1 draait er
- * geen mailserver achter de app.
+ * Alleen gemount wanneer er een mail-databron is: `webmail` (de IMAP-brug via
+ * de Express-server) of `erpnext-mail` (de Communication-variant). Staan beide
+ * uit, dan is er niets om te mounten.
  *
  * The `/webmail` <Route> becomes an empty placeholder (below): it must stay in
  * the <Routes> so the URL `/webmail` matches something and doesn't fall through
@@ -514,7 +531,8 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   refresh, instead of a full remount. Hidden via display:none
                   when another page is active (takes no layout space). See
                   KeepAliveWebmail above. */}
-              {isFeatureEnabled("webmail") && <KeepAliveWebmail active={activePage === "webmail"} />}
+              {(isFeatureEnabled("webmail") || isFeatureEnabled(ERPNEXT_MAIL))
+                && <KeepAliveWebmail active={activePage === "webmail"} />}
               {/* Defense-in-depth against issue #103 (a page-level crash
                   used to blank the entire app with no way back): any
                   uncaught render error in the active route now shows a

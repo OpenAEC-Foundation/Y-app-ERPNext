@@ -13,6 +13,7 @@ import {
   ChevronsLeft, ChevronsRight,
   Users, Users2,
   AlertTriangle,
+  Send, Inbox, Info,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -44,7 +45,8 @@ import { matchProjectFromMail } from "../lib/project-mail-match";
 import { resolveProjectFolder, type MailSide } from "../lib/project-folder-resolve";
 import { buildFolderProfiles, scoreFoldersFromHistory, historyConfidence } from "../lib/folder-profile-match";
 import { SortToProjectDialog, type SortRowProposal, type SortMove } from "../components/SortToProjectDialog";
-import { isDesktopApp } from "../lib/desktop";
+import { isDesktopApp, makeExternalLinkOpener } from "../lib/desktop";
+import { loadSession } from "../lib/session";
 import { hydrateSignatureOverrides } from "../lib/mailSignature";
 import { setBadgeCount } from "../lib/badges";
 import { useProjects } from "../lib/DataContext";
@@ -63,7 +65,8 @@ import {
 } from "../lib/webmail-prefetch";
 import {
   formatSender, formatAddress, formatDate, getDateGroup,
-  formatFullDate, textBodyToHtml,
+  formatFullDate, textBodyToHtml, attachExternalLinkHandler,
+  getInitials, getAvatarColor,
 } from "../lib/mail-format";
 import type {
   MailMessageFull, MailFolder, ForwardedAttachment, ComposeState, SendPayload,
@@ -88,6 +91,15 @@ import {
   EMAIL_CATEGORIES, getCategoryMap, setCategoryForMessage,
   getRepliedMessages, markAsReplied, isReplied,
 } from "../lib/mail-categories";
+import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
+import {
+  listVirtualFolders, listMailboxMessages, getMessageBody,
+  markRead, markUnread, sendMail, linkToDocument, hasEnabledEmailAccount,
+  projectOfFolder,
+  MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD,
+  type ErpMailMessage, type ErpMailFolder,
+} from "../lib/mail-erpnext";
+import { getFileUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
 import CreateFolderModal from "../components/mail/CreateFolderModal";
@@ -203,9 +215,19 @@ const PAGE_SIZE = 50;
 const TOAST_ERROR_RE = /mislukt|failed|fehlgeschlagen|fehler|kon niet|could not|konnte nicht|\bfout\b|\berror\b/i;
 const TOAST_LOADING_RE = /\bwordt\b|bezig|being sent|sending|loading|\bwird\b/i;
 
-/* ─── Main component ─── */
+/* ─── IMAP-variant (Express-brug) ─── */
 
-export default function Webmail() {
+/**
+ * De klassieke, IMAP-gebonden Webmail. Draait op de `/api/mail/*`-endpoints
+ * van de Y-app Express-server en is daarom alleen bereikbaar zolang de
+ * feature `webmail` aanstaat. In Y-next (geen eigen server) staat die uit en
+ * rendert `<Webmail>` hieronder de Communication-variant.
+ *
+ * Bewust niet verwijderd: dit is de volledige IMAP-implementatie (map-CRUD,
+ * gedeelde postvakken, drag-move, IndexedDB-bodycache, warmup) die de Y-app-
+ * deploy nog gebruikt. Onbereikbaar in Y-next, ongewijzigd voor Y-app.
+ */
+function ImapWebmail() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -3654,4 +3676,947 @@ export default function Webmail() {
       />
     </div>
   );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Y-next — Webmail op ERPNext `Communication`
+   ══════════════════════════════════════════════════════════════════════════
+
+   Dezelfde schermindeling als de IMAP-variant hierboven (mappen | lijst |
+   leespaneel), maar met `lib/mail-erpnext.ts` als enige databron. Er is geen
+   Express-server, geen IMAP-verbinding en geen IndexedDB-bodycache: elke
+   lijst- of leesactie is een gewone ERPNext-resourcecall, die door de
+   30s-responscache van `erpnext.ts` heen loopt.
+
+   Wat hier bewust ONTBREEKT (en dus ook geen knop heeft): map-CRUD,
+   verplaatsen, slepen, gedeelde postvakken, warmup/cache-chip en het
+   bulk-sorteren naar projectmappen. Mappen zijn virtueel — er valt niets te
+   hernoemen of te verplaatsen. Die UI hoort bij de IMAP-variant en blijft daar
+   achter `isFeatureEnabled("webmail")`.
+*/
+
+/**
+ * Feature-gate voor de Communication-mail.
+ *
+ * `erpnext-mail` staat nog niet in `ServerFeature`: `capabilities.ts` is
+ * eigendom van de fase-2-controller, die de key centraal toevoegt en op `true`
+ * zet op het moment dat `/webmail` uit de blocklist gaat. Deze ene cast
+ * overbrugt dat gat (één plek per bestand); zodra de key bestaat vervalt de
+ * cast zonder dat er aan de call-sites iets verandert.
+ */
+const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+
+/** Paginagrootte van de berichtenlijst (gelijk aan de adapter-default). */
+const ERP_PAGE_SIZE = 50;
+
+/** Bijlagetype dat `sendMail` accepteert. Afgeleid uit de adapter-signatuur,
+ *  want het lucide-icoon `File` schaduwt de globale `File`-naam in dit
+ *  bestand — `File[]` zou hier dus het verkeerde ding betekenen. */
+type MailAttachmentFile = NonNullable<Parameters<typeof sendMail>[0]["attachments"]>[number];
+
+interface ErpDraft {
+  mode: "new" | "reply" | "replyAll" | "forward";
+  to: string;
+  cc: string;
+  subject: string;
+  /** Wat de gebruiker typt (platte tekst; wordt bij verzenden HTML). */
+  body: string;
+  /** Geciteerde originele mail (HTML) — komt onder de nieuwe tekst. */
+  quoteHtml: string;
+  /** Leesbare "Op <datum> schreef <naam>"-regel bij het citaat. */
+  quoteLabel: string;
+  inReplyTo?: string;
+  reference?: { doctype: string; name: string };
+  files: MailAttachmentFile[];
+}
+
+function erpTime(value: string): number {
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/**
+ * Client-side conversatie: transitieve closure over de `in_reply_to`-ketting
+ * binnen het al opgehaalde lijstvenster — omhoog naar de voorouders én omlaag
+ * naar de antwoorden. Bewust geen extra servercalls, en bewust geen
+ * subject-matching: `in_reply_to` is een echte documentverwijzing, terwijl
+ * onderwerpen hergebruikt worden ("Vraag") en midden in een thread wijzigen.
+ * De prijs is dat een thread-lid buiten het opgehaalde venster niet meekomt;
+ * dat is een bewuste ondergrens, geen bug.
+ */
+function buildErpThread(all: ErpMailMessage[], current: ErpMailMessage): ErpMailMessage[] {
+  const byName = new Map<string, ErpMailMessage>();
+  const children = new Map<string, ErpMailMessage[]>();
+  for (const m of all) {
+    byName.set(m.name, m);
+    if (m.inReplyTo) {
+      const list = children.get(m.inReplyTo);
+      if (list) list.push(m);
+      else children.set(m.inReplyTo, [m]);
+    }
+  }
+  const seen = new Set<string>();
+  const out: ErpMailMessage[] = [];
+  const stack: ErpMailMessage[] = [current];
+  while (stack.length > 0) {
+    const msg = stack.pop();
+    if (!msg || seen.has(msg.name)) continue;
+    seen.add(msg.name);
+    out.push(msg);
+    const parent = msg.inReplyTo ? byName.get(msg.inReplyTo) : undefined;
+    if (parent) stack.push(parent);
+    for (const child of children.get(msg.name) ?? []) stack.push(child);
+  }
+  return out.sort((a, b) => erpTime(a.date) - erpTime(b.date));
+}
+
+/** "Re: " / "Fwd: " — maar nooit dubbel gestapeld. */
+function prefixSubject(subject: string, prefix: "Re" | "Fwd"): string {
+  const clean = (subject || "").trim();
+  const re = prefix === "Re" ? /^(re|antw|aw)\s*:/i : /^(fwd?|doorgestuurd)\s*:/i;
+  return re.test(clean) ? clean : `${prefix}: ${clean}`;
+}
+
+/** Adressenlijst zonder het eigen adres — reply-all mailt je niet jezelf. */
+function withoutSelf(addresses: string, self: string): string {
+  const selfLower = self.trim().toLowerCase();
+  return (addresses || "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter((a) => a && (!selfLower || !a.toLowerCase().includes(selfLower)))
+    .join(", ");
+}
+
+function ErpNextWebmail() {
+  const { t } = useTranslation();
+  const isMobile = useIsMobile();
+  const projects = useProjects();
+
+  const [setupOk, setSetupOk] = useState<boolean | null>(null);
+  const [selfEmail, setSelfEmail] = useState("");
+
+  const [folders, setFolders] = useState<ErpMailFolder[]>([]);
+  const [activeFolder, setActiveFolder] = useState<string>(MAIL_FOLDER_INBOX);
+  // Synchroon leesbare spiegel voor de race-guard in loadMessages: een laat
+  // antwoord voor map A mag de lijst van map B niet overschrijven.
+  const activeFolderRef = useRef(MAIL_FOLDER_INBOX);
+  useEffect(() => { activeFolderRef.current = activeFolder; }, [activeFolder]);
+
+  const [messages, setMessages] = useState<ErpMailMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState("");
+
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+
+  const [selected, setSelected] = useState<ErpMailMessage | null>(null);
+  const [body, setBody] = useState<{ html: string; attachments: { file_url: string; file_name: string }[] } | null>(null);
+  const [bodyLoading, setBodyLoading] = useState(false);
+
+  const [draft, setDraft] = useState<ErpDraft | null>(null);
+  const [sending, setSending] = useState(false);
+
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+
+  const [toast, setToast] = useState("");
+  const [mobilePane, setMobilePane] = useState<"list" | "message">("list");
+
+  const bodyFrameRef = useRef<HTMLIFrameElement>(null);
+  const openExternal = useMemo(() => makeExternalLinkOpener(), []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(""), 4000);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+
+  /* ─── Bootstrap: haalt ERPNext überhaupt mail binnen? ─── */
+  useEffect(() => {
+    let cancelled = false;
+    hasEnabledEmailAccount()
+      .then((ok) => { if (!cancelled) setSetupOk(ok); })
+      .catch(() => { if (!cancelled) setSetupOk(false); });
+    loadSession()
+      .then((s) => { if (!cancelled) setSelfEmail(s.user); })
+      .catch(() => { /* zonder eigen adres werkt alles; alleen reply-all is ruimer */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const refreshFolders = useCallback(() => {
+    listVirtualFolders()
+      .then(setFolders)
+      .catch(() => { /* mappen zijn afgeleid — de lijst zelf blijft werken */ });
+  }, []);
+
+  useEffect(() => { refreshFolders(); }, [refreshFolders]);
+
+  // Zoekterm ontdubbelen: zoeken is een servervraag op onderwerp/afzender.
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
+
+  const loadMessages = useCallback(async (folder: string, opts?: { start?: number }) => {
+    const start = opts?.start ?? 0;
+    const append = start > 0;
+    setLoading(true);
+    if (!append) {
+      // Verse pagina 1: leegmaken zodat de lijst niet kort de vorige map toont
+      // en de spinner (die op `messages.length === 0` hangt) daadwerkelijk
+      // verschijnt.
+      setError("");
+      setMessages([]);
+      setHasMore(false);
+    }
+    try {
+      const rows = await listMailboxMessages(folder, {
+        limit: ERP_PAGE_SIZE,
+        start,
+        search: search || undefined,
+      });
+      if (activeFolderRef.current !== folder) return;
+      setHasMore(rows.length === ERP_PAGE_SIZE);
+      setMessages((prev) => (append ? [...prev, ...rows] : rows));
+    } catch (err) {
+      if (activeFolderRef.current !== folder) return;
+      setError(err instanceof Error ? err.message : String(err));
+      if (!append) setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  // Map- of zoekwissel: altijd vanaf het begin herladen. De ref wordt hier
+  // expliciet meegezet zodat de race-guard in loadMessages niet afhangt van de
+  // volgorde waarin React de effects afwerkt.
+  useEffect(() => {
+    activeFolderRef.current = activeFolder;
+    void loadMessages(activeFolder);
+  }, [activeFolder, loadMessages]);
+
+  const refreshAll = useCallback(() => {
+    void loadMessages(activeFolderRef.current);
+    refreshFolders();
+  }, [loadMessages, refreshFolders]);
+
+  const isUnreadFolder = activeFolder === MAIL_FOLDER_UNREAD;
+  const isSentFolder = activeFolder === MAIL_FOLDER_SENT;
+
+  const filteredMessages = useMemo(
+    () => (unreadOnly && !isUnreadFolder ? messages.filter((m) => !m.seen) : messages),
+    [messages, unreadOnly, isUnreadFolder],
+  );
+
+  const thread = useMemo(
+    () => (selected ? buildErpThread(messages, selected) : []),
+    [messages, selected],
+  );
+
+  /**
+   * Zet `seen` optimistisch in de lijst én in de mappentellers, en schrijft
+   * daarna pas naar ERPNext. Anders dan bij IMAP is dit een gewone
+   * documentupdate — er is geen `\Seen`-STORE-race — dus een mislukte
+   * schrijfactie mag gewoon terugdraaien in plaats van een TTL-overlay nodig
+   * te hebben.
+   */
+  const applySeen = useCallback((name: string, seen: boolean, opts?: { silent?: boolean }) => {
+    const delta = seen ? -1 : 1;
+    const patch = (value: boolean) => {
+      setMessages((prev) => prev.map((m) => (m.name === name ? { ...m, seen: value } : m)));
+      setSelected((prev) => (prev && prev.name === name ? { ...prev, seen: value } : prev));
+    };
+    patch(seen);
+    setFolders((prev) => prev.map((f) => (f.kind === "sent" ? f : { ...f, unseen: Math.max(0, f.unseen + delta) })));
+
+    const write = seen ? markRead(name) : markUnread(name);
+    void write.catch(() => {
+      patch(!seen);
+      setFolders((prev) => prev.map((f) => (f.kind === "sent" ? f : { ...f, unseen: Math.max(0, f.unseen - delta) })));
+      if (!opts?.silent) setToast(t("webmail.load_failed"));
+    });
+  }, [t]);
+
+  const openMessage = useCallback(async (msg: ErpMailMessage) => {
+    setSelected(msg);
+    setDraft(null);
+    setShowLinkPicker(false);
+    setBody(null);
+    setBodyLoading(true);
+    if (isMobile) setMobilePane("message");
+
+    if (!msg.seen) applySeen(msg.name, true, { silent: true });
+
+    try {
+      const loaded = await getMessageBody(msg.name);
+      setBody(loaded);
+    } catch (err) {
+      setBody({ html: "", attachments: [] });
+      setToast(err instanceof Error ? err.message : t("webmail.load_failed"));
+    } finally {
+      setBodyLoading(false);
+    }
+  }, [applySeen, isMobile, t]);
+
+  /* ─── Opstellen / beantwoorden / doorsturen ─── */
+
+  /** Project van de actieve map — een nieuwe mail vanuit een projectmap krijgt
+   *  die koppeling meteen mee (en belandt zo in dezelfde virtuele map). */
+  function folderReference(): { doctype: string; name: string } | undefined {
+    const project = projectOfFolder(activeFolder);
+    return project ? { doctype: "Project", name: project } : undefined;
+  }
+
+  function openCompose() {
+    setDraft({
+      mode: "new", to: "", cc: "", subject: "", body: "",
+      quoteHtml: "", quoteLabel: "",
+      reference: folderReference(),
+      files: [],
+    });
+    setShowLinkPicker(false);
+    if (isMobile) setMobilePane("message");
+  }
+
+  function openReply(all: boolean) {
+    const msg = selected;
+    if (!msg) return;
+    const label = t("webmail.reply_quote_header", {
+      date: formatFullDate(msg.date),
+      name: msg.senderName || msg.sender,
+      email: msg.sender,
+    });
+    setDraft({
+      mode: all ? "replyAll" : "reply",
+      to: msg.sender,
+      cc: all ? withoutSelf([msg.recipients, msg.cc].filter(Boolean).join(", "), selfEmail) : "",
+      subject: prefixSubject(msg.subject, "Re"),
+      body: "",
+      quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
+      quoteLabel: label,
+      inReplyTo: msg.name,
+      reference: msg.reference,
+      files: [],
+    });
+    if (isMobile) setMobilePane("message");
+  }
+
+  function openForward() {
+    const msg = selected;
+    if (!msg) return;
+    const label = t("webmail.forward_quote_header", {
+      name: msg.senderName || msg.sender,
+      email: msg.sender,
+      date: formatFullDate(msg.date),
+    });
+    setDraft({
+      mode: "forward",
+      to: "",
+      cc: "",
+      subject: prefixSubject(msg.subject, "Fwd"),
+      body: "",
+      quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
+      quoteLabel: label,
+      reference: msg.reference,
+      files: [],
+    });
+    if (isMobile) setMobilePane("message");
+  }
+
+  async function handleSend() {
+    if (!draft) return;
+    if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
+    setSending(true);
+    setToast(t("webmail.message_sending"));
+    const typed = textBodyToHtml(draft.body);
+    const html = draft.quoteHtml
+      ? `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${draft.quoteHtml}</blockquote>`
+      : typed;
+    try {
+      await sendMail({
+        to: draft.to.trim(),
+        cc: draft.cc.trim() || undefined,
+        subject: draft.subject,
+        html,
+        attachments: draft.files.length > 0 ? draft.files : undefined,
+        inReplyTo: draft.inReplyTo,
+        reference: draft.reference,
+      });
+      setDraft(null);
+      setToast(t("webmail.message_sent"));
+      refreshAll();
+    } catch (err) {
+      setToast(t("webmail.send_failed", { message: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /* ─── Projectkoppeling — native Communication-referentie, geen localStorage ─── */
+  async function linkToProject(projectName: string) {
+    const msg = selected;
+    if (!msg) return;
+    setShowLinkPicker(false);
+    const reference = { doctype: "Project", name: projectName };
+    setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
+    setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
+    try {
+      await linkToDocument(msg.name, "Project", projectName);
+      setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
+      refreshFolders();
+    } catch (err) {
+      setToast(t("webmail.link_create_error", { message: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  const projectMatches = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    const list = q
+      ? projects.filter((p) =>
+          (p.project_name || "").toLowerCase().includes(q) ||
+          (p.name || "").toLowerCase().includes(q) ||
+          (p.customer_name || "").toLowerCase().includes(q))
+      : projects;
+    return list.slice(0, 20);
+  }, [projects, projectSearch]);
+
+  /**
+   * Popout. Eén stabiele sleutel volstaat — de Communication-docname; de
+   * IMAP-parameters (instance/email/acct/folder/uid) bestaan hier niet meer.
+   * De hash-route houdt de Web-Page-URL (`/y-next`) intact.
+   */
+  function popoutMessage(name: string) {
+    const url = `${window.location.pathname}${window.location.search}#/mail/view?msg=${encodeURIComponent(name)}`;
+    try {
+      window.open(url, "_blank", "noopener");
+    } catch (err) {
+      setToast(t("webmail.popout_failed", { error: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  /* ─── Mail-body in een iframe: geen scripts, links naar buiten ─── */
+  useEffect(() => {
+    const frame = bodyFrameRef.current;
+    if (!frame || !body) return;
+    const handler = () => {
+      const doc = frame.contentDocument;
+      if (doc) attachExternalLinkHandler(doc, openExternal);
+    };
+    frame.addEventListener("load", handler);
+    return () => frame.removeEventListener("load", handler);
+  }, [body, openExternal]);
+
+  const bodySrcDoc = useMemo(() => {
+    if (!body) return "";
+    const html = body.html || `<p style="color:#94a3b8">${t("webmail.no_content")}</p>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${getFileUrl("/")}" target="_blank">`
+      + `<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#334155;line-height:1.6;margin:16px 24px;word-wrap:break-word;overflow-wrap:anywhere;}`
+      + `img{max-width:100%}a{color:#2563eb}pre,code{white-space:pre-wrap;word-break:break-word}table{max-width:100%}`
+      + `blockquote{border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569}</style>`
+      + `</head><body>${html}</body></html>`;
+  }, [body, t]);
+
+  /* ─── Render ─── */
+
+  const fixedFolders = folders.filter((f) => f.kind !== "project");
+  const projectFolders = folders.filter((f) => f.kind === "project");
+
+  const folderIcon = (kind: ErpMailFolder["kind"]) =>
+    kind === "sent" ? Send : kind === "unread" ? EyeOff : kind === "project" ? FolderKanban : Inbox;
+
+  const renderFolderButton = (f: ErpMailFolder) => {
+    const Icon = folderIcon(f.kind);
+    const active = f.id === activeFolder;
+    return (
+      <button
+        key={f.id}
+        onClick={() => {
+          setActiveFolder(f.id);
+          setSelected(null);
+          setBody(null);
+          if (isMobile) setMobilePane("list");
+        }}
+        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg cursor-pointer transition-colors ${
+          active ? "bg-blue-100 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        <Icon size={13} className={active ? "text-blue-600" : "text-slate-400"} />
+        <span className="truncate flex-1 text-left">{f.label}</span>
+        {f.unseen > 0 && <span className="text-[10px] font-semibold text-blue-600">{f.unseen}</span>}
+      </button>
+    );
+  };
+
+  const folderPane = (
+    <>
+      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        {fixedFolders.map(renderFolderButton)}
+        {projectFolders.length > 0 && (
+          <>
+            <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
+              {t("nav.projects")}
+            </div>
+            {projectFolders.map(renderFolderButton)}
+          </>
+        )}
+      </div>
+      <div className="flex items-start gap-1.5 px-3 py-2 border-t border-slate-200 text-[10px] leading-snug text-slate-400">
+        <Info size={11} className="mt-0.5 flex-shrink-0" />
+        <span>{t("y_next.mail_direct_note")}</span>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-slate-100">
+      {/* Ribbon */}
+      {(!isMobile || mobilePane === "list") && (
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-white border-b border-slate-200 flex-shrink-0">
+          <button onClick={openCompose}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 cursor-pointer">
+            <PenSquare size={14} /> <span className="hidden md:inline">{t("common.new")}</span>
+          </button>
+          <div className="w-px h-6 bg-slate-200 mx-1" />
+          <button onClick={() => openReply(false)} disabled={!selected}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+            <Reply size={14} /> <span className="hidden md:inline">{t("webmail.reply")}</span>
+          </button>
+          <button onClick={() => openReply(true)} disabled={!selected}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+            <ReplyAll size={14} /> <span className="hidden md:inline">{t("webmail.reply_all")}</span>
+          </button>
+          <button onClick={openForward} disabled={!selected}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+            <Forward size={14} /> <span className="hidden md:inline">{t("webmail.forward")}</span>
+          </button>
+          <div className="flex-1" />
+          <button onClick={refreshAll} disabled={loading} title={t("webmail.retry")}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 rounded text-xs hover:bg-slate-100 cursor-pointer disabled:opacity-50">
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
+      )}
+
+      <div className={`flex flex-1 min-h-0 ${isMobile ? "flex-col" : ""}`}>
+        {/* Mappenpaneel — virtueel, dus geen aanmaken/hernoemen/slepen */}
+        {!isMobile && (
+          <div className="w-56 bg-slate-50 border-r border-slate-200 flex flex-col flex-shrink-0">
+            {folderPane}
+          </div>
+        )}
+
+        {/* Berichtenlijst */}
+        {(!isMobile || mobilePane === "list") && (
+          <div className={`bg-white flex flex-col ${isMobile ? "flex-1" : "w-96 border-r border-slate-200 flex-shrink-0"}`}>
+            {isMobile && (
+              <div className="border-b border-slate-200">
+                <select value={activeFolder}
+                  onChange={(e) => { setActiveFolder(e.target.value); setSelected(null); setBody(null); }}
+                  className="w-full text-sm font-medium bg-slate-50 border-0 px-3 py-2">
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>{f.label}{f.unseen ? ` (${f.unseen})` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="px-4 py-2.5 border-b border-slate-200 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-semibold text-slate-800 truncate">
+                    {folders.find((f) => f.id === activeFolder)?.label || activeFolder}
+                  </span>
+                  <span className="text-xs text-slate-400">{filteredMessages.length}</span>
+                </div>
+                {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
+                {!isUnreadFolder && (
+                  <button onClick={() => setUnreadOnly((v) => !v)}
+                    title={unreadOnly ? t("webmail.show_all_messages") : t("webmail.show_unread_only")}
+                    className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                      unreadOnly ? "bg-blue-100 text-blue-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    }`}>
+                    {unreadOnly ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                )}
+              </div>
+              <div className="relative mt-2">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input type="text" value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder={t("webmail.search_placeholder")}
+                  className="w-full pl-8 pr-8 py-1.5 bg-slate-100 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 border-0" />
+                {searchInput && (
+                  <button onClick={() => setSearchInput("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Instructiekaart: ERPNext haalt pas mail op zodra een Email
+                Account incoming/outgoing aan heeft. De UI blijft bruikbaar. */}
+            {setupOk === false && (
+              <div className="m-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex-shrink-0">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                <span>{t("y_next.mail_setup_required")}</span>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto">
+              {loading && messages.length === 0 && (
+                <div className="p-8 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+                  <Loader2 size={16} className="animate-spin" /> {t("webmail.loading_email")}
+                </div>
+              )}
+              {!loading && error && (
+                <div className="m-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm font-medium text-red-700">{t("webmail.load_failed")}</p>
+                  <p className="mt-1 text-xs text-red-600 break-words">{error}</p>
+                  <button onClick={refreshAll}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-300 text-red-700 rounded-lg text-xs font-medium hover:bg-red-100 cursor-pointer">
+                    <RefreshCw size={12} /> {t("webmail.retry")}
+                  </button>
+                </div>
+              )}
+              {!loading && !error && filteredMessages.length === 0 && (
+                <div className="p-8 text-center text-sm text-slate-400">
+                  {search ? t("webmail.no_results") : t("webmail.no_messages")}
+                </div>
+              )}
+              {(() => {
+                let lastGroup = "";
+                return filteredMessages.map((msg) => {
+                  const group = getDateGroup(msg.date);
+                  const showHeader = group !== lastGroup;
+                  lastGroup = group;
+                  const isActive = selected?.name === msg.name;
+                  // In "Verzonden" is de afzender jijzelf — toon de ontvanger.
+                  const who = isSentFolder ? (msg.recipients || msg.sender) : (msg.senderName || msg.sender);
+                  return (
+                    <div key={msg.name}>
+                      {showHeader && (
+                        <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                          {group}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => void openMessage(msg)}
+                        onDoubleClick={(e) => { e.preventDefault(); popoutMessage(msg.name); }}
+                        title={t("webmail.open_in_new_tab")}
+                        className={`w-full text-left pl-4 pr-3 py-2.5 border-b border-slate-100 cursor-pointer transition-colors ${
+                          isActive ? "bg-blue-100 border-l-4 border-l-blue-600"
+                            : !msg.seen ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
+                            : "border-l-2 border-l-transparent hover:bg-slate-50"
+                        }`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-sm truncate ${!msg.seen ? "font-semibold text-slate-900" : "text-slate-700"}`}>
+                            {who || t("webmail.no_subject")}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {msg.hasAttachments && <Paperclip size={11} className="text-slate-400" />}
+                            <span className="text-[11px] text-slate-400">{formatDate(msg.date)}</span>
+                          </div>
+                        </div>
+                        <p className={`text-xs truncate mt-0.5 ${!msg.seen ? "font-medium text-slate-800" : "text-slate-500"}`}>
+                          {msg.subject || t("webmail.no_subject")}
+                        </p>
+                        {msg.reference?.doctype === "Project" && (
+                          <p className="text-[10px] text-emerald-600 truncate mt-0.5 flex items-center gap-1">
+                            <FolderKanban size={10} /> {msg.reference.name}
+                          </p>
+                        )}
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
+              {hasMore && !loading && (
+                <button onClick={() => void loadMessages(activeFolder, { start: messages.length })}
+                  className="w-full py-2.5 text-xs text-blue-600 hover:bg-blue-50 cursor-pointer">
+                  {t("webmail.load_more")}
+                </button>
+              )}
+              {loading && messages.length > 0 && (
+                <div className="py-3 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <Loader2 size={12} className="animate-spin" /> {t("common.loading")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Leespaneel / opsteller */}
+        {(!isMobile || mobilePane === "message") && (
+          <div className="flex-1 min-w-0 bg-white flex flex-col">
+            {isMobile && (
+              <button onClick={() => setMobilePane("list")}
+                className="flex items-center gap-1 px-3 py-2 border-b border-slate-200 text-xs text-slate-500 cursor-pointer">
+                <ChevronLeft size={14} /> {t("webmail.folders")}
+              </button>
+            )}
+
+            {draft ? (
+              <ErpComposePane
+                draft={draft}
+                sending={sending}
+                onChange={setDraft}
+                onSend={() => void handleSend()}
+                onClose={() => setDraft(null)}
+              />
+            ) : !selected ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
+                {t("webmail.select_message")}
+              </div>
+            ) : (
+              <>
+                {/* Kop */}
+                <div className="px-5 py-3 border-b border-slate-200 flex-shrink-0">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${getAvatarColor(selected.senderName || selected.sender)}`}>
+                      {getInitials(selected.senderName || selected.sender)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-base font-semibold text-slate-900 break-words">
+                        {selected.subject || t("webmail.no_subject")}
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5 break-words">
+                        <span className="font-medium text-slate-700">{selected.senderName || selected.sender}</span>
+                        {selected.senderName ? ` <${selected.sender}>` : ""}
+                        {` · ${formatFullDate(selected.date)}`}
+                      </p>
+                      {selected.recipients && (
+                        <p className="text-[11px] text-slate-400 mt-0.5 break-words">
+                          {t("webmail.to_prefix")}: {selected.recipients}
+                          {selected.cc ? ` · Cc: ${selected.cc}` : ""}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => applySeen(selected.name, !selected.seen)}
+                        title={selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read")}
+                        className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
+                        {selected.seen ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button onClick={() => popoutMessage(selected.name)} title={t("webmail.open_in_new_tab")}
+                        className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
+                        <ExternalLink size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Projectkoppeling — native Communication-referentie */}
+                  <div className="relative mt-2 flex items-center gap-2">
+                    {selected.reference?.doctype === "Project" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+                        <FolderKanban size={11} /> {selected.reference.name}
+                      </span>
+                    )}
+                    <button onClick={() => { setShowLinkPicker((v) => !v); setProjectSearch(""); }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
+                      <FolderKanban size={11} /> {t("webmail.link_to_project")}
+                    </button>
+                    {showLinkPicker && (
+                      <div className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-lg border border-slate-200 z-50 flex flex-col max-h-72">
+                        <div className="p-2 border-b border-slate-100">
+                          <input type="search" autoFocus value={projectSearch}
+                            onChange={(e) => setProjectSearch(e.target.value)}
+                            placeholder={t("webmail.search_project")}
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-1">
+                          {projectMatches.length === 0 ? (
+                            <p className="px-3 py-2 text-xs text-slate-400 italic">{t("webmail.no_results")}</p>
+                          ) : projectMatches.map((p) => (
+                            <button key={p.name} onClick={() => void linkToProject(p.name)}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer truncate">
+                              {p.name}{p.project_name ? ` — ${p.project_name}` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Conversatie — client-side via in_reply_to */}
+                {thread.length > 1 && (
+                  <div className="px-5 py-2 border-b border-slate-100 bg-slate-50 flex-shrink-0">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                      {t("webmail.thread_all_messages", { count: thread.length })}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {thread.map((m) => {
+                        const current = m.name === selected.name;
+                        return (
+                          <button key={m.name} disabled={current} onClick={() => void openMessage(m)}
+                            className={`px-2 py-1 rounded text-[11px] border ${
+                              current
+                                ? "border-violet-400 bg-violet-50 text-violet-700 cursor-default"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700 cursor-pointer"
+                            }`}>
+                            {formatDate(m.date)} · {m.senderName || m.sender}
+                            {current ? ` · ${t("webmail.thread_current_label")}` : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Body */}
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  {bodyLoading ? (
+                    <div className="p-8 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+                      <Loader2 size={16} className="animate-spin" /> {t("webmail.loading_message")}
+                    </div>
+                  ) : (
+                    <iframe ref={bodyFrameRef} title="mail-body" srcDoc={bodySrcDoc}
+                      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                      className="w-full h-full border-0" />
+                  )}
+                </div>
+
+                {/* Bijlagen — echte ERPNext-Files, dus gewone (same-origin) links */}
+                {body && body.attachments.length > 0 && (
+                  <div className="border-t border-slate-200 px-5 py-2.5 flex-shrink-0">
+                    <p className="text-[11px] text-slate-500 mb-1.5 flex items-center gap-1">
+                      <Paperclip size={11} />
+                      {body.attachments.length === 1
+                        ? t("webmail.one_attachment")
+                        : t("webmail.n_attachments", { count: body.attachments.length })}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {body.attachments.map((att) => (
+                        <a key={att.file_url} href={getFileUrl(att.file_url)} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 hover:text-blue-700">
+                          <FileText size={12} className="text-slate-400" />
+                          <span className="truncate max-w-[180px]">{att.file_name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]">
+          <div className={`flex items-center gap-2.5 px-5 py-3 rounded-xl shadow-lg ${TOAST_ERROR_RE.test(toast) ? "bg-red-700 text-white" : "bg-slate-800 text-white"}`}>
+            {TOAST_LOADING_RE.test(toast) ? <Loader2 size={16} className="text-blue-300 animate-spin" />
+              : TOAST_ERROR_RE.test(toast) ? <X size={16} className="text-red-300" />
+              : <Check size={16} className="text-green-400" />}
+            <span className="text-sm font-medium">{toast}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Opsteller voor de Communication-variant.
+ *
+ * Bewust een eigen, kleine component in plaats van `ComposeWindow`: die laatste
+ * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
+ * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
+ */
+function ErpComposePane({ draft, sending, onChange, onSend, onClose }: {
+  draft: ErpDraft;
+  sending: boolean;
+  onChange: (next: ErpDraft) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const set = <K extends keyof ErpDraft>(key: K, value: ErpDraft[K]) => onChange({ ...draft, [key]: value });
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50 flex-shrink-0">
+        <span className="text-sm font-semibold text-slate-700">
+          {draft.mode === "forward" ? t("webmail.forward")
+            : draft.mode === "new" ? t("webmail.new_message")
+            : t("webmail.reply")}
+        </span>
+        <button onClick={onClose} title={t("common.close")}
+          className="p-1 rounded text-slate-400 hover:bg-slate-200 cursor-pointer">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="px-4 py-2 space-y-1.5 border-b border-slate-200 flex-shrink-0">
+        <label className="flex items-center gap-2">
+          <span className="w-16 text-[11px] text-slate-400">{t("webmail.to_label")}</span>
+          <input value={draft.to} onChange={(e) => set("to", e.target.value)}
+            placeholder={t("webmail.recipient_placeholder")}
+            className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="w-16 text-[11px] text-slate-400">Cc</span>
+          <input value={draft.cc} onChange={(e) => set("cc", e.target.value)}
+            className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="w-16 text-[11px] text-slate-400">{t("webmail.subject_label")}</span>
+          <input value={draft.subject} onChange={(e) => set("subject", e.target.value)}
+            className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
+        </label>
+      </div>
+
+      <textarea value={draft.body} onChange={(e) => set("body", e.target.value)}
+        placeholder={t("webmail.editor_placeholder")}
+        className="flex-1 min-h-0 w-full px-4 py-3 text-sm text-slate-800 resize-none focus:outline-none" />
+
+      {draft.quoteLabel && (
+        <div className="px-4 pb-2 text-[11px] text-slate-400 flex items-start gap-1 flex-shrink-0">
+          <Reply size={11} className="mt-0.5 flex-shrink-0" />
+          <span className="truncate">{draft.quoteLabel}</span>
+        </div>
+      )}
+
+      <div className="flex items-center flex-wrap gap-2 px-4 py-2.5 border-t border-slate-200 flex-shrink-0">
+        <button onClick={onSend} disabled={sending}
+          className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50 cursor-pointer">
+          {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+          {sending ? t("webmail.sending") : t("webmail.send")}
+        </button>
+        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs hover:bg-slate-100 cursor-pointer">
+          <Paperclip size={13} /> {t("webmail.attachment_btn")}
+          <input type="file" multiple className="hidden"
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              if (picked.length > 0) onChange({ ...draft, files: [...draft.files, ...picked] });
+              e.target.value = "";
+            }} />
+        </label>
+        {draft.files.map((f, i) => (
+          <span key={`${f.name}:${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[11px] text-slate-600">
+            {f.name}
+            <button onClick={() => onChange({ ...draft, files: draft.files.filter((_, j) => j !== i) })}
+              title={t("common.delete_tooltip")} className="text-slate-400 hover:text-red-600 cursor-pointer">
+              <X size={10} />
+            </button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Welke Webmail rendert, hangt af van de actieve databron:
+ *
+ * - `erpnext-mail` aan → de Communication-variant (Y-next, geen eigen server);
+ * - anders             → de IMAP-brug (Y-app mét Express-server).
+ *
+ * De route `/webmail` zelf wordt daarnaast door `isPageEnabled` bewaakt: staat
+ * hij in de blocklist, dan komt geen van beide varianten in beeld.
+ */
+export default function Webmail() {
+  if (isFeatureEnabled(ERPNEXT_MAIL)) return <ErpNextWebmail />;
+  return <ImapWebmail />;
 }
