@@ -237,7 +237,7 @@ export default function MessengerView() {
                 try {
                   const n = new Notification(last.senderDisplayName, {
                     body: last.text || t("messenger.attachment"),
-                    icon: "/favicon.svg",
+                    icon: `${import.meta.env.BASE_URL}y-logo.svg`,
                     tag: `y-app-msg-${params.convoId}`,
                   });
                   // Popout = eigen gespreksvenster → alleen focussen bij klik.

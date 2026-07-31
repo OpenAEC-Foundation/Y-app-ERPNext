@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { fetchList, getErpNextLinkUrl } from "../lib/erpnext";
 import { getActiveCompany, setActiveCompany } from "../lib/instances";
+import { isFeatureEnabled } from "../lib/capabilities";
 import CompanySelect from "../components/CompanySelect";
 import { useTranslation } from "react-i18next";
 
@@ -88,9 +89,14 @@ export default function Contacts() {
     }
   }, [company]);
 
-  /* ─── Fetch email contacts ─── */
+  /* ─── Fetch email contacts ───
+   * Express-only endpoint (/api/mail/contacts) — doesn't exist on the
+   * standalone ERPNext deployment. Gated behind the "webmail" capability;
+   * when disabled (Fase 1: always) the page simply shows ERPNext contacts
+   * without the email-derived merge, which is a non-core enrichment. */
 
   const loadEmailContacts = useCallback(async () => {
+    if (!isFeatureEnabled("webmail")) return;
     try {
       const res = await fetch(`/api/mail/contacts`, { credentials: "same-origin" });
       if (res.ok) {

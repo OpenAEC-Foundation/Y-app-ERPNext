@@ -13,6 +13,7 @@ import {
   Building2, User, Flag, ShoppingCart, LayoutTemplate, FolderPlus,
 } from "lucide-react";
 import { isDesktopApp } from "../lib/desktop";
+import { isFeatureEnabled } from "../lib/capabilities";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { loadProjectFoldersConfig, hydrateProjectFoldersConfig, buildProjectFolderPath } from "../lib/nasConfig";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
@@ -135,10 +136,12 @@ async function openFolder(folderPath: string) {
   const winPath = folderPath.replace(/\//g, "\\");
 
   // Desktop (Tauri): open de projectmap echt in Windows Verkenner via de native
-  // Rust-command (/api/nas/open-folder → open_in_explorer). De web-route
-  // /api/open-folder bestaat hier niet, dus zonder dit viel 'ie terug op
-  // "pad naar klembord kopiëren" i.p.v. te openen.
-  if (isDesktopApp()) {
+  // Rust-command (/api/nas/open-folder → open_in_explorer), maar alleen als de
+  // nextcloud/NAS-feature aan staat (Y-next fase 1: uit — er is geen server/
+  // Rust-brug om deze route te bedienen). /api/open-folder is een oude
+  // web-server-route die in Y-next niet meer bestaat; zonder de feature-gate
+  // vielen beide fetches altijd stil terug op de klembord-fallback hieronder.
+  if (isDesktopApp() && isFeatureEnabled("nextcloud")) {
     try {
       const res = await fetch("/api/nas/open-folder", {
         method: "POST",
@@ -155,16 +158,6 @@ async function openFolder(folderPath: string) {
       // andere fout → val door naar de klembord-fallback hieronder
     } catch { /* val door naar klembord */ }
   }
-
-  try {
-    // Try server-side open first (works if server has access)
-    const res = await fetch("/api/open-folder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: winPath }),
-    });
-    if (res.ok) return;
-  } catch { /* fallback below */ }
 
   // Fallback: copy path to clipboard so user can paste in Explorer
   try {
@@ -272,9 +265,13 @@ export function ProjectDetail({
   const [addingTask, setAddingTask] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // NAS projectmappen aanmaken (alleen desktop-build).
+  // NAS projectmappen aanmaken (alleen desktop-build + nextcloud-feature aan).
+  // De knop die dit aanroept wordt al niet gerenderd als de feature uit staat
+  // (zie isFeatureEnabled("nextcloud") hieronder); deze guard is verdediging
+  // in de diepte mocht de functie ooit los aangeroepen worden.
   const [creatingNas, setCreatingNas] = useState(false);
   async function handleCreateNasFolders() {
+    if (!isFeatureEnabled("nextcloud")) return;
     const instId = getActiveInstanceId();
     // Vers ophalen i.p.v. blind op localStorage vertrouwen — zonder dit bleef
     // een medewerker die Settings nooit bezocht (of geen toegang heeft tot de
@@ -320,6 +317,7 @@ export function ProjectDetail({
     // /api/nas/open-folder en anders naar het klembord terugvalt. Eerst
     // hydrateren zodat een medewerker die Settings nooit bezocht toch de door
     // de werkgever ingestelde doel-root gebruikt (i.p.v. een leeg pad).
+    if (!isFeatureEnabled("nextcloud")) return;
     await hydrateProjectFoldersConfig();
     openFolder(getProjectFolderPath(project));
   }
@@ -611,7 +609,7 @@ export function ProjectDetail({
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
-              {isDesktopApp() && (
+              {isDesktopApp() && isFeatureEnabled("nextcloud") && (
                 <button
                   onClick={handleCreateNasFolders}
                   disabled={creatingNas}
@@ -621,7 +619,7 @@ export function ProjectDetail({
                   <FolderPlus size={14} /> {t("projects.detail.create_nas_folders")}
                 </button>
               )}
-              {isDesktopApp() && (
+              {isDesktopApp() && isFeatureEnabled("nextcloud") && (
                 <button
                   onClick={handleOpenNasFolder}
                   title={t("projects.detail.open_nas_folder")}
@@ -1354,9 +1352,15 @@ function ProjectFormSidebar({
     }).then(setSalesOrders).catch(() => setSalesOrders([]));
   }, [customer]);
 
-  // Load template tasks when customer changes (only in create mode)
+  // Load template tasks when customer changes (only in create mode). De
+  // customer→template-koppeling komt uit de per-instance settings-bridge
+  // (/api/instances/:id/settings/*), een Express-only route die in Y-next
+  // niet bestaat — niet-kernfunctionaliteit (gewoon geen voorgestelde
+  // template-taken), dus gate + stille fallback, zelfde patroon als
+  // lib/activityTypes.ts (isFeatureEnabled("shared-settings")).
   useEffect(() => {
     if (!isCreate || !customer) { setTaskList([]); setTemplateSource(null); return; }
+    if (!isFeatureEnabled("shared-settings")) { setTaskList([]); setTemplateSource(null); return; }
     const instanceId = getActiveInstanceId();
     fetch(`/api/instances/${instanceId}/settings/project-template-mapping`)
       .then((r) => r.json())
@@ -2420,13 +2424,15 @@ export default function Projects() {
                       {p.expected_end_date || "-"}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <button
-                        title={getProjectFolderPath({ name: p.name, project_name: p.project_name })}
-                        onClick={async (e) => { e.stopPropagation(); await hydrateProjectFoldersConfig(); openFolder(getProjectFolderPath({ name: p.name, project_name: p.project_name })); }}
-                        className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-y-teal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <FolderOpen size={16} />
-                      </button>
+                      {isFeatureEnabled("nextcloud") && (
+                        <button
+                          title={getProjectFolderPath({ name: p.name, project_name: p.project_name })}
+                          onClick={async (e) => { e.stopPropagation(); await hydrateProjectFoldersConfig(); openFolder(getProjectFolderPath({ name: p.name, project_name: p.project_name })); }}
+                          className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-y-teal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <FolderOpen size={16} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

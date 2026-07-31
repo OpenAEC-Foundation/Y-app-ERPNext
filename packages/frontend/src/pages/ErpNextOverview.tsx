@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchAll, fetchList, fetchCount } from "../lib/erpnext";
 import { useEmployees, useProjects, useCompanies, useLeaves } from "../lib/DataContext";
+import { isFeatureEnabled } from "../lib/capabilities";
 import {
   ClipboardList, Users, FolderKanban, Clock, CalendarCheck,
   CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronRight,
@@ -417,7 +418,12 @@ export default function ErpNextOverview() {
     }
 
     // ─── 10. Emailondertekeningen ───
-    try {
+    // Express-only endpoint (/api/mail/signature) — doesn't exist on the
+    // standalone ERPNext deployment. This diagnostic is non-core (one of
+    // several config checks), so it's gated behind the "webmail" capability
+    // and silently skipped (no module card) when disabled, same as the
+    // dashboard's email widget.
+    if (isFeatureEnabled("webmail")) try {
       const sigItems: CheckItem[] = [];
       let withSig = 0;
       let withoutSig = 0;

@@ -13,25 +13,36 @@ import { getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { fetchMissingDaysForEmployees } from "../lib/missingDays";
 
 /* ── Checkbox-based "done" tracker (BTW + payroll) ── */
-/* Stored as one instance_settings key "mgmt-done" = { "btw:2026-Q1": "2026-04-22", "payroll:2026-03": "2026-04-15" } */
+/* Was ooit een server-side instance_settings key "mgmt-done"; er is geen
+   Express-server meer om dat te bedienen en er is geen generieke
+   key/value-store in standaard ERPNext om dit centraal op te slaan.
+   Niet-kern extraatje (een handmatige afvink-herinnering) — bewaard
+   client-side per browser, zelfde localStorage-conventie als de andere
+   pref_<instanceId>_* voorkeuren in dit bestand (view_mode hierboven,
+   liquidity_start_balance in LiquidityPlanning.tsx). */
+/* Waarde = { "btw:2026-Q1": "2026-04-22", "payroll:2026-03": "2026-04-15" } */
 
 type DoneMap = Record<string, string>;
 
-async function loadDoneMap(instanceId: string): Promise<DoneMap> {
-  try {
-    const res = await fetch(`/api/instances/${instanceId}/settings/mgmt-done`);
-    const data = await res.json();
-    if (data?.ok && data?.value && typeof data.value === "object") return data.value as DoneMap;
-  } catch { /* ignore */ }
-  return {};
+function doneMapStorageKey(instanceId: string): string {
+  return `pref_${instanceId}_mgmt_done`;
 }
 
-async function saveDoneMap(instanceId: string, value: DoneMap): Promise<void> {
-  await fetch(`/api/instances/${instanceId}/settings/mgmt-done`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value }),
-  });
+function loadDoneMap(instanceId: string): DoneMap {
+  try {
+    const raw = localStorage.getItem(doneMapStorageKey(instanceId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as DoneMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDoneMap(instanceId: string, value: DoneMap): void {
+  try {
+    localStorage.setItem(doneMapStorageKey(instanceId), JSON.stringify(value));
+  } catch { /* ignore quota/serialization errors */ }
 }
 
 function currentQuarterKey(offset = 0): { key: string; year: number; quarter: number; end: Date } {
@@ -635,19 +646,16 @@ function ManagementDashboardContent() {
   const instanceId = getActiveInstanceId();
   useEffect(() => {
     if (!instanceId) { setDoneLoaded(true); return; }
-    let cancelled = false;
-    loadDoneMap(instanceId).then(m => {
-      if (!cancelled) { setDoneMap(m); setDoneLoaded(true); }
-    });
-    return () => { cancelled = true; };
+    setDoneMap(loadDoneMap(instanceId));
+    setDoneLoaded(true);
   }, [instanceId]);
 
-  async function toggleDone(key: string) {
+  function toggleDone(key: string) {
     const next = { ...doneMap };
     if (next[key]) delete next[key];
     else next[key] = formatIsoDate(new Date());
     setDoneMap(next);
-    if (instanceId) await saveDoneMap(instanceId, next).catch(() => { /* ignore */ });
+    if (instanceId) saveDoneMap(instanceId, next);
   }
 
   /* Check: Customer project milestones (10/20/25/50/75/100/… projects) */

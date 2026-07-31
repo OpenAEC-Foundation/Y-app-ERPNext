@@ -3,12 +3,12 @@
  * SendInvoiceModal does not have to know about Frappe endpoints.
  *
  * Single source of truth = ERPNext. Y-app stores only the two defaults
- * (email template + print format) in `instance_settings`; everything
+ * (email template + print format) in the browser's localStorage; everything
  * else (subject/body/signature/SMTP/from-address) lives in ERPNext and
  * is fetched live when the modal opens.
  */
 
-import { callMethod, fetchDocument, fetchList, getErpNextAppUrl } from "./erpnext";
+import { callMethod, fetchDocument, fetchList } from "./erpnext";
 import { getActiveInstanceId } from "./instances";
 
 export interface InvoiceEmailDefaults {
@@ -61,15 +61,26 @@ export async function getSessionUser(): Promise<string> {
   }
 }
 
+/**
+ * Y-app defaults storage — Y-next has no backend of its own anymore, so
+ * these two convenience defaults (which email template / print format to
+ * preselect when sending an invoice) live in the browser's localStorage
+ * instead of a server-side `/api/instances/*` settings store. This is a
+ * pure UI preference (nothing ERPNext-side depends on it, and the sender
+ * can always override the template/format per send), so a per-browser
+ * value is an acceptable trade-off for not having a settings backend.
+ * Namespaced per instance id for forward-compat with a future multi-
+ * instance Y-next, even though today `getActiveInstanceId()` is always
+ * "default".
+ */
+const INVOICE_EMAIL_DEFAULTS_KEY_PREFIX = "y_next_invoice_email_defaults_";
+
 /** Load Y-app defaults for this instance. Returns empty strings if not set. */
 export async function loadInvoiceEmailDefaults(): Promise<InvoiceEmailDefaults> {
-  const id = getActiveInstanceId();
   try {
-    const res = await fetch(`/api/instances/${id}/settings/invoice-email-defaults`);
-    if (!res.ok) return { default_email_template: "", default_print_format: "" };
-    const wrapped = await res.json().catch(() => null) as
-      | { ok: boolean; value?: Partial<InvoiceEmailDefaults> } | null;
-    const value = wrapped?.value || {};
+    const raw = localStorage.getItem(`${INVOICE_EMAIL_DEFAULTS_KEY_PREFIX}${getActiveInstanceId()}`);
+    if (!raw) return { default_email_template: "", default_print_format: "" };
+    const value = JSON.parse(raw) as Partial<InvoiceEmailDefaults>;
     return {
       default_email_template: value.default_email_template || "",
       default_print_format: value.default_print_format || "",
@@ -80,18 +91,16 @@ export async function loadInvoiceEmailDefaults(): Promise<InvoiceEmailDefaults> 
 }
 
 export async function saveInvoiceEmailDefaults(values: InvoiceEmailDefaults): Promise<void> {
-  const id = getActiveInstanceId();
-  const res = await fetch(`/api/instances/${id}/settings/invoice-email-defaults`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: values }),
-  });
-  // Don't let silent server-side rejections look like a successful save —
-  // the user would see "Saved!" while nothing was persisted.
-  if (!res.ok) {
-    let detail = "";
-    try { const j = await res.json(); detail = j?.error || JSON.stringify(j); } catch { /* ignore */ }
-    throw new Error(`Save failed (HTTP ${res.status})${detail ? `: ${detail}` : ""}`);
+  try {
+    localStorage.setItem(
+      `${INVOICE_EMAIL_DEFAULTS_KEY_PREFIX}${getActiveInstanceId()}`,
+      JSON.stringify(values),
+    );
+  } catch (e) {
+    // localStorage can throw (private browsing quota, disabled storage) —
+    // surface it like the old server-backed save did so the Settings UI
+    // doesn't silently claim success.
+    throw new Error(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -433,17 +442,23 @@ export async function renderEmailTemplate(
 }
 
 /**
- * Fetch the print-preview HTML voor een Frappe doc via de `/api/printview-html`
- * server proxy. Eén bron-van-waarheid voor InvoiceModal-preview én
- * SendInvoiceModal-preview, zodat de asset-rewriting (logo, letterhead) op
- * exact dezelfde manier werkt.
+ * Fetch the print-preview HTML for a Frappe doc via Frappe's own standard
+ * `/printview` website route — exactly what the ERPNext desk's print-
+ * preview tab shows. One source of truth for both the InvoiceModal
+ * preview and the SendInvoiceModal preview.
  *
- * MUST go through `window.fetch` (not iframe src=…) so the global fetch
- * interceptor adds the `X-Y-App-Instance` header. An iframe src bypasses
- * the interceptor and the request 401s with "missing_instance".
+ * Y-next runs same-origin with ERPNext (no separate backend/proxy), so this
+ * resolves directly against the current origin with the browser's existing
+ * Frappe session cookie — no `X-Y-App-Instance` header or asset-URL
+ * rewriting needed. The HTML Frappe returns already contains same-origin
+ * relative `/files/...`, `/private/files/...` and `/assets/...` references,
+ * which resolve correctly once `<base href>` points back at this origin
+ * (see `withBaseHref` below — needed because the preview is shown in an
+ * iframe via `srcDoc`, whose base URL is `about:srcdoc`).
  *
- * Mirrors the multi-endpoint fallback pattern: different Frappe versions
- * whitelist different print-rendering methods.
+ * Multiple endpoint variants are tried because different Frappe versions
+ * accept `format` vs `print_format` as the query-param name, and as a
+ * last resort the whitelisted `frappe.www.printview.get_html` RPC method.
  *
  * @param doctype  ERPNext doctype, bv "Sales Invoice"
  * @param name     Doc name
@@ -466,15 +481,15 @@ export async function fetchPrintPreviewHtml(
   const enc = encodeURIComponent;
   const bust = cacheBuster ? `&_t=${enc(cacheBuster)}` : "";
   const endpoints = [
-    `/api/printview-html?doctype=${enc(doctype)}&name=${enc(name)}&format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
-    `/api/printview-html?doctype=${enc(doctype)}&name=${enc(name)}&print_format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
-    `/api/method/frappe.client.get_print?doctype=${enc(doctype)}&name=${enc(name)}&print_format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
+    `/printview?doctype=${enc(doctype)}&name=${enc(name)}&format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
+    `/printview?doctype=${enc(doctype)}&name=${enc(name)}&print_format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
     `/api/method/frappe.www.printview.get_html?doctype=${enc(doctype)}&name=${enc(name)}&format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
   ];
-  // Iframes loaded via `srcDoc` have base URL `about:srcdoc`, so absolute
-  // paths like `/api/erpnext-asset?…` don't resolve to Y-app's origin even
-  // with `sandbox="allow-same-origin"`. Inject a `<base href>` pointing at
-  // the Y-app origin so the proxy URLs resolve correctly.
+  // Iframes loaded via `srcDoc` have base URL `about:srcdoc`, so relative
+  // asset paths like `/files/…` don't resolve to this origin even with
+  // `sandbox="allow-same-origin"`. Inject a `<base href>` pointing at this
+  // page's origin (== the ERPNext origin, same-origin deployment) so those
+  // references resolve correctly.
   function withBaseHref(html: string): string {
     const base = `<base href="${window.location.origin}/">`;
     if (/<base\b/i.test(html)) return html;
@@ -488,62 +503,26 @@ export async function fetchPrintPreviewHtml(
       // cache: "no-store" voorkomt dat de browser een eerdere render
       // terug-serveert nadat dezelfde URL opnieuw wordt opgevraagd na een
       // save (de query is identiek behalve de _t-buster).
-      const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+      const r = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "text/html, application/xhtml+xml" },
+      });
       if (!r.ok) continue;
       const text = await r.text();
-      if (url.startsWith("/api/printview-html")) {
-        // Server already rewrote image/asset URLs to same-origin /api/erpnext-asset.
+      if (url.startsWith("/printview")) {
         if (text.length > 2000 && /<html|<body/i.test(text)) return withBaseHref(text);
-      } else if (url.startsWith("/api/method/")) {
+      } else {
         try {
           const parsed = JSON.parse(text);
           if (typeof parsed?.message === "string" && parsed.message.length > 100) {
-            // These fallback endpoints don't pass through our server rewriter,
-            // so do it client-side here. Iframe `<img>` loads bypass the
-            // X-Y-App-Instance interceptor → encode instance in query param.
-            return withBaseHref(rewriteErpnextAssetUrls(parsed.message, getActiveInstanceId()));
+            return withBaseHref(parsed.message);
           }
         } catch { /* not JSON */ }
-      } else if (text.length > 2000 && /<html|<body/i.test(text)) {
-        return withBaseHref(rewriteErpnextAssetUrls(text, getActiveInstanceId()));
       }
     } catch { /* try next */ }
   }
   return "";
-}
-
-/**
- * Mirror of the server-side `rewriteErpnextAssetUrls()` in index.ts.
- * Only used for fallback endpoints that don't pass through our printview proxy.
- */
-function rewriteErpnextAssetUrls(html: string, instanceId: string): string {
-  // Without a numeric instance ID the server-side asset endpoint can't
-  // resolve which ERPNext sid to use and returns 401, so emit the original
-  // HTML untouched (lets `<base href>` + direct ERPNext loads still work
-  // when ERPNext happens to be browser-reachable).
-  if (!instanceId || instanceId === "default" || Number.isNaN(parseInt(instanceId, 10))) {
-    return html;
-  }
-  const proxy = `/api/erpnext-asset?instance=${encodeURIComponent(instanceId)}&path=`;
-  const erpHost = getErpNextAppUrl().replace(/\/$/, "");
-  let out = html;
-  // 1. Absolute ERPNext URLs (https://erp.host/files/...) → route via proxy
-  if (erpHost) {
-    const hostEsc = erpHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const absRe = new RegExp(`(["'(])${hostEsc}(/(?:files|private/files|assets)/[^"')\\s]+)`, "g");
-    out = out.replace(absRe, (_m, q, p) => `${q}${proxy}${encodeURIComponent(p)}`);
-  }
-  // 2. Relative src/href
-  out = out.replace(
-    /((?:src|href)=)(["'])(\/(?:files|private\/files|assets)\/[^"']+)\2/g,
-    (_m, attr, q, p) => `${attr}${q}${proxy}${encodeURIComponent(p)}${q}`,
-  );
-  // 3. CSS url(/files/…)
-  out = out.replace(
-    /url\((["']?)(\/(?:files|private\/files|assets)\/[^"')]+)\1\)/g,
-    (_m, q, p) => `url(${q}${proxy}${encodeURIComponent(p)}${q})`,
-  );
-  return out;
 }
 
 /**

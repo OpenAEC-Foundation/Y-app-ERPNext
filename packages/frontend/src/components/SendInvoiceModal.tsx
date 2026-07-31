@@ -24,7 +24,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, ExternalLink, AlertTriangle, RefreshCw, Send, FileText, ZoomIn, ZoomOut, Maximize2, Mail, Paperclip } from "lucide-react";
 import { fetchDocument, getErpNextAppUrl, getErpNextLinkUrl } from "../lib/erpnext";
-import { getActiveInstanceId } from "../lib/instances";
 import {
   fetchInvoiceEmailTemplates,
   fetchPrintPreviewHtml,
@@ -321,14 +320,13 @@ export default function SendInvoiceModal({
   const erpnextLink = `${getErpNextLinkUrl()}/sales-invoice/${invoiceName}`;
 
   // Signature HTML often references `/files/foo.png`, `/private/files/...`,
-  // `/assets/...`. Two different rewrites are needed:
-  //
-  //  - signatureForRecipient — absolute ERPNext URLs, for what we send out
-  //    in the email body (the recipient's mail client will fetch them).
-  //  - signaturePreviewHtml  — same-origin /api/erpnext-asset URLs, for the
-  //    iframe-style preview inside Y-app (Y-app session can fetch private
-  //    files; the browser can't fetch ERPNext directly when ERPNext isn't
-  //    publicly reachable, e.g. behind a private network).
+  // `/assets/...`. `signatureForRecipient` rewrites those to absolute
+  // ERPNext URLs — needed for what we send out in the email body (the
+  // recipient's mail client fetches them from a browser/device that isn't
+  // same-origin with ERPNext). The in-app preview below, in contrast, is
+  // rendered directly into the page DOM (not a sandboxed iframe) and Y-next
+  // runs same-origin with ERPNext, so the original relative paths already
+  // resolve correctly there — no proxy/rewrite needed for the preview.
   const signatureForRecipient = (() => {
     if (!signature) return "";
     const erpHost = getErpNextAppUrl().replace(/\/$/, "");
@@ -339,28 +337,7 @@ export default function SendInvoiceModal({
       .replace(/(src|href)='(\/(?:files|private\/files|assets)\/[^']*)'/g,
                `$1='${erpHost}$2'`);
   })();
-  const signaturePreviewHtml = (() => {
-    if (!signature) return "";
-    const proxy = `/api/erpnext-asset?instance=${encodeURIComponent(getActiveInstanceId())}&path=`;
-    const erpHost = getErpNextAppUrl().replace(/\/$/, "");
-    let out = signature;
-    // 1. Absolute ERPNext URLs (https://erp.host/files/...) → strip host, route via proxy
-    if (erpHost) {
-      const hostEsc = erpHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const absRe = new RegExp(`(src|href)=(["'])${hostEsc}(/(?:files|private/files|assets)/[^"']+)\\2`, "g");
-      out = out.replace(absRe, (_m, attr, q, path) => `${attr}=${q}${proxy}${encodeURIComponent(path)}${q}`);
-    }
-    // 2. Relative paths (/files/..., /assets/...)
-    out = out
-      .replace(/(src|href)="(\/(?:files|private\/files|assets)\/[^"]*)"/g,
-               (_m, attr, path) => `${attr}="${proxy}${encodeURIComponent(path)}"`)
-      .replace(/(src|href)='(\/(?:files|private\/files|assets)\/[^']*)'/g,
-               (_m, attr, path) => `${attr}='${proxy}${encodeURIComponent(path)}'`);
-    // 3. CSS url(...) — soms zit het logo in een inline-style achtergrond
-    out = out.replace(/url\((["']?)(\/(?:files|private\/files|assets)\/[^"')]+)\1\)/g,
-                      (_m, q, path) => `url(${q}${proxy}${encodeURIComponent(path)}${q})`);
-    return out;
-  })();
+  const signaturePreviewHtml = signature;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"

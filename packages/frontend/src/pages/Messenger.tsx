@@ -795,7 +795,7 @@ export default function Messenger() {
                 try {
                   const n = new Notification(last.senderDisplayName || t("messenger.new_message_notification"), {
                     body: last.text || t("messenger.attachment"),
-                    icon: "/favicon.svg",
+                    icon: `${import.meta.env.BASE_URL}y-logo.svg`,
                     tag: `y-app-msg-${convo.id}`,
                   });
                   n.onclick = () => {
@@ -975,7 +975,7 @@ export default function Messenger() {
                   try {
                     const n = new Notification(last.senderDisplayName || t("messenger.new_message_notification"), {
                       body: last.text || t("messenger.attachment"),
-                      icon: "/favicon.svg",
+                      icon: `${import.meta.env.BASE_URL}y-logo.svg`,
                       tag: `y-app-msg-${selectedConvo.id}`,
                     });
                     n.onclick = () => {

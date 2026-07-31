@@ -3,6 +3,7 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { fetchList, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
+import { isFeatureEnabled } from "../lib/capabilities";
 import { RecipientInput } from "../components/RecipientInput";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
@@ -75,7 +76,14 @@ interface CustomCalendar {
 
 /* ─── ERPNext source toggle types ─── */
 
-type ErpSourceKey = "events" | "tasks" | "leaves" | "timesheets" | "meetings";
+// "meetings" bestond hier ooit als ERPNext-bron, maar dat draaide op het
+// Express-only /api/meetings-endpoint (server-side JSON store) — die bestaat
+// niet op de standalone ERPNext-deployment en er is geen standaard-doctype
+// (Event/Note/eigen doctype) dat de gestructureerde meeting-notes-data
+// (deelnemers, actiepunten) dekt. Zie MeetingNotes.tsx (BLOCKED) — deze bron
+// is daarom hier verwijderd i.p.v. gegate, zodat de agenda geen dode toggle
+// toont voor data die nooit kan laden.
+type ErpSourceKey = "events" | "tasks" | "leaves" | "timesheets";
 
 interface ErpSourceConfig {
   key: ErpSourceKey;
@@ -88,7 +96,6 @@ const ERP_SOURCES: ErpSourceConfig[] = [
   { key: "tasks", label: "agenda.source_tasks", color: "#f59e0b" },
   { key: "leaves", label: "agenda.source_leaves", color: "#ef4444" },
   { key: "timesheets", label: "agenda.source_timesheets", color: "#10b981" },
-  { key: "meetings", label: "agenda.source_meetings", color: "#7c3aed" },
 ];
 
 const TYPE_COLORS: Record<string, string> = {
@@ -215,7 +222,12 @@ function setDefaultCalendarTarget(target: string): void {
 
 // Schrijfbare CalDAV-agenda's: alleen geauthenticeerde collecties (accountId
 // gezet). Publieke iCal-feeds zijn alleen-lezen en vallen af.
+// De iCal/O365-brug draait volledig op Express-only /api/calendar/*-routes,
+// die niet bestaan op de standalone ERPNext-deployment — gate achter de
+// "calendar-bridge"-capability zodat er nooit een aanroep naar die routes
+// ontstaat (ook niet vanuit oude localStorage-voorkeuren van vóór Y-next).
 function getWritableCalDavCalendars(): CustomCalendar[] {
+  if (!isFeatureEnabled("calendar-bridge")) return [];
   return getCustomCalendars().filter(c => c.accountId && c.enabled !== false);
 }
 
@@ -234,7 +246,12 @@ function AddCalendarModal({ onClose, onAdd }: {
   // Vault-mailaccounts van deze instance, voor CalDAV-inlog (optioneel).
   const [accountId, setAccountId] = useState("");
   const [accounts, setAccounts] = useState<Array<{ id: string; email: string; label: string }>>([]);
+  // Deze modal is alleen bereikbaar via de (op calendar-bridge gegate)
+  // "Add calendar"-knop in SettingsPanel, maar herhaalt de check hier
+  // expliciet: /api/instances/*/mail-accounts en /api/calendar/ical zijn
+  // Express-only en mogen nooit aangeroepen worden zonder die capability.
   useEffect(() => {
+    if (!isFeatureEnabled("calendar-bridge")) return;
     const instId = getActiveInstanceId();
     if (!instId || instId === "default") return;
     fetch(`/api/instances/${instId}/mail-accounts`, { credentials: "same-origin" })
@@ -246,6 +263,7 @@ function AddCalendarModal({ onClose, onAdd }: {
   async function handleAdd() {
     if (!name.trim()) { setError(t("agenda.fill_name")); return; }
     if (!url.trim()) { setError(t("agenda.fill_url")); return; }
+    if (!isFeatureEnabled("calendar-bridge")) { setError(t("agenda.fetch_calendar_error")); return; }
     setTesting(true);
     setError("");
     try {
@@ -339,10 +357,14 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, onErpToggle, onCale
   onO365Toggle: () => void;
 }) {
   const { t } = useTranslation();
+  // De iCal/O365-brug (/api/calendar/*) is Express-only en bestaat niet op de
+  // standalone ERPNext-deployment — deze secties worden stil verborgen i.p.v.
+  // getoond-maar-kapot zolang de "calendar-bridge"-capability uit staat.
+  const bridgeEnabled = isFeatureEnabled("calendar-bridge");
   return (
     <div className="w-64 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto">
-      {/* Office 365 Calendar — always shown; backend returns error if no OAuth2 tokens */}
-      {(
+      {/* Office 365 Calendar — alleen tonen als de calendar-bridge actief is */}
+      {bridgeEnabled && (
         <div className="px-4 py-3 border-b border-slate-200">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Office 365</h3>
           <label className="flex items-center gap-2.5 cursor-pointer group">
@@ -373,33 +395,36 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, onErpToggle, onCale
         </div>
       </div>
 
-      {/* Custom Calendars */}
-      <div className="px-4 py-3 flex-1">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">{t("agenda.external_calendars")}</h3>
-        <div className="space-y-2 mb-3">
-          {calendars.length === 0 && (
-            <p className="text-[11px] text-slate-400 italic">{t("agenda.no_external_calendars")}</p>
-          )}
-          {calendars.map(cal => (
-            <div key={cal.id} className="flex items-center gap-2 group">
-              <button onClick={() => onCalendarToggle(cal.id)}
-                className={`relative w-8 h-[18px] rounded-full transition-colors cursor-pointer flex-shrink-0 ${cal.enabled ? "bg-blue-500" : "bg-slate-300"}`}>
-                <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${cal.enabled ? "left-[16px]" : "left-[2px]"}`} />
-              </button>
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cal.color }} />
-              <span className="text-xs text-slate-700 flex-1 truncate" title={cal.name}>{cal.name}</span>
-              <button onClick={() => onCalendarRemove(cal.id)}
-                className="p-0.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+      {/* Custom Calendars — CalDAV/iCal-brug draait op Express, dus alleen
+          tonen (en aanmaken toestaan) als de calendar-bridge actief is. */}
+      {bridgeEnabled && (
+        <div className="px-4 py-3 flex-1">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">{t("agenda.external_calendars")}</h3>
+          <div className="space-y-2 mb-3">
+            {calendars.length === 0 && (
+              <p className="text-[11px] text-slate-400 italic">{t("agenda.no_external_calendars")}</p>
+            )}
+            {calendars.map(cal => (
+              <div key={cal.id} className="flex items-center gap-2 group">
+                <button onClick={() => onCalendarToggle(cal.id)}
+                  className={`relative w-8 h-[18px] rounded-full transition-colors cursor-pointer flex-shrink-0 ${cal.enabled ? "bg-blue-500" : "bg-slate-300"}`}>
+                  <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${cal.enabled ? "left-[16px]" : "left-[2px]"}`} />
+                </button>
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cal.color }} />
+                <span className="text-xs text-slate-700 flex-1 truncate" title={cal.name}>{cal.name}</span>
+                <button onClick={() => onCalendarRemove(cal.id)}
+                  className="p-0.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={onAddCalendar}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer w-full">
+            <Plus size={13} /> {t("agenda.add_calendar")}
+          </button>
         </div>
-        <button onClick={onAddCalendar}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer w-full">
-          <Plus size={13} /> {t("agenda.add_calendar")}
-        </button>
-      </div>
+      )}
     </div>
   );
 }
@@ -462,7 +487,7 @@ function CreateModal({ initial, onClose, onCreated }: {
       let inviteIcs: string | undefined;
       let inviteAccount: string | undefined;
 
-      if (form.type === "event" && form.calendarTarget.startsWith("caldav:")) {
+      if (form.type === "event" && form.calendarTarget.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
         // Doel = privé CalDAV-agenda: schrijf een VEVENT via de server (PUT .ics).
         const calId = form.calendarTarget.slice("caldav:".length);
         const cal = writableCalDav.find(c => c.id === calId);
@@ -720,10 +745,16 @@ function EventDetailModal({ event, calendars, onClose, onUpdated }: {
   const { t } = useTranslation();
   const isErpEvent = event.type === "event";
   const isErpTask = event.type === "task";
-  const isO365 = event.type === "o365";
+  // O365- en CalDAV-events worden alleen geladen als "calendar-bridge" actief
+  // is (zie loadIcalEvents/loadO365Events) — event.type kan dus in Fase 1
+  // nooit "o365"/"ical" zijn. De check hier is een expliciete tweede grendel
+  // zodat de PATCH/POST-aanroepen naar /api/calendar/* hieronder nooit
+  // bereikbaar zijn, ook niet via een stale event-object.
+  const bridgeEnabled = isFeatureEnabled("calendar-bridge");
+  const isO365 = bridgeEnabled && event.type === "o365";
   // CalDAV-event is bewerkbaar als de bron-agenda schrijfbaar is (vault-account
   // met server-side creds). Publieke iCal-feeds (geen accountId) blijven read-only.
-  const calDavSource = event.type === "ical"
+  const calDavSource = bridgeEnabled && event.type === "ical"
     ? calendars.find(c => c.id === event.calendarId && !!c.accountId)
     : undefined;
   const isCalDav = !!calDavSource;
@@ -1141,7 +1172,6 @@ export default function Agenda() {
     tasks: getErpSourceEnabled("tasks"),
     leaves: getErpSourceEnabled("leaves"),
     timesheets: getErpSourceEnabled("timesheets"),
-    meetings: getErpSourceEnabled("meetings"),
   });
 
   // Custom calendars
@@ -1253,13 +1283,6 @@ export default function Agenda() {
         fetchLabels.push("timesheets");
       }
 
-      if (erpSources.meetings) {
-        fetches.push(
-          fetch("/api/meetings").then(r => r.json()).then(j => j.data || j || [])
-        );
-        fetchLabels.push("meetings");
-      }
-
       const results = await Promise.allSettled(fetches);
       const items: EventItem[] = [];
 
@@ -1295,20 +1318,6 @@ export default function Agenda() {
               owner: ts.employee_name,
             });
           }
-        } else if (label === "meetings") {
-          for (const m of result.value) {
-            if (!m.date) continue;
-            // Only include meetings within the date range
-            const mDate = m.date.split("T")[0];
-            if (mDate < dateRange.start || mDate > dateRange.end) continue;
-            items.push({
-              id: `meeting-${m.id}`, title: m.title || t("agenda.no_title"),
-              start: m.date,
-              allDay: !m.date.includes("T"),
-              type: "meeting", color: TYPE_COLORS.meeting,
-              description: m.agenda || m.content || undefined,
-            });
-          }
         }
       });
 
@@ -1340,6 +1349,10 @@ export default function Agenda() {
   /* ─── Load iCal events ─── */
 
   const loadIcalEvents = useCallback(async () => {
+    // /api/calendar/ical is Express-only — gate the whole CalDAV/iCal bridge
+    // behind "calendar-bridge" so it never fires against the standalone
+    // ERPNext deployment (see getWritableCalDavCalendars above).
+    if (!isFeatureEnabled("calendar-bridge")) { setIcalEvents([]); return; }
     const enabledCals = calendars.filter(c => c.enabled);
     if (enabledCals.length === 0) { setIcalEvents([]); return; }
 
@@ -1392,7 +1405,10 @@ export default function Agenda() {
   /* ─── Load Office 365 calendar ─── */
 
   const loadO365Events = useCallback(async () => {
-    if (!o365Enabled) { setO365Events([]); return; }
+    // /api/calendar/o365 is Express-only (Graph API bridge) — gate behind
+    // "calendar-bridge" so it never fires against the standalone ERPNext
+    // deployment, regardless of the (per-device) o365Enabled preference.
+    if (!isFeatureEnabled("calendar-bridge") || !o365Enabled) { setO365Events([]); return; }
     const instanceId = getActiveInstanceId();
     // Try to resolve the user's email — first from localStorage (Webmail
     // config), then by looking up the Employee in ERPNext.
@@ -1478,7 +1494,6 @@ export default function Agenda() {
     if (erpSources.tasks) items.push({ label: t("agenda.source_tasks"), color: TYPE_COLORS.task });
     if (erpSources.leaves) items.push({ label: t("agenda.legend_leaves"), color: TYPE_COLORS.leave });
     if (erpSources.timesheets) items.push({ label: t("agenda.source_timesheets"), color: TYPE_COLORS.timesheet });
-    if (erpSources.meetings) items.push({ label: t("agenda.source_meetings"), color: TYPE_COLORS.meeting });
     for (const cal of calendars) {
       if (cal.enabled) items.push({ label: cal.name, color: cal.color });
     }

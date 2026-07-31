@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
-import { fetchList, fetchAll } from "./erpnext";
+import { fetchList, fetchAll, ApiError } from "./erpnext";
 import { prefetchCommonData } from "./prefetch";
 
 /* ─── Types ─── */
@@ -167,7 +167,14 @@ export function DataProvider({ children, userRoles }: { children: ReactNode; use
     }
 
     if (leaveResult.status === "fulfilled") setLeaves(leaveResult.value);
-    else console.error("Leave fetch error:", leaveResult.reason);
+    else if (leaveResult.reason instanceof ApiError && leaveResult.reason.status === 404) {
+      // "Leave Application" doesn't exist on instances without the HRMS
+      // app installed — leave the list empty and let the leave widgets
+      // fall back to their normal empty state, no console spam.
+      setLeaves([]);
+    } else {
+      console.error("Leave fetch error:", leaveResult.reason);
+    }
 
     if (!initialDone.current) {
       initialDone.current = true;

@@ -125,3 +125,56 @@ test("fetchList: on 401, verifies via frappe.auth.get_logged_user (not the old y
     mock.restore();
   }
 });
+
+test("fetchList: self-heals on 417 'Field not permitted in query' by dropping the field and retrying, then caches the exclusion", async () => {
+  const doctype = "SelfHealDoctype";
+  const badField = "workflow_state";
+  let call = 0;
+  const warnCalls: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnCalls.push(args); };
+
+  const mock = installFetchMock((url) => {
+    call++;
+    const fieldsMatch = /fields=([^&]+)/.exec(url);
+    const fields: string[] = fieldsMatch ? JSON.parse(decodeURIComponent(fieldsMatch[1])) : [];
+    if (fields.includes(badField)) {
+      // The instance rejects the query as long as the offending field is present.
+      return {
+        status: 417,
+        body: {
+          exc_type: "DataError",
+          exception: `frappe.exceptions.DataError: Field not permitted in query: ${badField}`,
+          _server_messages: JSON.stringify([
+            JSON.stringify({ message: `Field not permitted in query: ${badField}`, title: "Message" }),
+          ]),
+        },
+      };
+    }
+    return { status: 200, body: { data: [{ name: "TASK-0001" }] } };
+  });
+
+  try {
+    // First call: 417 on attempt 1 (field present), self-heals, retries
+    // without the field on attempt 2, and succeeds.
+    const rows = await fetchList<{ name: string }>(doctype, { fields: ["name", badField] });
+    assert.deepEqual(rows, [{ name: "TASK-0001" }]);
+    assert.equal(call, 2);
+    assert.match(mock.calls[0].url, new RegExp(badField));
+    assert.doesNotMatch(mock.calls[1].url, new RegExp(badField));
+    assert.equal(warnCalls.length, 1, "should warn exactly once for this doctype+field");
+
+    // Second, independent call with the same params: the module-level
+    // exclusion cache means the field is dropped *before* the request is
+    // even sent — no repeat 417 round-trip, and the field never appears
+    // on the wire again.
+    const rows2 = await fetchList<{ name: string }>(doctype, { fields: ["name", badField] });
+    assert.deepEqual(rows2, [{ name: "TASK-0001" }]);
+    assert.equal(call, 3, "third network call should succeed directly, without re-sending the rejected field");
+    assert.doesNotMatch(mock.calls[2].url, new RegExp(badField));
+    assert.equal(warnCalls.length, 1, "should not warn again on the second call");
+  } finally {
+    mock.restore();
+    console.warn = originalWarn;
+  }
+});

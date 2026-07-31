@@ -2,9 +2,9 @@
  * Fase-1 schakelkast (Y-next).
  *
  * Y-next is een fork van Y-app die single-tenant direct op ERPNext v16
- * draait, zonder eigen backend. In fase 1 is alleen het Dashboard (en de
- * client-side Settings) actief; alle andere schermen tonen een
- * "volgt later"-pagina (zie `ComingSoon.tsx`). Server-afhankelijke features
+ * draait, zonder eigen backend. Na de paginamigratie zijn alle schermen die
+ * op de standaard ERPNext-API draaien actief; alleen Express-core-schermen
+ * tonen een "volgt later"-pagina (zie `ComingSoon.tsx`). Server-afhankelijke features
  * (mail, messenger, websocket, terminal, nextcloud, calendar-bridge,
  * stats-aggregatie, vault, extensions, synced-prefs, printview,
  * shared-settings, desktop) zijn volledig uit, omdat er geen server is die
@@ -25,15 +25,25 @@
 export const DISABLED_PAGE_MODE: "visible" | "hidden" = "visible";
 
 /**
- * Fase 1: alleen het dashboard (root en /dashboard) en de client-side
- * Settings-pagina (inclusief eventuele subroutes) zijn functioneel.
+ * Na de paginamigratie draait vrijwel elke pagina rechtstreeks op de
+ * standaard ERPNext-API. Alleen schermen waarvan de kern een Express-only
+ * dienst vereist (IMAP-webmail, messenger, Nextcloud, wachtwoordkluis,
+ * meeting-JSON-store, iframe-extensies) blijven op "volgt later" staan.
  */
+const DISABLED_PATH_PREFIXES = [
+  "/webmail",
+  "/messenger",
+  "/nextcloud-files",
+  "/nextcloud-talk",
+  "/passwords",
+  "/meeting-notes",
+  "/release-notes",
+  "/x",
+] as const;
+
 export function isPageEnabled(path: string): boolean {
-  return (
-    path === "/" ||
-    path === "/dashboard" ||
-    path === "/settings" ||
-    path.startsWith("/settings/")
+  return !DISABLED_PATH_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
   );
 }
 

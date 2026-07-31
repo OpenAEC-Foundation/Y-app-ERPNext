@@ -21,6 +21,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { ViewMode } from "../components/Sidebar";
 import { getActiveCompany, getActiveEmployee, getActiveActivityType, getActiveContractHours } from "../lib/instances";
+import { isFeatureEnabled } from "../lib/capabilities";
 
 function getViewMode(): ViewMode {
   return (localStorage.getItem("view_mode") as ViewMode) || "employer";
@@ -1454,7 +1455,12 @@ function TimesheetGoedkeuren() {
   const [employeeActivityMap, setEmployeeActivityMap] = useState<Record<string, string>>({});
 
   // Fetch per-employee activity-type mapping (employer-configured) once on mount.
+  // Bron is de Express-only settings-bridge (/api/shared-settings/*), die in
+  // Y-next niet bestaat — zelfde gate + stille fallback als lib/activityTypes.ts
+  // (isFeatureEnabled("shared-settings")); zonder mapping toont de kolom
+  // gewoon de standaard-activiteit i.p.v. de werkgever-override.
   useEffect(() => {
+    if (!isFeatureEnabled("shared-settings")) return;
     let cancelled = false;
     (async () => {
       try {

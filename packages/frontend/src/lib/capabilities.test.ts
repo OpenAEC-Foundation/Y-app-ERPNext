@@ -18,10 +18,37 @@ test("isPageEnabled: settings en settings-subroutes zijn enabled", () => {
   assert.equal(isPageEnabled("/settings/anything/nested"), true);
 });
 
-test("isPageEnabled: overige routes zijn disabled", () => {
-  assert.equal(isPageEnabled("/projects"), false);
-  assert.equal(isPageEnabled("/webmail"), false);
-  assert.equal(isPageEnabled("/x/foo"), false);
+test("isPageEnabled: gemigreerde ERPNext-pagina's zijn enabled", () => {
+  for (const path of [
+    "/projects",
+    "/tasks",
+    "/quotations",
+    "/sales",
+    "/timesheets",
+    "/leave",
+    "/contacts",
+    "/calendar",
+    "/financieel-dashboard",
+    "/management-dashboard",
+  ]) {
+    assert.equal(isPageEnabled(path), true, `${path} zou enabled moeten zijn`);
+  }
+});
+
+test("isPageEnabled: Express-core routes blijven disabled", () => {
+  for (const path of [
+    "/webmail",
+    "/messenger",
+    "/nextcloud-files",
+    "/nextcloud-talk",
+    "/passwords",
+    "/meeting-notes",
+    "/release-notes",
+    "/x",
+    "/x/foo",
+  ]) {
+    assert.equal(isPageEnabled(path), false, `${path} zou disabled moeten zijn`);
+  }
 });
 
 test("isFeatureEnabled: alle ServerFeature-waarden zijn disabled in fase 1", () => {

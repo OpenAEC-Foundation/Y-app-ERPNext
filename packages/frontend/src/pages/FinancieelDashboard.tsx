@@ -129,6 +129,144 @@ const MONTH_LABELS_KEYS = [
 const euro = (v: number) => `€ ${v.toLocaleString("nl-NL", { minimumFractionDigits: 2 })}`;
 const fmt = (n: number) => n % 1 !== 0 ? n.toFixed(1) : n.toFixed(0);
 
+/**
+ * Client-side vervanging voor de vroegere Express-route `/api/stats/uren`.
+ * Haalt Employee/Timesheet/Project/"Timesheet Detail" rechtstreeks op via
+ * de standaard `/api/resource`-endpoints en aggregeert exact dezelfde
+ * uren-per-medewerker/-project/-activiteit-statistieken client-side.
+ * "Timesheet Detail" heeft geen eigen `company`/`employee`-kolom om op te
+ * filteren, dus filteren we eerst de parent-Timesheets en batchen we de
+ * detail-fetch per 200 parent-namen (voorkomt een te lange `filters`-query
+ * bij grote jaren, net als de oude server-implementatie deed).
+ */
+async function fetchTimesheetDetailsChunked<T>(
+  parentNames: string[],
+  fields: string[]
+): Promise<T[]> {
+  if (parentNames.length === 0) return [];
+  const CHUNK = 200;
+  const chunks: string[][] = [];
+  for (let i = 0; i < parentNames.length; i += CHUNK) chunks.push(parentNames.slice(i, i + CHUNK));
+  const results = await Promise.all(
+    chunks.map((chunk) => fetchAll<T>("Timesheet Detail", fields, [["parent", "in", chunk]]))
+  );
+  return results.flat();
+}
+
+interface TimesheetDetailAggRow {
+  parent: string;
+  hours: number;
+  is_billable: number;
+  project: string | null;
+  activity_type: string | null;
+}
+
+async function computeUrenStats(
+  year: number,
+  company: string,
+  projEmployeeFilter: string
+): Promise<UrenStats> {
+  const [employees, timesheets, projects] = await Promise.all([
+    fetchAll<{ name: string; company: string }>("Employee", ["name", "company"]),
+    fetchAll<{ name: string; employee: string; employee_name: string; start_date: string; total_hours: number }>(
+      "Timesheet",
+      ["name", "employee", "employee_name", "start_date", "total_hours"],
+      [["docstatus", "=", 1], ["start_date", "like", `${year}%`]],
+      "start_date asc"
+    ),
+    fetchAll<{ name: string; project_name: string }>("Project", ["name", "project_name"]),
+  ]);
+
+  const empCompanyMap = new Map(employees.map((e) => [e.name, e.company || ""]));
+  const filteredTimesheets = company
+    ? timesheets.filter((ts) => empCompanyMap.get(ts.employee) === company)
+    : timesheets;
+
+  const projNameMap = new Map(projects.map((p) => [p.name, p.project_name || p.name]));
+
+  const empMap = new Map<string, EmpMonthly>();
+  const projMap = new Map<string, ProjMonthly>();
+  const activityMap = new Map<string, ActivityMonthly>();
+  let totalHours = 0, totalBillable = 0;
+  const monthTotalHours = new Array(12).fill(0);
+  const monthBillableHours = new Array(12).fill(0);
+
+  interface TsMeta { employee: string; monthIdx: number; }
+  const tsByName = new Map<string, TsMeta>();
+  for (const ts of filteredTimesheets) {
+    const emp = ts.employee;
+    const monthIdx = parseInt(ts.start_date.slice(5, 7), 10) - 1;
+    tsByName.set(ts.name, { employee: emp, monthIdx });
+
+    if (!empMap.has(emp)) {
+      empMap.set(emp, { employee: emp, name: ts.employee_name, months: new Array(12).fill(0), billableMonths: new Array(12).fill(0), total: 0, totalBillable: 0 });
+    }
+    const empEntry = empMap.get(emp)!;
+    empEntry.months[monthIdx] += ts.total_hours || 0;
+    empEntry.total += ts.total_hours || 0;
+    totalHours += ts.total_hours || 0;
+    monthTotalHours[monthIdx] += ts.total_hours || 0;
+  }
+
+  const allDetails = await fetchTimesheetDetailsChunked<TimesheetDetailAggRow>(
+    Array.from(tsByName.keys()),
+    ["parent", "hours", "is_billable", "project", "activity_type"]
+  );
+
+  for (const log of allDetails) {
+    const ts = tsByName.get(log.parent);
+    if (!ts) continue;
+    const empEntry = empMap.get(ts.employee);
+    if (!empEntry) continue;
+    const hours = log.hours || 0;
+    const isBillable = log.is_billable || 0;
+    const proj = log.project || "(geen project)";
+
+    if (isBillable) {
+      empEntry.billableMonths[ts.monthIdx] += hours;
+      empEntry.totalBillable += hours;
+      totalBillable += hours;
+      monthBillableHours[ts.monthIdx] += hours;
+    } else {
+      const activity = log.activity_type || "(geen activiteit)";
+      if (!activityMap.has(activity)) {
+        activityMap.set(activity, { activity, months: new Array(12).fill(0), total: 0 });
+      }
+      const actEntry = activityMap.get(activity)!;
+      actEntry.months[ts.monthIdx] += hours;
+      actEntry.total += hours;
+    }
+
+    if (!projEmployeeFilter || ts.employee === projEmployeeFilter) {
+      if (!projMap.has(proj)) {
+        const projDisplayName = projNameMap.get(proj) ? `${proj} — ${projNameMap.get(proj)}` : proj;
+        projMap.set(proj, { project: proj, name: projDisplayName, months: new Array(12).fill(0), billableMonths: new Array(12).fill(0), total: 0, totalBillable: 0 });
+      }
+      const projEntry = projMap.get(proj)!;
+      projEntry.months[ts.monthIdx] += hours;
+      projEntry.total += hours;
+      if (isBillable) {
+        projEntry.billableMonths[ts.monthIdx] += hours;
+        projEntry.totalBillable += hours;
+      }
+    }
+  }
+
+  const monthBillablePercent = monthTotalHours.map((tot: number, i: number) => (tot > 0 ? Math.round((monthBillableHours[i] / tot) * 100) : 0));
+
+  return {
+    employeeMonthly: Array.from(empMap.values()).sort((a, b) => b.total - a.total),
+    projectMonthly: Array.from(projMap.values()).sort((a, b) => b.total - a.total),
+    totalHours,
+    totalBillable,
+    billablePercent: totalHours > 0 ? Math.round((totalBillable / totalHours) * 100) : 0,
+    monthTotalHours,
+    monthBillableHours,
+    monthBillablePercent,
+    bureauActivities: Array.from(activityMap.values()).sort((a, b) => b.total - a.total),
+  };
+}
+
 export default function FinancieelDashboard() {
   const { t } = useTranslation();
   const [company, setCompany] = useState(getActiveCompany());
@@ -238,11 +376,7 @@ export default function FinancieelDashboard() {
   async function loadUrenData() {
     setLoadingUren(true);
     try {
-      const params = new URLSearchParams({ year: String(urenYear) });
-      if (company) params.set("company", company);
-      const res = await fetch(`/api/stats/uren?${params}`, { credentials: "same-origin" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: UrenStats = await res.json();
+      const data = await computeUrenStats(urenYear, company, "");
       setUrenStats(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("financial.hours_load_error"));
@@ -254,11 +388,52 @@ export default function FinancieelDashboard() {
   async function loadUrenDetail(employee: string, monthIdx: number, empName: string) {
     setLoadingDetail(true);
     try {
-      const res = await fetch(`/api/stats/uren/detail?year=${urenYear}&month=${monthIdx}&employee=${encodeURIComponent(employee)}`, { credentials: "same-origin" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: UrenDetail = await res.json();
-      data.employee = empName; // Use display name
-      setUrenDetail(data);
+      const monthStr = String(monthIdx + 1).padStart(2, "0");
+      const timesheets = await fetchAll<{ name: string; start_date: string }>(
+        "Timesheet",
+        ["name", "start_date"],
+        [["docstatus", "=", 1], ["employee", "=", employee], ["start_date", "like", `${urenYear}-${monthStr}%`]]
+      );
+      const tsStartDate = new Map(timesheets.map((ts) => [ts.name, ts.start_date]));
+
+      const [projects, details] = await Promise.all([
+        fetchAll<{ name: string; project_name: string }>("Project", ["name", "project_name"]),
+        fetchTimesheetDetailsChunked<{
+          parent: string; from_time: string | null; project: string | null;
+          activity_type: string | null; hours: number; is_billable: number; description: string | null;
+        }>(
+          Array.from(tsStartDate.keys()),
+          ["parent", "from_time", "project", "activity_type", "hours", "is_billable", "description"]
+        ),
+      ]);
+      const projNameMap = new Map(projects.map((p) => [p.name, p.project_name || p.name]));
+
+      const logs: UrenDetailLog[] = details.map((log) => {
+        const projId = log.project || "";
+        const projName = projId ? projNameMap.get(projId) : "";
+        const projDisplay = projName ? `${projId} — ${projName}` : projId;
+        return {
+          date: log.from_time?.split(" ")[0] || tsStartDate.get(log.parent) || "",
+          project: projDisplay,
+          activity: log.activity_type || "",
+          hours: log.hours || 0,
+          isBillable: !!log.is_billable,
+          description: log.description || "",
+        };
+      }).sort((a, b) => a.date.localeCompare(b.date));
+
+      const totalHours = logs.reduce((s, l) => s + l.hours, 0);
+      const billableHours = logs.filter((l) => l.isBillable).reduce((s, l) => s + l.hours, 0);
+
+      setUrenDetail({
+        employee: empName, // Use display name
+        month: monthIdx,
+        year: String(urenYear),
+        logs,
+        totalHours,
+        billableHours,
+        billablePercent: totalHours > 0 ? Math.round((billableHours / totalHours) * 100) : 0,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : t("financial.detail_load_error"));
     } finally {
@@ -269,12 +444,7 @@ export default function FinancieelDashboard() {
   async function loadProjData(empFilter: string) {
     setLoadingProj(true);
     try {
-      const params = new URLSearchParams({ year: String(urenYear) });
-      if (company) params.set("company", company);
-      if (empFilter) params.set("projEmployee", empFilter);
-      const res = await fetch(`/api/stats/uren?${params}`, { credentials: "same-origin" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: UrenStats = await res.json();
+      const data = await computeUrenStats(urenYear, company, empFilter);
       setProjData(data.projectMonthly);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("financial.project_hours_error"));

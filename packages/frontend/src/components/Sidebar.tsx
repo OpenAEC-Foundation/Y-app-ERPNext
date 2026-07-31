@@ -453,7 +453,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
             title="Home"
             aria-label="Home"
           >
-            <img src="/y-logo.svg" alt="Y-App" className="w-full h-full object-cover" />
+            <img src={`${import.meta.env.BASE_URL}y-logo.svg`} alt="Y-App" className="w-full h-full object-cover" />
           </button>
           {isExpanded && (
             <div className="min-w-0 flex-1">

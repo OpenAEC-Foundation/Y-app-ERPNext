@@ -34,10 +34,13 @@ interface Props {
  * met dezelfde Frappe print-format endpoints). Plug-and-play mits de
  * gebruiker is ingelogd op ERPNext via Y-app session.
  *
- * Asset-URL-rewriting (logo's, letterhead) wordt gedaan door
- * `fetchPrintPreviewHtml` in [lib/invoiceEmail.ts](src/lib/invoiceEmail.ts) —
- * exact dezelfde flow als SendInvoiceModal gebruikt voor de email-preview.
- * Niet zelf rewriten of base-href injecteren: dat moet centraal blijven.
+ * De HTML komt van `fetchPrintPreviewHtml` in
+ * [lib/invoiceEmail.ts](src/lib/invoiceEmail.ts) — exact dezelfde flow als
+ * SendInvoiceModal gebruikt voor de email-preview. Y-next draait same-origin
+ * met ERPNext, dus logo's/letterhead (relatieve `/files/...`-paden) laden
+ * direct zonder proxy; alleen de `<base href>` voor de srcDoc-iframe wordt
+ * daar geïnjecteerd. Niet zelf rewriten of base-href injecteren: dat moet
+ * centraal blijven.
  */
 export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", onFormatChange, refreshToken }: Props) {
   const [printFormat, setPrintFormatState] = useState<string>(PRINT_FORMATS[0]);
@@ -77,8 +80,8 @@ export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctype]);
 
-  // HTML preview ophalen via de gedeelde helper. Logo's/letterhead lopen
-  // hierdoor via /api/erpnext-asset proxy (zelfde mechanisme als email).
+  // HTML preview ophalen via de gedeelde helper. Same-origin met ERPNext,
+  // dus logo's/letterhead-assets laden direct (zelfde mechanisme als email).
   useEffect(() => {
     if (!name) {
       setPreviewHtml(null);

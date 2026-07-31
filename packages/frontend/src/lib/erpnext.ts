@@ -161,6 +161,68 @@ const CACHE_TTL = 30_000; // 30s
 const inflightRequests = new Map<string, Promise<unknown>>();
 
 /**
+ * Field self-healing — some ERPNext instances reject query fields that
+ * don't exist on that install (e.g. `workflow_state` on `Task` when no
+ * Task workflow is configured). Frappe answers with HTTP 417 and a
+ * DataError body naming the offending field:
+ * `Field not permitted in query: workflow_state`.
+ *
+ * Rather than hard-failing every list fetch against that doctype, fetchList
+ * drops the named field, remembers the exclusion per doctype for the life
+ * of the tab, and retries. Subsequent calls (including via fetchAll's
+ * pagination) never even ask for the field again.
+ */
+const rejectedFieldsCache = new Map<string, Set<string>>();
+const warnedRejectedFields = new Set<string>();
+const MAX_FIELD_SELF_HEAL_ATTEMPTS = 5;
+
+function getRejectedFields(doctype: string): Set<string> {
+  let set = rejectedFieldsCache.get(doctype);
+  if (!set) {
+    set = new Set();
+    rejectedFieldsCache.set(doctype, set);
+  }
+  return set;
+}
+
+/**
+ * Look for Frappe's "Field not permitted in query: <field>" DataError
+ * message anywhere in a parsed error response body (exception / exc /
+ * message / _server_messages — Frappe is inconsistent about which key
+ * carries it depending on version and error path).
+ */
+function extractRejectedField(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as { exception?: string; exc?: string; message?: string; _server_messages?: string };
+  const haystacks: string[] = [];
+  if (b.exception) haystacks.push(b.exception);
+  if (b.exc) haystacks.push(b.exc);
+  if (b.message) haystacks.push(b.message);
+  if (b._server_messages) {
+    try {
+      const arr = JSON.parse(b._server_messages);
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          try {
+            const parsed = JSON.parse(item);
+            if (parsed?.message) haystacks.push(String(parsed.message));
+          } catch {
+            haystacks.push(String(item));
+          }
+        }
+      }
+    } catch {
+      /* not JSON — ignore */
+    }
+  }
+  for (const text of haystacks) {
+    const m = /Field not permitted in query:\s*([A-Za-z0-9_]+)/.exec(text);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
  * Scope a cache/dedup key to the active instance. Without the instance id,
  * `/api/resource/Project` would collide between two tenants — a user
  * switching tabs within CACHE_TTL would be served the previous tenant's
@@ -210,9 +272,14 @@ export async function fetchList<T = Record<string, unknown>>(
     order_by?: string;
   }
 ): Promise<T[]> {
+  // Drop fields this doctype has already told us it doesn't permit, so
+  // repeat calls (including fetchAll's pagination) never re-trigger a 417.
+  const rejected = getRejectedFields(doctype);
+  let fields = params?.fields ? params.fields.filter((f) => !rejected.has(f)) : params?.fields;
+
   const searchParams = new URLSearchParams();
-  if (params?.fields) {
-    searchParams.set("fields", JSON.stringify(params.fields));
+  if (fields) {
+    searchParams.set("fields", JSON.stringify(fields));
   }
   if (params?.filters) {
     searchParams.set("filters", JSON.stringify(params.filters));
@@ -252,17 +319,42 @@ export async function fetchList<T = Record<string, unknown>>(
 
   const t0 = performance.now();
   const promise = (async () => {
-    const res = await fetchWithTimeout(url, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
-    if (!res.ok) {
-      handleAuthError(res);
-      if (res.status === 403) throw new ApiError(403, `No permission to access ${doctype}`);
-      throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
+    let attemptFields = fields;
+    let attemptUrl = url;
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetchWithTimeout(attemptUrl, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
+      if (!res.ok) {
+        // Self-heal: drop a field the instance just told us it doesn't
+        // permit in queries (417 DataError) and retry, bounded so a
+        // persistently broken instance can't loop forever.
+        if (attemptFields && attemptFields.length > 0 && attempt < MAX_FIELD_SELF_HEAL_ATTEMPTS) {
+          const errBody = await res.clone().json().catch(() => null);
+          const badField = extractRejectedField(errBody);
+          if (badField && attemptFields.includes(badField)) {
+            rejected.add(badField);
+            attemptFields = attemptFields.filter((f) => f !== badField);
+            const warnKey = `${doctype}::${badField}`;
+            if (!warnedRejectedFields.has(warnKey)) {
+              warnedRejectedFields.add(warnKey);
+              console.warn(`[erpnext] "${doctype}" rejected field "${badField}" (not permitted in query) — excluding it from future requests.`);
+            }
+            const retryParams = new URLSearchParams(searchParams);
+            if (attemptFields.length > 0) retryParams.set("fields", JSON.stringify(attemptFields));
+            else retryParams.delete("fields");
+            attemptUrl = buildApiUrl(`/api/resource/${doctype}`, retryParams);
+            continue;
+          }
+        }
+        handleAuthError(res);
+        if (res.status === 403) throw new ApiError(403, `No permission to access ${doctype}`);
+        throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
+      }
+      const json: ERPNextListResponse<T> = await res.json();
+      const ms = Math.round(performance.now() - t0);
+      if (PERF_LOG) console.log(`%c[fetch] ${doctype}`, ms > 500 ? "color:#dc2626;font-weight:bold" : "color:#2563eb", `${ms}ms (${json.data.length} rows)`);
+      responseCache.set(key, { data: json.data, ts: Date.now() });
+      return json.data;
     }
-    const json: ERPNextListResponse<T> = await res.json();
-    const ms = Math.round(performance.now() - t0);
-    if (PERF_LOG) console.log(`%c[fetch] ${doctype}`, ms > 500 ? "color:#dc2626;font-weight:bold" : "color:#2563eb", `${ms}ms (${json.data.length} rows)`);
-    responseCache.set(key, { data: json.data, ts: Date.now() });
-    return json.data;
   })();
 
   inflightRequests.set(key, promise);

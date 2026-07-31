@@ -289,15 +289,29 @@ export default function Tasks() {
     );
   }
 
-  // Get current user's email for "Mijn taken" filter
+  // Get current user's email for "Mijn taken" filter. Standaard Frappe RPC
+  // (frappe.auth.get_logged_user) i.p.v. de verdwenen Express-route
+  // /api/auth/me — zelfde patroon als lib/session.ts.
   const [erpnextUsername, setErpnextUsername] = useState<string>("");
   const [erpnextFullName, setErpnextFullName] = useState<string>("");
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "same-origin" })
+    fetch("/api/method/frappe.auth.get_logged_user", { credentials: "same-origin" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.username) setErpnextUsername(d.username);
-        if (d?.fullName) setErpnextFullName(d.fullName);
+      .then(async (d) => {
+        const username = d?.message;
+        if (!username || username === "Guest") return;
+        setErpnextUsername(username);
+        try {
+          const userRes = await fetch(`/api/resource/User/${encodeURIComponent(username)}`, {
+            credentials: "same-origin",
+          });
+          if (userRes.ok) {
+            const userBody = await userRes.json();
+            if (userBody?.data?.full_name) setErpnextFullName(userBody.data.full_name);
+          }
+        } catch {
+          // full_name is a nice-to-have; username-only matching still works
+        }
       })
       .catch(() => {});
   }, []);

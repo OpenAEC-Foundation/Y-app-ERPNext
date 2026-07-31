@@ -46,7 +46,7 @@ export function showWebNotification(opts: WebNotifyOptions): void {
   try {
     const n = new Notification(opts.title, {
       body: opts.body,
-      icon: "/favicon.svg",
+      icon: `${import.meta.env.BASE_URL}y-logo.svg`,
       tag: opts.tag,
     });
     if (opts.sound !== false) playNotificationSound();
