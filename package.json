@@ -32,7 +32,10 @@
     "dev:desktop": "cd packages/desktop && npx vite",
     "build:desktop": "cd packages/desktop && npx vite build",
     "tauri:dev": "cd packages/desktop && npx tauri dev",
-    "tauri:build": "cd packages/desktop && npx tauri build"
+    "tauri:build": "cd packages/desktop && npx tauri build",
+    "deploy": "npm run build && node scripts/deploy-y-next.mjs",
+    "smoke": "node scripts/smoke-y-next.mjs",
+    "test": "npm run test -w @y-app/frontend && node --test scripts/deploy-y-next.test.mjs scripts/lib/semver-bump.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
