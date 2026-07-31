@@ -9,6 +9,7 @@ import {
   collectAssets,
   buildWebPageFields,
   planUpsert,
+  mimeTypeFor,
 } from "./deploy-y-next.mjs";
 
 test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
@@ -41,6 +42,17 @@ test("buildWebPageFields: bevat root-element en verwijst naar de opgegeven besta
   assert.equal(fields.published, 1);
 });
 
+test("buildWebPageFields: import() heeft een .catch() met zichtbare foutmelding en console.error", () => {
+  const fields = buildWebPageFields({
+    entryJs: "index-abc123.js",
+    cssFiles: [],
+  });
+  assert.match(fields.javascript, /import\("\/files\/index-abc123\.js"\)\.catch\(/);
+  assert.match(fields.javascript, /console\.error\(/);
+  assert.match(fields.javascript, /Y-next kon niet laden/);
+  assert.match(fields.javascript, /getElementById\("root"\)/);
+});
+
 test("buildWebPageFields: nooit secrets in de output", () => {
   const fields = buildWebPageFields({
     entryJs: "index-abc123.js",
@@ -60,6 +72,20 @@ test("planUpsert: POST wanneer lookup leeg is", () => {
   assert.equal(plan.method, "POST");
   assert.match(plan.url, /Web Page$/);
   assert.doesNotMatch(plan.url, /Web Page\/.+/);
+});
+
+test("mimeTypeFor: geeft het juiste MIME-type per extensie", () => {
+  assert.equal(mimeTypeFor("index-abc123.js"), "application/javascript");
+  assert.equal(mimeTypeFor("chunk-def456.mjs"), "application/javascript");
+  assert.equal(mimeTypeFor("index-abc123.css"), "text/css");
+  assert.equal(mimeTypeFor("y-logo.svg"), "image/svg+xml");
+  assert.equal(mimeTypeFor("manifest.json"), "application/json");
+  assert.equal(mimeTypeFor("index-abc123.js.map"), "application/json");
+});
+
+test("mimeTypeFor: onbekende of ontbrekende extensie valt terug op application/octet-stream", () => {
+  assert.equal(mimeTypeFor("LICENSE"), "application/octet-stream");
+  assert.equal(mimeTypeFor("font.woff3"), "application/octet-stream");
 });
 
 test("collectAssets: vindt platte bestanden, negeert .vite/ en index.html", () => {

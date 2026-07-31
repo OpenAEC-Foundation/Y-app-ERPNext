@@ -81,7 +81,13 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
   const javascript = [
     "(function () {",
     ...linkLines,
-    `  import("/files/${entryJs}");`,
+    `  import("/files/${entryJs}").catch(function (err) {`,
+    '    console.error("Y-next kon niet laden:", err);',
+    '    var root = document.getElementById("root");',
+    "    if (root) {",
+    '      root.textContent = "Y-next kon niet laden. Probeer de pagina te vernieuwen of neem contact op met beheer.";',
+    "    }",
+    "  });",
     "})();",
   ].join("\n");
 
@@ -108,6 +114,38 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
     javascript,
     css,
   };
+}
+
+const MIME_TYPES_BY_EXT = {
+  ".js": "application/javascript",
+  ".mjs": "application/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".json": "application/json",
+  ".html": "text/html",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain",
+  ".map": "application/json",
+};
+
+/**
+ * Bepaalt het MIME-type voor een bestandsnaam op basis van de extensie.
+ * Zonder expliciet type ontvangt de browser vaak `application/octet-stream`
+ * (of laat Frappe het leeg), waardoor de dynamische ES-module-`import()` in
+ * de loader kan stranden op MIME-afdwinging ("Failed to load module script").
+ * @param {string} name
+ * @returns {string}
+ */
+export function mimeTypeFor(name) {
+  const match = /\.[^./\\]+$/.exec(name);
+  const ext = match ? match[0].toLowerCase() : "";
+  return MIME_TYPES_BY_EXT[ext] || "application/octet-stream";
 }
 
 /**
@@ -165,7 +203,7 @@ async function main() {
   for (const asset of assets) {
     const data = readFileSync(asset.path);
     const form = new FormData();
-    form.append("file", new Blob([data]), asset.name);
+    form.append("file", new Blob([data], { type: mimeTypeFor(asset.name) }), asset.name);
     form.append("is_private", "0");
     form.append("folder", "Home");
 
