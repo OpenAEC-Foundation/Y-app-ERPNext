@@ -2521,5 +2521,11 @@
   "settings.nas.readonly_note": "Deze instellingen worden door de werkgever beheerd. Je ziet ze hier alleen ter info.",
   "error_boundary.title": "Er is iets misgegaan",
   "error_boundary.message": "Dit onderdeel kon niet worden weergegeven. Probeer het opnieuw — als het probleem aanhoudt, meld het via de feedback-knop.",
-  "error_boundary.close": "Sluiten"
+  "error_boundary.close": "Sluiten",
+  "y_next.coming_soon_title": "Volgt later",
+  "y_next.coming_soon_body": "Deze functie volgt in een volgende Y-next fase.",
+  "y_next.badge_later": "volgt later",
+  "y_next.login_required": "Log in bij ERPNext om Y-next te gebruiken.",
+  "y_next.login_button": "Inloggen",
+  "y_next.direct_mode": "Rechtstreeks verbonden met ERPNext"
 }

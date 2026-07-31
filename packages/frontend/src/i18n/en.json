@@ -2521,5 +2521,11 @@
   "settings.nas.readonly_note": "These settings are managed by your employer. They are shown here for reference only.",
   "error_boundary.title": "Something went wrong",
   "error_boundary.message": "This part of the page could not be displayed. Please try again — if the problem persists, report it via the feedback button.",
-  "error_boundary.close": "Close"
+  "error_boundary.close": "Close",
+  "y_next.coming_soon_title": "Coming soon",
+  "y_next.coming_soon_body": "This feature will arrive in a later Y-next phase.",
+  "y_next.badge_later": "coming soon",
+  "y_next.login_required": "Sign in to ERPNext to use Y-next.",
+  "y_next.login_button": "Sign in",
+  "y_next.direct_mode": "Connected directly to ERPNext"
 }
