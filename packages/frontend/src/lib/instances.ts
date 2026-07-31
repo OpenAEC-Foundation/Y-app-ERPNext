@@ -6,7 +6,7 @@
  * pages that still reference getActiveInstanceId() or getActiveInstance().
  */
 
-import { type AuthReason, SESSION_LOST_REASONS, INSTANCE_FAILED_REASONS } from "./auth-reasons";
+import { type AuthReason, SESSION_LOST_REASONS, INSTANCE_FAILED_REASONS } from "./auth-reasons.ts";
 
 export interface InstanceTheme {
   primary: string;

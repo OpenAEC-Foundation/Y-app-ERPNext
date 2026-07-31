@@ -3,10 +3,11 @@
  * The backend handles authentication via HttpOnly y_session cookie.
  */
 
-import { getActiveInstance, getActiveInstanceId } from "./instances";
+import { getActiveInstance, getActiveInstanceId } from "./instances.ts";
+import { getCsrfToken } from "./csrf.ts";
 
 /** Performance logging — shows cache hits, fetch times, and slow queries in console */
-const PERF_LOG = localStorage.getItem("y_app_perf_log") === "1";
+const PERF_LOG = typeof localStorage !== "undefined" && localStorage.getItem("y_app_perf_log") === "1";
 
 /**
  * Per-operation timeouts. Without these, a hung ERPNext upstream stalls
@@ -44,6 +45,17 @@ function getHeaders(): HeadersInit {
   };
 }
 
+/** CSRF header for non-GET requests, when a token is available (empty otherwise). */
+function csrfHeaders(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-Frappe-CSRF-Token": token } : {};
+}
+
+/** Headers for non-GET (mutating) requests — getHeaders() plus the CSRF token. */
+function getMutationHeaders(): HeadersInit {
+  return { ...getHeaders(), ...csrfHeaders() };
+}
+
 /** API error with status code */
 export class ApiError extends Error {
   status: number;
@@ -54,18 +66,17 @@ export class ApiError extends Error {
 }
 
 /**
- * Handle auth errors — only force a logout when the Y-app session itself is
- * actually invalid. The bridged authMiddleware returns a generic 401 for
- * many distinct failures (Y-app session expired, instance not found,
- * upstream ERPNext login failed, upstream session expired and refresh
- * failed, etc.), and only the first one is a real "you are logged out"
- * signal. Without this check, a transient ERPNext upstream blip would
- * dump the user back at the login page mid-session.
+ * Handle auth errors — only force a logout when the ERPNext session itself
+ * is actually invalid. A single 401 from a given call can also mean a
+ * transient upstream blip, so verify before dumping the user back at the
+ * login page mid-session.
  *
- * Verify by hitting /api/yapp/me — that endpoint only returns 401 when
- * the Y-app cookie is missing or expired. If it returns 200 the session
- * is fine and we leave the user where they are; the call site still gets
- * an ApiError and can decide what to do (retry, show a toast, etc.).
+ * Verify via `GET /api/method/frappe.auth.get_logged_user` (same-origin,
+ * standard Frappe API). On a website page a logged-out visitor gets HTTP 200
+ * with `message: "Guest"` rather than a 4xx, so that is treated the same as
+ * an outright 401/403. Otherwise the session is fine and we leave the user
+ * where they are; the call site still gets an ApiError and can decide what
+ * to do (retry, show a toast, etc.).
  *
  * Fire-and-forget on purpose: callers don't need to await this side effect.
  */
@@ -73,8 +84,16 @@ function handleAuthError(res: Response): void {
   if (res.status !== 401) return;
   void (async () => {
     try {
-      const meRes = await fetch("/api/yapp/me", { credentials: "same-origin" });
-      if (meRes.status === 401) {
+      const meRes = await fetch("/api/method/frappe.auth.get_logged_user", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (meRes.status === 401 || meRes.status === 403) {
+        window.dispatchEvent(new CustomEvent("y-app:unauthorized"));
+        return;
+      }
+      const body = (await meRes.json().catch(() => null)) as { message?: string } | null;
+      if (body?.message === "Guest") {
         window.dispatchEvent(new CustomEvent("y-app:unauthorized"));
       }
     } catch {
@@ -369,7 +388,7 @@ export async function callMethod(
   const url = `/api/method/${method}`;
   const res = await fetchWithTimeout(url, {
     method: "POST",
-    headers: getHeaders(),
+    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(args),
   }, MUTATION_TIMEOUT_MS);
@@ -393,7 +412,7 @@ export async function createDocument<T = Record<string, unknown>>(
   const url = `/api/resource/${doctype}`;
   const res = await fetchWithTimeout(url, {
     method: "POST",
-    headers: getHeaders(),
+    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(data),
   }, MUTATION_TIMEOUT_MS);
@@ -415,7 +434,7 @@ export async function updateDocument<T = Record<string, unknown>>(
   const url = `/api/resource/${doctype}/${encodeURIComponent(name)}`;
   const res = await fetchWithTimeout(url, {
     method: "PUT",
-    headers: getHeaders(),
+    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(data),
   }, MUTATION_TIMEOUT_MS);
@@ -436,7 +455,7 @@ export async function deleteDocument(
   const url = `/api/resource/${doctype}/${encodeURIComponent(name)}`;
   const res = await fetchWithTimeout(url, {
     method: "DELETE",
-    headers: getHeaders(),
+    headers: getMutationHeaders(),
     credentials: "same-origin",
   }, MUTATION_TIMEOUT_MS);
   if (!res.ok) {
@@ -462,7 +481,9 @@ export async function uploadFile(
   const url = `/api/method/upload_file`;
   const res = await fetchWithTimeout(url, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    // NB: no Content-Type here — the browser must set its own multipart
+    // boundary for FormData bodies, so this can't reuse getMutationHeaders().
+    headers: { Accept: "application/json", ...csrfHeaders() },
     credentials: "same-origin",
     body: formData,
   }, UPLOAD_TIMEOUT_MS);
