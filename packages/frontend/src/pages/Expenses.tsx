@@ -173,7 +173,7 @@ function MyKmOverzicht() {
       {loading ? (
         <p className="text-center text-slate-400 py-4 text-sm">{t("common.loading")}</p>
       ) : !employee ? (
-        <p className="text-center text-slate-400 py-4 text-sm">{t("expenses.select_employee_in_settings", { defaultValue: "Select an employee in Settings" })}</p>
+        <p className="text-center text-slate-400 py-4 text-sm">{t("y_next.no_employee_link")}</p>
       ) : itinerary.length === 0 ? (
         <p className="text-center text-slate-400 py-4 text-sm">{t("expenses.no_trips_this_month", { defaultValue: "No trips this month" })}</p>
       ) : (

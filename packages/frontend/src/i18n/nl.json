@@ -2526,6 +2526,7 @@
   "y_next.coming_soon_title": "Volgt later",
   "y_next.coming_soon_body": "Deze functie volgt in een volgende Y-next fase.",
   "y_next.module_unavailable": "Deze module vereist een app die niet op deze ERPNext-site is geïnstalleerd.",
+  "y_next.no_employee_link": "Geen medewerker gekoppeld aan dit account. Koppel in ERPNext een Employee aan deze gebruiker om persoonlijke overzichten te zien.",
   "y_next.badge_later": "volgt later",
   "y_next.login_required": "Log in bij ERPNext om Y-next te gebruiken.",
   "y_next.login_button": "Inloggen",

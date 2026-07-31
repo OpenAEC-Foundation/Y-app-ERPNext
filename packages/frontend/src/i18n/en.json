@@ -2526,6 +2526,7 @@
   "y_next.coming_soon_title": "Coming soon",
   "y_next.coming_soon_body": "This feature will arrive in a later Y-next phase.",
   "y_next.module_unavailable": "This module requires an app that is not installed on this ERPNext site.",
+  "y_next.no_employee_link": "No employee linked to this account. Link an Employee to this user in ERPNext to see personal overviews.",
   "y_next.badge_later": "coming soon",
   "y_next.login_required": "Sign in to ERPNext to use Y-next.",
   "y_next.login_button": "Sign in",

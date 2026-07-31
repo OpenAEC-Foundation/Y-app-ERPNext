@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import type { ViewMode } from "../components/Sidebar";
 import { getActiveCompany, getActiveEmployee, getActiveActivityType, getActiveContractHours } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
+import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 
 function getViewMode(): ViewMode {
   return (localStorage.getItem("view_mode") as ViewMode) || "employer";
@@ -205,6 +206,14 @@ function BoekingenView({ viewMode }: { viewMode: ViewMode }) {
 
   const company = getActiveCompany();
   const isEmployee = viewMode === "employee";
+  // Personal ("employee") view is employee-bound: resolve "who am I" via the
+  // shared session-employee hook rather than the raw instance setting alone,
+  // so API-/beheeraccounts without a configured "Standaard medewerker" but
+  // with a matching ERPNext Employee record still resolve correctly. If it
+  // genuinely can't resolve one, show that honestly instead of a silent
+  // 0-hours table (or, worse, unfiltered company-wide data).
+  const sessionEmployeeId = useSessionEmployeeId(allEmployees);
+  const noEmployeeLink = isEmployee && !sessionEmployeeId;
 
   // Build employee ID set for company filtering
   const employeeIdSet = useMemo(() => {
@@ -268,12 +277,13 @@ function BoekingenView({ viewMode }: { viewMode: ViewMode }) {
         ? timesheets.filter((ts) => employeeIdSet.has(ts.employee))
         : timesheets;
 
-      // For employee view, filter on own employee
-      const myEmployee = isEmployee
-        ? getActiveEmployee()
-        : "";
-      const relevantTs = myEmployee
-        ? filteredTs.filter((ts) => ts.employee === myEmployee)
+      // For employee view, filter on own employee (resolved via the shared
+      // session-employee hook — see sessionEmployeeId above). Unlike the
+      // employer view, an unresolved employee here must NOT fall back to
+      // "show everything" — that would leak every employee's bookings into
+      // what's supposed to be a personal overview.
+      const relevantTs = isEmployee
+        ? (sessionEmployeeId ? filteredTs.filter((ts) => ts.employee === sessionEmployeeId) : [])
         : filteredTs;
 
       if (relevantTs.length === 0) {
@@ -343,7 +353,10 @@ function BoekingenView({ viewMode }: { viewMode: ViewMode }) {
       setBookings([]);
       setLoading(false);
     }
-  }, [dateRange.from, dateRange.to]);
+    // sessionEmployeeId resolves asynchronously (session lookup) — reload
+    // once it settles so the employee-view filter picks it up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange.from, dateRange.to, sessionEmployeeId]);
 
   // Apply employee filter (by employee ID)
   const employeeFiltered = useMemo(() => {
@@ -564,6 +577,13 @@ function BoekingenView({ viewMode }: { viewMode: ViewMode }) {
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           {error}
+        </div>
+      )}
+
+      {!loading && noEmployeeLink && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 flex items-start gap-3 text-sm">
+          <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+          <span>{t("y_next.no_employee_link")}</span>
         </div>
       )}
 

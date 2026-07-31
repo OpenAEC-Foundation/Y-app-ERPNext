@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { fetchList, callMethod } from "../lib/erpnext";
+import { fetchList, callMethod, isDoctypeMissing } from "../lib/erpnext";
 import { useEmployees, useLeaves, useProjects } from "../lib/DataContext";
 import CompanySelect from "../components/CompanySelect";
 import { isHoliday } from "../lib/holidays";
-import { CalendarDays, RefreshCw, ChevronLeft, ChevronRight, Filter, ZoomIn, ZoomOut, LayoutGrid, GanttChart } from "lucide-react";
+import { CalendarDays, RefreshCw, ChevronLeft, ChevronRight, Filter, ZoomIn, ZoomOut, LayoutGrid, GanttChart, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n/index";
 import { getActiveCompany } from "../lib/instances";
@@ -118,6 +118,13 @@ export default function Planning() {
   const [company, setCompany] = useState(getActiveCompany());
   const [deptFilter, setDeptFilter] = useState("");
   const tableRef = useRef<HTMLDivElement>(null);
+  // Set once we've confirmed Shift Plan Assignment doesn't exist on this
+  // instance (no HRMS app installed — see lib/erpnext.ts's missing-doctype
+  // cache). The gantt roster itself doesn't query this doctype, but its
+  // near-total emptiness on such instances is a direct consequence of it —
+  // so surface the same honest notice as Leave.tsx/Wiki.tsx instead of a
+  // silently empty grid.
+  const [shiftModuleUnavailable, setShiftModuleUnavailable] = useState(false);
 
   // --- Kanban-specific state ---
   const [kanbanTasks, setKanbanTasks] = useState<TasksTask[]>([]);
@@ -167,6 +174,14 @@ export default function Planning() {
         order_by: "modified desc",
       });
       setTasks(taskList);
+      // Cheap existence check, kept independent of the task load above (and
+      // of its error handling) — a 403 here (role-gated on some instances,
+      // see lib/prefetch.ts) must never block the roster itself. Only a 404
+      // "doctype not installed" response is what we care about, and that
+      // degrades to [] via fetchList's own missing-doctype handling.
+      fetchList("Shift Plan Assignment", { fields: ["name"], limit_page_length: 1 })
+        .then(() => setShiftModuleUnavailable(isDoctypeMissing("Shift Plan Assignment")))
+        .catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -611,6 +626,13 @@ export default function Planning() {
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
+      )}
+
+      {!loading && shiftModuleUnavailable && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 flex items-start gap-3">
+          <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+          <span>{t("y_next.module_unavailable")}</span>
+        </div>
       )}
 
       {tab === "gantt" && (

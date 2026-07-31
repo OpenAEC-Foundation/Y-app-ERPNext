@@ -2512,6 +2512,7 @@
   "y_next.coming_soon_title": "Folgt später",
   "y_next.coming_soon_body": "Diese Funktion folgt in einer späteren Y-next-Phase.",
   "y_next.module_unavailable": "Dieses Modul erfordert eine App, die auf dieser ERPNext-Site nicht installiert ist.",
+  "y_next.no_employee_link": "Kein Mitarbeiter mit diesem Konto verknüpft. Verknüpfe in ERPNext einen Employee mit diesem Benutzer, um persönliche Übersichten zu sehen.",
   "y_next.badge_later": "folgt später",
   "y_next.login_required": "Melden Sie sich bei ERPNext an, um Y-next zu nutzen.",
   "y_next.login_button": "Anmelden",
