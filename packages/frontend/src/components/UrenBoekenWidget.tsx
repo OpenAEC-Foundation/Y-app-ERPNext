@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { fetchList, fetchAll, fetchDocument, createDocument, updateDocument, getErpNextLinkUrl } from "../lib/erpnext";
 import { useEmployees, useProjects } from "../lib/DataContext";
 import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../lib/instances";
+import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { fetchActivityTypes, fetchEmployeeActivityType } from "../lib/activityTypes";
 import { TimesheetDetailsTable } from "../pages/Timesheets";
 import type { TimesheetDetail as TSDetail, ProjectInfo } from "../lib/timesheetValidation";
@@ -64,6 +65,16 @@ export default function UrenBoekenWidget({
   const projects = useProjects();
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
   const [employee, setEmployee] = useState(() => getActiveEmployee());
+
+  // Fall back to the ERPNext session user when no "default employee" is
+  // configured in Settings (getActiveEmployee() then returns "") — without
+  // this the "Uren boeken" widget silently starts with an empty MDW-select
+  // and "0 uur"/"Geen details gevonden" for any user who never set a
+  // default employee, even though their session usually maps to one.
+  const resolvedSessionEmployee = useSessionEmployeeId(allEmployees);
+  useEffect(() => {
+    if (!employee && resolvedSessionEmployee) setEmployee(resolvedSessionEmployee);
+  }, [employee, resolvedSessionEmployee]);
   const [project, setProject] = useState("");
   const [projectSearch, setProjectSearch] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);

@@ -1489,7 +1489,14 @@ export default function Agenda() {
 
   const activeLegend = useMemo(() => {
     const items: Array<{ label: string; color: string }> = [];
-    if (o365Enabled) items.push({ label: t("agenda.outlook_365"), color: TYPE_COLORS.o365 });
+    // Alleen tonen als de calendar-bridge daadwerkelijk actief is: anders
+    // suggereert dit label een gekoppelde, live Outlook-bron terwijl
+    // loadO365Events() hierboven altijd leeg blijft (Express-only route,
+    // bestaat niet op de standalone ERPNext-deployment) — dat oogde als een
+    // "verbonden maar leeg" agenda i.p.v. een simpelweg niet-actieve bron.
+    if (o365Enabled && isFeatureEnabled("calendar-bridge")) {
+      items.push({ label: t("agenda.outlook_365"), color: TYPE_COLORS.o365 });
+    }
     if (erpSources.events) items.push({ label: t("agenda.source_events"), color: TYPE_COLORS.event });
     if (erpSources.tasks) items.push({ label: t("agenda.source_tasks"), color: TYPE_COLORS.task });
     if (erpSources.leaves) items.push({ label: t("agenda.legend_leaves"), color: TYPE_COLORS.leave });

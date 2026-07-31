@@ -714,11 +714,15 @@ export default function Employees() {
     );
   }, [employees, search]);
 
+  // Alleen medewerkers met een echt ingevulde afdeling meetellen: een
+  // "Onbekend"-kaart die exact het totaal aantal medewerkers herhaalt (zoals
+  // hier gebeurde toen geen enkele medewerker een department had) voegt geen
+  // informatie toe en oogt als een kapot/leeg label i.p.v. een afdeling.
   const departments = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of filtered) {
-      const dept = e.department || t("common.unknown");
-      map.set(dept, (map.get(dept) || 0) + 1);
+      if (!e.department) continue;
+      map.set(e.department, (map.get(e.department) || 0) + 1);
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [filtered]);

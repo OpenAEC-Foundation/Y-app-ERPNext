@@ -913,7 +913,7 @@ export default function FinancieelDashboard() {
                           )}
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 whitespace-nowrap" style={{ transform: "rotate(-45deg)", transformOrigin: "top left", marginTop: "4px" }}>{d.label}</p>
+                      <p className="text-[10px] text-slate-400 whitespace-nowrap mt-1">{d.label}</p>
                     </div>
                   );
                 })}
@@ -1462,7 +1462,7 @@ export default function FinancieelDashboard() {
                                 />
                               </div>
                             </div>
-                            <p className="text-[10px] text-slate-400 whitespace-nowrap" style={{ transform: "rotate(-45deg)", transformOrigin: "top left", marginTop: "4px" }}>{d.label}</p>
+                            <p className="text-[10px] text-slate-400 whitespace-nowrap mt-1">{d.label}</p>
                           </div>
                         );
                       })}

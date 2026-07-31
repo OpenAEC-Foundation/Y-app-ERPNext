@@ -159,7 +159,7 @@ export default function Planning() {
       const taskList = await fetchList<Task>("Task", {
         fields: [
           "name", "subject", "status", "priority",
-          "project",
+          "_assign as assigned_to", "project",
           "exp_start_date", "exp_end_date",
         ],
         filters: [["status", "not in", ["Completed", "Cancelled"]]],

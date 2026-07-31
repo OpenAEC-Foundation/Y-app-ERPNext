@@ -8,7 +8,8 @@ import {
 import CompanySelect from "../components/CompanySelect";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { QuickKmBooking } from "./dashboard";
-import { getActiveCompany, getActiveEmployee } from "../lib/instances";
+import { getActiveCompany } from "../lib/instances";
+import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { useTranslation } from "react-i18next";
 import { useEmployees } from "../lib/DataContext";
 import { fetchEmployeeShiftWorkdays } from "../lib/missingDays";
@@ -87,7 +88,12 @@ const docstatusLabel: Record<number, string> = {
 
 function MyKmOverzicht() {
   const { t } = useTranslation();
-  const employee = getActiveEmployee();
+  // Val terug op de ERPNext-sessiegebruiker als er geen "standaard
+  // medewerker" is ingesteld — anders toont dit paneel voor iedereen zonder
+  // die instelling permanent "Selecteer een medewerker in Instellingen",
+  // ook als de sessie prima naar een Employee-record te herleiden is.
+  const allEmployees = useEmployees();
+  const employee = useSessionEmployeeId(allEmployees);
   const [trName, setTrName] = useState("");
   const [totalKm, setTotalKm] = useState(0);
   const [itinerary, setItinerary] = useState<ItineraryRow[]>([]);

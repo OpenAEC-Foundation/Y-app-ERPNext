@@ -7,6 +7,7 @@ import type { TravelTypeConfig } from "../../lib/travelType";
 import { fetchTravelTypeConfig } from "../../lib/travelType";
 import { useEmployees } from "../../lib/DataContext";
 import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../../lib/instances";
+import { useSessionEmployeeId } from "../../lib/useSessionEmployee";
 import { BookingWarning, useMissingBookings } from "./useMissingBookings";
 
 /** Map active i18n language → Intl locale tag for toLocaleDateString /
@@ -82,6 +83,14 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
   const allEmployees = useEmployees();
   const instanceId = getActiveInstance().id;
   const [employee, setEmployee] = useState(() => getActiveEmployee());
+  // Val terug op de ERPNext-sessiegebruiker als er geen "standaard
+  // medewerker" is ingesteld, zodat het MDW-veld niet permanent op
+  // "Selecteer..." blijft staan terwijl de sessie wel naar een
+  // Employee-record te herleiden is (zelfde patroon als UrenBoekenWidget).
+  const resolvedSessionEmployee = useSessionEmployeeId(allEmployees);
+  useEffect(() => {
+    if (!employee && resolvedSessionEmployee) setEmployee(resolvedSessionEmployee);
+  }, [employee, resolvedSessionEmployee]);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [departure, setDeparture] = useState("");
   // No hardcoded default destination — it varied per employer/customer and a

@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { fetchList, createDocument, updateDocument } from "../lib/erpnext";
+import { fetchList, createDocument, updateDocument, isDoctypeMissing } from "../lib/erpnext";
 import {
   BookOpen, Plus, Search, Edit3, Save, X, ChevronRight, ChevronLeft,
   Bold, Italic, Heading, List, Link, Code, Eye, RefreshCw,
-  FileText, Clock, Check,
+  FileText, Clock, Check, AlertTriangle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -126,6 +126,11 @@ export default function Wiki() {
   const { t } = useTranslation();
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [loading, setLoading] = useState(true);
+  // fetchList degradeert een 404 op de doctype zelf (geen "Wiki Page" op deze
+  // instance) stilzwijgend naar [] — zonder deze check zag de gebruiker
+  // gewoon "Geen wiki pagina's gevonden", niet te onderscheiden van een
+  // instance die de module wél heeft maar simpelweg nog geen pagina's.
+  const [moduleUnavailable, setModuleUnavailable] = useState(false);
   const [selectedPage, setSelectedPage] = useState<WikiPage | null>(null);
   const [mode, setMode] = useState<Mode>("view");
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,6 +156,7 @@ export default function Wiki() {
         order_by: "modified desc",
       });
       setPages(data);
+      setModuleUnavailable(isDoctypeMissing("Wiki Page"));
       // If we had a selected page, refresh it
       if (selectedPage) {
         const updated = data.find((p) => p.name === selectedPage.name);
@@ -303,13 +309,20 @@ export default function Wiki() {
               </button>
               <button
                 onClick={() => setShowNewModal(true)}
-                className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+                disabled={moduleUnavailable}
+                className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 title={t("wiki.new_page_title")}
               >
                 <Plus size={16} />
               </button>
             </div>
           </div>
+          {moduleUnavailable && (
+            <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2">
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>{t("y_next.module_unavailable")}</span>
+            </div>
+          )}
           {/* Search */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -330,8 +343,8 @@ export default function Wiki() {
               <RefreshCw size={20} className="animate-spin" />
             </div>
           ) : filteredPages.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-sm">
-              {searchQuery ? t("wiki.no_results") : t("wiki.no_pages")}
+            <div className="text-center py-12 text-slate-400 text-sm px-4">
+              {searchQuery ? t("wiki.no_results") : moduleUnavailable ? t("y_next.module_unavailable") : t("wiki.no_pages")}
             </div>
           ) : (
             <div className="py-1">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchList, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchList, fetchAll, getErpNextLinkUrl } from "../lib/erpnext";
 import { BookOpen, RefreshCw, Filter, ExternalLink, Search } from "lucide-react";
 import CompanySelect from "../components/CompanySelect";
 import { useTranslation } from "react-i18next";
@@ -16,6 +16,12 @@ interface Account {
   is_group: number;
 }
 
+interface GLEntry {
+  account: string;
+  debit: number;
+  credit: number;
+}
+
 const ROOT_TYPE_COLORS: Record<string, string> = {
   Asset: "bg-blue-100 text-blue-700",
   Liability: "bg-purple-100 text-purple-700",
@@ -24,9 +30,24 @@ const ROOT_TYPE_COLORS: Record<string, string> = {
   Equity: "bg-amber-100 text-amber-700",
 };
 
+// Boekhoudkundige saldi: Asset & Expense hebben een natuurlijk debetsaldo,
+// Liability/Equity/Income een natuurlijk creditsaldo (zelfde conventie als
+// Jaarrekening.tsx).
+const CREDIT_TYPES = new Set(["Liability", "Equity", "Income"]);
+
+function euro(value: number): string {
+  return value.toLocaleString("nl-NL", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function Ledgers() {
   const { t } = useTranslation();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [balances, setBalances] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [company, setCompany] = useState(getActiveCompany());
@@ -40,13 +61,33 @@ export default function Ledgers() {
       const filters: unknown[][] = [];
       if (company) filters.push(["company", "=", company]);
 
-      const list = await fetchList<Account>("Account", {
-        fields: ["name", "account_name", "account_number", "parent_account", "root_type", "account_type", "company", "is_group"],
-        filters,
-        limit_page_length: 0,
-        order_by: "account_number asc, name asc",
-      });
+      const glFilters: unknown[][] = [["is_cancelled", "=", 0]];
+      if (company) glFilters.push(["company", "=", company]);
+
+      const [list, glEntries] = await Promise.all([
+        fetchList<Account>("Account", {
+          fields: ["name", "account_name", "account_number", "parent_account", "root_type", "account_type", "company", "is_group"],
+          filters,
+          limit_page_length: 0,
+          order_by: "account_number asc, name asc",
+        }),
+        // Cumulatief saldo sinds het begin (geen datumfilter), zelfde aanpak
+        // als de balans-kolom in Jaarrekening.tsx.
+        fetchAll<GLEntry>("GL Entry", ["account", "debit", "credit"], glFilters),
+      ]);
       setAccounts(list);
+
+      const rootTypeByAccount = new Map(list.map((a) => [a.name, a.root_type]));
+      const balanceMap = new Map<string, number>();
+      for (const entry of glEntries) {
+        const rootType = rootTypeByAccount.get(entry.account);
+        if (!rootType) continue;
+        const delta = CREDIT_TYPES.has(rootType)
+          ? entry.credit - entry.debit
+          : entry.debit - entry.credit;
+        balanceMap.set(entry.account, (balanceMap.get(entry.account) || 0) + delta);
+      }
+      setBalances(balanceMap);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -147,7 +188,9 @@ export default function Ledgers() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs text-slate-400">—</td>
+                  <td className={`px-4 py-2.5 text-right font-mono text-xs ${a.is_group ? "text-slate-400" : "text-slate-700"}`}>
+                    {a.is_group ? "—" : euro(balances.get(a.name) || 0)}
+                  </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">{a.company}</td>
                   <td className="px-4 py-2.5">
                     <a href={`${getErpNextLinkUrl()}/account/${encodeURIComponent(a.name)}`}

@@ -77,7 +77,7 @@ function MonthlyChart({ invoices }: { invoices: OutstandingInvoice[] }) {
     <div className="flex items-end gap-2 h-48">
       {monthData.map((d) => (
         <div key={d.month} className="flex-1 flex flex-col items-center justify-end h-full group">
-          <div className="relative w-full flex justify-center">
+          <div className="relative w-full h-full flex flex-col justify-end items-center">
             <div className="absolute -top-10 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
               {t("openstaand.tooltip_invoices", { count: d.count, amount: euro(d.amount) })}
             </div>
@@ -290,7 +290,7 @@ export default function Outstanding() {
             {agingData.map((bucket) => (
               <div key={bucket.labelKey} className="text-center">
                 <div className="h-32 flex items-end justify-center mb-3">
-                  <div className="w-full max-w-[80px] relative group">
+                  <div className="w-full h-full max-w-[80px] relative group flex flex-col justify-end">
                     {/* Tooltip */}
                     <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                       {t("openstaand.tooltip_invoices", { count: bucket.count, amount: euro(bucket.amount) })}
