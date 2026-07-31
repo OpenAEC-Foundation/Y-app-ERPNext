@@ -124,15 +124,15 @@ test("buildSettingDoctype: module/custom/autoname en de exacte veldenlijst", () 
   assert.deepEqual(Object.keys(byName).sort(), ["setting_key", "setting_value"]);
 });
 
-test("buildSettingDoctype: role All heeft alleen read, Projects User heeft write/create", () => {
+test("buildSettingDoctype: geen rol All (API weigert die), Projects User heeft read/write/create", () => {
   const def = buildSettingDoctype();
   const byRole = Object.fromEntries(def.permissions.map((p) => [p.role, p]));
-  assert.ok(byRole["All"]);
-  assert.equal(byRole["All"].read, 1);
-  assert.ok(!byRole["All"].write);
-  assert.ok(!byRole["All"].create);
+  // Frappe weigert rol "All" op custom doctypes die via de API worden
+  // aangemaakt ("Non administrator user can not set the role All").
+  assert.ok(!byRole["All"]);
 
   assert.ok(byRole["Projects User"]);
+  assert.equal(byRole["Projects User"].read, 1);
   assert.equal(byRole["Projects User"].write, 1);
   assert.equal(byRole["Projects User"].create, 1);
 });

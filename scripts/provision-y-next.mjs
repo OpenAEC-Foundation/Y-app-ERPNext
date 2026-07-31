@@ -88,8 +88,10 @@ export function buildSettingDoctype() {
       { fieldname: "setting_value", label: "Setting Value", fieldtype: "Long Text" },
     ],
     permissions: [
+      // Rol "All" wordt door Frappe geweigerd bij API-aanmaak van custom
+      // doctypes ("Non administrator user can not set the role All").
+      // Projects User dekt alle Y-next-gebruikers.
       { role: "System Manager", read: 1, write: 1, create: 1, delete: 1 },
-      { role: "All", read: 1 },
       { role: "Projects User", read: 1, write: 1, create: 1 },
     ],
   };
