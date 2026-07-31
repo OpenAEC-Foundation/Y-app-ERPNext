@@ -30,16 +30,28 @@ leest en schrijft data uitsluitend via de standaard Frappe/ERPNext REST API.
 
 ---
 
-## Fase-1 scope
+## Fase-scope
 
-In deze fase zijn actief:
+In fase 1 en 2 zijn actief:
 
 - **Dashboard**
 - **Settings**
+- **E-mail** — via ERPNext **Communication**-documenten (geen eigen
+  mailserver; vereist een geactiveerd Email Account, zie
+  [`docs/deployment.md`](docs/deployment.md#fase-2))
+- **Vergadernotities**
+- **Extensies** — configuratie-opslag, beheer beperkt tot System Manager
+- **Release notes** — lokaal in de frontend bijgehouden
 
-Overige schermen (Projecten, Facturen, HR, Webmail, Messenger, etc.) zijn wel
-opgenomen in de navigatie maar tonen voorlopig "volgt later" — ze worden in
-latere fases stap voor stap geactiveerd tegen de ERPNext-API.
+Nog niet actief (volgen in fase 3, omdat ze een server/proxy vereisen):
+
+- **Berichten** (NextCloud Talk)
+- **Documenten** (Nextcloud)
+- **Wachtwoorden**
+
+Overige schermen (Projecten, Facturen, HR, etc.) zijn wel opgenomen in de
+navigatie maar tonen voorlopig "volgt later" — ze worden in latere fases
+stap voor stap geactiveerd tegen de ERPNext-API.
 
 `packages/server` en `packages/desktop` bevatten de oorspronkelijke
 Y-app-runtimes (Express-backend resp. Tauri-desktopbuild). Die worden in deze

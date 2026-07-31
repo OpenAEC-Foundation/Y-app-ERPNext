@@ -107,3 +107,52 @@ npm run dev
 - **Gast-weergave:** een niet-ingelogde bezoeker krijgt een loginkaart te
   zien; de standaard ERPNext-navbar en -footer zijn op de `/y-next`-route
   verborgen.
+
+## Fase 2
+
+### Provisioning van custom DocTypes
+
+```powershell
+$env:YNEXT_API_TOKEN = "<API key>:<API secret>"
+node scripts/provision-y-next.mjs
+Remove-Item Env:\YNEXT_API_TOKEN
+```
+
+- Het script is **idempotent**: opnieuw draaien op een site waar de DocTypes
+  al bestaan doet niets kapot en overschrijft geen bestaande data.
+- Het maakt twee custom DocTypes aan: **`Y Meeting Note`** (vergadernotities)
+  en **`Y Next Setting`** (generieke sleutel/waarde-opslag, o.a. voor de
+  extensies-configuratie).
+- **`YNEXT_API_TOKEN`** is verplicht, zelfde formaat en zelfde
+  geheimhoudingsregels als bij `npm run deploy` hierboven — nooit in `.env`,
+  commits, logs of buildoutput.
+- **Let op:** de DocPerm-rijen (read/write/create/delete/submit/cancel/amend
+  per rol) worden door het script altijd **expliciet** meegestuurd. Frappe
+  vult een DocPerm-rij waarvan vlaggen ontbreken zelf aan met defaults, wat
+  op een lege of onvolledige payload tot rechten kan leiden die niet
+  overeenkomen met de bedoeling. Vermijd dus een gedeeltelijke payload bij
+  handmatige aanpassingen aan deze DocTypes.
+
+### E-mailactivatie (handmatige stap)
+
+Webmail in Y-next leest en verstuurt via het ERPNext **Email Account**-
+document (Communication-koppeling), niet via een eigen mailserver. Voordat
+webmail werkt, moet in de ERPNext-UI op het betreffende Email Account:
+
+- **`enable_incoming`** en **`enable_outgoing`** aangevinkt staan, en
+- een wachtwoord ingevuld zijn (of de bijbehorende OAuth-koppeling actief
+  zijn).
+
+Dit is bewust een **handmatige stap in de ERPNext-UI** — het
+provisioningscript raakt het Email Account niet aan. Zolang deze stap niet
+gezet is, toont Y-next in de webmail-sectie een instructiekaart in plaats
+van een foutmelding.
+
+### Eerste fase-2-deployment
+
+- **Datum:** 2026-07-31
+- **Geverifieerde onderdelen:**
+  - Webmail op basis van ERPNext **Communication**-documenten.
+  - Vergadernotities (`Y Meeting Note`).
+  - Extensies-opslag (`Y Next Setting`), beheer beperkt tot System Manager.
+  - Release notes, lokaal in de frontend bijgehouden.
