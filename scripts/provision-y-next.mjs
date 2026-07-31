@@ -90,9 +90,17 @@ export function buildSettingDoctype() {
     permissions: [
       // Rol "All" wordt door Frappe geweigerd bij API-aanmaak van custom
       // doctypes ("Non administrator user can not set the role All").
-      // Projects User dekt alle Y-next-gebruikers.
+      // Projects User dekt alle Y-next-gebruikers, maar krijgt hier bewust
+      // alléén leesrecht: de rijen in dit DocType zijn o.a. de
+      // geïnstalleerde-extensies-lijst, die vervolgens draait met de
+      // ERPNext-rechten van de kijker (zie ExtensionHost.tsx RPC-bridge).
+      // Schrijfrecht voor élke Projects User zou een willekeurige medewerker
+      // in staat stellen een eigen HTTPS-URL te installeren die dan in de
+      // sessie van bv. een System Manager wordt uitgevoerd — een
+      // privilege-escalatiepad. Schrijven/aanmaken/verwijderen is daarom
+      // beheerdersactie (System Manager only).
       { role: "System Manager", read: 1, write: 1, create: 1, delete: 1 },
-      { role: "Projects User", read: 1, write: 1, create: 1 },
+      { role: "Projects User", read: 1 },
     ],
   };
 }

@@ -1167,12 +1167,8 @@ function StandaloneCompose({ draft, fromAddr, acct, account, inReplyTo, referenc
    Y-next — popout op ERPNext `Communication`
    ══════════════════════════════════════════════════════════════════════════ */
 
-/**
- * Zie de gelijknamige constante in `Webmail.tsx`: `erpnext-mail` bestaat nog
- * niet in `ServerFeature` omdat `capabilities.ts` centraal door de
- * fase-2-controller wordt omgezet. Eén cast per bestand overbrugt dat.
- */
-const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+/** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
+const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
 
 interface ErpViewDoc {
   subject?: string;

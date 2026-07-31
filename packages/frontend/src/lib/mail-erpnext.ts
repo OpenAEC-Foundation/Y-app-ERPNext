@@ -34,6 +34,7 @@ import {
   updateDocument,
   uploadFile,
   callMethod,
+  ApiError,
   type FileInfo,
 } from "./erpnext.ts";
 
@@ -384,10 +385,18 @@ export async function unseenCount(): Promise<number> {
 /**
  * Of ERPNext überhaupt mail binnenhaalt. Zolang geen Email Account
  * `enable_incoming=1` heeft, blijft Communication leeg en toont de UI een
- * instructiekaart in plaats van een lege lijst zonder uitleg. Faalt de call
- * (geen leesrecht op Email Account), dan is `false` de veilige uitkomst:
- * de instructiekaart is hinderlijker dan onterecht niets tonen, maar nooit
- * misleidend.
+ * instructiekaart in plaats van een lege lijst zonder uitleg.
+ *
+ * `Email Account` is in Frappe standaard geen breed leesbaar DocType — een
+ * gewone medewerker (geen System Manager) krijgt op deze call een 403. Voor
+ * hén is `false` NIET de veilige uitkomst: "kan niet vaststellen" is iets
+ * anders dan "niet geconfigureerd", en de kaart zou anders permanent blijven
+ * hangen terwijl mail prima werkt. Bij 403 geven we daarom `true` terug (de
+ * kaart is toch vooral een beheerdershint). Een echte 404 (doctype ontbreekt
+ * op deze instance) komt via `fetchList`'s missing-doctype-cache al als lege
+ * array terug, dus die blijft via `rows.length > 0` netjes `false`. Alle
+ * overige fouten (netwerk, 5xx) vallen terug op `false` — dezelfde
+ * conservatieve keuze als voorheen.
  */
 export async function hasEnabledEmailAccount(): Promise<boolean> {
   try {
@@ -397,7 +406,8 @@ export async function hasEnabledEmailAccount(): Promise<boolean> {
       limit_page_length: 1,
     });
     return rows.length > 0;
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) return true;
     return false;
   }
 }

@@ -3695,16 +3695,8 @@ function ImapWebmail() {
    achter `isFeatureEnabled("webmail")`.
 */
 
-/**
- * Feature-gate voor de Communication-mail.
- *
- * `erpnext-mail` staat nog niet in `ServerFeature`: `capabilities.ts` is
- * eigendom van de fase-2-controller, die de key centraal toevoegt en op `true`
- * zet op het moment dat `/webmail` uit de blocklist gaat. Deze ene cast
- * overbrugt dat gat (één plek per bestand); zodra de key bestaat vervalt de
- * cast zonder dat er aan de call-sites iets verandert.
- */
-const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+/** Feature-gate voor de Communication-mail (Y-next, geen eigen server). */
+const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
 
 /** Paginagrootte van de berichtenlijst (gelijk aan de adapter-default). */
 const ERP_PAGE_SIZE = 50;

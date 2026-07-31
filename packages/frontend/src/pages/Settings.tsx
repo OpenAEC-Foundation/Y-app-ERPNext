@@ -9,7 +9,7 @@ import {
 } from "../lib/invoiceEmail";
 import type { ViewMode } from "../components/Sidebar";
 import { useCompanies, useEmployees } from "../lib/DataContext";
-import { fetchList } from "../lib/erpnext";
+import { fetchList, ApiError } from "../lib/erpnext";
 import { NasSettingsSection } from "../components/NasSettingsSection";
 import { getActiveInstance, getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { getErpNextLinkUrl } from "../lib/erpnext";
@@ -1816,6 +1816,7 @@ function ExtensionsPanel({ instanceId }: { instanceId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [formName, setFormName] = useState("");
   const [formUrl, setFormUrl] = useState("");
@@ -1837,12 +1838,30 @@ function ExtensionsPanel({ instanceId }: { instanceId: string }) {
   );
 
   async function persistRemotes(next: RemoteExtension[]) {
+    const previous = remotes;
     setRemotes(next);
     setSaving(true);
+    setSaveError("");
     try {
       await saveRemoteExtensions(instanceId, next);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      // `Y Next Setting` is System Manager-only for write/create (see
+      // scripts/provision-y-next.mjs) — a non-admin viewer gets a 403 here.
+      // Roll back the optimistic update and surface it instead of failing
+      // silently, which would otherwise show an "installed" state that
+      // never actually persisted.
+      setRemotes(previous);
+      if (err instanceof ApiError && err.status === 403) {
+        setSaveError(t("settings.extensions.err_forbidden", {
+          defaultValue: "Only an administrator (System Manager) can change the extension list. Ask an administrator to install or remove this extension.",
+        }));
+      } else {
+        setSaveError(t("settings.extensions.err_save_failed", {
+          defaultValue: "Could not save the extension list. Please try again.",
+        }));
+      }
     } finally { setSaving(false); }
   }
 
@@ -1944,7 +1963,12 @@ function ExtensionsPanel({ instanceId }: { instanceId: string }) {
             })
           )}
         </div>
-        {(saving || saved) && (
+        {saveError && (
+          <div className="px-6 py-2 border-t border-slate-200 bg-red-50 text-xs text-red-600">
+            {saveError}
+          </div>
+        )}
+        {(saving || saved) && !saveError && (
           <div className="px-6 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-500">
             {saving ? t("settings.saving", { defaultValue: "Saving..." }) : t("settings.saved", { defaultValue: "Saved!" })}
           </div>

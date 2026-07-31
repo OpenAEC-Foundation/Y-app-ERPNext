@@ -20,12 +20,8 @@ import { APP_VERSION, APP_NAME } from "../lib/version";
 import { useTranslation } from "react-i18next";
 import InlineSearch from "./InlineSearch";
 
-/**
- * Webmail op ERPNext `Communication`. De key staat nog niet in
- * `ServerFeature` — `capabilities.ts` wordt centraal door de fase-2-controller
- * omgezet; deze ene cast overbrugt dat tot dan (zie App.tsx / Webmail.tsx).
- */
-const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+/** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
+const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
 
 export type Page =
   | "dashboard" | "management-dashboard"

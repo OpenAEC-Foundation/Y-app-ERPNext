@@ -28,7 +28,7 @@ import {
   callMethod,
   getErpNextAppUrl,
 } from "../lib/erpnext";
-import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
+import { getActiveInstanceId } from "../lib/instances";
 import {
   buildExtensionSrc,
   extensionOrigin,
@@ -47,24 +47,28 @@ type RpcReply =
   | { id: string | number; type: "yapp-ext.rpc.reply"; ok: false; error: string };
 
 /**
- * Fetch an ERPNext-hosted private file (e.g. Employee.image) through the
- * bridged per-instance proxy. The extension iframe has no ERPNext session,
- * so returning the blob as base64 lets the extension wrap it in a data:
- * URL without exposing a URL the browser would have to refetch (and fail
- * on) cross-origin. Accepts either a full URL, a relative ERPNext path
+ * Fetch an ERPNext-hosted private file (e.g. Employee.image). The extension
+ * iframe runs on a third-party origin and has no ERPNext session cookie, so
+ * returning the blob as base64 lets the extension wrap it in a data: URL
+ * without exposing a URL the browser would have to refetch (and fail on)
+ * cross-origin. Accepts either a full URL, a relative ERPNext path
  * (`/private/files/...`, `/files/...`) or a bare filename.
+ *
+ * Y-next runs same-origin with ERPNext (no Express server, no `/api/i/:id`
+ * bridged proxy — that was the Y-app-web pattern), so this fetches the
+ * `/private/files/...` path directly and relies on the session cookie the
+ * parent tab already carries.
  */
 async function fetchPrivateFile(rawPath: string): Promise<{ contentType: string; base64: string }> {
-  const inst = getActiveInstance();
   let path = rawPath;
-  // Accept a full URL and strip the origin so we always go through the
-  // bridged `/api/i/:id/*` proxy — the browser has no ERPNext cookies.
+  // Accept a full URL and strip the origin so a same-origin relative fetch
+  // always resolves to this ERPNext site, regardless of what host the
+  // extension embedded in the path it sent us.
   if (/^https?:\/\//i.test(path)) {
     try { path = new URL(path).pathname; } catch { /* fall through */ }
   }
   if (!path.startsWith("/")) path = "/" + path;
-  const url = `/api/i/${inst.id}${path}`;
-  const res = await fetch(url, { credentials: "same-origin" });
+  const res = await fetch(path, { credentials: "same-origin" });
   if (!res.ok) throw new Error(`fetchPrivateFile ${res.status}: ${path}`);
   const contentType = res.headers.get("content-type") || "application/octet-stream";
   const buf = await res.arrayBuffer();

@@ -448,10 +448,42 @@ test("hasEnabledEmailAccount: true zodra er een account met enable_incoming=1 be
   }
 });
 
-test("hasEnabledEmailAccount: false in plaats van een throw wanneer de lijst-call faalt", async () => {
+test("hasEnabledEmailAccount: true bij 403 (geen leesrecht) — 'kan niet vaststellen' != 'niet geconfigureerd'", async () => {
   invalidateCache("Email Account");
   await settleFetchDedup();
   const mock = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
+  try {
+    assert.equal(await hasEnabledEmailAccount(), true);
+  } finally {
+    mock.restore();
+    invalidateCache("Email Account");
+  }
+});
+
+test("hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt (404 DoesNotExistError)", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const mock = installFetchMock(() => ({
+    status: 404,
+    body: {
+      exc_type: "DoesNotExistError",
+      _server_messages: JSON.stringify([
+        JSON.stringify({ message: "DocType Email Account not found", title: "Message" }),
+      ]),
+    },
+  }));
+  try {
+    assert.equal(await hasEnabledEmailAccount(), false);
+  } finally {
+    mock.restore();
+    invalidateCache("Email Account");
+  }
+});
+
+test("hasEnabledEmailAccount: false bij een andere serverfout (5xx)", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const mock = installFetchMock(() => ({ status: 500, body: { exception: "Internal Server Error" } }));
   try {
     assert.equal(await hasEnabledEmailAccount(), false);
   } finally {

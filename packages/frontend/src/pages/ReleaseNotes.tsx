@@ -1,19 +1,9 @@
-import { useState, useEffect } from "react";
-import { RefreshCw, ExternalLink, Tag } from "lucide-react";
+import { ExternalLink, Tag } from "lucide-react";
 import { APP_VERSION, APP_NAME } from "../lib/version";
 import { useTranslation } from "react-i18next";
 
-interface GitHubRelease {
-  tag_name: string;
-  name: string;
-  body: string;
-  published_at: string;
-  html_url: string;
-  prerelease: boolean;
-  draft: boolean;
-}
-
-// Fallback local releases (used when GitHub is unreachable). Newest first.
+// Lokaal onderhouden release-historie (zie CLAUDE.md "Release notes").
+// Newest first.
 const LOCAL_RELEASES = [
   {
     version: "0.31.0",
@@ -1362,66 +1352,17 @@ const LOCAL_RELEASES = [
   },
 ];
 
-/** Parse markdown body from GitHub release into sections */
-function parseReleaseBody(body: string): { title: string; items: string[] }[] {
-  const sections: { title: string; items: string[] }[] = [];
-  let current: { title: string; items: string[] } | null = null;
-  for (const line of body.split("\n")) {
-    const headingMatch = line.match(/^###?\s+(.+)/);
-    if (headingMatch) {
-      if (current) sections.push(current);
-      current = { title: headingMatch[1].trim(), items: [] };
-      continue;
-    }
-    const itemMatch = line.match(/^[-*]\s+(.+)/);
-    if (itemMatch && current) {
-      current.items.push(itemMatch[1].replace(/\*\*/g, "").trim());
-    } else if (itemMatch && !current) {
-      current = { title: "Wijzigingen", items: [itemMatch[1].replace(/\*\*/g, "").trim()] };
-    }
-  }
-  if (current) sections.push(current);
-  return sections;
-}
-
 export default function ReleaseNotes() {
   const { t } = useTranslation();
-  const [ghReleases, setGhReleases] = useState<GitHubRelease[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetchReleases();
-  }, []);
-
-  async function fetchReleases() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("https://api.github.com/repos/OpenAEC-Foundation/Y-app/releases?per_page=20", {
-        headers: { Accept: "application/vnd.github.v3+json" },
-      });
-      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-      const data: GitHubRelease[] = await res.json();
-      setGhReleases(data.filter(r => !r.draft));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Merge GitHub releases with local fallback
-  const releases = ghReleases.length > 0
-    ? ghReleases.map(r => ({
-        version: r.tag_name.replace(/^v/, ""),
-        date: new Date(r.published_at).toLocaleDateString("nl-NL"),
-        url: r.html_url,
-        prerelease: r.prerelease,
-        sections: parseReleaseBody(r.body || ""),
-        name: r.name,
-      }))
-    : LOCAL_RELEASES;
+  // Y-next draait zonder eigen server en zonder eigen GitHub-repo met
+  // releases. Deze pagina deed voorheen onvoorwaardelijk (niet gegate) een
+  // cross-origin fetch naar api.github.com/repos/OpenAEC-Foundation/Y-app —
+  // dat is de release-historie van het Y-app-webproduct, niet van Y-next, en
+  // het stuurt een third-party request vanaf een ERPNext-pagina die niemand
+  // hoeft te maken. Y-next toont daarom uitsluitend de lokale
+  // `LOCAL_RELEASES` — geen netwerkaanroep, geen fallback-mechanisme nodig.
+  const releases = LOCAL_RELEASES;
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -1433,18 +1374,7 @@ export default function ReleaseNotes() {
           <h1 className="text-2xl font-bold text-slate-800">{APP_NAME} Release Notes</h1>
           <p className="text-sm text-slate-500">{t("settings.version")}: v{APP_VERSION}</p>
         </div>
-        <button onClick={fetchReleases} disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer disabled:opacity-50">
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          {loading ? t("common.loading") : t("common.refresh")}
-        </button>
       </div>
-
-      {error && ghReleases.length === 0 && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-          {t("release_notes.fetch_failed", { error })}
-        </div>
-      )}
 
       <div className="space-y-6">
         {releases.map((release) => {

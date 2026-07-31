@@ -11,14 +11,8 @@ import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capab
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
 import { APP_VERSION } from "./lib/version";
 
-/**
- * Webmail op ERPNext `Communication` (Y-next, geen eigen server).
- *
- * De key staat nog niet in `ServerFeature`: `capabilities.ts` wordt centraal
- * door de fase-2-controller omgezet, samen met het schrappen van `/webmail`
- * uit de blocklist. Eén cast per bestand overbrugt dat tot dan.
- */
-const ERPNEXT_MAIL = "erpnext-mail" as ServerFeature;
+/** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
+const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
 
 // Lazy-load all pages
 const Dashboard = lazy(() => import("./pages/dashboard"));

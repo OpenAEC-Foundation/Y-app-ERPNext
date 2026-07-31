@@ -124,17 +124,29 @@ test("buildSettingDoctype: module/custom/autoname en de exacte veldenlijst", () 
   assert.deepEqual(Object.keys(byName).sort(), ["setting_key", "setting_value"]);
 });
 
-test("buildSettingDoctype: geen rol All (API weigert die), Projects User heeft read/write/create", () => {
+test("buildSettingDoctype: geen rol All (API weigert die), System Manager heeft volledige CRUD, Projects User alleen read", () => {
   const def = buildSettingDoctype();
   const byRole = Object.fromEntries(def.permissions.map((p) => [p.role, p]));
   // Frappe weigert rol "All" op custom doctypes die via de API worden
   // aangemaakt ("Non administrator user can not set the role All").
   assert.ok(!byRole["All"]);
 
+  assert.ok(byRole["System Manager"]);
+  assert.equal(byRole["System Manager"].read, 1);
+  assert.equal(byRole["System Manager"].write, 1);
+  assert.equal(byRole["System Manager"].create, 1);
+  assert.equal(byRole["System Manager"].delete, 1);
+
+  // Y Next Setting bevat o.a. de geïnstalleerde-extensies-lijst, die draait
+  // met de ERPNext-rechten van de kijker (ExtensionHost RPC-bridge).
+  // Schrijven/aanmaken is daarom bewust beperkt tot System Manager — een
+  // willekeurige Projects User mag alleen lezen, niet zelf een
+  // extensie-URL installeren die dan in andermans sessie uitgevoerd wordt.
   assert.ok(byRole["Projects User"]);
   assert.equal(byRole["Projects User"].read, 1);
-  assert.equal(byRole["Projects User"].write, 1);
-  assert.equal(byRole["Projects User"].create, 1);
+  assert.equal(byRole["Projects User"].write, undefined);
+  assert.equal(byRole["Projects User"].create, undefined);
+  assert.equal(byRole["Projects User"].delete, undefined);
 });
 
 test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async () => {

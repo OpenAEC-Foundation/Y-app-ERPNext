@@ -220,6 +220,8 @@
   "settings.extensions.err_invalid_url": "URL moet beginnen met http:// of https://",
   "settings.extensions.err_id_required": "ID is verplicht",
   "settings.extensions.err_duplicate_id": "Er bestaat al een extensie met dit ID",
+  "settings.extensions.err_forbidden": "Alleen een beheerder (System Manager) kan de extensielijst wijzigen. Vraag een beheerder om deze extensie te installeren of te verwijderen.",
+  "settings.extensions.err_save_failed": "Opslaan van de extensielijst is mislukt. Probeer het opnieuw.",
   "_technical.datastore_error": "useDataStore must be used inside <DataProvider>",
   "modules.section.general": "Algemeen",
   "modules.section.organisation": "Organisatie",

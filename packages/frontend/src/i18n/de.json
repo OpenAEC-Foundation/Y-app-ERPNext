@@ -2220,6 +2220,8 @@
   "settings.extensions.err_invalid_url": "URL muss mit http:// oder https:// beginnen",
   "settings.extensions.err_id_required": "ID ist erforderlich",
   "settings.extensions.err_duplicate_id": "Eine Erweiterung mit dieser ID existiert bereits",
+  "settings.extensions.err_forbidden": "Nur ein Administrator (System Manager) kann die Erweiterungsliste ändern. Bitte einen Administrator, diese Erweiterung zu installieren oder zu entfernen.",
+  "settings.extensions.err_save_failed": "Die Erweiterungsliste konnte nicht gespeichert werden. Bitte versuche es erneut.",
   "tasks.create.title": "Neue Aufgabe",
   "tasks.create.subject_placeholder": "Betreff der Aufgabe...",
   "tasks.create.project_search": "Projekt suchen...",

@@ -220,6 +220,8 @@
   "settings.extensions.err_invalid_url": "URL must start with http:// or https://",
   "settings.extensions.err_id_required": "ID is required",
   "settings.extensions.err_duplicate_id": "An extension with this ID already exists",
+  "settings.extensions.err_forbidden": "Only an administrator (System Manager) can change the extension list. Ask an administrator to install or remove this extension.",
+  "settings.extensions.err_save_failed": "Could not save the extension list. Please try again.",
   "_technical.datastore_error": "useDataStore must be used inside <DataProvider>",
   "modules.section.general": "General",
   "modules.section.organisation": "Organisation",
