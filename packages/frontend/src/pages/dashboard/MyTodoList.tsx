@@ -45,10 +45,69 @@ export function MyTodoList({ filterMode, onNavigate }: { filterMode?: "tasks" | 
 
   // For assigning new todos (optional)
   const myEmployeeId = getActiveEmployee();
+
+  // Resolve the ERPNext session user as a fallback for sites where no
+  // "default employee" is configured in Settings (getActiveEmployee() then
+  // returns ""). Without this, myEmail below stays permanently empty on
+  // such sites, loadTodos() is never called (it's gated on myEmail), and
+  // this widget spins on "Laden..." forever — same resolution chain as
+  // Tasks.tsx's myEmail.
+  const [erpnextUsername, setErpnextUsername] = useState<string>("");
+  const [erpnextFullName, setErpnextFullName] = useState<string>("");
+  const [sessionChecked, setSessionChecked] = useState(false);
+  useEffect(() => {
+    fetch("/api/method/frappe.auth.get_logged_user", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (d) => {
+        const username = d?.message;
+        if (!username || username === "Guest") return;
+        setErpnextUsername(username);
+        try {
+          const userRes = await fetch(`/api/resource/User/${encodeURIComponent(username)}`, { credentials: "same-origin" });
+          if (userRes.ok) {
+            const userBody = await userRes.json();
+            if (userBody?.data?.full_name) setErpnextFullName(userBody.data.full_name);
+          }
+        } catch {
+          // full_name is a nice-to-have; username-only matching still works
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSessionChecked(true));
+  }, []);
+
   const myEmail = useMemo(() => {
-    const emp = employees.find((e) => e.name === myEmployeeId);
-    return emp?.user_id || emp?.company_email || "";
-  }, [employees, myEmployeeId]);
+    // Priority 1: default employee setting → resolve to email
+    if (myEmployeeId) {
+      const emp = employees.find((e) => e.name === myEmployeeId);
+      if (emp) return emp.user_id || emp.company_email || "";
+    }
+    // Priority 2: match ERPNext logged-in user against Employee.user_id
+    if (erpnextUsername) {
+      const emp = employees.find((e) => e.user_id?.toLowerCase() === erpnextUsername.toLowerCase());
+      if (emp) return emp.user_id || emp.company_email || erpnextUsername;
+    }
+    // Priority 3: match by fullName (ERPNext User name often differs from Employee email)
+    if (erpnextFullName) {
+      const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+      const fullNameNorm = normalize(erpnextFullName);
+      const emp = employees.find((e) => normalize(e.employee_name) === fullNameNorm);
+      if (emp) return emp.user_id || emp.company_email || "";
+    }
+    // Priority 4: just the ERPNext username
+    if (erpnextUsername) return erpnextUsername;
+    // Priority 5: legacy session user
+    return localStorage.getItem("y_session_user") || "";
+  }, [employees, myEmployeeId, erpnextUsername, erpnextFullName]);
+
+  // Safety net: once the session lookup has settled and we still can't
+  // resolve "who am I", stop showing the loading spinner — there is no
+  // myEmail for loadTodos() to ever fire on, so without this the widget
+  // would otherwise spin on "Laden..." indefinitely.
+  useEffect(() => {
+    if (myEmail || !sessionChecked) return;
+    setLoading(false);
+  }, [myEmail, sessionChecked]);
 
   const projectNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -82,14 +141,18 @@ export function MyTodoList({ filterMode, onNavigate }: { filterMode?: "tasks" | 
       .filter(t => t.reference_type === "Task" && t.reference_name && !taskDetails.has(t.reference_name))
       .map(t => t.reference_name);
     if (taskNames.length === 0) return;
-    fetchList<{ name: string; subject: string; project: string; description: string; workflow_state: string }>("Task", {
-      fields: ["name", "subject", "project", "description", "workflow_state"],
+    fetchList<{ name: string; subject: string; project: string; description: string; workflow_state: string; status: string }>("Task", {
+      fields: ["name", "subject", "project", "description", "workflow_state", "status"],
       filters: [["name", "in", taskNames]],
       limit_page_length: taskNames.length,
     }).then(tasks => {
       setTaskDetails(prev => {
         const newMap = new Map(prev);
-        for (const t of tasks) newMap.set(t.name, t);
+        // Same field-self-heal fallback as Tasks.tsx: on instances without a
+        // Task Workflow, workflow_state comes back undefined for every row,
+        // so the Completed/Cancelled filter below and the badge would
+        // otherwise silently stop working.
+        for (const t of tasks) newMap.set(t.name, { ...t, workflow_state: t.workflow_state || t.status });
         return newMap;
       });
     }).catch(() => {});
@@ -307,6 +370,9 @@ export function MyTodoList({ filterMode, onNavigate }: { filterMode?: "tasks" | 
 
           {openTodos.length === 0 && closedTodos.length === 0 && myEmail && (
             <p className="text-sm text-slate-400 text-center py-4">{t("dashboard.no_todos")}</p>
+          )}
+          {openTodos.length === 0 && closedTodos.length === 0 && !myEmail && sessionChecked && (
+            <p className="text-sm text-slate-400 text-center py-4">{t("dashboard.no_employee_linked")}</p>
           )}
         </div>
       )}

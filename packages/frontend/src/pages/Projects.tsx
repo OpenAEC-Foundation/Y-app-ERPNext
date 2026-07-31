@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
-import { fetchList, fetchDocument, fetchAll, fetchCount, callMethod, createDocument, updateDocument, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchList, fetchDocument, fetchAll, fetchCount, fetchChildTable, callMethod, createDocument, updateDocument, getErpNextLinkUrl } from "../lib/erpnext";
 import { useProjects, useCompanies, useEmployees } from "../lib/DataContext";
 import { getActiveInstanceId, getActiveCompany, getActiveEmployee } from "../lib/instances";
 import type { ProjectRecord } from "../lib/DataContext";
@@ -2112,11 +2112,17 @@ export default function Projects() {
       let tsDetails: TimesheetDetail[] = [];
       let tsParents: TimesheetParent[] = [];
       try {
-        tsDetails = await fetchList<TimesheetDetail>("Timesheet Detail", {
-          fields: ["project", "hours", "parent"],
-          filters: [["project", "is", "set"]],
-          limit_page_length: 5000,
-        });
+        // Frappe v16 403s a plain /api/resource list query against a
+        // child-table doctype like "Timesheet Detail" — even with a
+        // parenttype filter — so this goes through fetchChildTable's
+        // frappe.client.get_list(parent=...) RPC instead (verified against
+        // a live v16 instance; see lib/erpnext.ts for details).
+        tsDetails = await fetchChildTable<TimesheetDetail>(
+          "Timesheet Detail", "Timesheet",
+          ["project", "hours", "parent"],
+          [["project", "is", "set"]],
+          5000
+        );
         if (tsDetails.length > 0) {
           tsParents = await fetchList<TimesheetParent>("Timesheet", {
             fields: ["name", "employee_name"],

@@ -270,7 +270,21 @@ function missingDoctypeKey(doctype: string): string {
   return `${getActiveInstance().id}::${doctype}`;
 }
 
-function isDoctypeMissing(doctype: string): boolean {
+/**
+ * Whether `doctype` has already been confirmed missing on the active
+ * instance (see markDoctypeMissing above) — i.e. every fetchList/fetchAll/
+ * fetchCount call against it is degrading to an empty result rather than
+ * hitting the network. Pages that need to tell "genuinely zero records"
+ * apart from "this app isn't installed here" (e.g. to show a dedicated
+ * "module unavailable" notice instead of a misleading all-zeros view) can
+ * check this after their initial load instead of re-deriving the same
+ * missing-doctype detection themselves.
+ *
+ * Only reflects doctypes this tab has actually queried at least once —
+ * before the first request, a genuinely-missing doctype still reads as
+ * `false` here.
+ */
+export function isDoctypeMissing(doctype: string): boolean {
   return missingDoctypesCache.has(missingDoctypeKey(doctype));
 }
 
@@ -581,6 +595,38 @@ export async function callMethod(
   }
   const json = await res.json();
   return json.message;
+}
+
+/**
+ * List rows of a Frappe child-table doctype (e.g. "Timesheet Detail")
+ * directly, scoped to its parent doctype.
+ *
+ * On Frappe v16, a plain `/api/resource/<Child Doctype>` list query for a
+ * child table — fetchList's usual path — comes back HTTP 403
+ * ("Insufficient Permission for Timesheet Detail"), *even when the query
+ * includes a `["parenttype", "=", "<Parent Doctype>"]` filter*: verified
+ * against a live v16 instance, both plain and parenttype-filtered
+ * `/api/resource` requests 403 identically. The documented, working way to
+ * list child-table rows is the `frappe.client.get_list` RPC with an
+ * explicit `parent` argument (not a filter) naming the parent doctype —
+ * also verified live: same query, only the `parent` kwarg differs, and it
+ * returns 200 with the expected rows. This wraps that call.
+ *
+ * Unlike fetchList, this is not client-side cached or self-healing on
+ * rejected fields — callers with those needs should wrap this themselves.
+ */
+export async function fetchChildTable<T = Record<string, unknown>>(
+  childDoctype: string,
+  parentDoctype: string,
+  fields: string[],
+  filters?: unknown[][],
+  limitPageLength?: number
+): Promise<T[]> {
+  const args: Record<string, unknown> = { doctype: childDoctype, parent: parentDoctype, fields };
+  if (filters && filters.length > 0) args.filters = filters;
+  if (limitPageLength !== undefined) args.limit_page_length = limitPageLength;
+  const result = await callMethod("frappe.client.get_list", args);
+  return (result as T[] | null) || [];
 }
 
 export async function createDocument<T = Record<string, unknown>>(

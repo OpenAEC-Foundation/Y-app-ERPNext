@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { fetchAll, fetchCount } from "../lib/erpnext";
+import { fetchAll, fetchCount, fetchChildTable } from "../lib/erpnext";
 import {
   BarChart3, RefreshCw, Landmark, FileText, ShoppingCart,
   TrendingUp, AlertTriangle, Filter, Clock, Users, FolderKanban, X, Building2,
@@ -138,6 +138,12 @@ const fmt = (n: number) => n % 1 !== 0 ? n.toFixed(1) : n.toFixed(0);
  * filteren, dus filteren we eerst de parent-Timesheets en batchen we de
  * detail-fetch per 200 parent-namen (voorkomt een te lange `filters`-query
  * bij grote jaren, net als de oude server-implementatie deed).
+ *
+ * Frappe v16 403's a plain /api/resource list query against a child-table
+ * doctype like "Timesheet Detail" — even with a parenttype filter — so this
+ * goes through fetchChildTable's frappe.client.get_list(parent=...) RPC
+ * instead of fetchAll (verified against a live v16 instance; see
+ * lib/erpnext.ts for details).
  */
 async function fetchTimesheetDetailsChunked<T>(
   parentNames: string[],
@@ -148,7 +154,9 @@ async function fetchTimesheetDetailsChunked<T>(
   const chunks: string[][] = [];
   for (let i = 0; i < parentNames.length; i += CHUNK) chunks.push(parentNames.slice(i, i + CHUNK));
   const results = await Promise.all(
-    chunks.map((chunk) => fetchAll<T>("Timesheet Detail", fields, [["parent", "in", chunk]]))
+    // Generous per-chunk cap: each chunk covers 200 parent Timesheets, and a
+    // Timesheet realistically has at most a handful of time-log rows each.
+    chunks.map((chunk) => fetchChildTable<T>("Timesheet Detail", "Timesheet", fields, [["parent", "in", chunk]], 5000))
   );
   return results.flat();
 }
@@ -168,10 +176,15 @@ async function computeUrenStats(
 ): Promise<UrenStats> {
   const [employees, timesheets, projects] = await Promise.all([
     fetchAll<{ name: string; company: string }>("Employee", ["name", "company"]),
+    // Not `docstatus = 1` (submitted-only): on instances where Timesheets
+    // are never explicitly "submitted" in the ERPNext document-lifecycle
+    // sense, that would silently zero out every hour on this tab — same
+    // reasoning as Profitability.tsx and ErpNextOverview.tsx's timesheet
+    // count (`docstatus != 2`). Only exclude cancelled (docstatus = 2) rows.
     fetchAll<{ name: string; employee: string; employee_name: string; start_date: string; total_hours: number }>(
       "Timesheet",
       ["name", "employee", "employee_name", "start_date", "total_hours"],
-      [["docstatus", "=", 1], ["start_date", "like", `${year}%`]],
+      [["docstatus", "!=", 2], ["start_date", "like", `${year}%`]],
       "start_date asc"
     ),
     fetchAll<{ name: string; project_name: string }>("Project", ["name", "project_name"]),
@@ -389,10 +402,14 @@ export default function FinancieelDashboard() {
     setLoadingDetail(true);
     try {
       const monthStr = String(monthIdx + 1).padStart(2, "0");
+      // Match computeUrenStats' `docstatus != 2` above — this drill-down
+      // must find the same Timesheets that fed the aggregate hours it's
+      // expanding, or a month that shows N hours in the overview would show
+      // an empty detail panel on click.
       const timesheets = await fetchAll<{ name: string; start_date: string }>(
         "Timesheet",
         ["name", "start_date"],
-        [["docstatus", "=", 1], ["employee", "=", employee], ["start_date", "like", `${urenYear}-${monthStr}%`]]
+        [["docstatus", "!=", 2], ["employee", "=", employee], ["start_date", "like", `${urenYear}-${monthStr}%`]]
       );
       const tsStartDate = new Map(timesheets.map((ts) => [ts.name, ts.start_date]));
 

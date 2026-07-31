@@ -80,8 +80,14 @@ export default function Profitability() {
   async function loadData() {
     setLoading(true);
     try {
+      // Not `docstatus = 1` (submitted-only): on instances where Timesheets
+      // are never explicitly "submitted" in the ERPNext document-lifecycle
+      // sense (approval tracked some other way — same reality
+      // ErpNextOverview.tsx's timesheet count already accounts for with
+      // `docstatus != 2`), that would silently zero out every hour here.
+      // Only exclude cancelled (docstatus = 2) rows.
       const tsFilters: unknown[][] = [
-        ["docstatus", "=", 1],
+        ["docstatus", "!=", 2],
         ["start_date", ">=", yearStart],
         ["start_date", "<=", yearEnd],
       ];

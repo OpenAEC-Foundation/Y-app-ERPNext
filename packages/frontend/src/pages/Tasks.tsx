@@ -45,7 +45,29 @@ const workflowColors: Record<string, string> = {
   "to discussed": "bg-cyan-100 text-cyan-700",
   Completed: "bg-green-100 text-green-700",
   Cancelled: "bg-red-100 text-red-700",
+  // Plain ERPNext Task statuses — shown when the site has no Task Workflow
+  // configured, so `workflow_state` falls back to `status` (see loadData).
+  "Pending Review": "bg-purple-100 text-purple-700",
+  Overdue: "bg-red-100 text-red-700",
 };
+
+// Two status vocabularies, depending on whether this Task doctype has a
+// Workflow configured on the active instance:
+// - WORKFLOW_STATUS_OPTIONS: the custom workflow_state values used when a
+//   Task Workflow exists (this app's own history).
+// - PLAIN_STATUS_OPTIONS: ERPNext's built-in Task.status values, used when
+//   no workflow is configured — querying `workflow_state` then gets a 417
+//   ("Field not permitted in query"), lib/erpnext.ts self-heals that by
+//   dropping the field, and loadData falls back to `status` per task.
+const WORKFLOW_STATUS_OPTIONS = [
+  "Open", "Working", "Pending Review Intern", "Pending Review Extern",
+  "On Hold", "Information required", "to discussed", "Completed", "Cancelled",
+];
+const PLAIN_STATUS_OPTIONS = ["Open", "Working", "Pending Review", "Overdue", "Completed", "Cancelled"];
+// Default filter selections per vocabulary — everything except the "done"
+// states, matching the original workflow-mode default.
+const WORKFLOW_DEFAULT_FILTER = ["Open", "Working", "Pending Review Intern", "Pending Review Extern", "On Hold", "Information required", "to discussed"];
+const PLAIN_DEFAULT_FILTER = ["Open", "Working", "Pending Review", "Overdue"];
 
 // Workflow action map: { fromState: [{ action, nextState }] }
 const workflowActions: Record<string, { action: string; next: string }[]> = {
@@ -179,7 +201,19 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string[]>(["Open", "Working", "Pending Review Intern", "Pending Review Extern", "On Hold", "Information required", "to discussed"]);
+  // Empty = no filter applied yet. Populated with a sensible default (all
+  // "not done" statuses, in whichever vocabulary this instance actually
+  // uses) once the first load tells us whether workflow_state is available
+  // — see loadData/didInitStatusFilter below. Starting non-empty here would
+  // silently hide every task whenever this instance turns out to use plain
+  // ERPNext statuses instead of a custom Task Workflow.
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  // Whether the Task doctype on this instance actually has a Workflow
+  // configured (workflow_state query succeeds) vs. falls back to ERPNext's
+  // built-in status values (workflow_state gets self-healed away as a 417).
+  // Drives which status vocabulary the filter dropdown/badges use.
+  const [hasWorkflowState, setHasWorkflowState] = useState(true);
+  const didInitStatusFilter = useRef(false);
   const [company, setCompany] = useState(() => getActiveCompany() || "");
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -247,22 +281,29 @@ export default function Tasks() {
       ];
       // Try with workflow_state first. Frappe only exposes that field when
       // the Task doctype has a Workflow configured; on instances without
-      // one the call returns 417. Retry without it and synthesize
-      // workflow_state from `status` so the badge/filter UI still renders
-      // (the WorkflowChanger dropdown naturally degrades to empty because
-      // workflowActions has no entries for ERPNext's built-in statuses).
-      const fetchTasks = async (): Promise<Task[]> => {
+      // one, lib/erpnext.ts's field self-heal silently drops workflow_state
+      // from the query and retries — it does NOT throw, so every row comes
+      // back with workflow_state simply absent, not a 417. (The ApiError
+      // catch below is kept as a defensive fallback in case that field ever
+      // surfaces as a hard error instead of self-healing.) Either way,
+      // synthesize workflow_state from `status` so filtering/grouping never
+      // silently loses every task (the WorkflowChanger dropdown naturally
+      // degrades to empty because workflowActions has no entries for
+      // ERPNext's built-in statuses).
+      const fetchTasks = async (): Promise<{ rows: Task[]; hasWorkflow: boolean }> => {
         try {
-          return await fetchAll<Task>("Task", [...BASE_FIELDS, "workflow_state"], filters, "modified desc");
+          const raw = await fetchAll<Task>("Task", [...BASE_FIELDS, "workflow_state"], filters, "modified desc");
+          const hasWorkflow = raw.some((r) => r.workflow_state);
+          return { rows: raw.map((r) => ({ ...r, workflow_state: r.workflow_state || r.status })), hasWorkflow };
         } catch (err) {
           if (err instanceof ApiError && err.status === 417) {
             const rows = await fetchAll<Omit<Task, "workflow_state">>("Task", BASE_FIELDS, filters, "modified desc");
-            return rows.map((r) => ({ ...r, workflow_state: r.status }));
+            return { rows: rows.map((r) => ({ ...r, workflow_state: r.status })), hasWorkflow: false };
           }
           throw err;
         }
       };
-      const [list, empList] = await Promise.all([
+      const [{ rows: list, hasWorkflow }, empList] = await Promise.all([
         fetchTasks(),
         fetchList<Employee>("Employee", {
           fields: ["name", "employee_name", "company_email", "user_id"],
@@ -272,6 +313,11 @@ export default function Tasks() {
       ]);
       setTasks(list);
       setEmployees(empList);
+      setHasWorkflowState(hasWorkflow);
+      if (!didInitStatusFilter.current) {
+        didInitStatusFilter.current = true;
+        setStatusFilter(hasWorkflow ? WORKFLOW_DEFAULT_FILTER : PLAIN_DEFAULT_FILTER);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -618,7 +664,7 @@ export default function Tasks() {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setStatusDropdownOpen(false)} />
               <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 min-w-[180px]">
-                {["Open", "Working", "Pending Review Intern", "Pending Review Extern", "On Hold", "Information required", "to discussed", "Completed", "Cancelled"].map((s) => (
+                {(hasWorkflowState ? WORKFLOW_STATUS_OPTIONS : PLAIN_STATUS_OPTIONS).map((s) => (
                   <label
                     key={s}
                     className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700"

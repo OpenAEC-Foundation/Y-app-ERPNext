@@ -30,6 +30,22 @@ const FORBIDDEN = /\/api\/(mail|messenger|nextcloud|nas|calendar|meetings|stats|
 const DEFAULT_ROUTES = ["/", "/settings"];
 const routes = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT_ROUTES;
 
+// Fail fast on malformed routes (e.g. Git Bash/MSYS path-mangled CLI args —
+// see routeToName below) before launching a browser or screenshotting
+// anything, rather than crashing mid-run after some routes already ran.
+for (const route of routes) {
+  if (typeof route !== "string" || !route.startsWith("/")) {
+    console.error(
+      `Ongeldige route "${route}" — verwacht een route die met "/" begint. ` +
+      `Op Git Bash/MSYS kan de shell een kaal "/route"-argument omzetten naar een ` +
+      `absoluut Windows-pad (bv. "C:/Program Files/Git/route") vóórdat node het ` +
+      `ziet. Zet in dat geval MSYS_NO_PATHCONV=1 vóór het commando, of gebruik een ` +
+      `dubbele leidende slash ("//route").`
+    );
+    process.exit(1);
+  }
+}
+
 const outDir = join(process.cwd(), "temp", "screens");
 mkdirSync(outDir, { recursive: true });
 
@@ -50,7 +66,33 @@ async function launch() {
   throw lastError;
 }
 
+/**
+ * Turn an app route ("/", "/leads", "/sales/123") into a safe screenshot
+ * filename stem.
+ *
+ * On Git Bash/MSYS (Windows), a bare leading-slash CLI argument like
+ * "/sales" is silently rewritten by the shell's POSIX-path conversion into
+ * an absolute Windows path — e.g. "C:/Program Files/Git/sales" — *before*
+ * node ever sees it, because MSYS treats a single leading "/" as its own
+ * install root. Passed unguarded into the old implementation, that mangled
+ * path degraded to a filename like "C_Program_Files_Git_sales.png": no
+ * error, but also not a screenshot of anything meaningful (the equally
+ * mangled `#${route}` hash used for the actual page load matched nothing,
+ * so the app rendered its default view instead).
+ *
+ * Reject anything that isn't a real "/"-rooted route instead of silently
+ * turning it into a plausible-looking but wrong filename.
+ */
 function routeToName(route) {
+  if (typeof route !== "string" || !route.startsWith("/")) {
+    throw new Error(
+      `Ongeldige route "${route}" — verwacht een route die met "/" begint. ` +
+      `Op Git Bash/MSYS kan de shell een kaal "/route"-argument omzetten naar een ` +
+      `absoluut Windows-pad (bv. "C:/Program Files/Git/route") vóórdat node het ` +
+      `ziet. Zet in dat geval MSYS_NO_PATHCONV=1 vóór het commando, of gebruik een ` +
+      `dubbele leidende slash ("//route").`
+    );
+  }
   const clean = route.replace(/^\/+|\/+$/g, "").replace(/[^a-z0-9-]+/gi, "_");
   return clean || "dashboard";
 }

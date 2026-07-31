@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
-import { fetchList, fetchDocument } from "../../lib/erpnext";
+import { fetchList, fetchDocument, fetchChildTable } from "../../lib/erpnext";
 import { useDataLoading } from "../../lib/DataContext";
 import { isHoliday } from "../../lib/holidays";
 import { getActiveEmployee } from "../../lib/instances";
@@ -58,17 +58,23 @@ export function useMissingBookings(): { missingHours: string | null; missingKm: 
         // Replaced with a single Timesheet Detail list query: filter by
         // parent IN [...] AND from_time within prevDateStr. limit 1 because
         // we only need to know if any row exists.
+        // Frappe v16 403's a plain /api/resource list query against a
+        // child-table doctype like "Timesheet Detail" — even with a
+        // parenttype filter — so this goes through fetchChildTable's
+        // frappe.client.get_list(parent=...) RPC instead (verified against
+        // a live v16 instance; see lib/erpnext.ts for details).
         let hasHours = false;
         if (timesheets.length > 0) {
-          const detailRows = await fetchList<{ name: string }>("Timesheet Detail", {
-            fields: ["name"],
-            filters: [
+          const detailRows = await fetchChildTable<{ name: string }>(
+            "Timesheet Detail", "Timesheet",
+            ["name"],
+            [
               ["parent", "in", timesheets.map(ts => ts.name)],
               ["from_time", ">=", `${prevDateStr} 00:00:00`],
               ["from_time", "<=", `${prevDateStr} 23:59:59`],
             ],
-            limit_page_length: 1,
-          });
+            1
+          );
           hasHours = detailRows.length > 0;
         }
         if (!hasHours) {

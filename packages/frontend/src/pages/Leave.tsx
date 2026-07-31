@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { fetchList, fetchDocument, createDocument, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchList, fetchDocument, createDocument, getErpNextLinkUrl, isDoctypeMissing } from "../lib/erpnext";
 import CompanySelect from "../components/CompanySelect";
 import { useEmployees } from "../lib/DataContext";
 import { fetchShiftHoursMap, fetchShiftDayHoursMap, fetchEmployeeDayHours } from "../lib/shiftHours";
@@ -148,6 +148,12 @@ export default function Leave() {
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set once the initial load has confirmed Leave Application/Leave
+  // Allocation don't exist on this ERPNext instance (no HRMS app installed —
+  // see lib/erpnext.ts's missing-doctype cache). When true, every count and
+  // balance below is structurally zero, not a data fact, so the page shows
+  // a dedicated notice instead of a misleading wall of zeros.
+  const [hrModuleUnavailable, setHrModuleUnavailable] = useState(false);
   const [search, setSearch] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [statusFilter, setStatusFilter] = useState("");
@@ -227,6 +233,10 @@ export default function Leave() {
       setLeaves(list);
       setAllocations(allocData);
       setTimesheets(tsData);
+      // fetchList already degraded these to [] instead of throwing if the
+      // doctype itself doesn't exist on this instance (no HRMS app) — check
+      // that after the fact so the UI can explain *why* everything is zero.
+      setHrModuleUnavailable(isDoctypeMissing("Leave Application") || isDoctypeMissing("Leave Allocation"));
 
       // Use shared shift hours utility (B09/B11: real Shift Type data, no name-parsing)
       setContractHoursMap(shiftResult.hoursMap);
@@ -443,6 +453,13 @@ export default function Leave() {
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
+      )}
+
+      {!loading && hrModuleUnavailable && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 flex items-start gap-3">
+          <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+          <span>{t("y_next.module_unavailable")}</span>
+        </div>
       )}
 
       {/* KPI Cards - clickable to switch to aanvragen tab */}

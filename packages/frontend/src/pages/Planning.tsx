@@ -28,6 +28,11 @@ interface Task {
   exp_end_date: string;
 }
 
+// Terminal states shared by both the custom Task Workflow vocabulary and
+// ERPNext's built-in Task statuses — used to blacklist "done" tasks out of
+// the kanban tab regardless of which vocabulary this instance uses.
+const DONE_STATES = ["Completed", "Cancelled"];
+
 const priorityColors: Record<string, string> = {
   Urgent: "bg-red-400",
   High: "bg-orange-400",
@@ -196,7 +201,12 @@ export default function Planning() {
           limit_page_length: 200,
         }),
       ]);
-      setKanbanTasks(list);
+      // Same field-self-heal fallback as Tasks.tsx: on instances without a
+      // Task Workflow, `workflow_state` gets silently dropped by
+      // lib/erpnext.ts's 417 self-heal, so every row would otherwise carry
+      // workflow_state === undefined and vanish from the active-states
+      // filter below.
+      setKanbanTasks(list.map((task) => ({ ...task, workflow_state: task.workflow_state || task.status })));
       setKanbanEmployees(empList);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
@@ -236,10 +246,12 @@ export default function Planning() {
     return emailToName.get(email.toLowerCase()) || email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  // Kanban: filter by active workflow states
+  // Kanban: filter by active (not-yet-done) states. Blacklist rather than
+  // whitelist so this works regardless of whether this instance uses the
+  // custom Task Workflow vocabulary or plain ERPNext statuses (both use
+  // "Completed"/"Cancelled" as their terminal states).
   const kanbanFiltered = useMemo(() => {
-    const activeStates = ["Open", "Working", "Pending Review Intern", "Pending Review Extern", "On Hold", "Information required", "to discussed"];
-    return kanbanTasks.filter((t) => activeStates.includes(t.workflow_state));
+    return kanbanTasks.filter((t) => !DONE_STATES.includes(t.workflow_state));
   }, [kanbanTasks]);
 
   // Kanban: group by assignee

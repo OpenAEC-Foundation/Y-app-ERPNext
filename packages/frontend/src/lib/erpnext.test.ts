@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchList, fetchAll, createDocument, fetchCount, ApiError } from "./erpnext.ts";
+import { fetchList, fetchAll, createDocument, fetchCount, ApiError, isDoctypeMissing, fetchChildTable } from "./erpnext.ts";
 import { resetCsrfTokenCache } from "./csrf.ts";
 
 interface RecordedCall {
@@ -336,6 +336,79 @@ test("fetchCount: missing doctype (404 DoesNotExistError) resolves to 0 and is c
     assert.equal(call, 1, "no additional network call once the doctype is known missing");
   } finally {
     mock.restore();
+  }
+});
+
+test("fetchChildTable: lists a child doctype via frappe.client.get_list with an explicit `parent` arg (not a `parenttype` filter)", async () => {
+  const mock = installFetchMock((url, init) => {
+    assert.match(url, /^\/api\/method\/frappe\.client\.get_list$/);
+    assert.equal(init?.method, "POST");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.doctype, "Timesheet Detail");
+    assert.equal(body.parent, "Timesheet");
+    // Must NOT smuggle the parent scoping in as a "parenttype" filter —
+    // verified live against Frappe v16 that still 403s.
+    const filters: unknown[][] = body.filters || [];
+    assert.ok(!filters.some((f) => Array.isArray(f) && f[0] === "parenttype"));
+    assert.deepEqual(body.fields, ["name", "hours", "parent"]);
+    return { status: 200, body: { message: [{ name: "row-1", hours: 4, parent: "TS-0001" }] } };
+  });
+  try {
+    const rows = await fetchChildTable<{ name: string; hours: number; parent: string }>(
+      "Timesheet Detail", "Timesheet", ["name", "hours", "parent"], [["parent", "in", ["TS-0001"]]], 500
+    );
+    assert.deepEqual(rows, [{ name: "row-1", hours: 4, parent: "TS-0001" }]);
+    assert.equal(mock.calls.length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchChildTable: returns [] when the RPC responds with no message", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: {} }));
+  try {
+    const rows = await fetchChildTable("Timesheet Detail", "Timesheet", ["name"]);
+    assert.deepEqual(rows, []);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("isDoctypeMissing: false before any request, true once fetchList has confirmed the doctype is missing", async () => {
+  const doctype = "Expense Claim";
+  // Not queried yet in this tab — must not report "missing" based on
+  // nothing, even though the doctype genuinely doesn't exist on the target.
+  assert.equal(isDoctypeMissing(doctype), false);
+
+  const mock = installFetchMock(() => ({
+    status: 404,
+    body: {
+      exc_type: "DoesNotExistError",
+      _server_messages: JSON.stringify([
+        JSON.stringify({ message: `DocType ${doctype} not found`, title: "Message" }),
+      ]),
+    },
+  }));
+  try {
+    const rows = await fetchList(doctype, { fields: ["name"] });
+    assert.deepEqual(rows, []);
+    // Now that fetchList has hit and cached the 404, callers (e.g. a page
+    // that wants to show "module unavailable" instead of misleading zeros)
+    // can detect it without re-deriving the same logic themselves.
+    assert.equal(isDoctypeMissing(doctype), true);
+  } finally {
+    mock.restore();
+  }
+
+  // A doctype that is NOT missing (ordinary successful fetch) must read false.
+  const okDoctype = "IsDoctypeMissingOkDoctype";
+  assert.equal(isDoctypeMissing(okDoctype), false);
+  const okMock = installFetchMock(() => ({ status: 200, body: { data: [{ name: "X" }] } }));
+  try {
+    await fetchList(okDoctype, { fields: ["name"] });
+    assert.equal(isDoctypeMissing(okDoctype), false);
+  } finally {
+    okMock.restore();
   }
 });
 
