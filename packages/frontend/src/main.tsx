@@ -8,6 +8,21 @@ import { initInstances } from './lib/instances'
 // Apply default theme
 initInstances()
 
+// Documenttitel en favicon: als Web Page draait de SPA onder ERPNext's
+// eigen paginatitel en zonder favicon. Zet hier vóór de eerste render een
+// duidelijke Y-next-identiteit. De guard voorkomt een dubbele <link> bij
+// een tweede mount en laat dev (index.html declareert al een favicon)
+// ongemoeid. BASE_URL is "/" in dev en "/files/" in productie, dus dit pad
+// resolvet in beide omgevingen correct naar het gebundelde logo-asset.
+document.title = "Y-next";
+if (!document.querySelector('link[rel~="icon"]')) {
+  const iconLink = document.createElement("link");
+  iconLink.rel = "icon";
+  iconLink.type = "image/svg+xml";
+  iconLink.href = `${import.meta.env.BASE_URL}y-logo.svg`;
+  document.head.appendChild(iconLink);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

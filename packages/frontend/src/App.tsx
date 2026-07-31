@@ -9,6 +9,7 @@ import { ToastProvider } from "./components/Toast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isFeatureEnabled, isPageEnabled } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
+import { APP_VERSION } from "./lib/version";
 
 // Lazy-load all pages
 const Dashboard = lazy(() => import("./pages/dashboard"));
@@ -148,16 +149,71 @@ function App() {
   }
 
   if (state.status === "unauthenticated") {
+    // Zelfde kaartopmaak als het originele Y-app loginscherm (zie
+    // LoginPage.tsx): donkere teal-gradient achtergrond, glazen kaart met
+    // Y-logo-badge en een footer met "OpenAEC Foundation" + versienummer.
+    // Geen e-mail/wachtwoord-velden en geen /api/yapp-aanroepen — dit
+    // scherm stuurt alleen door naar de bestaande ERPNext-login.
     return (
-      <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm rounded-xl bg-white shadow-xl p-8 text-center space-y-5">
-          <p className="text-sm text-slate-600">{t("y_next.login_required")}</p>
-          <button
-            onClick={() => window.location.assign(loginUrl())}
-            className="w-full px-4 py-2 rounded-lg bg-y-teal text-white text-sm font-medium hover:opacity-90 cursor-pointer"
-          >
-            {t("y_next.login_button")}
-          </button>
+      <div
+        className="fixed inset-0 flex items-center justify-center p-6"
+        style={{
+          background:
+            "linear-gradient(160deg, #0a1628 0%, #0f2030 20%, #0d3b3f 45%, #0a2a35 65%, #0f1e2e 85%, #0a1628 100%)",
+        }}
+      >
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div
+              className="inline-flex items-center justify-center w-20 h-20 rounded-2xl"
+              style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6, #2dd4bf)" }}
+            >
+              <svg viewBox="0 0 32 32" className="w-11 h-11">
+                <text
+                  x="16"
+                  y="23"
+                  textAnchor="middle"
+                  fontFamily="system-ui, sans-serif"
+                  fontWeight="800"
+                  fontSize="20"
+                  fill="white"
+                >
+                  Y
+                </text>
+              </svg>
+            </div>
+            <h1 className="text-3xl font-bold text-white mt-5 tracking-tight">Y-next</h1>
+          </div>
+
+          <div className="bg-white/[0.08] backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/30 border border-white/[0.12] p-8 text-center space-y-5">
+            <p className="text-sm text-slate-300">{t("y_next.login_required")}</p>
+            <button
+              onClick={() => window.location.assign(loginUrl())}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white rounded-xl cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-teal-500/25 hover:-translate-y-0.5 active:translate-y-0"
+              style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)" }}
+            >
+              {t("y_next.login_button")}
+            </button>
+          </div>
+
+          <div className="text-center mt-8 space-y-2">
+            <div className="flex items-center justify-center gap-2 opacity-60">
+              <svg viewBox="0 0 140 20" className="h-3.5" fill="none">
+                <text
+                  x="0"
+                  y="15"
+                  fontFamily="system-ui, sans-serif"
+                  fontWeight="600"
+                  fontSize="13"
+                  fill="rgba(148,163,184,0.8)"
+                  letterSpacing="0.5"
+                >
+                  OpenAEC Foundation
+                </text>
+              </svg>
+            </div>
+            <p className="text-[10px] text-slate-600 font-mono tracking-wider">v{APP_VERSION}</p>
+          </div>
         </div>
       </div>
     );
