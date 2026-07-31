@@ -1,0 +1,65 @@
+[package]
+name = "y-app-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "y_app_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-stronghold = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-notification = "2"
+reqwest = { version = "0.13", features = ["cookies", "json", "rustls-no-provider"], default-features = false }
+rusqlite = { version = "0.39", features = ["bundled"] }
+dashmap = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "io-util", "net", "time"] }
+urlencoding = "2"
+
+# IMAP / MIME stack — added for in-process Webmail support so the desktop
+# build can reach the mail server directly from the user's IP, bypassing
+# the Y-app VPS (and any IP-level fail2ban that's blocking it).
+# Uses rustls (not native-tls/OpenSSL) so Android cross-compilation works.
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+rustls-pki-types = "1"
+mail-parser = "0.11"
+futures = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+base64 = "0.22"
+
+# SMTP — added in Phase B for Send/Reply/Forward. Tokio + rustls so we
+# don't pull in OpenSSL system deps the rest of the project avoids.
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "tokio1"] }
+
+# Android-only: the biometric prompt plugin. Used as a UX gate before our own
+# Tauri commands hand the stored vault password back to the JS layer.
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-biometric = "2"
+
+# Desktop-only: native folder picker (NAS project-folders). rfd has no Android
+# backend (E0277 on the *DialogImpl traits) → only build it off-Android.
+# The in-app updater (tauri-plugin-updater) is likewise desktop-only — Android
+# updates ship as a signed APK via the Play/Releases flow, not the updater.
+# tauri-plugin-process gives us relaunch() after a successful install.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = "0.15"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"

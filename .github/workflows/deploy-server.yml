@@ -1,0 +1,142 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag pushen + GitHub Release; sync-branch pushen
+      pull-requests: write # sync bump-PR openen (main is protected)
+      actions: write # Build & Release dispatchen (gh workflow run) na het taggen
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # volledige history + tags voor de versie-check
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci # vóór de bump → package-lock blijft consistent
+
+      # Bepaal de versie: bestaat tag v<manifest-versie> nog niet → release as-is;
+      # bestaat 'ie wél → bump uit Conventional Commits sinds dat tag.
+      # Schrijft (bij bump) de 4 manifests + CHANGELOG + altijd RELEASE_NOTES.md.
+      - name: Bepaal versie
+        id: ver
+        run: node scripts/auto-version.mjs
+
+      # main is protected (GH006): de deploy pusht NOOIT direct naar main en
+      # faalt NOOIT meer op de versie-stap. Bij een bump commit hij de manifests
+      # op een sync-branch en opent/ververst een PR — de deploy gaat daarna
+      # gewoon door met bouwen+deployen op díe versie. Het mergen van de PR
+      # trekt main's manifest bij, zodat de vólgende deploy weer schoon op
+      # bumped=false landt (tag as-is). Zo kan een vergeten pre-bump de deploy
+      # niet meer blokkeren; hooguit loopt main's manifest één release achter tot
+      # de PR gemerged is.
+      - name: Bump op sync-branch + PR (alleen bij bump; nooit fataal)
+        if: steps.ver.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/bump-${{ steps.ver.outputs.version }}"
+          # Sync-branch met de gebumpte manifests; hierop bouwt+tagt de rest van
+          # de run door (zelfde code als main + enkel de versie-bump).
+          git checkout -B "$BRANCH"
+          git add package.json packages/frontend/package.json packages/server/package.json \
+                  packages/desktop/src-tauri/tauri.conf.json CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.ver.outputs.version }}" || echo "niets te committen"
+          git push -f origin "$BRANCH" || echo "sync-branch pushen mislukt — deploy gaat door"
+          gh pr create --base "${{ github.ref_name }}" --head "$BRANCH" \
+            --title "chore(release): bump ${{ steps.ver.outputs.version }}" \
+            --body "Automatisch geopend door Deploy. main is protected, dus de manifest-bump kan niet direct naar main. De deploy is wél doorgegaan met ${{ steps.ver.outputs.version }}; merge deze PR zodat main's manifest bijtrekt voor de volgende deploy." \
+            || echo "PR bestaat al of kon niet aangemaakt worden — deploy gaat door"
+
+      - name: Tag + GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tags vallen NIET onder branch-protection → dit kan altijd, ook zonder
+          # main-push. Op de bump-tak wijst de tag naar de bump-commit; anders
+          # naar de huidige main-HEAD.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG="${{ steps.ver.outputs.version }}"
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
+          # Als DRAFT aanmaken: Build & Release publiceert 'm pas nadat alle
+          # binaries erop staan (publish-release gate). Zo is er nooit meer een
+          # stil-gepubliceerde, lege release zichtbaar. Bestaat 'ie al → alleen
+          # de notes verversen (draft-status niet forceren op een re-run).
+          gh release create "$TAG" \
+            --title "Y-app $TAG" \
+            --notes-file RELEASE_NOTES.md \
+            --draft \
+          || gh release edit "$TAG" --notes-file RELEASE_NOTES.md
+
+      - name: Dispatch Build & Release (binaries → deze tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tag-gedreven: geef de zojuist gemaakte tag expliciet mee. release.yml
+          # checkt die ref uit en uploadt de exe/dmg/apk/server-bundle naar exact
+          # deze release — onafhankelijk van of main's manifest al bijgetrokken is.
+          # De workflow-DEFINITIE komt van de default branch (--ref weggelaten →
+          # main), zodat de nieuwste release.yml (met version-input) gebruikt wordt.
+          # NB: dispatch via GITHUB_TOKEN mag (actions:write) en triggert WÉL —
+          # anders dan een tag-push met GITHUB_TOKEN, die geen workflow start.
+          gh workflow run release.yml \
+            -f version="${{ steps.ver.outputs.version }}" \
+            || echo "Build & Release dispatchen mislukt — start 'm handmatig voor ${{ steps.ver.outputs.version }}"
+
+      - run: npm run build # bouwt met de (eventueel gebumpte) manifest-versie
+      - run: npm run build:server
+
+      - name: Deploy frontend
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "packages/frontend/dist/*"
+          target: "/opt/y-app/dist/"
+          strip_components: 3
+
+      - name: Deploy server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "packages/server/dist/server.cjs"
+          target: "/opt/y-app/"
+          strip_components: 3
+
+      - name: Ensure nginx allows email forward payload (idempotent)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            NGINX_CONF=/etc/nginx/sites-available/y-app
+            if [ -f "$NGINX_CONF" ] && ! sudo grep -q "client_max_body_size" "$NGINX_CONF"; then
+              sudo sed -i '/server_name /a\    client_max_body_size 50m;' "$NGINX_CONF"
+              sudo nginx -t && sudo systemctl reload nginx
+              echo "nginx: client_max_body_size 50m toegevoegd en herladen"
+            else
+              echo "nginx: client_max_body_size al aanwezig of config niet gevonden"
+            fi
+
+      - name: Restart server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: cd /opt/y-app && pm2 restart ecosystem.config.cjs || pm2 start ecosystem.config.cjs

@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@source "../../frontend/src/**/*.tsx";
+
+/* Safe area insets for mobile (Android status bar, iOS notch, gesture bar).
+   html/body/root are all height:100% with overflow:hidden so nothing
+   scrolls at the top level. body has the safe-area padding and box-sizing
+   so its content area is the safe region. The workspace uses h-full (not
+   h-screen) to fill this area. Inner content scrolls via overflow-auto
+   on <main>. Background matches the tab bar so the status bar blends. */
+html {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background-color: #0f172a;
+}
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+#root {
+  height: 100%;
+}
+
+@theme {
+  --color-y-purple: #043b42;
+  --color-y-purple-light: #065a64;
+  --color-y-purple-dark: #022a2f;
+  --color-y-teal: #006876;
+  --color-y-teal-light: #99c2c8;
+  --color-y-teal-dark: #043b42;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Global custom scrollbars — slim & modern */
+/* WebKit (Chrome / Electron) */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Always-visible scrollbar for calendar views */
+.scrollbar-visible::-webkit-scrollbar {
+  height: 10px;
+}
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 5px;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 5px;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+/* Firefox */
+.scrollbar-visible {
+  scrollbar-width: auto;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+/* react-day-picker: compact + custom colors for leave modal */
+.rdp-root {
+  --rdp-accent-color: #006876;
+  --rdp-accent-background-color: #e0f7fa;
+  --rdp-range_middle-background-color: #e0f7fa;
+  --rdp-day-height: 24px;
+  --rdp-day-width: 24px;
+  --rdp-day_button-height: 24px;
+  --rdp-day_button-width: 24px;
+  --rdp-months-gap: 0.5rem;
+}
+.rdp-root .rdp-month_caption {
+  font-size: 0.75rem;
+  padding: 0.15rem 0;
+}
+.rdp-root .rdp-weekday {
+  font-size: 0.65rem;
+  padding: 0.1rem 0;
+}
+.rdp-root .rdp-day_button {
+  font-size: 0.7rem;
+}
+/* today = teal ring */
+.rdp-root .rdp-today .rdp-day_button {
+  outline: 2px solid #006876;
+  outline-offset: -2px;
+  border-radius: 9999px;
+  font-weight: 700;
+}
+/* non-workday (schedule) = greyed out */
+.rdp-day--nonworkday .rdp-day_button {
+  color: #cbd5e1 !important;
+  background: #f8fafc !important;
+}
+/* holiday = teal accent */
+.rdp-day--holiday .rdp-day_button {
+  color: #006876 !important;
+  background: #e0f2f1 !important;
+  font-weight: 600;
+}
+/* existing leave = orange */
+.rdp-day--existing-leave .rdp-day_button {
+  color: #c2410c !important;
+  background: #fff7ed !important;
+  font-weight: 600;
+}
+
+/* Rich text editor placeholder */
+[contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+/* Email signature styling in editor */
+.email-signature img {
+  max-width: 100%;
+  height: auto;
+}

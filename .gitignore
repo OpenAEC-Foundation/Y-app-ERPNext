@@ -1,5 +1,84 @@
+# Y-next lokale werkruimtes en tooling
 .worktrees/
 .superpowers/
-node_modules/
-.env*
+.claude/
+.playwright-mcp/
+*-snapshot.yml
 PROMPTS.md
+temp/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies en buildoutput
+node_modules
+node_modules/
+**/dist
+dist-ssr
+dist_bak
+*.local
+
+# Env files (never commit — may contain secrets)
+.env
+**/.env
+.env*
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Build resources (generated)
+**/build-resources/icon.ico
+**/build-resources/icon.png
+
+# Generated start scripts
+start.bat
+start-production.bat
+
+# Encrypted credential vault files (NEVER commit)
+*.enc
+*.kdbx
+vault-cache.json
+vault.enc
+vault.enc.bak
+credentials.vault
+credentials.vault.bak
+credentials.kdbx
+
+# Master encryption key + any local secrets directory
+master.key
+*.key
+secrets/
+
+# SQLite databases (sessions.db + WAL sidecars)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Tauri
+**/src-tauri/target/
+**/src-tauri/binaries/
+**/src-tauri/icons/
+packages/desktop/src-tauri/gen/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

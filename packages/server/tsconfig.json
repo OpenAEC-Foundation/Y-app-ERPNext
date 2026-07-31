@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    // tsc emit't hier nooit — de echte build is esbuild (npm run build) en dev
+    // draait via tsx. tsc is puur --noEmit-analyse; noEmit maakt dat expliciet
+    // en laat de cross-package type-import van api-shapes.ts toe zonder
+    // rootDir/TS6059-gedoe (Fase 5 drift-safety).
+    "noEmit": true,
+    "declaration": false
+  },
+  "include": ["src/**/*.ts"]
+}

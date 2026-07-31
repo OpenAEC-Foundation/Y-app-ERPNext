@@ -1,0 +1,21 @@
+{
+  "name": "Y-app",
+  "short_name": "Y-app",
+  "description": "Multi-tenant ERPNext workspace — manage multiple ERPNext deployments from one account.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "lang": "nl",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/y-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

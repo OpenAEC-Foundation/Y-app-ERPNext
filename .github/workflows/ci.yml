@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # 24 i.p.v. 20: de frontend-testsuite draait via `node --test` met
+          # native TS-type-stripping (vereist Node ≥22; lokaal = 24).
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      # Testsuites (incl. de drift-safety parity-tests: DESKTOP_CONFIG_KEYS
+      # TS↔Rust, /api/mail-route-pariteit server↔desktop-adapter, locale-sync).
+      # Zonder deze stappen bewaakten die tests niets — ze draaiden alleen lokaal.
+      - run: npm test -w @y-app/server
+      - run: npm test -w @y-app/frontend
+      - run: npm run build
+      - run: npm run build:mini
+      - run: npm run build:server

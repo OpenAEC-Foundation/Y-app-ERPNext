@@ -1,0 +1,40 @@
+{
+  "name": "y-app",
+  "private": true,
+  "version": "0.32.0",
+  "type": "module",
+  "workspaces": [
+    "packages/frontend",
+    "packages/server"
+  ],
+  "author": {
+    "name": "OpenAEC Foundation",
+    "email": "info@openaec.org",
+    "url": "https://github.com/OpenAEC-Foundation"
+  },
+  "description": "Y-app — Multi-instance ERPNext dashboard",
+  "scripts": {
+    "dev": "npm run dev -w @y-app/frontend",
+    "dev:server": "npm run dev -w @y-app/server",
+    "dev:all": "concurrently \"npm run dev -w @y-app/server\" \"npm run dev:with-backend -w @y-app/frontend\"",
+    "build": "npm run build -w @y-app/frontend",
+    "build:server": "npm run build -w @y-app/server",
+    "build:config": "npm run build:config -w @y-app/server",
+    "build:tauri": "npm run tauri:build -w @y-app/frontend",
+    "lint": "npm run lint -w @y-app/frontend",
+    "preview": "npm run preview -w @y-app/frontend",
+    "start:server": "npm run start -w @y-app/server",
+    "dev:mini": "concurrently \"npm run dev:mini -w @y-app/server\" \"npm run dev:mini -w @y-app/frontend\"",
+    "dev:mini:server": "npm run dev:mini -w @y-app/server",
+    "dev:mini:ui": "npm run dev:mini -w @y-app/frontend",
+    "build:mini": "npm run build:mini -w @y-app/frontend",
+    "build:mini-tauri": "npm run build:mini -w @y-app/frontend && npm run tauri:build:mini -w @y-app/frontend",
+    "dev:desktop": "cd packages/desktop && npx vite",
+    "build:desktop": "cd packages/desktop && npx vite build",
+    "tauri:dev": "cd packages/desktop && npx tauri dev",
+    "tauri:build": "cd packages/desktop && npx tauri build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
