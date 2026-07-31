@@ -39,6 +39,10 @@ Remove-Item Env:\YNEXT_API_TOKEN
   `/files/...`-assets ook echt 200 teruggeven.
 - Verwijder de token-variabele na afloop uit je sessie
   (`Remove-Item Env:\YNEXT_API_TOKEN`).
+- `YNEXT_BUILD_TAG` is optioneel (zie `vite.config.ts`) en mag uitsluitend
+  kleine letters en cijfers bevatten (`a-z0-9`); een tag die daar niet aan
+  voldoet, wordt door `extractBuildTag` niet herkend, waardoor het
+  deployscript de per-build content-marker overslaat.
 
 ## Rollback
 

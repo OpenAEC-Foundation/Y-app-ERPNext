@@ -57,5 +57,6 @@ export type ServerFeature =
  * geen eigen backend om ze te bedienen.
  */
 export function isFeatureEnabled(_feature: ServerFeature): boolean {
+  void _feature; // signature keeps the parameter for future fases; nothing to check yet
   return false;
 }

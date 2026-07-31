@@ -17,10 +17,12 @@ createRoot(document.getElementById('root')!).render(
 // Geen service worker in fase 1 — Y-next wordt als ERPNext Web Page
 // geserveerd en registreert niets meer onder /sw.js.
 
-// In dev, actively unregister any previously-installed service worker and
-// wipe its caches. A stale SW from an earlier production-like session will
-// otherwise intercept every request to localhost and cause endless loading.
-if ("serviceWorker" in navigator && import.meta.env.DEV) {
+// Actively unregister any previously-installed service worker and wipe its
+// caches, in every environment (not just dev). A stale SW from an earlier
+// deployment (e.g. the frontend-only Y-next port, or an older production
+// build) would otherwise keep intercepting every request on this origin —
+// including /api/* — with no self-healing path for a returning visitor.
+if ("serviceWorker" in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
     for (const reg of regs) reg.unregister().catch(() => { /* */ });
   });

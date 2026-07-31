@@ -12,7 +12,7 @@
  * komt. GET-requests hebben dat niet nodig.
  */
 
-import { getActiveInstance, getActiveInstanceId } from "./instances.ts";
+import { getActiveInstance } from "./instances.ts";
 import { getCsrfToken } from "./csrf.ts";
 
 /** Performance logging — shows cache hits, fetch times, and slow queries in console */
@@ -508,45 +508,24 @@ export async function fetchCount(
   doctype: string,
   filters?: unknown[][]
 ): Promise<number> {
-  const instanceId = getActiveInstanceId();
-  if (instanceId === "default") {
-    // Legacy fallback: use old REST aggregate (only for the default/non-multi-instance case)
-    const args: Record<string, string> = {
-      fields: JSON.stringify(["count(name) as total"]),
-      filters: filters ? JSON.stringify(filters) : "[]",
-      limit_page_length: "1",
-    };
-    const url = `/api/resource/${doctype}?${new URLSearchParams(args)}`;
-    const key = cacheKey(url);
-    const cached = responseCache.get(key);
-    if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data as number;
-    const res = await fetchWithTimeout(url, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
-    if (!res.ok) {
-      handleAuthError(res);
-      throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
-    }
-    const json = await res.json();
-    const count = json.data?.[0]?.total ?? 0;
-    responseCache.set(key, { data: count, ts: Date.now() });
-    return count;
-  }
-
-  // Version-aware count via server abstraction
-  const params = new URLSearchParams({ doctype });
-  if (filters) params.set("filters", JSON.stringify(filters));
-  const url = `/api/i/${instanceId}/count?${params}`;
+  // Y-next heeft geen instance-abstractielaag meer om naartoe te routeren —
+  // altijd de directe Frappe REST-aggregate op /api/resource gebruiken.
+  const args: Record<string, string> = {
+    fields: JSON.stringify(["count(name) as total"]),
+    filters: filters ? JSON.stringify(filters) : "[]",
+    limit_page_length: "1",
+  };
+  const url = `/api/resource/${doctype}?${new URLSearchParams(args)}`;
   const key = cacheKey(url);
   const cached = responseCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data as number;
-
   const res = await fetchWithTimeout(url, { headers: getHeaders(), credentials: "same-origin" }, READ_TIMEOUT_MS);
   if (!res.ok) {
     handleAuthError(res);
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.error || `Count failed: ${res.status}`);
+    throw new ApiError(res.status, `ERPNext API error: ${res.status}`);
   }
   const json = await res.json();
-  const count = Number(json.count ?? 0);
+  const count = json.data?.[0]?.total ?? 0;
   responseCache.set(key, { data: count, ts: Date.now() });
   return count;
 }

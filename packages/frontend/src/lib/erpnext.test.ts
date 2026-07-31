@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchList, createDocument, ApiError } from "./erpnext.ts";
+import { fetchList, createDocument, fetchCount, ApiError } from "./erpnext.ts";
 import { resetCsrfTokenCache } from "./csrf.ts";
 
 interface RecordedCall {
@@ -77,6 +77,21 @@ test("fetchList: hits /api/resource/<doctype> same-origin without X-Y-App-Instan
     assert.equal(call.init?.credentials, "same-origin");
     const headers = call.init?.headers as Record<string, string>;
     assert.equal("X-Y-App-Instance" in headers, false);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchCount: always hits /api/resource/<doctype> aggregate, never /api/i/<id>/count", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: [{ total: 3 }] } }));
+  try {
+    const count = await fetchCount("FetchCountTestDoctype", [["status", "=", "Open"]]);
+    assert.equal(count, 3);
+    assert.equal(mock.calls.length, 1);
+    const call = mock.calls[0];
+    assert.match(call.url, /^\/api\/resource\/FetchCountTestDoctype\?/);
+    assert.doesNotMatch(call.url, /\/api\/i\//);
+    assert.equal(call.init?.credentials, "same-origin");
   } finally {
     mock.restore();
   }

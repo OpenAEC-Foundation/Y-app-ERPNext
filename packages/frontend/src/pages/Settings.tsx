@@ -14,7 +14,7 @@ import { NasSettingsSection } from "../components/NasSettingsSection";
 import { getActiveInstance, getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { getErpNextLinkUrl } from "../lib/erpnext";
 import { getModuleConfig, setModuleConfig, type ModuleConfig, SIDEBAR_MODULES, ALWAYS_VISIBLE } from "../lib/modules";
-import { isFeatureEnabled } from "../lib/capabilities";
+import { isFeatureEnabled, isPageEnabled } from "../lib/capabilities";
 import ComingSoon from "../components/ComingSoon";
 import type { Page } from "../components/Sidebar";
 
@@ -321,7 +321,10 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2500);
   }
 
-  if (showReleaseNotes) {
+  // Zelfde gate als de /release-notes route (App.tsx): ReleaseNotes doet bij
+  // mount een cross-origin call naar api.github.com. Fase 1 mag die request
+  // nooit versturen, dus het paneel mag hier ook niet renderen.
+  if (showReleaseNotes && isPageEnabled("/release-notes")) {
     return (
       <div>
         <div className="px-6 pt-4">
@@ -1260,13 +1263,15 @@ export default function SettingsPage() {
                 <span className="text-sm font-semibold text-slate-800">v{APP_VERSION}</span>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowReleaseNotes(true)}
-                  className="flex items-center gap-2 text-sm text-y-teal hover:text-y-teal-dark font-medium cursor-pointer"
-                >
-                  <FileText size={14} />
-                  {t("settings.view_release_notes")}
-                </button>
+                {isPageEnabled("/release-notes") && (
+                  <button
+                    onClick={() => setShowReleaseNotes(true)}
+                    className="flex items-center gap-2 text-sm text-y-teal hover:text-y-teal-dark font-medium cursor-pointer"
+                  >
+                    <FileText size={14} />
+                    {t("settings.view_release_notes")}
+                  </button>
+                )}
                 <a
                   href="https://github.com/rickd/y-app/blob/main/CHANGELOG.md"
                   target="_blank"
