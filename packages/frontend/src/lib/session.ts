@@ -38,6 +38,47 @@ interface UserDocResponse {
 }
 
 /**
+ * De user van de laatst geladen sessie. De app-shell laadt de sessie één keer
+ * bij bootstrap; losse modules (zoals `module-access.ts`) die daarna alleen
+ * de gebruikersnaam nodig hebben, lenen 'm hier in plaats van nóg een
+ * `get_logged_user`-request te doen.
+ */
+let cachedUser: string | null = null;
+
+/** De ingelogde ERPNext-user, of null zolang de sessie niet geladen is. */
+export function getSessionUser(): string | null {
+  return cachedUser;
+}
+
+/**
+ * De ingelogde ERPNext-user, desnoods door hem alsnog op te halen. Levert
+ * `null` bij een gast/ontbrekende sessie in plaats van te gooien — bedoeld
+ * voor best-effort-consumenten die zonder user gewoon minder kunnen.
+ */
+export async function resolveSessionUser(): Promise<string | null> {
+  if (cachedUser) return cachedUser;
+  try {
+    const res = await fetch("/api/method/frappe.auth.get_logged_user", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as GetLoggedUserResponse | null;
+    const user = body?.message;
+    if (!user || user === "Guest") return null;
+    cachedUser = user;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+/** Vergeet de onthouden user (uitloggen, en het opruimpad in tests). */
+export function resetSessionUserCache(): void {
+  cachedUser = null;
+}
+
+/**
  * Loads the current ERPNext session.
  *
  * 1. `GET /api/method/frappe.auth.get_logged_user` — on a website page a
@@ -66,6 +107,7 @@ export async function loadSession(): Promise<ERPNextSession> {
   if (!user || user === "Guest") {
     throw new SessionUnavailableError("ERPNext session unavailable", 401);
   }
+  cachedUser = user;
 
   let fullName = user;
   let roles: string[] = [];

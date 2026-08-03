@@ -782,6 +782,8 @@
   "settings.changelog_4": "Leave planning and billable fixes",
   "settings.manage_modules": "Manage modules",
   "settings.manage_modules_hint": "Toggle modules and menu items on or off. Disabled items are hidden from the sidebar.",
+  "settings.employer_modules_title": "Module visibility",
+  "settings.employer_modules_erpnext_note": "No longer a setting: which modules an employee sees now follows straight from ERPNext (blocked modules and per-doctype read permissions). Manage it on the ERPNext user or role.",
   "settings.always_active": "Always active",
   "settings.required": "Required",
   "settings.modules_save_hint": "Changes are saved and applied to the sidebar immediately.",

@@ -103,7 +103,6 @@ interface UserContext {
   username: string;
   fullName: string;
   roles: string[];
-  blockedModules: string[];
 }
 
 function App() {
@@ -264,13 +263,12 @@ function App() {
     );
   }
 
+  // Modulevisibiliteit hangt niet aan de shell: de Sidebar leest de
+  // ERPNext-rechten zelf uit via `lib/module-access.ts`.
   const user: UserContext = {
     username: state.session.user,
     fullName: state.session.fullName,
     roles: state.session.roles,
-    // ERPNext-modulevisibiliteit werd door de Express-laag berekend; die
-    // bestaat niet meer, dus blokkeert de shell zelf niets.
-    blockedModules: [],
   };
 
   const shell = <AuthenticatedApp user={user} />;
@@ -501,7 +499,6 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
               mobileOpen={mobileMenuOpen}
               onCloseMobile={() => setMobileMenuOpen(false)}
               userRoles={user.roles}
-              blockedModules={user.blockedModules}
             />
           )}
           <div className="flex-1 flex flex-col min-h-0 min-w-0">

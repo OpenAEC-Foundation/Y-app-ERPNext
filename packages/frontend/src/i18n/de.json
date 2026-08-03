@@ -673,6 +673,8 @@
   "settings.changelog_4": "Urlaubsplanung und abrechnungsfähige Korrekturen",
   "settings.manage_modules": "Module verwalten",
   "settings.manage_modules_hint": "Module und Menüeinträge ein- oder ausschalten. Deaktivierte Einträge werden im Seitenmenü ausgeblendet.",
+  "settings.employer_modules_title": "Modulsichtbarkeit",
+  "settings.employer_modules_erpnext_note": "Keine Einstellung mehr: Welche Module eine Mitarbeiterin sieht, ergibt sich jetzt direkt aus ERPNext (blockierte Module und Leserechte je DocType). Zu verwalten am ERPNext-Benutzer oder an der Rolle.",
   "settings.always_active": "Immer aktiv",
   "settings.required": "Pflicht",
   "settings.modules_save_hint": "Änderungen werden sofort gespeichert und auf das Seitenmenü angewendet.",

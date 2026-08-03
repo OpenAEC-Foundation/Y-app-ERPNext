@@ -782,6 +782,8 @@
   "settings.changelog_4": "Vakantieplanning en facturabel fixes",
   "settings.manage_modules": "Modules beheren",
   "settings.manage_modules_hint": "Schakel modules en menu-items in of uit. Uitgeschakelde items worden verborgen in het zijmenu.",
+  "settings.employer_modules_title": "Modulezichtbaarheid",
+  "settings.employer_modules_erpnext_note": "Vervallen als instelling: welke modules een medewerker ziet, volgt nu rechtstreeks uit ERPNext (geblokkeerde modules en leesrechten per doctype). Regel het in ERPNext bij de gebruiker of de rol.",
   "settings.always_active": "Altijd actief",
   "settings.required": "Verplicht",
   "settings.modules_save_hint": "Wijzigingen worden direct opgeslagen en toegepast op het zijmenu.",

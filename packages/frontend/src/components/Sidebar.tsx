@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getActiveCompany } from "../lib/instances";
-import { getModuleConfig, isItemEnabled, isSectionEnabled, ALWAYS_VISIBLE, migratePageIdMap } from "../lib/modules";
+import { getModuleConfig, isItemEnabled, isSectionEnabled, ALWAYS_VISIBLE } from "../lib/modules";
 import { DISABLED_PAGE_MODE, isFeatureEnabled, isPageEnabled, type ServerFeature } from "../lib/capabilities";
+import { getModuleAccess, type ModuleAccess } from "../lib/module-access";
 import { unseenCount } from "../lib/mail-erpnext";
 import { useRemoteExtensions } from "../extensions/remote";
 import { useLeaves } from "../lib/DataContext";
@@ -52,7 +53,6 @@ interface SidebarProps {
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
   userRoles?: string[];
-  blockedModules?: string[];
 }
 
 /** Map ERPNext roles to pages they can access */
@@ -222,7 +222,7 @@ function getSections(): NavSection[] {
   ];
 }
 
-export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeChange, sidebarCollapsed, onToggleCollapse, mobileOpen, onCloseMobile, userRoles = [], blockedModules = [] }: SidebarProps) {
+export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeChange, sidebarCollapsed, onToggleCollapse, mobileOpen, onCloseMobile, userRoles = [] }: SidebarProps) {
   const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
@@ -235,7 +235,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
   const [badges, setBadges] = useState<Record<string, number>>({});
   const leaves = useLeaves();
   const [moduleFilter, setModuleFilter] = useState("");
-  const [employerModuleConfig, setEmployerModuleConfig] = useState<Record<string, boolean> | null>(null);
+  const [moduleAccess, setModuleAccess] = useState<Record<string, ModuleAccess> | null>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const sections = getSections();
   const navigate = useNavigate();
@@ -283,20 +283,18 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
     };
   }, []);
 
-  // Fetch employer module visibility config from server (applies in employee mode).
-  // `/api/user-settings/*` bestond alleen op de Express-server — alleen ophalen
-  // zolang die gedeelde-instellingen-feature aan staat.
+  // Modulezichtbaarheid komt rechtstreeks uit ERPNext (block_modules +
+  // doctype-rechten + configuratie, zie lib/module-access.ts). Er is bewust
+  // geen Y-next-instellingenlaag meer die dit kan overrulen. Zolang de
+  // proberonde loopt is `moduleAccess` null en tonen we alles — beter even
+  // te veel dan een sidebar die bij elke start knippert.
   useEffect(() => {
-    if (viewMode !== "employee" || !isFeatureEnabled("shared-settings")) { setEmployerModuleConfig(null); return; }
-    fetch("/api/user-settings/employee-visible-modules", { credentials: "same-origin" })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.ok && data.value && typeof data.value === "object") {
-          setEmployerModuleConfig(migratePageIdMap<boolean>(data.value as Record<string, boolean>));
-        }
-      })
-      .catch(() => {});
-  }, [viewMode]);
+    let cancelled = false;
+    getModuleAccess()
+      .then((access) => { if (!cancelled) setModuleAccess(access); })
+      .catch(() => { /* alles zichtbaar laten; volgende mount probeert opnieuw */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const handler = () => setBadges(getAllBadgeCounts());
@@ -351,11 +349,8 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
   /** Check if an item/section is visible for the current viewMode */
   const isVisible = (v?: Visibility) => !v || v === "all" || v === viewMode;
 
-  /** In employee mode, check if employer has allowed this module */
-  const isEmployerAllowed = (itemId: Page) => {
-    if (!employerModuleConfig) return true; // no config = all allowed
-    return employerModuleConfig[itemId] !== false;
-  };
+  /** Laat ERPNext dit scherm toe? Onbekende id of nog-niet-geladen ⇒ ja. */
+  const isAllowedByErpNext = (itemId: Page) => moduleAccess?.[itemId]?.visible !== false;
 
   const filteredSections = sections
     // Visibility-based filtering — hide items/sections not for this viewMode
@@ -365,25 +360,21 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
       items: section.items.filter((item) => isVisible(item.visibility)),
     }))
     .filter((section) => section.items.length > 0)
-    // Employer module config filtering — hide modules employer disabled for employees
-    .map((section) => viewMode !== "employee" ? section : ({
+    // ERPNext-rechten — block_modules, doctype-permissies en ontbrekende
+    // doctypes. Dit is per gebruiker, dus items verdwijnen hier écht (geen
+    // "volgt later"-badge): voor déze gebruiker bestaat het scherm niet.
+    .map((section) => !moduleAccess ? section : ({
       ...section,
-      items: section.items.filter((item) => ALWAYS_VISIBLE.has(item.id) || isEmployerAllowed(item.id)),
+      items: section.items.filter((item) => ALWAYS_VISIBLE.has(item.id) || isAllowedByErpNext(item.id)),
     }))
     .filter((section) => section.items.length > 0)
     // Role-based filtering — only applied in employer view. In employee view,
-    // the explicit `visibility` flags + employer-config + ERPNext blockedModules
+    // the explicit `visibility` flags + the ERPNext module-access round above
     // already handle access, and the role-map is too strict (an "Employee"-only
     // role would otherwise hide timesheets/leave/expenses/projects).
     .map((section) => (accessiblePages === "all" || viewMode === "employee") ? section : ({
       ...section,
       items: section.items.filter((item) => accessiblePages.has(item.id)),
-    }))
-    .filter((section) => section.items.length > 0)
-    // B02: ERPNext blocked modules — hide pages for modules the user doesn't have access to
-    .map((section) => blockedModules.length === 0 ? section : ({
-      ...section,
-      items: section.items.filter((item) => ALWAYS_VISIBLE.has(item.id) || !blockedModules.includes(item.id)),
     }))
     .filter((section) => section.items.length > 0)
     // Y-next fase 1: pagina's die nog niet geactiveerd zijn (zie

@@ -13,51 +13,10 @@ import { fetchList, ApiError } from "../lib/erpnext";
 import { NasSettingsSection } from "../components/NasSettingsSection";
 import { getActiveInstance, getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { getErpNextLinkUrl } from "../lib/erpnext";
-import { getModuleConfig, setModuleConfig, type ModuleConfig, SIDEBAR_MODULES, ALWAYS_VISIBLE } from "../lib/modules";
+import { getModuleConfig, setModuleConfig, type ModuleConfig, SIDEBAR_MODULES } from "../lib/modules";
 import { isFeatureEnabled, isPageEnabled } from "../lib/capabilities";
 import ComingSoon from "../components/ComingSoon";
-import type { Page } from "../components/Sidebar";
 
-/** All modules that can appear in employee sidebar — used for employer toggle UI */
-const EMPLOYEE_MANAGEABLE_MODULES: { id: Page; label: string; section: string }[] = [
-  { id: "dashboard", label: "Dashboard", section: "" },
-  { id: "webmail", label: "E-mail", section: "" },
-  { id: "contacts", label: "Contacten", section: "" },
-  { id: "messenger", label: "Berichten", section: "" },
-  { id: "calendar", label: "Agenda", section: "" },
-  { id: "tasks", label: "Taken", section: "Taken & Planning" },
-  { id: "subtasks", label: "Subtaken", section: "Taken & Planning" },
-  { id: "nextcloud-files", label: "Documenten", section: "" },
-  { id: "financieel-dashboard", label: "Statistieken", section: "" },
-  { id: "projects", label: "Projecten", section: "Projecten" },
-  { id: "quotations", label: "Offertes", section: "Projecten" },
-  { id: "salesorders", label: "Verkooporders", section: "Projecten" },
-  { id: "leads", label: "Leads", section: "Projecten" },
-  { id: "meeting-notes", label: "Vergadernotities", section: "Projecten" },
-  { id: "deliverynotes", label: "Leveringen", section: "Projecten" },
-  { id: "planning", label: "Planning", section: "Taken & Planning" },
-  { id: "timesheets", label: "Urenregistratie", section: "Taken & Planning" },
-  { id: "todo", label: "Todo", section: "Taken & Planning" },
-  { id: "wiki", label: "Kennisbank", section: "Taken & Planning" },
-  { id: "ledgers", label: "Grootboeken", section: "Boekhouding" },
-  { id: "bank-transactions", label: "Banktransacties", section: "Boekhouding" },
-  { id: "sales", label: "Verkoopfacturen", section: "Boekhouding" },
-  { id: "purchase", label: "Inkoopfacturen", section: "Boekhouding" },
-  { id: "booking-program", label: "Boekingsprogramma", section: "Boekhouding" },
-  { id: "btw", label: "BTW", section: "Boekhouding" },
-  { id: "jaarrekening", label: "Jaarrekening", section: "Boekhouding" },
-  { id: "revenue", label: "Omzet", section: "Financieel" },
-  { id: "outstanding", label: "Openstaand", section: "Financieel" },
-  { id: "cost-insight", label: "Kosteninzicht", section: "Financieel" },
-  { id: "profitability", label: "Rendabiliteit", section: "Financieel" },
-  { id: "liquidity-planning", label: "Liquiditeitsplanning", section: "Financieel" },
-  { id: "loonaangifte", label: "Loonaangifte", section: "Financieel" },
-  { id: "leave", label: "Vakantie & Overuren", section: "HR & Personeel" },
-  { id: "expenses", label: "Onkostenvergoeding", section: "HR & Personeel" },
-  { id: "letters", label: "Brieven", section: "" },
-  { id: "erpnext-overview", label: "Implementatie", section: "" },
-  { id: "settings", label: "Instellingen", section: "" },
-];
 import { APP_VERSION, APP_NAME } from "../lib/version";
 import { IS_MINI } from "../lib/variant";
 import ReleaseNotes from "./ReleaseNotes";
@@ -208,7 +167,6 @@ export default function SettingsPage() {
   // Employer settings: activity types, per-employee activity types, and module visibility for employees
   const [employerActivityTypes, setEmployerActivityTypes] = useState<string[]>([]);
   const [employeeActivityMap, setEmployeeActivityMap] = useState<Record<string, string>>({});
-  const [employerModules, setEmployerModules] = useState<Record<string, boolean>>({});
   const [employerSettingsLoading, setEmployerSettingsLoading] = useState(false);
   const [employerSettingsSaved, setEmployerSettingsSaved] = useState(false);
 
@@ -240,7 +198,6 @@ export default function SettingsPage() {
         if (data.ok && data.settings) {
           if (data.settings["activity-types"]) setEmployerActivityTypes(data.settings["activity-types"]);
           if (data.settings["employee-activity-types"]) setEmployeeActivityMap(data.settings["employee-activity-types"]);
-          if (data.settings["employee-visible-modules"]) setEmployerModules(data.settings["employee-visible-modules"]);
         }
       })
       .catch(() => {});
@@ -260,11 +217,6 @@ export default function SettingsPage() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ value: employeeActivityMap }),
-        }),
-        fetch(`/api/instances/${id}/settings/employee-visible-modules`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: employerModules }),
         }),
       ]);
       setEmployerSettingsSaved(true);
@@ -520,31 +472,15 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Module visibility for employees */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-              <LayoutGrid size={20} className="text-violet-500" />
+          {/* Modulezichtbaarheid is geen Y-next-instelling meer: de sidebar
+              volgt 1-op-1 de ERPNext-rechten (zie lib/module-access.ts). */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div className="flex items-center gap-3">
+              <LayoutGrid size={20} className="text-slate-400" />
               <div>
-                <h3 className="text-base font-semibold text-slate-700">{t("settings.employer_modules_title", { defaultValue: "Module visibility for employees" })}</h3>
-                <p className="text-xs text-slate-400">{t("settings.employer_modules_desc", { defaultValue: "Toggle which modules employees can see in their sidebar." })}</p>
+                <h3 className="text-base font-semibold text-slate-700">{t("settings.employer_modules_title")}</h3>
+                <p className="text-xs text-slate-400">{t("settings.employer_modules_erpnext_note")}</p>
               </div>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {EMPLOYEE_MANAGEABLE_MODULES.map(item => (
-                <label key={item.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-50 ${ALWAYS_VISIBLE.has(item.id) ? "opacity-50" : "cursor-pointer"}`}>
-                  <input
-                    type="checkbox"
-                    checked={employerModules[item.id] !== false}
-                    disabled={ALWAYS_VISIBLE.has(item.id)}
-                    onChange={(e) => {
-                      setEmployerModules(prev => ({ ...prev, [item.id]: e.target.checked }));
-                    }}
-                    className="rounded border-slate-300 text-violet-500"
-                  />
-                  <span className="text-sm text-slate-700">{item.label}</span>
-                  {item.section && <span className="text-[10px] text-slate-400 ml-auto">{item.section}</span>}
-                </label>
-              ))}
             </div>
           </div>
 
