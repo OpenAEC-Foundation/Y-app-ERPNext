@@ -11,9 +11,16 @@
  *
  * 1. **Mappen zijn virtueel.** Er bestaan geen IMAP-mappen; een "map" is
  *    hier een vaste filter op Communication (Postvak IN / Verzonden /
- *    Ongelezen) of een projectkoppeling (`reference_doctype=Project`).
- *    Map-CRUD, verplaatsen en gedeelde postvakken bestaan dus niet in dit
- *    model — die UI hoort achter de IMAP-featuregate te blijven.
+ *    Ongelezen / Prullenbak) of een projectkoppeling
+ *    (`reference_doctype=Project`). Map-CRUD, verplaatsen en gedeelde
+ *    postvakken bestaan dus niet in dit model — die UI hoort achter de
+ *    IMAP-featuregate te blijven.
+ *
+ *    De enige uitzondering is de **Prullenbak**: die is géén verzinsel van
+ *    Y-next maar Frappe's eigen `Communication.email_status`, een Select met
+ *    exact drie opties (`Open` / `Spam` / `Trash`) — live geverifieerd op de
+ *    doelinstance (Frappe 16.19.0 / ERPNext 16.16.0). Verwijderen zet dat
+ *    veld op `Trash`; definitief verwijderen is pas daarná een echte DELETE.
  *
  * 2. **Nooit SQL-aggregates in `fields`.** Frappe v16 weigert die met
  *    HTTP 417 ("SQL functions are not allowed as strings in SELECT") en er
@@ -72,7 +79,7 @@ export interface ErpMailFolder {
    */
   label: string;
   unseen: number;
-  kind: "inbox" | "sent" | "unread" | "project" | "custom";
+  kind: "inbox" | "sent" | "unread" | "trash" | "project" | "custom";
   /** Alleen bij `kind === "project"`: de Project-docname. */
   project?: string;
   /** Alleen bij `kind === "custom"`: het tag-label zonder `mail/`-prefix. */
@@ -97,6 +104,8 @@ export interface ErpMailPage {
 export const MAIL_FOLDER_INBOX = "INBOX";
 export const MAIL_FOLDER_SENT = "Sent";
 export const MAIL_FOLDER_UNREAD = "unread";
+/** Virtuele Prullenbak-map: alles met `email_status = "Trash"`. */
+export const MAIL_FOLDER_TRASH = "trash";
 export const MAIL_PROJECT_FOLDER_PREFIX = "project:";
 /** Map-id-prefix van een custom (tag-)map: `tag:Klanten`. */
 export const MAIL_TAG_FOLDER_PREFIX = "tag:";
@@ -119,6 +128,34 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_CONVERSATION_MESSAGES = 25;
 /** Standaard aantal treffers van een zoekactie. */
 const DEFAULT_SEARCH_LIMIT = 50;
+/** Hoeveel Email Accounts de IMAP-mappensectie maximaal uitleest. */
+const MAX_IMAP_ACCOUNTS = 5;
+
+/* ─── Prullenbak: Frappe's eigen `Communication.email_status` ─── */
+
+/**
+ * `email_status` is een Select met exact drie opties: `Open` / `Spam` /
+ * `Trash` (live opgehaald uit het DocField op de doelinstance — het is NIET
+ * hetzelfde veld als `status`, dat Open/Replied/Closed/Linked kent). Y-next
+ * gebruikt daarvan alleen `Open` en `Trash`; `Spam` blijft ongemoeid en telt
+ * dus gewoon mee in Postvak IN, precies zoals ERPNext het zelf toont.
+ */
+const EMAIL_STATUS_TRASH = "Trash";
+const EMAIL_STATUS_OPEN = "Open";
+
+/**
+ * Sluit prullenbak-items uit elke niet-prullenbak-query.
+ *
+ * **NULL-veilig, en dat is niet vanzelfsprekend.** In kaal SQL laat
+ * `email_status != 'Trash'` rijen met `NULL` vallen — dat zou hier élke mail
+ * onzichtbaar maken die ooit zonder `email_status` is weggeschreven. Frappe's
+ * `DatabaseQuery` wikkelt negatieve operatoren echter in `ifnull(...)`; dat is
+ * op de doelinstance geverifieerd met een veld dat op álle rijen NULL is
+ * (`imap_folder != "x"` gaf alle rijen terug in plaats van nul). Wie deze
+ * filter ooit vervangt door een handgeschreven `or_filters`-constructie of
+ * een ander backend-pad, moet die eigenschap opnieuw aantonen.
+ */
+const NOT_TRASHED: unknown[] = ["email_status", "!=", EMAIL_STATUS_TRASH];
 
 const LIST_FIELDS = [
   "name",
@@ -139,7 +176,7 @@ const LIST_FIELDS = [
  * Zoek- en conversatieresultaten komen niet uit één map, dus die queries
  * vragen `sent_or_received` mee om de bijbehorende virtuele map af te leiden.
  */
-const SEARCH_FIELDS = [...LIST_FIELDS, "sent_or_received"];
+const SEARCH_FIELDS = [...LIST_FIELDS, "sent_or_received", "email_status"];
 
 /** Frappe geeft Check-velden als 0/1 terug, maar niet elke route consequent. */
 function toBool(value: unknown): boolean {
@@ -185,9 +222,22 @@ function assertValidTagLabel(label: string): string {
  * Filters van een virtuele map. Onbekende map-ids vallen bewust terug op
  * Postvak IN, zodat een stale map-id uit localStorage geen lege of foutieve
  * lijst oplevert.
+ *
+ * Élke map behalve de Prullenbak sluit getrashte mail uit — óók Verzonden,
+ * de projectmappen en de eigen (tag-)mappen. Zou dat ergens ontbreken, dan
+ * zou een weggegooide mail daar blijven staan en zou "verwijderen" per map
+ * iets anders betekenen.
  */
 function filtersForFolder(folderId: string): unknown[][] {
-  const base: unknown[][] = [["communication_type", "=", "Communication"]];
+  if (folderId === MAIL_FOLDER_TRASH) {
+    // Bewust géén `sent_or_received`-beperking: de prullenbak toont zowel
+    // weggegooide ontvangen als verzonden mail, net als in elke mailclient.
+    return [
+      ["communication_type", "=", "Communication"],
+      ["email_status", "=", EMAIL_STATUS_TRASH],
+    ];
+  }
+  const base: unknown[][] = [["communication_type", "=", "Communication"], NOT_TRASHED];
   if (folderId === MAIL_FOLDER_SENT) {
     return [...base, ["sent_or_received", "=", "Sent"]];
   }
@@ -213,8 +263,13 @@ function filtersForFolder(folderId: string): unknown[][] {
  * Virtuele map van een rij die niet uit een mapquery komt (zoek- en
  * conversatieresultaten). Zonder `sent_or_received` in de rij is Postvak IN
  * de veilige aanname: dat is de map waar de UI standaard op terugvalt.
+ *
+ * Een getrashte rij hoort bij de Prullenbak, niet bij zijn oorspronkelijke
+ * richting — anders zou de conversatieweergave beweren dat een weggegooid
+ * bericht nog in Postvak IN staat.
  */
 function folderForRow(row: Record<string, unknown>): string {
+  if (toStr(row.email_status) === EMAIL_STATUS_TRASH) return MAIL_FOLDER_TRASH;
   return toStr(row.sent_or_received) === "Sent" ? MAIL_FOLDER_SENT : MAIL_FOLDER_INBOX;
 }
 
@@ -320,7 +375,9 @@ export async function searchMessages(
 
   const rows = await fetchList<Record<string, unknown>>("Communication", {
     fields: SEARCH_FIELDS,
-    filters: [["communication_type", "=", "Communication"]],
+    // Zoeken gaat over álle mappen heen, maar niet over de prullenbak: wie
+    // een weggegooide mail zoekt, hoort daarvoor de Prullenbak te openen.
+    filters: [["communication_type", "=", "Communication"], NOT_TRASHED],
     or_filters: orFilters,
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
@@ -338,6 +395,7 @@ async function listProjectFolders(): Promise<ErpMailFolder[]> {
     fields: ["reference_name", "communication_date"],
     filters: [
       ["communication_type", "=", "Communication"],
+      NOT_TRASHED,
       ["reference_doctype", "=", "Project"],
     ],
     order_by: "communication_date desc",
@@ -374,6 +432,7 @@ async function listProjectFolders(): Promise<ErpMailFolder[]> {
     unique.map((project) =>
       fetchCount("Communication", [
         ["communication_type", "=", "Communication"],
+        NOT_TRASHED,
         ["reference_doctype", "=", "Project"],
         ["reference_name", "=", project],
         ["seen", "=", 0],
@@ -419,6 +478,7 @@ export async function listCustomFolders(): Promise<ErpMailFolder[]> {
     labels.map((label) =>
       fetchCount("Communication", [
         ["communication_type", "=", "Communication"],
+        NOT_TRASHED,
         ["_user_tags", "like", `%${tagNameForLabel(label)}%`],
         ["seen", "=", 0],
       ]).catch(() => 0)
@@ -525,13 +585,17 @@ export async function untagMessage(name: string, label: string): Promise<void> {
 }
 
 /**
- * De virtuele mappenlijst: de drie vaste mappen, de custom (tag-)mappen en
- * de projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom
- * zijn teller.
+ * De virtuele mappenlijst: de vaste mappen, de custom (tag-)mappen en de
+ * projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom zijn
+ * teller; de Prullenbak telt zijn eigen ongelezen berichten.
  */
 export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
-  const [unseen, customFolders, projectFolders] = await Promise.all([
+  const [unseen, trashUnseen, customFolders, projectFolders] = await Promise.all([
     unseenCount().catch(() => 0),
+    fetchCount("Communication", [
+      ...filtersForFolder(MAIL_FOLDER_TRASH),
+      ["seen", "=", 0],
+    ]).catch(() => 0),
     listCustomFolders().catch(() => [] as ErpMailFolder[]),
     listProjectFolders().catch(() => [] as ErpMailFolder[]),
   ]);
@@ -539,9 +603,86 @@ export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
     { id: MAIL_FOLDER_SENT, label: "Verzonden", unseen: 0, kind: "sent" },
     { id: MAIL_FOLDER_UNREAD, label: "Ongelezen", unseen, kind: "unread" },
+    { id: MAIL_FOLDER_TRASH, label: "Prullenbak", unseen: trashUnseen, kind: "trash" },
     ...customFolders,
     ...projectFolders,
   ];
+}
+
+/* ─── IMAP-mappen van het gekoppelde Email Account (alleen-lezen) ─── */
+
+/** Eén rij uit de `imap_folder`-child-table van een Email Account. */
+export interface ErpImapFolder {
+  /** Docname van het Email Account waar deze rij bij hoort. */
+  account: string;
+  /** IMAP-mapnaam zoals ERPNext hem synchroniseert (bv. `INBOX`). */
+  folderName: string;
+  /** Doctype waar mail uit deze map aan gehangen wordt; meestal leeg. */
+  appendTo?: string;
+}
+
+/**
+ * De IMAP-mappen die ERPNext daadwerkelijk synchroniseert.
+ *
+ * **Waarom dit alleen-lezen informatie is en geen mapfilter.** De
+ * `imap_folder`-child-table bepaalt wélke IMAP-mappen ERPNext ophaalt, maar
+ * de binnengehaalde `Communication` legt de bronmap **niet** vast: het veld
+ * `Communication.imap_folder` bestaat wel (Data, hidden, read-only) maar staat
+ * op de doelinstance op `NULL` voor élk bericht — ook voor de mails die net
+ * via de INBOX-rij zijn gesynct. Er is dus geen kolom om per map op te
+ * filteren, en `uid` alléén helpt niet: dat is een per-map-teller, die na een
+ * tweede maprij niet meer uniek is.
+ *
+ * Gevolg: extra rijen toevoegen laat méér mail binnenkomen, maar alles komt
+ * in één ongedifferentieerde stroom terecht. Deze functie voedt daarom een
+ * informatieve sectie in de mappenkolom — géén klikbare filters die niets
+ * zouden filteren.
+ *
+ * `Email Account` is geen breed leesbaar DocType; bij een 403 (of welke fout
+ * dan ook) komt er een lege lijst terug en verdwijnt de sectie stilletjes.
+ */
+export async function listImapFolders(): Promise<ErpImapFolder[]> {
+  try {
+    const accounts = await fetchList<{ name: string }>("Email Account", {
+      fields: ["name"],
+      filters: [["enable_incoming", "=", 1], ["use_imap", "=", 1]],
+      order_by: "name asc",
+      limit_page_length: MAX_IMAP_ACCOUNTS,
+    });
+    if (accounts.length === 0) return [];
+
+    // De child-table komt niet mee in een lijstquery — die zit alleen in het
+    // volledige document. Eén doc-fetch per account, parallel.
+    const docs = await Promise.all(
+      accounts.map((acc) =>
+        fetchDocument<{ imap_folder?: { folder_name?: string; append_to?: string }[] }>(
+          "Email Account",
+          acc.name
+        )
+          .then((doc) => ({ account: acc.name, rows: doc?.imap_folder ?? [] }))
+          .catch(() => ({ account: acc.name, rows: [] as { folder_name?: string; append_to?: string }[] }))
+      )
+    );
+
+    const out: ErpImapFolder[] = [];
+    const seen = new Set<string>();
+    for (const { account, rows } of docs) {
+      for (const row of rows) {
+        const folderName = toStr(row?.folder_name).trim();
+        if (!folderName) continue;
+        const key = `${account} ${folderName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const entry: ErpImapFolder = { account, folderName };
+        const appendTo = toStr(row?.append_to).trim();
+        if (appendTo) entry.appendTo = appendTo;
+        out.push(entry);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /** Volledige mailinhoud (HTML) plus de op de Communication gehangen Files. */
@@ -571,11 +712,36 @@ export async function markUnread(name: string): Promise<void> {
 }
 
 /**
- * Verwijder een bericht. Er is geen prullenbak in dit model: `Communication`
- * kent geen "Trash"-map, dus dit is een echte DELETE. De UI hoort dus zelf
- * om bevestiging te vragen.
+ * Verplaats een bericht naar de Prullenbak.
+ *
+ * Dit is een gewone documentupdate op `email_status` — geen DELETE. Het
+ * bericht verdwijnt daarmee uit élke andere maplijst (zie `NOT_TRASHED`) en
+ * verschijnt in de Prullenbak, waar het teruggezet of definitief verwijderd
+ * kan worden. Omdat het omkeerbaar is hoeft de UI hier **niet** om
+ * bevestiging te vragen; dat hoort alleen bij `deleteForever`.
+ *
+ * Wat dit NIET doet: de originele mail op de mailserver aanraken. ERPNext
+ * synchroniseert `email_status` niet terug naar IMAP, dus dit raakt
+ * uitsluitend de ERPNext-kopie. De mappenkolom zegt dat met zoveel woorden.
  */
-export async function deleteMessage(name: string): Promise<void> {
+export async function moveToTrash(name: string): Promise<void> {
+  await updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH });
+}
+
+/** Haal een bericht weer uit de Prullenbak; het keert terug in zijn map. */
+export async function restoreFromTrash(name: string): Promise<void> {
+  await updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN });
+}
+
+/**
+ * Verwijder een bericht definitief: een echte DELETE op de Communication.
+ *
+ * Onomkeerbaar, dus alleen aan te bieden vanuit de Prullenbak en achter een
+ * bevestiging. Vereist `delete` op Communication (permlevel 0) — die DocPerm
+ * zet `scripts/provision-y-next.mjs`; zonder die regel geeft dit een 403 en
+ * blijft `moveToTrash` het enige werkende pad.
+ */
+export async function deleteForever(name: string): Promise<void> {
   await deleteDocument("Communication", name);
 }
 
@@ -614,7 +780,19 @@ export async function bulkMarkUnread(names: string[]): Promise<void> {
   await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
 }
 
-export async function bulkDelete(names: string[]): Promise<void> {
+export async function bulkMoveToTrash(names: string[]): Promise<void> {
+  await bulkApply(names, (name) =>
+    updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH })
+  );
+}
+
+export async function bulkRestoreFromTrash(names: string[]): Promise<void> {
+  await bulkApply(names, (name) =>
+    updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN })
+  );
+}
+
+export async function bulkDeleteForever(names: string[]): Promise<void> {
   await bulkApply(names, (name) => deleteDocument("Communication", name));
 }
 
@@ -636,17 +814,29 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
 
   const found = new Map<string, ErpMailMessage>();
 
-  async function fetchByNames(names: string[]): Promise<ErpMailMessage[]> {
+  /**
+   * `includeTrashed` staat alleen aan voor het bronbericht: wie een mail in
+   * de Prullenbak opent hoort zijn conversatie gewoon te zien. De rest van de
+   * boom laat weggegooide berichten juist weg — die horen niet terug te komen
+   * als thread-blokje boven een mail in Postvak IN.
+   */
+  async function fetchByNames(
+    names: string[],
+    opts?: { includeTrashed?: boolean }
+  ): Promise<ErpMailMessage[]> {
     if (names.length === 0) return [];
+    const filters: unknown[][] = [["communication_type", "=", "Communication"]];
+    if (!opts?.includeTrashed) filters.push(NOT_TRASHED);
+    filters.push(["name", "in", names]);
     const rows = await fetchList<Record<string, unknown>>("Communication", {
       fields: SEARCH_FIELDS,
-      filters: [["communication_type", "=", "Communication"], ["name", "in", names]],
+      filters,
       limit_page_length: names.length,
     });
     return rows.map((row) => mapMessage(row, folderForRow(row)));
   }
 
-  const root = (await fetchByNames([name]))[0];
+  const root = (await fetchByNames([name], { includeTrashed: true }))[0];
   if (!root) return [];
   found.set(root.name, root);
 
@@ -666,7 +856,11 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
   while (frontier.length > 0 && found.size < MAX_CONVERSATION_MESSAGES) {
     const rows = await fetchList<Record<string, unknown>>("Communication", {
       fields: SEARCH_FIELDS,
-      filters: [["communication_type", "=", "Communication"], ["in_reply_to", "in", frontier]],
+      filters: [
+        ["communication_type", "=", "Communication"],
+        NOT_TRASHED,
+        ["in_reply_to", "in", frontier],
+      ],
       order_by: "communication_date asc",
       limit_page_length: MAX_CONVERSATION_MESSAGES,
     }).catch(() => [] as Record<string, unknown>[]);

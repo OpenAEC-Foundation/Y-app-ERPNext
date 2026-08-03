@@ -181,6 +181,17 @@ const PERM_MANAGER = "frappe.core.page.permission_manager.permission_manager";
  *   élke mark-read en élke maptoewijzing met een 403
  *   ("does not have doctype access via role permission") — instance-breed,
  *   voor iedere gebruiker. Zie e2e-report-1 §1.
+ * - **Communication / delete op permlevel 0.** De webmail heeft een
+ *   Prullenbak: "verwijderen" zet `email_status` op `Trash` (een gewone
+ *   update, gedekt door de write-regels hierboven) en pas *binnen* de
+ *   Prullenbak kan een bericht definitief weg. Die tweede stap is een echte
+ *   DELETE op Communication. Live gemeten stand op de doelinstance: System
+ *   Manager heeft op permlevel 0 al `delete: 1`, Projects User heeft er
+ *   helemaal géén DocPerm-rij. Zonder deze regels blijft "definitief
+ *   verwijderen" voor een gewone medewerker op een 403 hangen terwijl de knop
+ *   er wel staat. De System Manager-regel staat er voor de volledigheid bij:
+ *   `ensurePermissions` is idempotent en meldt hem simpelweg als ongewijzigd
+ *   zolang de core-default blijft zoals hij is.
  * - **ToDo / delete.** Y-next kan todo's aanmaken maar de core-DocPerm zet
  *   `delete: 0` voor System Manager, waardoor een per ongeluk aangemaakt
  *   todo permanent is (REST-DELETE én `frappe.client.delete` geven 403).
@@ -195,6 +206,8 @@ export function buildPermissionRules() {
   return [
     { doctype: "Communication", role: "Projects User", permlevel: 0, ptype: "write", value: 1 },
     { doctype: "Communication", role: "System Manager", permlevel: 0, ptype: "write", value: 1 },
+    { doctype: "Communication", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
+    { doctype: "Communication", role: "System Manager", permlevel: 0, ptype: "delete", value: 1 },
     { doctype: "ToDo", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
     { doctype: "ToDo", role: "System Manager", permlevel: 0, ptype: "delete", value: 1 },
   ];

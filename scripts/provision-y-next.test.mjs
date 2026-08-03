@@ -60,16 +60,20 @@ function satisfiedPermsHandler(url) {
   if (!url.includes(".get_permissions")) throw new Error(`Onverwachte perm-call: ${url}`);
   // get_permissions is per doctype gescoped — de mock spiegelt dat.
   const doctype = decodeURIComponent(new URL(url).searchParams.get("doctype") || "");
-  const rows = buildPermissionRules()
-    .filter((r) => r.doctype === doctype)
-    .map((r) => ({
-      parent: r.doctype,
-      role: r.role,
-      permlevel: r.permlevel,
-      if_owner: 0,
-      [r.ptype]: r.value,
-    }));
-  return { status: 200, body: { message: rows } };
+  // Eén rij per (rol, permlevel) — meerdere regels op dezelfde rij (write én
+  // delete op Communication) horen samengevoegd te worden, precies zoals
+  // Frappe ze teruggeeft. Zou de mock er twee losse rijen van maken, dan
+  // vindt `findPermRow` alleen de eerste en lijkt de tweede vlag te ontbreken.
+  const byRow = new Map();
+  for (const r of buildPermissionRules()) {
+    if (r.doctype !== doctype) continue;
+    const key = `${r.role}/${r.permlevel}`;
+    if (!byRow.has(key)) {
+      byRow.set(key, { parent: r.doctype, role: r.role, permlevel: r.permlevel, if_owner: 0 });
+    }
+    byRow.get(key)[r.ptype] = r.value;
+  }
+  return { status: 200, body: { message: [...byRow.values()] } };
 }
 
 /** Alleen de calls naar /api/resource/DocType (dus zonder de rechtenfase). */
@@ -292,7 +296,7 @@ test("provision: verstuurt de Authorization-header met token-prefix, maar logt n
 
 /* ────────────────────────── Rechten (ensurePermissions) ────────────────────────── */
 
-test("buildPermissionRules: dekt Communication-write en ToDo-delete op permlevel 0", () => {
+test("buildPermissionRules: dekt Communication-write/-delete en ToDo-delete op permlevel 0", () => {
   const rules = buildPermissionRules();
   const key = (r) => `${r.doctype}/${r.role}/${r.permlevel}/${r.ptype}=${r.value}`;
   const keys = rules.map(key);
@@ -301,11 +305,51 @@ test("buildPermissionRules: dekt Communication-write en ToDo-delete op permlevel
   // core-DocPerm geeft permlevel-0-write aan niemand.
   assert.ok(keys.includes("Communication/Projects User/0/write=1"));
   assert.ok(keys.includes("Communication/System Manager/0/write=1"));
+  // "Definitief verwijderen" vanuit de Prullenbak is een echte DELETE; zonder
+  // deze regel ziet een Projects User de knop wel maar krijgt hij een 403.
+  assert.ok(keys.includes("Communication/Projects User/0/delete=1"));
+  assert.ok(keys.includes("Communication/System Manager/0/delete=1"));
   // Zonder delete is een in Y-next aangemaakt todo permanent.
   assert.ok(keys.includes("ToDo/Projects User/0/delete=1"));
   assert.ok(keys.includes("ToDo/System Manager/0/delete=1"));
 
   for (const r of rules) assert.equal(r.permlevel, 0);
+  // Elke regel moet uniek zijn — een dubbele (doctype, rol, ptype) zou twee
+  // identieke Permission Manager-calls per run opleveren.
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test("ensurePermissions: zet Communication-delete voor Projects User zonder de bestaande write-rij te dupliceren", async () => {
+  // Live stand op de doelinstance: Communication heeft géén Projects
+  // User-rij, en System Manager heeft op permlevel 0 al delete: 1.
+  const mock = installPermMock({
+    Communication: [{ role: "System Manager", permlevel: 0, if_owner: 0, read: 1, write: 0, delete: 1 }],
+    ToDo: [
+      { role: "Projects User", permlevel: 0, if_owner: 0, read: 1, delete: 1 },
+      { role: "System Manager", permlevel: 0, if_owner: 0, read: 1, delete: 1 },
+    ],
+  });
+  const logs = installConsoleLogSpy();
+  try {
+    const result = await ensurePermissions({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+    });
+
+    // De ontbrekende rij wordt één keer toegevoegd, niet één keer per ptype.
+    assert.deepEqual(result.added, ["Communication/Projects User/0"]);
+    assert.ok(result.updated.includes("Communication/Projects User/0/write"));
+    assert.ok(result.updated.includes("Communication/Projects User/0/delete"));
+    // System Manager had delete al -> geen update, wel een write-update.
+    assert.ok(result.unchanged.includes("Communication/System Manager/0/delete"));
+    assert.ok(result.updated.includes("Communication/System Manager/0/write"));
+
+    const addCalls = mock.calls.filter((c) => c.url.includes(".add") && c.init?.method === "POST");
+    assert.equal(addCalls.length, 1, "de rij wordt maar één keer aangemaakt");
+  } finally {
+    logs.restore();
+    mock.restore();
+  }
 });
 
 /** Bouwt een fetch-mock voor de Permission Manager met een instelbare perm-tabel. */

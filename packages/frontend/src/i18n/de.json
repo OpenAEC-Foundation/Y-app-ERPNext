@@ -2522,7 +2522,7 @@
   "y_next.login_button": "Anmelden",
   "y_next.direct_mode": "Direkt mit ERPNext verbunden",
   "y_next.mail_setup_required": "E-Mail ist auf dieser ERPNext-Site noch nicht aktiviert. Aktiviere unter Einstellungen → Email Account 'Enable Incoming' und 'Enable Outgoing' mit den Zugangsdaten des Postfachs.",
-  "y_next.mail_direct_note": "Diese Mail-Ansicht läuft direkt auf ERPNext (Communication). Ordner sind Labels, keine Postfächer: eine Mail, die du einem Ordner hinzufügst, bleibt auch im Posteingang.",
+  "y_next.mail_direct_note": "Diese Mail-Ansicht läuft direkt auf ERPNext (Communication). Ordner sind Labels, keine Postfächer: eine Mail, die du einem Ordner hinzufügst, bleibt auch im Posteingang. Löschen verschiebt die Mail in den Papierkorb von ERPNext — die ursprüngliche Mail auf dem Mailserver bleibt bestehen.",
   "y_next.mail_folders_section": "Ordner",
   "y_next.mail_no_custom_folders": "Noch keine eigenen Ordner",
   "y_next.mail_folder_label_invalid": "Ein Ordnername darf nicht leer sein und kein Komma enthalten.",
@@ -2551,5 +2551,17 @@
   "y_next.mail_forward_attachments": "Anhänge der ursprünglichen Nachricht: {{names}}",
   "y_next.mail_signature_appended": "Deine Signatur wird automatisch unter die Nachricht gesetzt.",
   "y_next.mail_show_cc": "Cc/Bcc",
-  "y_next.mail_bcc_label": "Bcc"
+  "y_next.mail_bcc_label": "Bcc",
+  "y_next.mail_move_to_trash": "In den Papierkorb",
+  "y_next.mail_moved_to_trash": "In den Papierkorb verschoben",
+  "y_next.mail_moved_to_trash_many": "{{count}} E-Mails in den Papierkorb verschoben",
+  "y_next.mail_restore": "Wiederherstellen",
+  "y_next.mail_restored": "Aus dem Papierkorb wiederhergestellt",
+  "y_next.mail_restored_many": "{{count}} E-Mails wiederhergestellt",
+  "y_next.mail_restore_failed": "Wiederherstellen fehlgeschlagen — bitte erneut versuchen",
+  "y_next.mail_delete_forever": "Endgültig löschen",
+  "y_next.mail_no_delete_permission": "Keine Berechtigung zum endgültigen Löschen von E-Mails — wende dich an deinen Administrator oder führe das Provisioning aus",
+  "y_next.mail_imap_folders_section": "IMAP-Ordner",
+  "y_next.mail_imap_folder_hint": "Synchronisiert aus dem E-Mail-Konto \"{{account}}\"",
+  "y_next.mail_imap_folders_note": "Zur Information: Dies sind die Ordner, die ERPNext vom Mailserver abruft. Abgerufene Nachrichten speichern ihren Quellordner nicht, daher ist kein Filtern pro IMAP-Ordner möglich."
 }

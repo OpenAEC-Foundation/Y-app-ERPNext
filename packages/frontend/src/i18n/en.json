@@ -2536,7 +2536,7 @@
   "y_next.login_button": "Sign in",
   "y_next.direct_mode": "Connected directly to ERPNext",
   "y_next.mail_setup_required": "Email is not activated on this ERPNext site yet. Under Settings → Email Account, turn on 'Enable Incoming' and 'Enable Outgoing' with the mailbox credentials.",
-  "y_next.mail_direct_note": "This mail view runs directly on ERPNext (Communication). Folders are labels, not mailboxes: a message you add to a folder stays in the Inbox as well.",
+  "y_next.mail_direct_note": "This mail view runs directly on ERPNext (Communication). Folders are labels, not mailboxes: a message you add to a folder stays in the Inbox as well. Deleting moves the message to the ERPNext trash — the original message on the mail server stays put.",
   "y_next.mail_folders_section": "Folders",
   "y_next.mail_no_custom_folders": "No folders of your own yet",
   "y_next.mail_folder_label_invalid": "A folder name cannot be empty and cannot contain a comma.",
@@ -2565,5 +2565,17 @@
   "y_next.mail_forward_attachments": "Attachments of the original message: {{names}}",
   "y_next.mail_signature_appended": "Your signature is added below the message automatically.",
   "y_next.mail_show_cc": "Cc/Bcc",
-  "y_next.mail_bcc_label": "Bcc"
+  "y_next.mail_bcc_label": "Bcc",
+  "y_next.mail_move_to_trash": "Move to trash",
+  "y_next.mail_moved_to_trash": "Moved to trash",
+  "y_next.mail_moved_to_trash_many": "{{count}} emails moved to trash",
+  "y_next.mail_restore": "Restore",
+  "y_next.mail_restored": "Restored from trash",
+  "y_next.mail_restored_many": "{{count}} emails restored",
+  "y_next.mail_restore_failed": "Restore failed — please try again",
+  "y_next.mail_delete_forever": "Delete permanently",
+  "y_next.mail_no_delete_permission": "No permission to permanently delete email — ask your administrator or run the provisioning",
+  "y_next.mail_imap_folders_section": "IMAP folders",
+  "y_next.mail_imap_folder_hint": "Synced from the email account \"{{account}}\"",
+  "y_next.mail_imap_folders_note": "For reference: these are the folders ERPNext fetches from the mail server. Fetched messages do not record their source folder, so filtering per IMAP folder is not possible."
 }

@@ -2536,7 +2536,7 @@
   "y_next.login_button": "Inloggen",
   "y_next.direct_mode": "Rechtstreeks verbonden met ERPNext",
   "y_next.mail_setup_required": "E-mail is nog niet geactiveerd op deze ERPNext-site. Zet bij Instellingen → Email Account 'Enable Incoming' en 'Enable Outgoing' aan met de inloggegevens van de mailbox.",
-  "y_next.mail_direct_note": "Deze mailweergave draait rechtstreeks op ERPNext (Communicatie). Mappen zijn labels, geen postvakken: een mail die je aan een map toevoegt blijft ook in Postvak IN staan.",
+  "y_next.mail_direct_note": "Deze mailweergave draait rechtstreeks op ERPNext (Communicatie). Mappen zijn labels, geen postvakken: een mail die je aan een map toevoegt blijft ook in Postvak IN staan. Verwijderen zet de mail in de prullenbak van ERPNext — de originele mail op de mailserver blijft staan.",
   "y_next.mail_folders_section": "Mappen",
   "y_next.mail_no_custom_folders": "Nog geen eigen mappen",
   "y_next.mail_folder_label_invalid": "Een mapnaam mag niet leeg zijn en geen komma bevatten.",
@@ -2565,5 +2565,17 @@
   "y_next.mail_forward_attachments": "Bijlagen van het oorspronkelijke bericht: {{names}}",
   "y_next.mail_signature_appended": "Je handtekening wordt automatisch onder het bericht gezet.",
   "y_next.mail_show_cc": "Cc/Bcc",
-  "y_next.mail_bcc_label": "Bcc"
+  "y_next.mail_bcc_label": "Bcc",
+  "y_next.mail_move_to_trash": "Naar prullenbak",
+  "y_next.mail_moved_to_trash": "Naar prullenbak verplaatst",
+  "y_next.mail_moved_to_trash_many": "{{count}} e-mails naar prullenbak verplaatst",
+  "y_next.mail_restore": "Terugzetten",
+  "y_next.mail_restored": "Teruggezet uit prullenbak",
+  "y_next.mail_restored_many": "{{count}} e-mails teruggezet",
+  "y_next.mail_restore_failed": "Terugzetten mislukt — probeer opnieuw",
+  "y_next.mail_delete_forever": "Definitief verwijderen",
+  "y_next.mail_no_delete_permission": "Geen rechten om e-mail definitief te verwijderen — vraag je beheerder of draai de provisioning",
+  "y_next.mail_imap_folders_section": "IMAP-mappen",
+  "y_next.mail_imap_folder_hint": "Gesynchroniseerd vanuit het Email Account \"{{account}}\"",
+  "y_next.mail_imap_folders_note": "Ter informatie: dit zijn de mappen die ERPNext van de mailserver ophaalt. De opgehaalde berichten onthouden hun bronmap niet, dus er kan niet per IMAP-map gefilterd worden."
 }

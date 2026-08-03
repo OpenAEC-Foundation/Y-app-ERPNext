@@ -9,10 +9,15 @@ import {
   getMessageBody,
   markRead,
   markUnread,
-  deleteMessage,
+  moveToTrash,
+  restoreFromTrash,
+  deleteForever,
+  bulkMoveToTrash,
+  bulkRestoreFromTrash,
+  bulkDeleteForever,
+  listImapFolders,
   bulkMarkRead,
   bulkMarkUnread,
-  bulkDelete,
   getConversation,
   getSignature,
   getQueueStatusFor,
@@ -25,6 +30,7 @@ import {
   linkToDocument,
   unseenCount,
   hasEnabledEmailAccount,
+  MAIL_FOLDER_TRASH,
 } from "./mail-erpnext.ts";
 
 interface RecordedCall {
@@ -98,11 +104,13 @@ function countFor(url: string): number {
   const doctype = doctypeMatch ? decodeURIComponent(doctypeMatch[1]) : "";
   if (doctype !== "Communication") return 0;
   const filters = filtersOf(url);
+  const isTrash = filters.some((f) => Array.isArray(f) && f[0] === "email_status" && f[1] === "=");
+  if (isTrash) return 3;
   const isProject = filters.some((f) => Array.isArray(f) && f[0] === "reference_name");
   return isProject ? 2 : 7;
 }
 
-test("listVirtualFolders: Inbox/Verzonden/Ongelezen plus projectmappen, tellingen via get_count (nooit een SQL-aggregate)", async () => {
+test("listVirtualFolders: Inbox/Verzonden/Ongelezen/Prullenbak plus projectmappen, tellingen via get_count (nooit een SQL-aggregate)", async () => {
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/method/frappe.client.get_count")) {
       return { status: 200, body: { message: countFor(url) } };
@@ -138,13 +146,17 @@ test("listVirtualFolders: Inbox/Verzonden/Ongelezen plus projectmappen, tellinge
     const inbox = folders.find((f) => f.kind === "inbox");
     const sent = folders.find((f) => f.kind === "sent");
     const unread = folders.find((f) => f.kind === "unread");
-    assert.ok(inbox && sent && unread);
+    const trash = folders.find((f) => f.kind === "trash");
+    assert.ok(inbox && sent && unread && trash);
     assert.equal(inbox.id, "INBOX");
     assert.equal(sent.id, "Sent");
     assert.equal(unread.id, "unread");
+    assert.equal(trash.id, MAIL_FOLDER_TRASH);
     assert.equal(inbox.unseen, 7);
     assert.equal(unread.unseen, 7);
     assert.equal(sent.unseen, 0);
+    // De Prullenbak telt zijn eigen ongelezen berichten, niet die van INBOX.
+    assert.equal(trash.unseen, 3);
 
     const projects = folders.filter((f) => f.kind === "project");
     assert.equal(projects.length, 2, "duplicate reference_name rows collapse to one folder each");
@@ -212,6 +224,8 @@ test("listMailboxMessages: INBOX filtert op Received en mapt Communication-velde
     assert.match(url, /^\/api\/resource\/Communication\?/);
     assert.ok(hasFilter(url, "communication_type", "=", "Communication"));
     assert.ok(hasFilter(url, "sent_or_received", "=", "Received"));
+    // Weggegooide mail hoort in geen enkele gewone map thuis.
+    assert.ok(hasFilter(url, "email_status", "!=", "Trash"));
     assert.match(url, /limit_page_length=25/);
     assert.match(url, /limit_start=50/);
     assert.match(url, /order_by=communication_date\+desc|order_by=communication_date%20desc/);
@@ -234,6 +248,66 @@ test("listMailboxMessages: Sent, unread en projectmap gebruiken hun eigen filter
     await listMailboxMessages("project:PROJ-0007");
     assert.ok(hasFilter(mock.calls[2].url, "reference_doctype", "=", "Project"));
     assert.ok(hasFilter(mock.calls[2].url, "reference_name", "=", "PROJ-0007"));
+
+    await listMailboxMessages("tag:Klanten");
+    assert.ok(hasFilter(mock.calls[3].url, "_user_tags", "like", "%mail/Klanten%"));
+
+    // Élke van die mappen sluit de prullenbak uit — anders zou een
+    // weggegooide mail per map iets anders betekenen.
+    for (const call of mock.calls) {
+      assert.ok(hasFilter(call.url, "email_status", "!=", "Trash"), call.url);
+    }
+  } finally {
+    mock.restore();
+  }
+});
+
+test("listMailboxMessages: de Prullenbak filtert op email_status=Trash en beperkt de richting NIET", async () => {
+  const mock = installFetchMock(() => ({
+    status: 200,
+    body: {
+      data: [
+        { name: "COMM-TR-1", subject: "Weg", communication_date: "2026-07-01 10:00:00", seen: 1 },
+      ],
+    },
+  }));
+  try {
+    const msgs = await listMailboxMessages(MAIL_FOLDER_TRASH);
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0].folder, MAIL_FOLDER_TRASH);
+
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "communication_type", "=", "Communication"));
+    assert.ok(hasFilter(url, "email_status", "=", "Trash"));
+    // Zowel weggegooide ontvangen als verzonden mail hoort hier te staan.
+    assert.equal(
+      filtersOf(url).some((f) => Array.isArray(f) && f[0] === "sent_or_received"),
+      false
+    );
+    // En de uitsluitingsfilter mag hier natuurlijk juist NIET staan.
+    assert.equal(hasFilter(url, "email_status", "!=", "Trash"), false);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("searchMessages: zoekt niet in de prullenbak en tagt een getrashte rij als zodanig", async () => {
+  const mock = installFetchMock(() => ({
+    status: 200,
+    body: {
+      data: [
+        { name: "COMM-S1", subject: "Offerte", sent_or_received: "Sent", communication_date: "2026-07-02 08:00:00" },
+        { name: "COMM-S2", subject: "Offerte", sent_or_received: "Received", email_status: "Trash", communication_date: "2026-07-01 08:00:00" },
+      ],
+    },
+  }));
+  try {
+    const rows = await searchMessages("offerte");
+    assert.ok(hasFilter(mock.calls[0].url, "email_status", "!=", "Trash"));
+    assert.equal(rows[0].folder, "Sent");
+    // Zou de server toch een getrashte rij teruggeven (andere backend, oude
+    // cache), dan wijst de map naar de Prullenbak in plaats van naar INBOX.
+    assert.equal(rows[1].folder, MAIL_FOLDER_TRASH);
   } finally {
     mock.restore();
   }
@@ -532,6 +606,81 @@ test("getSignature: lege string bij 403 en bij een account zonder handtekening",
   }
 });
 
+/*
+ * LET OP — deze `Email Account`-tests staan bewust vóór
+ * "hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt". Die test
+ * markeert `Email Account` via de 404-DoesNotExistError als ontbrekend
+ * DocType, en `erpnext.ts` houdt dat voor de rest van het proces vast (geen
+ * netwerkcall meer, altijd een lege lijst).
+ */
+
+test("listImapFolders: leest de imap_folder-child-table van elk incoming IMAP-account", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/resource/Email Account?")) {
+      return rowsBody([{ name: "OpenAEC Mail" }]);
+    }
+    if (url.startsWith("/api/resource/Email%20Account/") || url.startsWith("/api/resource/Email Account/")) {
+      return {
+        status: 200,
+        body: {
+          data: {
+            name: "OpenAEC Mail",
+            imap_folder: [
+              { folder_name: "INBOX", append_to: "" },
+              { folder_name: "Projecten", append_to: "Issue" },
+              // Rijen zonder mapnaam (of dubbel) horen niet in de lijst.
+              { folder_name: "  ", append_to: "" },
+              { folder_name: "INBOX", append_to: "" },
+            ],
+          },
+        },
+      };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    const rows = await listImapFolders();
+    assert.deepEqual(rows, [
+      { account: "OpenAEC Mail", folderName: "INBOX" },
+      { account: "OpenAEC Mail", folderName: "Projecten", appendTo: "Issue" },
+    ]);
+    const listCall = mock.calls.find((c) => c.url.startsWith("/api/resource/Email Account?"));
+    assert.ok(listCall);
+    assert.ok(hasFilter(listCall.url, "enable_incoming", "=", 1));
+    assert.ok(hasFilter(listCall.url, "use_imap", "=", 1));
+  } finally {
+    mock.restore();
+    invalidateCache("Email Account");
+    await settleFetchDedup();
+  }
+});
+
+test("listImapFolders: lege lijst bij 403 (Email Account is geen breed leesbaar DocType)", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const forbidden = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
+  try {
+    assert.deepEqual(await listImapFolders(), []);
+  } finally {
+    forbidden.restore();
+    invalidateCache("Email Account");
+    await settleFetchDedup();
+  }
+
+  // Geen accounts -> geen doc-fetch, dus ook geen lege sectie met ruis.
+  const none = installFetchMock(() => rowsBody([]));
+  try {
+    assert.deepEqual(await listImapFolders(), []);
+    assert.equal(none.calls.length, 1);
+  } finally {
+    none.restore();
+    invalidateCache("Email Account");
+    await settleFetchDedup();
+  }
+});
+
 test("hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt (404 DoesNotExistError)", async () => {
   invalidateCache("Email Account");
   await settleFetchDedup();
@@ -649,7 +798,11 @@ test("searchMessages: or_filters op subject/sender/recipients, map afgeleid uit 
     assert.ok(!hasOrFilter(url, "content", "%kade%"), "content blijft standaard buiten de zoekactie");
     assert.match(url, /limit_page_length=10/);
     // Zoeken is map-overstijgend: geen sent_or_received- of referentiefilter.
-    assert.equal(filtersOf(url).length, 1);
+    // Wat er wél staat: het type-filter en de prullenbak-uitsluiting.
+    assert.deepEqual(filtersOf(url), [
+      ["communication_type", "=", "Communication"],
+      ["email_status", "!=", "Trash"],
+    ]);
   } finally {
     mock.restore();
     invalidateCache("Communication");
@@ -670,14 +823,35 @@ test("searchMessages: lege zoekterm doet geen enkele call, includeContent voegt 
   }
 });
 
-test("deleteMessage: DELETE op de Communication (er is geen prullenbak in dit model)", async () => {
+test("moveToTrash / restoreFromTrash: PUT op email_status, nooit een DELETE", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "COMM-T1" } } }));
+  try {
+    await moveToTrash("COMM-T1");
+    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-T1");
+    assert.equal(mock.calls[0].init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), { email_status: "Trash" });
+
+    await restoreFromTrash("COMM-T1");
+    assert.equal(mock.calls[1].init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), { email_status: "Open" });
+
+    // Weggooien mag nooit stilletjes een echte verwijdering worden.
+    for (const c of mock.calls) assert.notEqual(c.init?.method, "DELETE");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("deleteForever: pas hier een echte DELETE op de Communication", async () => {
   const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
   try {
-    await deleteMessage("COMM-DEL-1");
+    await deleteForever("COMM-DEL-1");
     assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-DEL-1");
     assert.equal(mock.calls[0].init?.method, "DELETE");
   } finally {
     mock.restore();
+    invalidateCache("Communication");
   }
 });
 
@@ -728,10 +902,40 @@ test("bulkMarkRead / bulkMarkUnread: parallelle PUTs en daarna een verse lijst (
   }
 });
 
-test("bulkDelete: DELETE per bericht", async () => {
+test("bulkMoveToTrash / bulkRestoreFromTrash: één PUT per bericht met de juiste email_status", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "ok" } } }));
+  try {
+    await bulkMoveToTrash(["COMM-T1", "COMM-T2", "COMM-T1"]);
+    const puts = mock.calls.filter((c) => c.init?.method === "PUT");
+    assert.equal(puts.length, 2, "dubbele namen worden ontdubbeld");
+    assert.deepEqual(
+      puts.map((p) => p.url).sort(),
+      ["/api/resource/Communication/COMM-T1", "/api/resource/Communication/COMM-T2"]
+    );
+    for (const p of puts) assert.deepEqual(JSON.parse(String(p.init?.body)), { email_status: "Trash" });
+
+    const before = mock.calls.length;
+    await bulkRestoreFromTrash(["COMM-T3"]);
+    assert.deepEqual(
+      JSON.parse(String(mock.calls[before].init?.body)),
+      { email_status: "Open" }
+    );
+
+    // Lege lijst: geen enkele call.
+    const after = mock.calls.length;
+    await bulkMoveToTrash([]);
+    await bulkRestoreFromTrash([]);
+    assert.equal(mock.calls.length, after);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulkDeleteForever: DELETE per bericht", async () => {
   const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
   try {
-    await bulkDelete(["COMM-D1", "COMM-D2"]);
+    await bulkDeleteForever(["COMM-D1", "COMM-D2"]);
     assert.equal(mock.calls.length, 2);
     for (const c of mock.calls) assert.equal(c.init?.method, "DELETE");
     assert.deepEqual(
@@ -789,6 +993,52 @@ test("getConversation: in_reply_to-ketting omhoog én omlaag, chronologisch geso
     assert.equal(thread[0].folder, "INBOX");
     assert.equal(thread[1].folder, "Sent");
     assert.equal(thread[2].seen, false);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("getConversation: het bronbericht mag getrasht zijn, de rest van de boom niet", async () => {
+  const trashed = {
+    name: "COMM-CT",
+    subject: "Weggegooid",
+    sender: "jan@x.nl",
+    communication_date: "2026-07-01 09:00:00",
+    seen: 1,
+    sent_or_received: "Received",
+    email_status: "Trash",
+  };
+  const child = {
+    name: "COMM-CU",
+    subject: "Re: Weggegooid",
+    sender: "info@y.nl",
+    communication_date: "2026-07-01 10:00:00",
+    seen: 1,
+    in_reply_to: "COMM-CT",
+    sent_or_received: "Sent",
+  };
+  const mock = installFetchMock((url) => {
+    const byName = filterValue(url, "name") as string[] | undefined;
+    if (byName) return rowsBody(byName.includes("COMM-CT") ? [trashed] : []);
+    const byParent = filterValue(url, "in_reply_to") as string[] | undefined;
+    if (byParent) return rowsBody(byParent.includes("COMM-CT") ? [child] : []);
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    const thread = await getConversation("COMM-CT");
+    assert.deepEqual(thread.map((m) => m.name), ["COMM-CT", "COMM-CU"]);
+    // Het bronbericht staat in de Prullenbak; de UI mag dat zo tonen.
+    assert.equal(thread[0].folder, "trash");
+
+    // De bron-lookup mag de prullenbak NIET uitsluiten (anders zie je geen
+    // conversatie bij een mail die je net hebt weggegooid) …
+    const rootCall = mock.calls[0];
+    assert.equal(hasFilter(rootCall.url, "email_status", "!=", "Trash"), false);
+    // … maar de afdaling naar antwoorden juist wél.
+    const descend = mock.calls.find((c) => filterValue(c.url, "in_reply_to"));
+    assert.ok(descend);
+    assert.ok(hasFilter(descend.url, "email_status", "!=", "Trash"));
   } finally {
     mock.restore();
     invalidateCache("Communication");
@@ -899,9 +1149,9 @@ test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de proje
     const folders = await listVirtualFolders();
     assert.deepEqual(
       folders.map((f) => f.kind),
-      ["inbox", "sent", "unread", "custom", "project"]
+      ["inbox", "sent", "unread", "trash", "custom", "project"]
     );
-    assert.equal(folders[3].id, "tag:Archief");
+    assert.equal(folders[4].id, "tag:Archief");
   } finally {
     mock.restore();
     invalidateCache("Tag");

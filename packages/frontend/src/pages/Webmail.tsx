@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
+  RotateCcw, Server,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -97,12 +98,14 @@ import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
 import {
   listVirtualFolders, listMailboxMessagesPaged, getMessageBody,
   markRead, markUnread, sendMail, linkToDocument, hasEnabledEmailAccount,
-  projectOfFolder, searchMessages, deleteMessage, bulkDelete,
+  projectOfFolder, searchMessages,
+  moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
+  deleteForever, bulkDeleteForever, listImapFolders,
   bulkMarkRead, bulkMarkUnread, getConversation, getSignature,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
   unseenCount,
-  MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD,
-  type ErpMailMessage, type ErpMailFolder,
+  MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
+  type ErpMailMessage, type ErpMailFolder, type ErpImapFolder,
 } from "../lib/mail-erpnext";
 import {
   appendSignature, buildReplyRecipients, formatAttachmentNames,
@@ -3700,15 +3703,25 @@ function ImapWebmail() {
 
    Wat hier ANDERS is dan bij IMAP, en waarom:
 
-   - **Mappen zijn geen mappen.** De vaste drie (Postvak IN / Verzonden /
-     Ongelezen) zijn filters, de projectmappen zijn `reference_doctype`-
-     koppelingen en de eigen mappen zijn ERPNext-tags (`mail/<naam>`). Een
-     mail "verplaatsen" is dus taggen of koppelen, niet kopiëren-en-wissen:
-     hij blijft in Postvak IN staan en verschijnt er *ook* in de eigen map.
-     Daarom heet de sleepactie in de UI ook "toevoegen aan", niet "verplaatsen
-     uit".
-   - **Verwijderen is definitief.** `Communication` kent geen prullenbak, dus
-     elke delete vraagt om bevestiging — ook de bulkvariant.
+   - **Mappen zijn geen mappen.** De vaste vier (Postvak IN / Verzonden /
+     Ongelezen / Prullenbak) zijn filters, de projectmappen zijn
+     `reference_doctype`-koppelingen en de eigen mappen zijn ERPNext-tags
+     (`mail/<naam>`). Een mail "verplaatsen" is dus taggen of koppelen, niet
+     kopiëren-en-wissen: hij blijft in Postvak IN staan en verschijnt er *ook*
+     in de eigen map. Daarom heet de sleepactie in de UI ook "toevoegen aan",
+     niet "verplaatsen uit".
+   - **Verwijderen gaat in twee stappen.** De prullenbakknop werkt direct en
+     zonder bevestiging: hij zet `email_status` op `Trash`, waarmee de mail uit
+     alle andere mappen verdwijnt en in de Prullenbak verschijnt. Pas *binnen*
+     de Prullenbak biedt de UI "terugzetten" en "definitief verwijderen" aan —
+     die laatste achter een bevestiging, want dat is een echte DELETE.
+     Belangrijk: dit raakt alleen de ERPNext-kopie. ERPNext synchroniseert
+     `email_status` niet terug naar IMAP, dus de mail blijft op de mailserver
+     staan. De voetnoot onder de mappenkolom zegt dat er met zoveel woorden bij.
+   - **De IMAP-mappensectie is informatief, niet klikbaar.** Zie
+     `listImapFolders()` in de adapter: ERPNext legt de bronmap van een
+     binnengehaalde mail niet vast, dus er valt niet per IMAP-map te filteren.
+     Een klikbare maplijst zou hier dus iets beloven wat de data niet kan.
    - **Een eigen map verwijderen laat de mails staan.** Alleen het Tag-document
      verdwijnt; de bevestigingstekst zegt dat expliciet, want anders leest
      "map verwijderen" als "mail weg".
@@ -3844,6 +3857,9 @@ function ErpNextWebmail() {
   /** Aflever-status per verzonden Communication (leeg = geen leesrecht). */
   const [queueStatus, setQueueStatus] = useState<Record<string, string>>({});
 
+  /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
+  const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
+
   const [toast, setToast] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "message">("list");
 
@@ -3870,6 +3886,13 @@ function ErpNextWebmail() {
     getSignature()
       .then((sig) => { if (!cancelled) setSignature(sig); })
       .catch(() => { /* mail zonder handtekening is geen fout */ });
+    // De IMAP-mappenlijst verandert alleen wanneer een beheerder het Email
+    // Account aanpast — één keer per paginabezoek volstaat. De adapter geeft
+    // bij een 403 (geen leesrecht op Email Account) gewoon [] terug, waarmee
+    // de sectie stilletjes verdwijnt.
+    listImapFolders()
+      .then((rows) => { if (!cancelled) setImapFolders(rows); })
+      .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -4030,6 +4053,12 @@ function ErpNextWebmail() {
 
   const isUnreadFolder = activeFolder === MAIL_FOLDER_UNREAD;
   const isSentFolder = activeFolder === MAIL_FOLDER_SENT;
+  /**
+   * In de Prullenbak wisselt de betekenis van élke verwijderknop: daar is
+   * "verwijderen" definitief (en dus achter een bevestiging) en komt er een
+   * "terugzetten" naast te staan.
+   */
+  const isTrashFolder = activeFolder === MAIL_FOLDER_TRASH;
   const searching = search.length > 0;
 
   const filteredMessages = useMemo(
@@ -4173,15 +4202,24 @@ function ErpNextWebmail() {
       : new Set(filteredMessages.map((m) => m.name))));
   }, [filteredMessages]);
 
-  /* ─── Verwijderen ─── */
+  /* ─── Prullenbak: weggooien, terugzetten, definitief verwijderen ─── */
 
-  const handleDelete = useCallback(async (names: string[]) => {
+  /**
+   * Gedeelde romp van de drie acties die rijen uit de zichtbare lijst laten
+   * verdwijnen. Alle drie doen exact hetzelfde met de UI — optimistisch uit de
+   * lijst halen, bij totale mislukking terugrollen, daarna hertellen — en
+   * verschillen alleen in de serveractie en de meldingen. Eén helper in plaats
+   * van drie bijna-kopieën, want juist het terugrol- en herteltak is het deel
+   * dat stilletjes uiteen gaat lopen zodra je hem dupliceert.
+   */
+  const applyRemoval = useCallback(async (
+    names: string[],
+    run: (names: string[]) => Promise<void>,
+    okMessage: (count: number) => string,
+    failMessage: string,
+    permissionMessage: string,
+  ) => {
     if (names.length === 0) return;
-    const ok = window.confirm(names.length === 1
-      ? t("webmail.confirm_permanent_delete")
-      : t("y_next.mail_confirm_delete_many", { count: names.length }));
-    if (!ok) return;
-
     const doomed = new Set(names);
     const before = messagesRef.current;
     const next = before.filter((m) => !doomed.has(m.name));
@@ -4191,24 +4229,80 @@ function ErpNextWebmail() {
     if (selectedName && doomed.has(selectedName)) { setSelected(null); setBody(null); setThread([]); }
 
     try {
-      if (names.length === 1) await deleteMessage(names[0]);
-      else await bulkDelete(names);
-      setToast(names.length === 1
-        ? t("y_next.mail_deleted")
-        : t("y_next.mail_deleted_many", { count: names.length }));
+      await run(names);
+      setToast(okMessage(names.length));
     } catch (err) {
-      // Alles faalde (de adapter gooit alleen dán) — de lijst terugzetten is
-      // eerlijker dan berichten laten verdwijnen die er nog zijn.
+      // Alles faalde (de bulk-adapter gooit alleen dán) — de lijst terugzetten
+      // is eerlijker dan berichten laten verdwijnen die er nog zijn.
       messagesRef.current = before;
       setMessages(before);
-      setToast(t("webmail.delete_failed") + (err instanceof Error ? `: ${err.message}` : ""));
+      setToast(isPermissionError(err)
+        ? permissionMessage
+        : failMessage + (err instanceof Error ? `: ${err.message}` : ""));
     } finally {
       // Deelfouten slikt de bulk-adapter in, dus alleen een verse lijst vertelt
-      // wat er werkelijk weg is.
+      // wat er werkelijk gebeurd is.
       refreshFolders();
       silentReload();
     }
-  }, [refreshFolders, selectedName, silentReload, t]);
+  }, [refreshFolders, selectedName, silentReload]);
+
+  /**
+   * Naar de Prullenbak. Bewust géén bevestiging: de actie is omkeerbaar, en
+   * een popup bij elke weggegooide mail is precies waarom de vorige versie
+   * traag aanvoelde.
+   */
+  const handleTrash = useCallback((names: string[]) => applyRemoval(
+    names,
+    (list) => (list.length === 1 ? moveToTrash(list[0]) : bulkMoveToTrash(list)),
+    (count) => (count === 1
+      ? t("y_next.mail_moved_to_trash")
+      : t("y_next.mail_moved_to_trash_many", { count })),
+    t("webmail.delete_failed"),
+    t("y_next.mail_no_write_permission"),
+  ), [applyRemoval, t]);
+
+  /** Terug uit de Prullenbak; het bericht keert terug in zijn eigen map. */
+  const handleRestore = useCallback((names: string[]) => applyRemoval(
+    names,
+    (list) => (list.length === 1 ? restoreFromTrash(list[0]) : bulkRestoreFromTrash(list)),
+    (count) => (count === 1
+      ? t("y_next.mail_restored")
+      : t("y_next.mail_restored_many", { count })),
+    t("y_next.mail_restore_failed"),
+    t("y_next.mail_no_write_permission"),
+  ), [applyRemoval, t]);
+
+  /**
+   * Definitief weg. Alleen bereikbaar vanuit de Prullenbak, en als enige van
+   * de drie achter een bevestiging — dit is een echte DELETE op de
+   * Communication en er is daarna geen weg terug.
+   */
+  const handleDeleteForever = useCallback((names: string[]) => {
+    if (names.length === 0) return;
+    const ok = window.confirm(names.length === 1
+      ? t("webmail.confirm_permanent_delete")
+      : t("y_next.mail_confirm_delete_many", { count: names.length }));
+    if (!ok) return;
+    void applyRemoval(
+      names,
+      (list) => (list.length === 1 ? deleteForever(list[0]) : bulkDeleteForever(list)),
+      (count) => (count === 1
+        ? t("y_next.mail_deleted")
+        : t("y_next.mail_deleted_many", { count })),
+      t("webmail.delete_failed"),
+      t("y_next.mail_no_delete_permission"),
+    );
+  }, [applyRemoval, t]);
+
+  /**
+   * Wat de prullenbakknop doet, hangt af van waar je staat. Buiten de
+   * Prullenbak: weggooien. Erbinnen: definitief verwijderen.
+   */
+  const handleDeleteAction = useCallback((names: string[]) => {
+    if (isTrashFolder) handleDeleteForever(names);
+    else void handleTrash(names);
+  }, [handleDeleteForever, handleTrash, isTrashFolder]);
 
   /* ─── Bulk: gelezen / ongelezen ─── */
 
@@ -4250,6 +4344,25 @@ function ErpNextWebmail() {
   const assignToFolder = useCallback(async (folder: ErpMailFolder, names: string[]) => {
     if (names.length === 0) return;
     const target = new Set(names);
+
+    // Vanuit de Prullenbak naar een echte map betekent onmiskenbaar "haal dit
+    // terug". Zonder deze stap zou de mail wél zijn tag of koppeling krijgen,
+    // maar getrasht blijven — en dus in geen enkele maplijst opduiken, want
+    // die sluiten getrashte mail allemaal uit. Een actie die lijkt te lukken
+    // en niets zichtbaars doet is erger dan geen actie.
+    if (activeFolderRef.current === MAIL_FOLDER_TRASH) {
+      try {
+        await bulkRestoreFromTrash(names);
+      } catch (err) {
+        setToast(isPermissionError(err)
+          ? t("y_next.mail_no_write_permission")
+          : t("y_next.mail_restore_failed"));
+        return;
+      }
+      const remaining = messagesRef.current.filter((m) => !target.has(m.name));
+      messagesRef.current = remaining;
+      setMessages(remaining);
+    }
 
     if (folder.kind === "project" && folder.project) {
       const reference = { doctype: "Project", name: folder.project };
@@ -4315,8 +4428,12 @@ function ErpNextWebmail() {
       ? fromRef
       : (e.dataTransfer.getData("text/plain") || "").split(",").filter(Boolean);
     dragNamesRef.current = [];
+    // Naar de Prullenbak slepen is de enige sleepactie die géén tag of
+    // koppeling zet, maar `email_status` wijzigt — dus niet via
+    // `assignToFolder`, die alleen custom- en projectmappen kent.
+    if (folder.kind === "trash") { void handleTrash(names); return; }
     void assignToFolder(folder, names);
-  }, [assignToFolder]);
+  }, [assignToFolder, handleTrash]);
 
   /* ─── Eigen mappen: aanmaken en verwijderen ─── */
 
@@ -4529,6 +4646,7 @@ function ErpNextWebmail() {
   const folderIcon = (kind: ErpMailFolder["kind"]) =>
     kind === "sent" ? Send
       : kind === "unread" ? EyeOff
+      : kind === "trash" ? Trash2
       : kind === "project" ? FolderKanban
       : kind === "custom" ? Tag
       : Inbox;
@@ -4536,7 +4654,9 @@ function ErpNextWebmail() {
   const renderFolderButton = (f: ErpMailFolder) => {
     const Icon = folderIcon(f.kind);
     const active = f.id === activeFolder;
-    const droppable = f.kind === "custom" || f.kind === "project";
+    // De Prullenbak is óók een droptarget: slepen is de snelste manier om een
+    // mail weg te gooien, en `handleDrop` kent die kant apart af.
+    const droppable = f.kind === "custom" || f.kind === "project" || f.kind === "trash";
     const isDragTarget = dragOver === f.id;
     return (
       <div
@@ -4623,6 +4743,37 @@ function ErpNextWebmail() {
             {projectFolders.map(renderFolderButton)}
           </>
         )}
+
+        {/* IMAP-mappen — bewust alleen-lezen. ERPNext haalt deze mappen op,
+            maar legt per binnengehaalde mail niet vast uit wélke map hij komt
+            (`Communication.imap_folder` blijft leeg), dus er valt niet op te
+            filteren. Klikbare rijen zouden hier niets doen. */}
+        {imapFolders.length > 0 && (
+          <>
+            <div className="flex items-center gap-1 px-3 pt-3 pb-1">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                {t("y_next.mail_imap_folders_section")}
+              </span>
+              <Info size={10} className="text-slate-300" aria-hidden />
+            </div>
+            {imapFolders.map((f) => (
+              <div
+                key={`${f.account}::${f.folderName}`}
+                title={t("y_next.mail_imap_folder_hint", { account: f.account })}
+                className="flex items-center gap-2 px-3 py-1 text-xs text-slate-400 cursor-default"
+              >
+                <Server size={12} className="text-slate-300 flex-shrink-0" />
+                <span className="truncate flex-1">{f.folderName}</span>
+                {f.appendTo && (
+                  <span className="text-[10px] text-slate-400 truncate">{f.appendTo}</span>
+                )}
+              </div>
+            ))}
+            <p className="px-3 pt-0.5 text-[10px] leading-snug text-slate-400 italic">
+              {t("y_next.mail_imap_folders_note")}
+            </p>
+          </>
+        )}
       </div>
       <div className="flex items-start gap-1.5 px-3 py-2 border-t border-slate-200 text-[10px] leading-snug text-slate-400">
         <Info size={11} className="mt-0.5 flex-shrink-0" />
@@ -4655,9 +4806,21 @@ function ErpNextWebmail() {
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-slate-100 disabled:opacity-30 disabled:cursor-default cursor-pointer">
             <Forward size={14} /> <span className="hidden md:inline">{t("webmail.forward")}</span>
           </button>
-          <button onClick={() => selected && void handleDelete([selected.name])} disabled={!selected}
+          {/* In de Prullenbak komt "terugzetten" ernaast; de prullenbakknop
+              zelf betekent daar "definitief verwijderen". */}
+          {isTrashFolder && (
+            <button onClick={() => selected && void handleRestore([selected.name])} disabled={!selected}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+              <RotateCcw size={14} /> <span className="hidden md:inline">{t("y_next.mail_restore")}</span>
+            </button>
+          )}
+          <button onClick={() => selected && handleDeleteAction([selected.name])} disabled={!selected}
+            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:cursor-default cursor-pointer">
-            <Trash2 size={14} /> <span className="hidden md:inline">{t("webmail.delete_btn")}</span>
+            <Trash2 size={14} />
+            <span className="hidden md:inline">
+              {isTrashFolder ? t("y_next.mail_delete_forever") : t("webmail.delete_btn")}
+            </span>
           </button>
           <div className="flex-1" />
           <button onClick={refreshAll} disabled={loading} title={t("webmail.retry")}
@@ -4762,7 +4925,14 @@ function ErpNextWebmail() {
                     </div>
                   )}
                 </div>
-                <button onClick={() => void handleDelete([...checked])} title={t("webmail.delete_btn")}
+                {isTrashFolder && (
+                  <button onClick={() => void handleRestore([...checked])} title={t("y_next.mail_restore")}
+                    className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
+                    <RotateCcw size={13} />
+                  </button>
+                )}
+                <button onClick={() => handleDeleteAction([...checked])}
+                  title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-red-600 cursor-pointer">
                   <Trash2 size={13} />
                 </button>
@@ -4889,12 +5059,22 @@ function ErpNextWebmail() {
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); void handleDelete([msg.name]); }}
-                          title={t("webmail.delete_btn")}
-                          className="absolute right-2 bottom-2 hidden group-hover:flex p-1 rounded bg-white/90 text-slate-400 hover:text-red-600 cursor-pointer">
-                          <Trash2 size={12} />
-                        </button>
+                        <div className="absolute right-2 bottom-2 hidden group-hover:flex items-center gap-1">
+                          {isTrashFolder && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void handleRestore([msg.name]); }}
+                              title={t("y_next.mail_restore")}
+                              className="p-1 rounded bg-white/90 text-slate-400 hover:text-emerald-700 cursor-pointer">
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteAction([msg.name]); }}
+                            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                            className="p-1 rounded bg-white/90 text-slate-400 hover:text-red-600 cursor-pointer">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -4972,7 +5152,14 @@ function ErpNextWebmail() {
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         <ExternalLink size={14} />
                       </button>
-                      <button onClick={() => void handleDelete([selected.name])} title={t("webmail.delete_btn")}
+                      {isTrashFolder && (
+                        <button onClick={() => void handleRestore([selected.name])} title={t("y_next.mail_restore")}
+                          className="p-1.5 rounded text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer">
+                          <RotateCcw size={14} />
+                        </button>
+                      )}
+                      <button onClick={() => handleDeleteAction([selected.name])}
+                        title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
                         className="p-1.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer">
                         <Trash2 size={14} />
                       </button>
