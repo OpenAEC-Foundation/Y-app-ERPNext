@@ -4,6 +4,7 @@ import { useEmployees, useProjects } from "../lib/DataContext";
 import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../lib/instances";
 import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { fetchActivityTypes, fetchEmployeeActivityType } from "../lib/activityTypes";
+import { cleanBookingError } from "../lib/booking-error";
 import { TimesheetDetailsTable } from "../pages/Timesheets";
 import type { TimesheetDetail as TSDetail, ProjectInfo } from "../lib/timesheetValidation";
 import {
@@ -64,6 +65,9 @@ export default function UrenBoekenWidget({
   const allEmployees = useEmployees();
   const projects = useProjects();
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
+  // Onderscheid "nog niet geladen" van "deze instance heeft er geen" — zonder
+  // dat verschil zou de eerste render activity_type onterecht weglaten.
+  const [activityTypesLoaded, setActivityTypesLoaded] = useState(false);
   const [employee, setEmployee] = useState(() => getActiveEmployee());
 
   // Fall back to the ERPNext session user when no "default employee" is
@@ -248,8 +252,26 @@ export default function UrenBoekenWidget({
       .catch(() => {
         setActivityTypes(["Execution"]);
         setActivityType("Execution");
-      });
+      })
+      .finally(() => setActivityTypesLoaded(true));
   }, [isEmployee]);
+
+  /**
+   * Wat er daadwerkelijk als `activity_type` de deur uit gaat.
+   *
+   * Het is een Link-veld naar de "Activity Type"-doctype: stuur je een waarde
+   * die op déze instance niet bestaat, dan weigert ERPNext de hele boeking
+   * (417 LinkValidationError) — inclusief de hardgecodeerde default
+   * "Execution", die lang niet op elke installatie bestaat. Daarom: alleen
+   * meesturen als de instance Activity Types heeft, en terugvallen op de
+   * eerste die er wél is. Heeft de instance er geen enkele, dan laten we het
+   * veld helemaal weg en past ERPNext zijn eigen default toe.
+   */
+  const resolvedActivityType = useMemo(() => {
+    if (!activityTypesLoaded) return activityType || undefined;
+    if (activityTypes.length === 0) return undefined;
+    return activityTypes.includes(activityType) ? activityType : activityTypes[0];
+  }, [activityTypesLoaded, activityTypes, activityType]);
 
   // Update activity type when employee changes
   // For employees: fetch employer-configured per-employee activity type
@@ -435,7 +457,17 @@ export default function UrenBoekenWidget({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employee || hours <= 0 || !activityType) return;
+    // Nooit stil terugvallen: een `return` zonder melding is precies waardoor
+    // de knop "niets leek te doen".
+    if (!employee || hours <= 0) {
+      setSuccess("");
+      setFormError(
+        t("hours_widget.fill_required", {
+          defaultValue: "Kies een medewerker en een geldige tijd (eindtijd na starttijd) voordat je boekt.",
+        })
+      );
+      return;
+    }
 
     // Warn if hours seem unrealistic (possible AM/PM confusion on 12h locale systems)
     if (hours > 10 && inputMode === "tijd") {
@@ -456,7 +488,7 @@ export default function UrenBoekenWidget({
     try {
       const company = getActiveCompany() || undefined;
       const newTimeLog = {
-        activity_type: activityType,
+        activity_type: resolvedActivityType,
         from_time: `${date} ${fromTime}:00`,
         to_time: `${date} ${toTime}:00`,
         hours,
@@ -498,6 +530,10 @@ export default function UrenBoekenWidget({
           time_logs: [newTimeLog],
         });
         tsName = doc.name;
+        // Zonder dit blijft weekTimesheet null (deps [employee, date] wijzigen
+        // niet), en maakt de vólgende boeking in dezelfde week een tweede
+        // Timesheet aan i.p.v. een regel toe te voegen aan deze.
+        setWeekTimesheet(tsName);
       }
 
       setSuccess(t("hours_widget.success_message", { tsName }));
@@ -505,7 +541,7 @@ export default function UrenBoekenWidget({
       const newEntry: TSDetail = {
         name: `local-${Date.now()}`,
         parent: tsName,
-        activity_type: activityType,
+        activity_type: resolvedActivityType || "",
         hours: parseFloat(duurInput) || hours,
         project,
         from_time: `${date} ${fromTime}:00`,
@@ -529,7 +565,9 @@ export default function UrenBoekenWidget({
       // Trigger server refetch so the widget stays in sync
       setRefreshKey(k => k + 1);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t("common.unknown_error"));
+      // De échte servermelding tonen (bv. "Row 1: From Time and To Time ... is
+      // overlapping with TS-2026-00001") — nooit stil inslikken.
+      setFormError(err instanceof Error ? cleanBookingError(err.message) : t("common.unknown_error"));
     } finally {
       setSubmitting(false);
     }
@@ -539,8 +577,20 @@ export default function UrenBoekenWidget({
   const selectedTask = tasks.find((t) => t.name === task);
 
   /* ─── Form Card ─── */
+  /* De succes-/foutmelding hoort BIJ het formulier, niet bij één layout.
+     Stonden ze alleen in de "stacked" return, dan slikte de "side-by-side"
+     variant (de tab "Uren boeken" op /timesheets) élke uitkomst op: een
+     geslaagde boeking gaf geen bevestiging én een harde ERPNext-afwijzing
+     (bv. 417 OverlapError) verdween in state die nooit gemount werd — de
+     knop leek "niets te doen". */
   const formContent = (
     <>
+      {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
+      {formError && (
+        <div role="alert" className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm whitespace-pre-wrap">
+          {formError}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-2 min-w-0">
         {/* Row 1: MDW (130px) | PROJECT (~40%) | TAAK (~40%) */}
@@ -702,12 +752,17 @@ export default function UrenBoekenWidget({
           </div>
           {/* Boeken knop */}
           <div className="flex items-end">
+            {/* Bewust ZONDER `required`: dit veld staat op display:none, en een
+                ongeldig required-control dat de browser niet kan focussen breekt
+                de submit af zónder melding (Chrome logt alleen "An invalid form
+                control ... is not focusable" in de console). De React-state is
+                hier de bron van waarheid. */}
             {!isEmployee && (
-              <select value={activityType} onChange={(e) => setActivityType(e.target.value)} required style={{ display: "none" }}>
+              <select value={activityType} onChange={(e) => setActivityType(e.target.value)} style={{ display: "none" }}>
                 {activityTypes.map((at) => <option key={at} value={at}>{at}</option>)}
               </select>
             )}
-            <button type="submit" disabled={submitting || !employee || hours <= 0 || !activityType}
+            <button type="submit" disabled={submitting || !employee || hours <= 0}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer whitespace-nowrap">
               <Send size={13} />
               {submitting ? "..." : t("dashboard.km_submit")}
@@ -775,9 +830,6 @@ export default function UrenBoekenWidget({
           {weekTotal > 0 && <span className="font-semibold shrink-0">{weekTotal.toFixed(2)}u</span>}
         </div>
       </div>
-
-      {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
-      {formError && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{formError}</div>}
 
       {formContent}
 
