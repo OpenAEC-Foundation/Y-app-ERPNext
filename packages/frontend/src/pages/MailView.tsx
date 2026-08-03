@@ -30,6 +30,7 @@ import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } f
 import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
 import { MessageAttachments } from "../components/MessageAttachments";
+import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
@@ -1196,6 +1197,8 @@ function ErpNextMailView({ name }: { name: string }) {
   // beginnen (de render hieronder toont de foutkaart).
   const [loading, setLoading] = useState(Boolean(name));
   const [error, setError] = useState("");
+  /** Alleen voor de popup-blocker bij een PDF-bijlage; geen laadfout. */
+  const [popupError, setPopupError] = useState("");
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState(500);
 
@@ -1298,24 +1301,15 @@ function ErpNextMailView({ name }: { name: string }) {
           style={{ height: frameHeight }}
         />
 
-        {body && body.attachments.length > 0 && (
-          <div className="border-t border-slate-200 px-6 py-4">
-            <p className="text-[11px] text-slate-500 mb-2 flex items-center gap-1">
-              <Paperclip size={11} />
-              {body.attachments.length === 1
-                ? t("webmail.one_attachment")
-                : t("webmail.n_attachments", { count: body.attachments.length })}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {body.attachments.map((att) => (
-                <a key={att.file_url} href={getFileUrl(att.file_url)} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 hover:text-blue-700">
-                  <Paperclip size={12} className="text-slate-400" />
-                  <span className="truncate max-w-[220px]">{att.file_name}</span>
-                </a>
-              ))}
-            </div>
-          </div>
+        {body && (
+          <ErpAttachmentList
+            attachments={body.attachments}
+            onError={setPopupError}
+            className="border-t border-slate-200 px-6 py-4"
+          />
+        )}
+        {popupError && (
+          <p className="px-6 pb-4 text-xs text-red-600">{popupError}</p>
         )}
       </div>
     </div>
