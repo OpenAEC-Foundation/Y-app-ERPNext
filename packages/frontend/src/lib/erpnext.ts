@@ -13,7 +13,7 @@
  */
 
 import { getActiveInstance } from "./instances.ts";
-import { getCsrfToken } from "./csrf.ts";
+import { getCsrfToken, refreshCsrfToken } from "./csrf.ts";
 
 /** Performance logging — shows cache hits, fetch times, and slow queries in console */
 const PERF_LOG = typeof localStorage !== "undefined" && localStorage.getItem("y_app_perf_log") === "1";
@@ -63,6 +63,52 @@ function csrfHeaders(): Record<string, string> {
 /** Headers for non-GET (mutating) requests — getHeaders() plus the CSRF token. */
 function getMutationHeaders(): HeadersInit {
   return { ...getHeaders(), ...csrfHeaders() };
+}
+
+/**
+ * Statuscodes waaronder Frappe een CSRF-weigering kan terugsturen.
+ * `CSRFTokenError` is een 400; 417 staat erbij omdat Frappe's generieke
+ * `throw`-pad sommige validatiefouten daarop afbeeldt.
+ */
+const CSRF_RETRY_STATUSES = new Set([400, 417]);
+/** Frappe's melding bij CSRFTokenError is letterlijk "Invalid Request". */
+const CSRF_ERROR_PATTERN = /csrf|invalid request/i;
+
+/**
+ * Voert een muterende request uit en probeert hem **één keer** opnieuw als het
+ * antwoord naar een verlopen/verkeerd CSRF-token ruikt.
+ *
+ * Waarom dit nodig is: de pagina-HTML van de Web Page is browser-cachebaar,
+ * dus na een login-redirect kan de SPA nog met het gast-token ("None") draaien
+ * — élke schrijfactie faalt dan met `Invalid Request`, terwijl lezen gewoon
+ * werkt omdat GET geen CSRF-check kent. `refreshCsrfToken()` haalt een vers
+ * token op; alleen als dat écht een ander token oplevert heeft opnieuw
+ * proberen zin (anders zou een echte "Invalid Request" verdubbelen).
+ *
+ * De headers worden per poging opnieuw opgebouwd, zodat de retry het verse
+ * token meekrijgt. Bodies zijn strings of FormData en dus herbruikbaar.
+ */
+async function mutationFetch(
+  url: string,
+  init: Omit<RequestInit, "headers">,
+  timeoutMs: number,
+  buildHeaders: () => HeadersInit = getMutationHeaders,
+): Promise<Response> {
+  const attempt = () => fetchWithTimeout(url, { ...init, headers: buildHeaders() }, timeoutMs);
+
+  const res = await attempt();
+  if (res.ok || !CSRF_RETRY_STATUSES.has(res.status)) return res;
+
+  // Body via clone() lezen: de originele response moet leesbaar blijven voor
+  // parseErpError() als dit tóch geen CSRF-fout is.
+  const body = await res.clone().text().catch(() => "");
+  if (!CSRF_ERROR_PATTERN.test(body)) return res;
+
+  const before = getCsrfToken();
+  const fresh = await refreshCsrfToken();
+  if (!fresh || fresh === before) return res;
+
+  return attempt();
 }
 
 /** API error with status code */
@@ -578,9 +624,8 @@ export async function callMethod(
   args: Record<string, unknown>
 ): Promise<unknown> {
   const url = `/api/method/${method}`;
-  const res = await fetchWithTimeout(url, {
+  const res = await mutationFetch(url, {
     method: "POST",
-    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(args),
   }, MUTATION_TIMEOUT_MS);
@@ -634,9 +679,8 @@ export async function createDocument<T = Record<string, unknown>>(
   data: Record<string, unknown>
 ): Promise<T> {
   const url = `/api/resource/${doctype}`;
-  const res = await fetchWithTimeout(url, {
+  const res = await mutationFetch(url, {
     method: "POST",
-    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(data),
   }, MUTATION_TIMEOUT_MS);
@@ -656,9 +700,8 @@ export async function updateDocument<T = Record<string, unknown>>(
   data: Record<string, unknown>
 ): Promise<T> {
   const url = `/api/resource/${doctype}/${encodeURIComponent(name)}`;
-  const res = await fetchWithTimeout(url, {
+  const res = await mutationFetch(url, {
     method: "PUT",
-    headers: getMutationHeaders(),
     credentials: "same-origin",
     body: JSON.stringify(data),
   }, MUTATION_TIMEOUT_MS);
@@ -677,9 +720,8 @@ export async function deleteDocument(
   name: string
 ): Promise<void> {
   const url = `/api/resource/${doctype}/${encodeURIComponent(name)}`;
-  const res = await fetchWithTimeout(url, {
+  const res = await mutationFetch(url, {
     method: "DELETE",
-    headers: getMutationHeaders(),
     credentials: "same-origin",
   }, MUTATION_TIMEOUT_MS);
   if (!res.ok) {
@@ -703,14 +745,13 @@ export async function uploadFile(
   formData.append("is_private", isPrivate ? "1" : "0");
 
   const url = `/api/method/upload_file`;
-  const res = await fetchWithTimeout(url, {
+  const res = await mutationFetch(url, {
     method: "POST",
-    // NB: no Content-Type here — the browser must set its own multipart
-    // boundary for FormData bodies, so this can't reuse getMutationHeaders().
-    headers: { Accept: "application/json", ...csrfHeaders() },
     credentials: "same-origin",
     body: formData,
-  }, UPLOAD_TIMEOUT_MS);
+    // NB: no Content-Type here — the browser must set its own multipart
+    // boundary for FormData bodies, so this can't reuse getMutationHeaders().
+  }, UPLOAD_TIMEOUT_MS, () => ({ Accept: "application/json", ...csrfHeaders() }));
   if (!res.ok) {
     handleAuthError(res);
     throw new Error(`Upload failed: ${res.status}`);

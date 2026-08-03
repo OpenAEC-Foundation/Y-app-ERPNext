@@ -4,9 +4,20 @@ import './index.css'
 import './i18n'
 import App from './App.tsx'
 import { initInstances } from './lib/instances'
+import { ensureCsrfToken } from './lib/csrf'
 
 // Apply default theme
 initInstances()
+
+// Zorg vóór de eerste schrijfactie dat er een bruikbaar CSRF-token is.
+// De Web-Page-HTML is browser-cachebaar (`Cache-Control: private,
+// max-age=300, stale-while-revalidate=10800`), dus wie /y-next uitgelogd
+// opende en daarna via /login terugkwam, draait op de gecachte gast-HTML —
+// met `frappe.csrf_token = "None"`. Lezen werkt dan gewoon (GET kent geen
+// CSRF-check), maar élke mutatie faalt met "Invalid Request". Deze
+// fire-and-forget haalt in dat geval een vers token op; is het token al goed,
+// dan doet hij niets en kost hij geen request.
+void ensureCsrfToken()
 
 // Documenttitel en favicon: als Web Page draait de SPA onder ERPNext's
 // eigen paginatitel en zonder favicon. Zet hier vóór de eerste render een
