@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import { fetchList, updateDocument, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchList, updateDocument, deleteDocument, getErpNextLinkUrl } from "../lib/erpnext";
+import { isPermissionError } from "../lib/permission-error";
 import { compareTodos } from "../lib/todoSort";
 import { useEmployees } from "../lib/DataContext";
 import {
@@ -105,6 +106,31 @@ export default function Todo() {
     } catch {
       await loadData();
     }
+  }
+
+  /**
+   * Verwijderen van een todo. `TodoDetail` rendert zijn verwijderknop alleen
+   * als deze prop er is — zonder de bedrading hierboven was een in Y-next
+   * aangemaakt todo dus onverwijderbaar (hooguit op "Afgerond" te zetten).
+   * De bevestiging zit in `TodoDetail` zelf, vlak vóór de aanroep.
+   *
+   * Gooit bij een fout door: `TodoDetail` toont de melding in het paneel. Een
+   * 403 betekent een ontbrekend DocPerm `delete` op ToDo (zie de
+   * `ensurePermissions`-fase van de provisioning) en verdient een
+   * handelingsgerichte tekst in plaats van Frappe's rauwe traceback-regel.
+   */
+  async function handleDeleteTodo(todoName: string) {
+    if (!todoName) return;
+    try {
+      await deleteDocument("ToDo", todoName);
+    } catch (e) {
+      if (isPermissionError(e)) throw new Error(t("y_next.todo_no_delete_permission"));
+      throw new Error(
+        `${t("y_next.todo_delete_failed")}${e instanceof Error && e.message ? `: ${e.message}` : ""}`
+      );
+    }
+    setSelectedTodo(null);
+    await loadData();
   }
 
   function openCreate() {
@@ -263,6 +289,7 @@ export default function Todo() {
           myEmail={myEmail}
           onClose={() => setSelectedTodo(null)}
           onSave={loadData}
+          onDelete={handleDeleteTodo}
         />
       )}
     </div>

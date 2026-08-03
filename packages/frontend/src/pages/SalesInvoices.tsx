@@ -145,11 +145,14 @@ export default function SalesInvoices() {
   }, [statusFilter]);
   const [emailMap, setEmailMap] = useState<Map<string, string>>(new Map());
   const [projectNameMap, setProjectNameMap] = useState<Map<string, string>>(new Map());
-  const [fromDate, setFromDate] = useState(() => {
-    const now = new Date();
-    const qStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-    return qStart.toISOString().split("T")[0];
-  });
+  // Standaardvenster: het lopende jaar (1 jan t/m vandaag). Het kwartaal
+  // waar dit eerder op stond is te smal voor een facturenlijst — bij
+  // binnenkomst toonde die 1 van de 8 openstaande facturen, wat makkelijk
+  // te lezen is als "de lijst is leeg". De filter-UI is een simpel
+  // van/tot-paar (DateRangeFilter), dus een jaarvenster is ook het
+  // makkelijkst met de hand te versmallen. Gelijk aan het venster dat de
+  // "te factureren"-subtab al gebruikt.
+  const [fromDate, setFromDate] = useState(() => `${new Date().getFullYear()}-01-01`);
   const [toDate, setToDate] = useState(() => new Date().toISOString().split("T")[0]);
 
   // Separate date range for the "te factureren" sub-tab. Defaults to

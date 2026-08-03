@@ -47,6 +47,7 @@ import { resolveProjectFolder, type MailSide } from "../lib/project-folder-resol
 import { buildFolderProfiles, scoreFoldersFromHistory, historyConfidence } from "../lib/folder-profile-match";
 import { SortToProjectDialog, type SortRowProposal, type SortMove } from "../components/SortToProjectDialog";
 import { isDesktopApp, makeExternalLinkOpener } from "../lib/desktop";
+import { isPermissionError, firstPermissionError } from "../lib/permission-error";
 import { loadSession } from "../lib/session";
 import { hydrateSignatureOverrides } from "../lib/mailSignature";
 import { setBadgeCount } from "../lib/badges";
@@ -4071,6 +4072,14 @@ function ErpNextWebmail() {
    * documentupdate — er is geen `\Seen`-STORE-race — dus een mislukte
    * schrijfactie mag gewoon terugdraaien in plaats van een TTL-overlay nodig
    * te hebben.
+   *
+   * `silent` dempt alleen ruis (de automatische mark-read bij het openen van
+   * een mail). Een RECHTENfout is nooit ruis: zonder DocPerm `write` op
+   * permlevel 0 faalt élke mark-read, en zonder melding ziet de gebruiker
+   * alleen dat het bericht weer vetgedrukt wordt — precies het feedbackloze
+   * patroon dat eerder "de Boeken-knop doet niets" opleverde. Die melding
+   * komt er dus altijd doorheen, mét de handeling die het oplost (draai de
+   * provisioning: `ensurePermissions` zet dit recht).
    */
   const applySeen = useCallback((name: string, seen: boolean, opts?: { silent?: boolean }) => {
     const delta = seen ? -1 : 1;
@@ -4083,11 +4092,12 @@ function ErpNextWebmail() {
     shiftUnseenBaseline(delta);
 
     const write = seen ? markRead(name) : markUnread(name);
-    void write.catch(() => {
+    void write.catch((err: unknown) => {
       patch(!seen);
       setFolders((prev) => prev.map((f) => (f.kind === "sent" ? f : { ...f, unseen: Math.max(0, f.unseen - delta) })));
       shiftUnseenBaseline(-delta);
-      if (!opts?.silent) setToast(t("webmail.load_failed"));
+      if (isPermissionError(err)) setToast(t("y_next.mail_no_write_permission"));
+      else if (!opts?.silent) setToast(t("webmail.load_failed"));
     });
   }, [shiftUnseenBaseline, t]);
 
@@ -4219,10 +4229,10 @@ function ErpNextWebmail() {
 
     try {
       await (seen ? bulkMarkRead(names) : bulkMarkUnread(names));
-    } catch {
+    } catch (err) {
       messagesRef.current = before;
       setMessages(before);
-      setToast(t("webmail.load_failed"));
+      setToast(isPermissionError(err) ? t("y_next.mail_no_write_permission") : t("webmail.load_failed"));
     } finally {
       refreshFolders();
       silentReload();
@@ -4265,9 +4275,19 @@ function ErpNextWebmail() {
     if (!op) return;
 
     const results = await Promise.allSettled(names.map(op));
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed > 0) {
-      setToast(t("y_next.mail_action_failed", { count: failed }));
+    const reasons = results
+      .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+      .map((r) => r.reason);
+    if (reasons.length > 0) {
+      // "Actie mislukt voor N bericht(en)" zonder reden laat de gebruiker met
+      // lege handen achter. De verreweg meest voorkomende oorzaak is een
+      // ontbrekend schrijfrecht op Communication (permlevel 0) — die krijgt
+      // daarom zijn eigen, handelingsgerichte melding; de rest toont de
+      // onderliggende fouttekst.
+      const detail = reasons[0] instanceof Error ? reasons[0].message : "";
+      setToast(firstPermissionError(reasons)
+        ? t("y_next.mail_no_write_permission")
+        : t("y_next.mail_action_failed", { count: reasons.length }) + (detail ? `: ${detail}` : ""));
       silentReload();
     } else {
       setToast(t("y_next.mail_added_to_folder", { name: folder.label }));

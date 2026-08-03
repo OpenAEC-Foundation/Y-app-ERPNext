@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 /**
- * Provisioning-script voor Y-next custom DocTypes op ERPNext.
+ * Provisioning-script voor Y-next op ERPNext.
  *
- * Maakt (idempotent) de custom DocTypes aan die Y-next fase 2 nodig heeft:
- * `Y Meeting Note` (vergadernotities) en `Y Next Setting` (generieke
- * sleutel/waarde-opslag, o.a. voor extensies). Bestaat een DocType al, dan
- * gebeurt er niets — dit script is veilig herhaaldelijk te draaien.
+ * Twee fasen, beide idempotent:
+ *
+ * 1. **DocTypes** — maakt de custom DocTypes aan die Y-next fase 2 nodig
+ *    heeft: `Y Meeting Note` (vergadernotities) en `Y Next Setting`
+ *    (generieke sleutel/waarde-opslag, o.a. voor extensies). Bestaat een
+ *    DocType al, dan gebeurt er niets.
+ * 2. **Rechten** — zet de DocPerm-vlaggen op *bestaande* (core-)doctypes die
+ *    Y-next nodig heeft maar die Frappe standaard niet geeft (zie
+ *    `buildPermissionRules` voor het waarom per regel).
+ *
+ * Het script is veilig herhaaldelijk te draaien.
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
@@ -154,11 +161,159 @@ async function ensureDoctype(baseUrl, token, definition) {
   return "created";
 }
 
+/* ─────────────────────────── Rechten (fase 2) ─────────────────────────── */
+
+const PERM_MANAGER = "frappe.core.page.permission_manager.permission_manager";
+
 /**
- * Provisioneert alle Y-next custom DocTypes (idempotent): bestaat een
- * DocType al, dan wordt hij overgeslagen; anders wordt hij aangemaakt.
+ * De DocPerm-vlaggen die Y-next nodig heeft op *bestaande* doctypes.
+ *
+ * WAAROM DIT NODIG IS — Frappe's core-DocPerms dekken deze paden niet:
+ *
+ * - **Communication / write op permlevel 0.** In Y-next is webmail geen
+ *   IMAP-schil maar een view op de `Communication`-doctype. "Gelezen"
+ *   markeren (`markRead`/`markUnread` → `seen`) en een bericht in een eigen
+ *   map hangen (`tagMessage` → `_user_tags`, en de `add_tag`-RPC daarachter)
+ *   zijn dus doodgewone *documentupdates*. Frappe's core-DocPerm op
+ *   Communication geeft permlevel-0-`write` echter aan NIEMAND — System
+ *   Manager heeft er `write: 0`, Inbox User `write: 0`, `All` (if_owner)
+ *   `write: 0`; alleen permlevel 2 heeft write. Zonder deze regels faalt
+ *   élke mark-read en élke maptoewijzing met een 403
+ *   ("does not have doctype access via role permission") — instance-breed,
+ *   voor iedere gebruiker. Zie e2e-report-1 §1.
+ * - **ToDo / delete.** Y-next kan todo's aanmaken maar de core-DocPerm zet
+ *   `delete: 0` voor System Manager, waardoor een per ongeluk aangemaakt
+ *   todo permanent is (REST-DELETE én `frappe.client.delete` geven 403).
+ *   Zie e2e-report-1 §2.
+ *
+ * Bewust géén `read`-regels: die zijn er al, en dit script hoort geen
+ * rechten te verbreden die niemand mist.
+ *
+ * @returns {{ doctype: string, role: string, permlevel: number, ptype: string, value: number }[]}
+ */
+export function buildPermissionRules() {
+  return [
+    { doctype: "Communication", role: "Projects User", permlevel: 0, ptype: "write", value: 1 },
+    { doctype: "Communication", role: "System Manager", permlevel: 0, ptype: "write", value: 1 },
+    { doctype: "ToDo", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
+    { doctype: "ToDo", role: "System Manager", permlevel: 0, ptype: "delete", value: 1 },
+  ];
+}
+
+/**
+ * Haalt de huidige DocPerm-rijen van één doctype op via de Permission
+ * Manager. Levert een lege lijst bij een onbruikbaar antwoord — dan wordt
+ * elke regel als "rij ontbreekt" behandeld, en `add` is zelf idempotent
+ * (Frappe's `add_permission` keert terug zodra de rij al bestaat).
+ * @returns {Promise<object[]>}
+ */
+async function getPermissions(baseUrl, token, doctype) {
+  const url = `${baseUrl}/api/method/${PERM_MANAGER}.get_permissions?doctype=${encodeURIComponent(doctype)}`;
+  const res = await safeFetch(url, { headers: { Authorization: `token ${token}` } });
+  if (!res.ok) {
+    throw new Error(`Rechten opvragen voor "${doctype}" mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  const rows = body && Array.isArray(body.message) ? body.message : [];
+  return rows;
+}
+
+/** POST naar een Permission Manager-methode; gooit met status bij een fout. */
+async function callPermManager(baseUrl, token, method, payload, description) {
+  const res = await safeFetch(`${baseUrl}/api/method/${PERM_MANAGER}.${method}`, {
+    method: "POST",
+    headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`${description} mislukt: HTTP ${res.status}.`);
+  }
+}
+
+/**
+ * Zoekt de DocPerm-rij voor (rol, permlevel) tussen de opgehaalde rijen.
+ * `if_owner`-rijen tellen niet mee: die geven alleen rechten op eigen
+ * documenten en zijn dus geen vervanging voor de gevraagde rij.
+ */
+function findPermRow(rows, role, permlevel) {
+  return rows.find(
+    (r) => r && r.role === role && Number(r.permlevel) === Number(permlevel) && !Number(r.if_owner)
+  ) || null;
+}
+
+/**
+ * Zet alle regels uit `buildPermissionRules` idempotent op de instance.
+ *
+ * Per regel: eerst de huidige perms lezen; ontbreekt de (rol, permlevel)-rij
+ * dan wordt die eerst toegevoegd (`add` maakt een rij met alleen `read: 1`),
+ * en daarna wordt alleen bij een afwijkende waarde een `update` gestuurd.
+ * Klopt de vlag al, dan gaat er niets over de lijn.
+ *
+ * @param {{ baseUrl: string, token: string, rules?: object[] }} params
+ * @returns {Promise<{ added: string[], updated: string[], unchanged: string[] }>}
+ */
+export async function ensurePermissions({ baseUrl, token, rules = buildPermissionRules() }) {
+  const added = [];
+  const updated = [];
+  const unchanged = [];
+  /** @type {Map<string, object[]>} — één get_permissions-call per doctype. */
+  const permsByDoctype = new Map();
+
+  for (const rule of rules) {
+    const { doctype, role, permlevel, ptype, value } = rule;
+    const label = `${doctype}/${role}/${permlevel}/${ptype}`;
+
+    if (!permsByDoctype.has(doctype)) {
+      permsByDoctype.set(doctype, await getPermissions(baseUrl, token, doctype));
+    }
+    const rows = permsByDoctype.get(doctype);
+    let row = findPermRow(rows, role, permlevel);
+
+    if (!row) {
+      await callPermManager(
+        baseUrl,
+        token,
+        "add",
+        { parent: doctype, role, permlevel },
+        `Rol-rij toevoegen (${doctype}/${role}/${permlevel})`
+      );
+      // Frappe's add_permission maakt de rij aan met alleen `read: 1`; de
+      // gevraagde vlag moet daarna nog gezet worden.
+      row = { role, permlevel, read: 1 };
+      rows.push(row);
+      added.push(`${doctype}/${role}/${permlevel}`);
+      console.log(`Rechten: rol-rij ${doctype}/${role} (permlevel ${permlevel}) toegevoegd.`);
+    }
+
+    if (Number(row[ptype] || 0) === Number(value)) {
+      unchanged.push(label);
+      console.log(`Rechten: ${label} staat al op ${value} — overgeslagen.`);
+      continue;
+    }
+
+    await callPermManager(
+      baseUrl,
+      token,
+      "update",
+      { doctype, role, permlevel, ptype, value },
+      `Recht zetten (${label})`
+    );
+    row[ptype] = value;
+    updated.push(label);
+    console.log(`Rechten: ${label} gezet op ${value}.`);
+  }
+
+  return { added, updated, unchanged };
+}
+
+/**
+ * Provisioneert Y-next (idempotent): eerst de custom DocTypes — bestaat een
+ * DocType al, dan wordt hij overgeslagen; anders wordt hij aangemaakt —
+ * daarna de DocPerm-vlaggen uit `buildPermissionRules`. De rechtenfase komt
+ * bewust ná de doctype-fase: een regel kan over een net aangemaakt DocType
+ * gaan.
  * @param {{ baseUrl: string, token: string }} params
- * @returns {Promise<{ created: string[], existing: string[] }>}
+ * @returns {Promise<{ created: string[], existing: string[], permissions: { added: string[], updated: string[], unchanged: string[] } }>}
  */
 export async function provision({ baseUrl, token }) {
   const definitions = [buildMeetingNoteDoctype(), buildSettingDoctype()];
@@ -169,15 +324,18 @@ export async function provision({ baseUrl, token }) {
     if (result === "created") created.push(definition.name);
     else existing.push(definition.name);
   }
-  return { created, existing };
+  const permissions = await ensurePermissions({ baseUrl, token });
+  return { created, existing, permissions };
 }
 
 async function main() {
   const { baseUrl, token } = requiredEnv(process.env);
-  console.log(`Provisioning Y-next custom DocTypes tegen ${baseUrl} ...`);
-  const { created, existing } = await provision({ baseUrl, token });
+  console.log(`Provisioning Y-next tegen ${baseUrl} ...`);
+  const { created, existing, permissions } = await provision({ baseUrl, token });
   console.log(
-    `Klaar. Aangemaakt: ${created.join(", ") || "geen"}. Al aanwezig: ${existing.join(", ") || "geen"}.`
+    `Klaar. Aangemaakt: ${created.join(", ") || "geen"}. Al aanwezig: ${existing.join(", ") || "geen"}. ` +
+      `Rechten — rol-rijen toegevoegd: ${permissions.added.length}, gezet: ${permissions.updated.length}, ` +
+      `ongewijzigd: ${permissions.unchanged.length}.`
   );
 }
 

@@ -37,7 +37,9 @@ export function TodoDetail({
   myEmail: string;
   onClose: () => void;
   onSave: () => void;
-  onDelete?: (todoName: string) => void;
+  /** Ontbreekt deze prop, dan rendert de verwijderknop niet. Mag gooien —
+   *  de melding komt dan in het paneel te staan. */
+  onDelete?: (todoName: string) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const isCreate = mode === "create";
@@ -84,7 +86,12 @@ export function TodoDetail({
 
   async function handleDelete() {
     if (!todo || !onDelete) return;
+    // Bevestigen vóór `deleting` aan gaat: annuleren mag de knop niet
+    // permanent uitgeschakeld achterlaten. Verwijderen is onomkeerbaar —
+    // ERPNext kent geen prullenbak voor ToDo.
+    if (!window.confirm(t("y_next.todo_confirm_delete"))) return;
     setDeleting(true);
+    setError(null);
     try {
       await onDelete(todo.name);
     } catch (e) {

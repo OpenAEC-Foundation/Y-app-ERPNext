@@ -215,12 +215,83 @@ const inflightRequests = new Map<string, Promise<unknown>>();
  *
  * Rather than hard-failing every list fetch against that doctype, fetchList
  * (and fetchCount, for fields named in its filters) drops the named field,
- * remembers the exclusion per doctype for the life of the tab, and retries.
- * Subsequent calls (including via fetchAll's pagination) never even ask for
- * the field again.
+ * remembers the exclusion per doctype, and retries. Subsequent calls
+ * (including via fetchAll's pagination) never even ask for the field again.
+ *
+ * The exclusion list is mirrored into **sessionStorage**, because an
+ * in-memory-only cache is rebuilt from scratch on every full page load: a
+ * measured 4-5 doomed round-trips per project/task list fetch, plus a wall of
+ * red console noise that masks real errors. sessionStorage — not
+ * localStorage — on purpose: a field can genuinely appear later (a custom
+ * field gets added, a Task workflow gets configured), and a browser-session
+ * boundary is the natural moment to re-check that. Persisting is
+ * best-effort: any storage failure (Safari private mode, quota, blocked
+ * third-party storage) degrades silently to the old in-memory behaviour.
  */
+const REJECTED_FIELDS_STORAGE_KEY = "ynext_bad_fields_v1";
 const rejectedFieldsCache = new Map<string, Set<string>>();
 const warnedRejectedFields = new Set<string>();
+
+/** sessionStorage if it exists and is usable; `null` otherwise (SSR, tests,
+ *  blocked storage — merely *touching* the property can throw in Safari). */
+function rejectedFieldsStore(): Storage | null {
+  try {
+    return (globalThis as { sessionStorage?: Storage }).sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * (Re)hydrate the exclusion list from sessionStorage, replacing whatever is
+ * in memory. Called once at module init; exported so tests can install a
+ * storage mock and reload deterministically.
+ */
+export function loadRejectedFieldsFromStorage(): void {
+  rejectedFieldsCache.clear();
+  const store = rejectedFieldsStore();
+  if (!store) return;
+  let parsed: unknown;
+  try {
+    const raw = store.getItem(REJECTED_FIELDS_STORAGE_KEY);
+    if (!raw) return;
+    parsed = JSON.parse(raw);
+  } catch {
+    return; // corrupt or unreadable — start clean rather than throw at import time
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+  for (const [doctype, fields] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!Array.isArray(fields)) continue;
+    const set = new Set(fields.filter((f): f is string => typeof f === "string"));
+    if (set.size > 0) rejectedFieldsCache.set(doctype, set);
+  }
+}
+
+function persistRejectedFields(): void {
+  const store = rejectedFieldsStore();
+  if (!store) return;
+  const plain: Record<string, string[]> = {};
+  for (const [doctype, set] of rejectedFieldsCache) {
+    if (set.size > 0) plain[doctype] = [...set];
+  }
+  try {
+    store.setItem(REJECTED_FIELDS_STORAGE_KEY, JSON.stringify(plain));
+  } catch {
+    /* quota or blocked storage — the in-memory cache still works this tab */
+  }
+}
+
+/** Test seam: drop both the in-memory list and the persisted copy. */
+export function resetRejectedFieldsCache(): void {
+  rejectedFieldsCache.clear();
+  warnedRejectedFields.clear();
+  const store = rejectedFieldsStore();
+  try {
+    store?.removeItem(REJECTED_FIELDS_STORAGE_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
 
 function getRejectedFields(doctype: string): Set<string> {
   let set = rejectedFieldsCache.get(doctype);
@@ -231,12 +302,26 @@ function getRejectedFields(doctype: string): Set<string> {
   return set;
 }
 
+/**
+ * Record one newly-rejected field: remember it in memory, write the whole
+ * list through to sessionStorage, and warn once.
+ */
+function rememberRejectedField(doctype: string, field: string): void {
+  getRejectedFields(doctype).add(field);
+  persistRejectedFields();
+  warnRejectedFieldOnce(doctype, field);
+}
+
 function warnRejectedFieldOnce(doctype: string, field: string): void {
   const warnKey = `${doctype}::${field}`;
   if (warnedRejectedFields.has(warnKey)) return;
   warnedRejectedFields.add(warnKey);
   console.warn(`[erpnext] "${doctype}" rejected field "${field}" (not permitted in query) — excluding it from future requests.`);
 }
+
+// Pick up this session's already-known exclusions before the first fetch, so
+// a page reload doesn't re-walk the whole 417 chain.
+loadRejectedFieldsFromStorage();
 
 /**
  * Pull every human-readable message string out of a parsed Frappe/ERPNext
@@ -460,9 +545,8 @@ export async function fetchList<T = Record<string, unknown>>(
           const errBody = await res.clone().json().catch(() => null);
           const badField = extractRejectedField(errBody);
           if (badField && attemptFields.includes(badField)) {
-            rejected.add(badField);
+            rememberRejectedField(doctype, badField);
             attemptFields = attemptFields.filter((f) => f !== badField);
-            warnRejectedFieldOnce(doctype, badField);
             const retryParams = new URLSearchParams(searchParams);
             if (attemptFields.length > 0) retryParams.set("fields", JSON.stringify(attemptFields));
             else retryParams.delete("fields");
@@ -800,9 +884,8 @@ export async function fetchCount(
         const errBody = await res.clone().json().catch(() => null);
         const badField = extractRejectedField(errBody);
         if (badField && attemptFilters.some((f) => Array.isArray(f) && f[0] === badField)) {
-          rejected.add(badField);
+          rememberRejectedField(doctype, badField);
           attemptFilters = attemptFilters.filter((f) => !(Array.isArray(f) && f[0] === badField));
-          warnRejectedFieldOnce(doctype, badField);
           url = buildUrl(attemptFilters);
           continue;
         }
