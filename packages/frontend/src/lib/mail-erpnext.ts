@@ -26,6 +26,8 @@
  */
 
 import {
+  createDocument,
+  deleteDocument,
   fetchAttachments,
   fetchCount,
   fetchDocument,
@@ -65,14 +67,29 @@ export interface ErpMailFolder {
   id: string;
   /**
    * Weergavenaam. Voor de vaste mappen is dit een NL-standaardlabel; de
-   * UI-laag mag op `kind` vertalen. Projectmappen dragen de projectnaam,
-   * die per definitie niet vertaalbaar is.
+   * UI-laag mag op `kind` vertalen. Project- en custom mappen dragen hun
+   * eigen naam, die per definitie niet vertaalbaar is.
    */
   label: string;
   unseen: number;
-  kind: "inbox" | "sent" | "unread" | "project";
+  kind: "inbox" | "sent" | "unread" | "project" | "custom";
   /** Alleen bij `kind === "project"`: de Project-docname. */
   project?: string;
+  /** Alleen bij `kind === "custom"`: het tag-label zonder `mail/`-prefix. */
+  tag?: string;
+}
+
+/** Eén pagina berichten plus de wetenschap of er nog meer is. */
+export interface ErpMailPage {
+  messages: ErpMailMessage[];
+  /**
+   * `true` zodra de server een volle pagina teruggaf. Bewust géén
+   * extra `get_count`: dat is een tweede round-trip per pagina en de
+   * enige vraag die de UI ("Meer laden"-knop) stelt is of er nóg een
+   * pagina te halen valt. Prijs: op een exacte veelvoud van `limit`
+   * levert de laatste klik één lege pagina op.
+   */
+  hasMore: boolean;
 }
 
 /* ─── Virtuele map-ids ─── */
@@ -81,13 +98,27 @@ export const MAIL_FOLDER_INBOX = "INBOX";
 export const MAIL_FOLDER_SENT = "Sent";
 export const MAIL_FOLDER_UNREAD = "unread";
 export const MAIL_PROJECT_FOLDER_PREFIX = "project:";
+/** Map-id-prefix van een custom (tag-)map: `tag:Klanten`. */
+export const MAIL_TAG_FOLDER_PREFIX = "tag:";
+/**
+ * Naam-prefix van de Tag-documenten die als mailmap tellen. Zonder deze
+ * namespace zou elke ERPNext-tag (project-, taak-, klanttags) als mailmap
+ * in de mappenlijst opduiken.
+ */
+export const MAIL_TAG_NAME_PREFIX = "mail/";
 
 /** Hoeveel projectmappen maximaal in de mappenlijst verschijnen. */
 const MAX_PROJECT_FOLDERS = 50;
 /** Hoeveel recente Communications de projectdiscovery scant. */
 const PROJECT_DISCOVERY_WINDOW = 200;
+/** Hoeveel custom (tag-)mappen maximaal in de mappenlijst verschijnen. */
+const MAX_CUSTOM_FOLDERS = 50;
 /** Standaard paginagrootte van de berichtenlijst. */
 const DEFAULT_PAGE_SIZE = 50;
+/** Harde bovengrens van een conversatie-closure (zie `getConversation`). */
+const MAX_CONVERSATION_MESSAGES = 25;
+/** Standaard aantal treffers van een zoekactie. */
+const DEFAULT_SEARCH_LIMIT = 50;
 
 const LIST_FIELDS = [
   "name",
@@ -104,6 +135,12 @@ const LIST_FIELDS = [
   "reference_name",
 ];
 
+/**
+ * Zoek- en conversatieresultaten komen niet uit één map, dus die queries
+ * vragen `sent_or_received` mee om de bijbehorende virtuele map af te leiden.
+ */
+const SEARCH_FIELDS = [...LIST_FIELDS, "sent_or_received"];
+
 /** Frappe geeft Check-velden als 0/1 terug, maar niet elke route consequent. */
 function toBool(value: unknown): boolean {
   return value === 1 || value === true || value === "1";
@@ -118,6 +155,30 @@ export function projectOfFolder(folderId: string): string | null {
   return folderId.startsWith(MAIL_PROJECT_FOLDER_PREFIX)
     ? folderId.slice(MAIL_PROJECT_FOLDER_PREFIX.length)
     : null;
+}
+
+/** Tag-label van de custom map-id (`tag:Klanten` → `Klanten`). */
+export function tagOfFolder(folderId: string): string | null {
+  if (!folderId.startsWith(MAIL_TAG_FOLDER_PREFIX)) return null;
+  const label = folderId.slice(MAIL_TAG_FOLDER_PREFIX.length);
+  return label ? label : null;
+}
+
+/** Volledige Tag-docname van een custom map (`Klanten` → `mail/Klanten`). */
+export function tagNameForLabel(label: string): string {
+  return `${MAIL_TAG_NAME_PREFIX}${label.trim()}`;
+}
+
+/**
+ * Een tag-label moet een geldige Tag-docname opleveren én bruikbaar blijven
+ * in de `_user_tags`-string, die komma-gescheiden is. Een label met een
+ * komma zou daar in twee tags uiteenvallen en de map onvindbaar maken.
+ */
+function assertValidTagLabel(label: string): string {
+  const trimmed = (label ?? "").trim();
+  if (!trimmed) throw new Error("Mapnaam mag niet leeg zijn");
+  if (trimmed.includes(",")) throw new Error("Mapnaam mag geen komma bevatten");
+  return trimmed;
 }
 
 /**
@@ -137,7 +198,24 @@ function filtersForFolder(folderId: string): unknown[][] {
   if (project) {
     return [...base, ["reference_doctype", "=", "Project"], ["reference_name", "=", project]];
   }
+  const tag = tagOfFolder(folderId);
+  if (tag) {
+    // `_user_tags` is één komma-gescheiden string per document; een `like`
+    // is de enige manier om er in een lijstquery op te filteren. Bewust
+    // géén `sent_or_received`-beperking: een custom map mag zowel
+    // ontvangen als verzonden mail bevatten.
+    return [...base, ["_user_tags", "like", `%${tagNameForLabel(tag)}%`]];
+  }
   return [...base, ["sent_or_received", "=", "Received"]];
+}
+
+/**
+ * Virtuele map van een rij die niet uit een mapquery komt (zoek- en
+ * conversatieresultaten). Zonder `sent_or_received` in de rij is Postvak IN
+ * de veilige aanname: dat is de map waar de UI standaard op terugvalt.
+ */
+function folderForRow(row: Record<string, unknown>): string {
+  return toStr(row.sent_or_received) === "Sent" ? MAIL_FOLDER_SENT : MAIL_FOLDER_INBOX;
 }
 
 function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMessage {
@@ -195,6 +273,59 @@ export async function listMailboxMessages(
   }
   const rows = await fetchList<Record<string, unknown>>("Communication", params);
   return rows.map((row) => mapMessage(row, folderId));
+}
+
+/**
+ * Zelfde lijst als `listMailboxMessages`, maar met de paginatie-vraag die de
+ * UI stelt: valt er nóg een pagina te halen? Zie `ErpMailPage.hasMore` voor
+ * waarom dat op de paginagrootte wordt afgeleid en niet op een teller.
+ */
+export async function listMailboxMessagesPaged(
+  folderId: string,
+  opts: { start: number; limit: number; search?: string }
+): Promise<ErpMailPage> {
+  const limit = opts.limit;
+  const messages = await listMailboxMessages(folderId, {
+    limit,
+    start: opts.start,
+    search: opts.search,
+  });
+  return { messages, hasMore: messages.length === limit };
+}
+
+/**
+ * Vrije zoekactie over álle mappen heen (dus zonder `sent_or_received`- of
+ * referentiefilter). Treffers krijgen de map die bij hun richting hoort,
+ * zodat de UI ze kan openen alsof ze uit Postvak IN of Verzonden komen.
+ *
+ * `content` (de mailbody) doet standaard **niet** mee: dat is een LONGTEXT-
+ * kolom zonder index, en een `like %…%` daarop scant elke Communication —
+ * op een volle mailbox is dat seconden per toetsaanslag. Frappe staat de
+ * filter wél toe (het is geen SQL-functie in `fields`, dus geen 417), dus wie
+ * die prijs bewust wil betalen zet `includeContent: true`.
+ */
+export async function searchMessages(
+  query: string,
+  opts?: { limit?: number; includeContent?: boolean }
+): Promise<ErpMailMessage[]> {
+  const term = (query ?? "").trim();
+  if (!term) return [];
+  const like = `%${term}%`;
+  const orFilters: unknown[][] = [
+    ["subject", "like", like],
+    ["sender", "like", like],
+    ["recipients", "like", like],
+  ];
+  if (opts?.includeContent) orFilters.push(["content", "like", like]);
+
+  const rows = await fetchList<Record<string, unknown>>("Communication", {
+    fields: SEARCH_FIELDS,
+    filters: [["communication_type", "=", "Communication"]],
+    or_filters: orFilters,
+    order_by: "communication_date desc",
+    limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
+  });
+  return rows.map((row) => mapMessage(row, folderForRow(row)));
 }
 
 /**
@@ -260,18 +391,155 @@ async function listProjectFolders(): Promise<ErpMailFolder[]> {
 }
 
 /**
- * De virtuele mappenlijst: de drie vaste mappen plus de projectmappen.
- * "Ongelezen" is een view op Postvak IN en deelt daarom zijn teller.
+ * Custom mappen: door de gebruiker aangemaakte `Tag`-documenten met de
+ * `mail/`-namespace. Anders dan projectmappen zijn dit echte documenten, dus
+ * een lege map blijft bestaan tot hij expliciet verwijderd wordt.
+ */
+export async function listCustomFolders(): Promise<ErpMailFolder[]> {
+  const rows = await fetchList<{ name?: string }>("Tag", {
+    fields: ["name"],
+    filters: [["name", "like", `${MAIL_TAG_NAME_PREFIX}%`]],
+    order_by: "name asc",
+    limit_page_length: MAX_CUSTOM_FOLDERS,
+  });
+
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const name = row?.name;
+    if (!name || !name.startsWith(MAIL_TAG_NAME_PREFIX)) continue;
+    const label = name.slice(MAIL_TAG_NAME_PREFIX.length).trim();
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  if (labels.length === 0) return [];
+
+  const counts = await Promise.all(
+    labels.map((label) =>
+      fetchCount("Communication", [
+        ["communication_type", "=", "Communication"],
+        ["_user_tags", "like", `%${tagNameForLabel(label)}%`],
+        ["seen", "=", 0],
+      ]).catch(() => 0)
+    )
+  );
+
+  return labels.map((label, i) => ({
+    id: `${MAIL_TAG_FOLDER_PREFIX}${label}`,
+    label,
+    unseen: counts[i],
+    kind: "custom" as const,
+    tag: label,
+  }));
+}
+
+/**
+ * Maak een custom map aan. Dat is puur een `Tag`-document; pas wanneer er
+ * een mail aan wordt getagd verschijnt er inhoud in.
+ */
+export async function createCustomFolder(label: string): Promise<void> {
+  const clean = assertValidTagLabel(label);
+  await createDocument("Tag", { name: tagNameForLabel(clean) });
+}
+
+/**
+ * Verwijder een custom map.
+ *
+ * Let op: dit verwijdert alleen het `Tag`-document. De reeds getagde
+ * Communications houden de tagstring in hun `_user_tags`-veld. Dat is
+ * onschadelijk residu — de map verdwijnt uit `listCustomFolders()` en er is
+ * geen map-id meer die erop filtert — maar het betekent dat een map met
+ * dezelfde naam die later opnieuw wordt aangemaakt direct weer de oude mail
+ * toont. Bewust niet elke mail nalopen: dat zou N updates kosten voor een
+ * cosmetisch veld.
+ */
+export async function deleteCustomFolder(label: string): Promise<void> {
+  const clean = assertValidTagLabel(label);
+  await deleteDocument("Tag", tagNameForLabel(clean));
+}
+
+/* ─── Taggen van losse berichten ─── */
+
+/** `_user_tags` als lijst; Frappe schrijft er een leidende komma in. */
+function parseUserTags(raw: unknown): string[] {
+  return toStr(raw)
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/** Frappe's eigen serialisatie: leidende komma, verder komma-gescheiden. */
+function serializeUserTags(tags: string[]): string {
+  return tags.length > 0 ? `,${tags.join(",")}` : "";
+}
+
+/**
+ * Fallback-pad voor (un)taggen: schrijf `_user_tags` rechtstreeks.
+ *
+ * De primaire route is Frappe's eigen `add_tag`/`remove_tag` RPC — die houdt
+ * naast `_user_tags` ook de `Tag Link`-administratie bij. Blijkt die op deze
+ * instance niet aanroepbaar (niet-whitelisted / geen rechten / methode
+ * ontbreekt), dan valt de adapter automatisch terug op deze documentupdate.
+ * Functioneel voor de mailmappen is dat gelijkwaardig: de mapfilter kijkt
+ * uitsluitend naar `_user_tags`.
+ */
+async function writeUserTags(name: string, mutate: (tags: string[]) => string[]): Promise<void> {
+  const doc = await fetchDocument<{ _user_tags?: string }>("Communication", name);
+  const current = parseUserTags(doc?._user_tags);
+  const next: string[] = [];
+  for (const tag of mutate(current)) {
+    if (tag && !next.includes(tag)) next.push(tag);
+  }
+  await updateDocument("Communication", name, { _user_tags: serializeUserTags(next) });
+}
+
+/** Hang een custom map(tag) aan een bericht. */
+export async function tagMessage(name: string, label: string): Promise<void> {
+  const tag = tagNameForLabel(assertValidTagLabel(label));
+  try {
+    await callMethod("frappe.desk.doctype.tag.tag.add_tag", {
+      tag,
+      dt: "Communication",
+      dn: name,
+    });
+  } catch {
+    await writeUserTags(name, (tags) => [...tags, tag]);
+  }
+  invalidateCache("Communication");
+}
+
+/** Haal een custom map(tag) van een bericht af. */
+export async function untagMessage(name: string, label: string): Promise<void> {
+  const tag = tagNameForLabel(assertValidTagLabel(label));
+  try {
+    await callMethod("frappe.desk.doctype.tag.tag.remove_tag", {
+      tag,
+      dt: "Communication",
+      dn: name,
+    });
+  } catch {
+    await writeUserTags(name, (tags) => tags.filter((t) => t !== tag));
+  }
+  invalidateCache("Communication");
+}
+
+/**
+ * De virtuele mappenlijst: de drie vaste mappen, de custom (tag-)mappen en
+ * de projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom
+ * zijn teller.
  */
 export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
-  const [unseen, projectFolders] = await Promise.all([
+  const [unseen, customFolders, projectFolders] = await Promise.all([
     unseenCount().catch(() => 0),
+    listCustomFolders().catch(() => [] as ErpMailFolder[]),
     listProjectFolders().catch(() => [] as ErpMailFolder[]),
   ]);
   return [
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
     { id: MAIL_FOLDER_SENT, label: "Verzonden", unseen: 0, kind: "sent" },
     { id: MAIL_FOLDER_UNREAD, label: "Ongelezen", unseen, kind: "unread" },
+    ...customFolders,
     ...projectFolders,
   ];
 }
@@ -300,6 +568,189 @@ export async function markRead(name: string): Promise<void> {
 
 export async function markUnread(name: string): Promise<void> {
   await updateDocument("Communication", name, { seen: 0 });
+}
+
+/**
+ * Verwijder een bericht. Er is geen prullenbak in dit model: `Communication`
+ * kent geen "Trash"-map, dus dit is een echte DELETE. De UI hoort dus zelf
+ * om bevestiging te vragen.
+ */
+export async function deleteMessage(name: string): Promise<void> {
+  await deleteDocument("Communication", name);
+}
+
+/**
+ * Voer een bulkactie parallel uit over een lijst berichten.
+ *
+ * Twee dingen die de bulkvorm anders maken dan N losse calls:
+ *
+ * 1. **Eén cache-invalidatie.** Elke `updateDocument`/`deleteDocument`
+ *    invalideert zelf al, maar die invalidaties vallen verspreid over de
+ *    parallelle calls: een lijstfetch die tussen de eerste en de laatste
+ *    binnenkomt, zet een halfbakken lijst terug in de cache. De expliciete
+ *    invalidatie ná `allSettled` garandeert dat de eerstvolgende lijst vers
+ *    van de server komt.
+ * 2. **Deelfouten laten de rest staan.** Eén Communication zonder
+ *    schrijfrecht mag de andere 49 niet ongedaan maken, dus per-item fouten
+ *    worden verzameld in plaats van gegooid. Faalt *alles*, dan is er niets
+ *    gebeurd en gaat de eerste fout alsnog naar de aanroeper.
+ */
+async function bulkApply(names: string[], op: (name: string) => Promise<unknown>): Promise<void> {
+  const unique = [...new Set(names.filter(Boolean))];
+  if (unique.length === 0) return;
+  const results = await Promise.allSettled(unique.map((name) => op(name)));
+  invalidateCache("Communication");
+  const rejected = results.filter((r) => r.status === "rejected");
+  if (rejected.length === results.length) {
+    throw (rejected[0] as PromiseRejectedResult).reason;
+  }
+}
+
+export async function bulkMarkRead(names: string[]): Promise<void> {
+  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
+}
+
+export async function bulkMarkUnread(names: string[]): Promise<void> {
+  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
+}
+
+export async function bulkDelete(names: string[]): Promise<void> {
+  await bulkApply(names, (name) => deleteDocument("Communication", name));
+}
+
+/**
+ * De conversatie rond één bericht: de hele `in_reply_to`-boom waar het in
+ * zit, chronologisch oplopend.
+ *
+ * Anders dan bij IMAP zijn er geen `References`-headers om overheen te
+ * lopen — ERPNext legt de threading vast in het `in_reply_to`-veld van
+ * Communication. De closure loopt daarom twee kanten op: omhoog langs de
+ * ouderketen (één lookup per stap) en omlaag via `in_reply_to in [...]`
+ * (één lookup per niveau, dus ook zijtakken/antwoorden van broers en zussen).
+ *
+ * Harde grens van `MAX_CONVERSATION_MESSAGES`: een pathologisch lange thread
+ * mag geen tientallen round-trips kosten bij het openen van één mail.
+ */
+export async function getConversation(name: string): Promise<ErpMailMessage[]> {
+  if (!name) return [];
+
+  const found = new Map<string, ErpMailMessage>();
+
+  async function fetchByNames(names: string[]): Promise<ErpMailMessage[]> {
+    if (names.length === 0) return [];
+    const rows = await fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [["communication_type", "=", "Communication"], ["name", "in", names]],
+      limit_page_length: names.length,
+    });
+    return rows.map((row) => mapMessage(row, folderForRow(row)));
+  }
+
+  const root = (await fetchByNames([name]))[0];
+  if (!root) return [];
+  found.set(root.name, root);
+
+  // Omhoog: de ouderketen. Stopt bij een ontbrekende of al bekende ouder
+  // (dat laatste sluit ook een cyclus in corrupte data af).
+  let parent = root.inReplyTo;
+  while (parent && !found.has(parent) && found.size < MAX_CONVERSATION_MESSAGES) {
+    const rows = await fetchByNames([parent]).catch(() => [] as ErpMailMessage[]);
+    const msg = rows[0];
+    if (!msg) break;
+    found.set(msg.name, msg);
+    parent = msg.inReplyTo;
+  }
+
+  // Omlaag: per niveau alle antwoorden op de tot nu toe bekende berichten.
+  let frontier = [...found.keys()];
+  while (frontier.length > 0 && found.size < MAX_CONVERSATION_MESSAGES) {
+    const rows = await fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [["communication_type", "=", "Communication"], ["in_reply_to", "in", frontier]],
+      order_by: "communication_date asc",
+      limit_page_length: MAX_CONVERSATION_MESSAGES,
+    }).catch(() => [] as Record<string, unknown>[]);
+    const next: string[] = [];
+    for (const row of rows) {
+      const msg = mapMessage(row, folderForRow(row));
+      if (!msg.name || found.has(msg.name)) continue;
+      if (found.size >= MAX_CONVERSATION_MESSAGES) break;
+      found.set(msg.name, msg);
+      next.push(msg.name);
+    }
+    frontier = next;
+  }
+
+  return [...found.values()].sort((a, b) => {
+    if (a.date === b.date) return a.name.localeCompare(b.name);
+    return a.date < b.date ? -1 : 1;
+  });
+}
+
+/**
+ * De handtekening van het standaard uitgaande Email Account, als HTML.
+ *
+ * `Email Account` is geen breed leesbaar DocType: een gewone medewerker
+ * krijgt hier een 403. Dat mag de compose-view niet breken — een mail zonder
+ * handtekening is prima, een compose-scherm dat niet opent niet. Elke fout
+ * (403, ontbrekend doctype, netwerk) levert daarom een lege string op.
+ */
+export async function getSignature(): Promise<string> {
+  try {
+    const rows = await fetchList<{ signature?: string }>("Email Account", {
+      fields: ["name", "signature"],
+      filters: [["default_outgoing", "=", 1]],
+      limit_page_length: 1,
+    });
+    return toStr(rows[0]?.signature);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Aflever-status per verzonden Communication, uit de `Email Queue`.
+ *
+ * ERPNext verstuurt asynchroon: `communication.email.make` maakt de
+ * Communication meteen, maar de daadwerkelijke aflevering doet de scheduler
+ * daarna. Deze lookup laat de UI het verschil tonen tussen "in de wachtrij",
+ * "verzonden" en "mislukt".
+ *
+ * `Email Queue` is net als `Email Account` niet standaard leesbaar voor
+ * iedereen; bij een 403 (of welke fout dan ook) komt er een leeg object
+ * terug en toont de UI simpelweg geen statuschip. De koppeling loopt via het
+ * `communication`-veld, met `reference_name` als terugval voor rijen die de
+ * queue zonder Communication-link heeft aangemaakt.
+ */
+export async function getQueueStatusFor(
+  communicationNames: string[]
+): Promise<Record<string, string>> {
+  const unique = [...new Set((communicationNames ?? []).filter(Boolean))];
+  if (unique.length === 0) return {};
+  try {
+    const rows = await fetchList<{
+      communication?: string;
+      reference_name?: string;
+      status?: string;
+    }>("Email Queue", {
+      fields: ["name", "communication", "reference_name", "status"],
+      filters: [["communication", "in", unique]],
+      order_by: "creation desc",
+      limit_page_length: unique.length * 2,
+    });
+    const wanted = new Set(unique);
+    const out: Record<string, string> = {};
+    for (const row of rows) {
+      const key = row?.communication || row?.reference_name || "";
+      const status = toStr(row?.status);
+      // Nieuwste eerst: de eerste rij per Communication is de actuele status.
+      if (!key || !wanted.has(key) || !status || out[key]) continue;
+      out[key] = status;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 /** Koppel een mail aan een ERPNext-document (de projectchip in de UI). */

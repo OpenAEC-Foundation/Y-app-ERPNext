@@ -4,9 +4,23 @@ import { invalidateCache } from "./erpnext.ts";
 import {
   listVirtualFolders,
   listMailboxMessages,
+  listMailboxMessagesPaged,
+  searchMessages,
   getMessageBody,
   markRead,
   markUnread,
+  deleteMessage,
+  bulkMarkRead,
+  bulkMarkUnread,
+  bulkDelete,
+  getConversation,
+  getSignature,
+  getQueueStatusFor,
+  listCustomFolders,
+  createCustomFolder,
+  deleteCustomFolder,
+  tagMessage,
+  untagMessage,
   sendMail,
   linkToDocument,
   unseenCount,
@@ -55,6 +69,22 @@ function filtersOf(url: string): unknown[][] {
 function hasFilter(url: string, field: string, op: string, value: unknown): boolean {
   return filtersOf(url).some(
     (f) => Array.isArray(f) && f[0] === field && f[1] === op && String(f[2]) === String(value)
+  );
+}
+
+/** Waarde van de eerste filter op `field` (bv. de lijst achter een `in`). */
+function filterValue(url: string, field: string): unknown {
+  const f = filtersOf(url).find((x) => Array.isArray(x) && x[0] === field);
+  return Array.isArray(f) ? f[2] : undefined;
+}
+
+function orFiltersOf(url: string): unknown[][] {
+  return (queryJson(url, "or_filters") as unknown[][] | undefined) ?? [];
+}
+
+function hasOrFilter(url: string, field: string, value: unknown): boolean {
+  return orFiltersOf(url).some(
+    (f) => Array.isArray(f) && f[0] === field && f[1] === "like" && f[2] === value
   );
 }
 
@@ -460,6 +490,48 @@ test("hasEnabledEmailAccount: true bij 403 (geen leesrecht) — 'kan niet vastst
   }
 });
 
+/*
+ * De twee getSignature-tests staan bewust vóór de 404-test hieronder:
+ * die markeert `Email Account` als ontbrekend DocType, en erpnext.ts houdt
+ * dat voor de rest van het proces vast (geen netwerkcall meer, altijd een
+ * lege lijst). Verplaatst naar achteren zouden ze stil op die cache lopen.
+ */
+test("getSignature: signature van het standaard uitgaande Email Account", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const mock = installFetchMock((url) => {
+    assert.ok(hasFilter(url, "default_outgoing", "=", 1));
+    return rowsBody([{ name: "OpenAEC Mail", signature: "<p>Met vriendelijke groet</p>" }]);
+  });
+  try {
+    assert.equal(await getSignature(), "<p>Met vriendelijke groet</p>");
+  } finally {
+    mock.restore();
+    invalidateCache("Email Account");
+  }
+});
+
+test("getSignature: lege string bij 403 en bij een account zonder handtekening", async () => {
+  invalidateCache("Email Account");
+  await settleFetchDedup();
+  const denied = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
+  try {
+    assert.equal(await getSignature(), "");
+  } finally {
+    denied.restore();
+    invalidateCache("Email Account");
+    await settleFetchDedup();
+  }
+
+  const empty = installFetchMock(() => rowsBody([{ name: "OpenAEC Mail" }]));
+  try {
+    assert.equal(await getSignature(), "");
+  } finally {
+    empty.restore();
+    invalidateCache("Email Account");
+  }
+});
+
 test("hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt (404 DoesNotExistError)", async () => {
   invalidateCache("Email Account");
   await settleFetchDedup();
@@ -489,5 +561,459 @@ test("hasEnabledEmailAccount: false bij een andere serverfout (5xx)", async () =
   } finally {
     mock.restore();
     invalidateCache("Email Account");
+  }
+});
+
+/* ───────────────────────── uitbouwslag A ───────────────────────── */
+
+function rowsBody(rows: unknown[]): { status: number; body: unknown } {
+  return { status: 200, body: { data: rows } };
+}
+
+test("listMailboxMessagesPaged: hasMore is waar zolang de server een volle pagina teruggeeft", async () => {
+  const page = Array.from({ length: 3 }, (_, i) => ({
+    name: `COMM-P${i}`,
+    subject: "s",
+    sender: "a@b.nl",
+    communication_date: "2026-07-01 09:00:00",
+    seen: 1,
+  }));
+  let call = 0;
+  const mock = installFetchMock(() => rowsBody(call++ === 0 ? page : page.slice(0, 2)));
+  try {
+    const first = await listMailboxMessagesPaged("project:PROJ-PAGE-0001", { start: 0, limit: 3 });
+    assert.equal(first.messages.length, 3);
+    assert.equal(first.hasMore, true, "volle pagina ⇒ er kan nog meer zijn");
+    assert.match(mock.calls[0].url, /limit_page_length=3/);
+    assert.match(mock.calls[0].url, /limit_start=0/);
+
+    const second = await listMailboxMessagesPaged("project:PROJ-PAGE-0001", { start: 3, limit: 3 });
+    assert.equal(second.messages.length, 2);
+    assert.equal(second.hasMore, false, "halve pagina ⇒ einde van de lijst");
+    assert.match(mock.calls[1].url, /limit_start=3/);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("listMailboxMessagesPaged: zoekterm gaat mee als or_filters, mapfilter blijft staan", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    const res = await listMailboxMessagesPaged("Sent", { start: 0, limit: 10, search: "kade" });
+    assert.deepEqual(res, { messages: [], hasMore: false });
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "sent_or_received", "=", "Sent"));
+    assert.ok(hasOrFilter(url, "subject", "%kade%"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("searchMessages: or_filters op subject/sender/recipients, map afgeleid uit sent_or_received", async () => {
+  const mock = installFetchMock(() =>
+    rowsBody([
+      {
+        name: "COMM-S1",
+        subject: "Offerte kade",
+        sender: "jan@example.com",
+        sender_full_name: "Jan",
+        recipients: "info@open-aec.com",
+        communication_date: "2026-07-02 10:00:00",
+        seen: 1,
+        sent_or_received: "Received",
+      },
+      {
+        name: "COMM-S2",
+        subject: "Re: Offerte kade",
+        sender: "info@open-aec.com",
+        recipients: "jan@example.com",
+        communication_date: "2026-07-03 10:00:00",
+        seen: 1,
+        sent_or_received: "Sent",
+      },
+    ])
+  );
+  try {
+    const hits = await searchMessages("kade", { limit: 10 });
+    assert.equal(hits.length, 2);
+    assert.equal(hits[0].folder, "INBOX", "ontvangen treffer hoort bij Postvak IN");
+    assert.equal(hits[1].folder, "Sent", "verzonden treffer hoort bij Verzonden");
+
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "communication_type", "=", "Communication"));
+    assert.ok(hasOrFilter(url, "subject", "%kade%"));
+    assert.ok(hasOrFilter(url, "sender", "%kade%"));
+    assert.ok(hasOrFilter(url, "recipients", "%kade%"));
+    assert.ok(!hasOrFilter(url, "content", "%kade%"), "content blijft standaard buiten de zoekactie");
+    assert.match(url, /limit_page_length=10/);
+    // Zoeken is map-overstijgend: geen sent_or_received- of referentiefilter.
+    assert.equal(filtersOf(url).length, 1);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("searchMessages: lege zoekterm doet geen enkele call, includeContent voegt content toe", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    assert.deepEqual(await searchMessages("   "), []);
+    assert.equal(mock.calls.length, 0, "een lege zoekterm mag geen query kosten");
+
+    await searchMessages("dijk", { includeContent: true });
+    assert.ok(hasOrFilter(mock.calls[0].url, "content", "%dijk%"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("deleteMessage: DELETE op de Communication (er is geen prullenbak in dit model)", async () => {
+  const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
+  try {
+    await deleteMessage("COMM-DEL-1");
+    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-DEL-1");
+    assert.equal(mock.calls[0].init?.method, "DELETE");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("bulkMarkRead / bulkMarkUnread: parallelle PUTs en daarna een verse lijst (cache geïnvalideerd)", async () => {
+  const folder = "project:PROJ-BULK-0001";
+  let listCalls = 0;
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/resource/Communication?")) {
+      listCalls++;
+      return rowsBody([]);
+    }
+    if (url.startsWith("/api/resource/Communication/")) {
+      return { status: 200, body: { data: { name: "ok" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await listMailboxMessages(folder);
+    assert.equal(listCalls, 1);
+    await settleFetchDedup();
+    await listMailboxMessages(folder);
+    assert.equal(listCalls, 1, "controle: de responscache serveert de tweede call normaal gesproken");
+    await settleFetchDedup();
+
+    await bulkMarkRead(["COMM-B1", "COMM-B2", "COMM-B1"]);
+    const puts = mock.calls.filter((c) => c.init?.method === "PUT");
+    assert.equal(puts.length, 2, "dubbele namen worden ontdubbeld");
+    assert.deepEqual(
+      puts.map((p) => p.url).sort(),
+      ["/api/resource/Communication/COMM-B1", "/api/resource/Communication/COMM-B2"]
+    );
+    for (const p of puts) assert.deepEqual(JSON.parse(String(p.init?.body)), { seen: 1 });
+
+    await listMailboxMessages(folder);
+    assert.equal(listCalls, 2, "na een bulkactie moet de lijst opnieuw van de server komen");
+
+    await bulkMarkUnread(["COMM-B3"]);
+    const last = mock.calls[mock.calls.length - 1];
+    assert.deepEqual(JSON.parse(String(last.init?.body)), { seen: 0 });
+
+    // Lege lijst: geen enkele call.
+    const before = mock.calls.length;
+    await bulkMarkRead([]);
+    assert.equal(mock.calls.length, before);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulkDelete: DELETE per bericht", async () => {
+  const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
+  try {
+    await bulkDelete(["COMM-D1", "COMM-D2"]);
+    assert.equal(mock.calls.length, 2);
+    for (const c of mock.calls) assert.equal(c.init?.method, "DELETE");
+    assert.deepEqual(
+      mock.calls.map((c) => c.url).sort(),
+      ["/api/resource/Communication/COMM-D1", "/api/resource/Communication/COMM-D2"]
+    );
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulk: één mislukt item stopt de rest niet, alles mislukt gooit wel", async () => {
+  const mock = installFetchMock((url) =>
+    url.includes("COMM-BAD")
+      ? { status: 403, body: { exception: "No permission" } }
+      : { status: 200, body: { data: { name: "ok" } } }
+  );
+  try {
+    await bulkMarkRead(["COMM-OK1", "COMM-BAD"]);
+    assert.equal(mock.calls.length, 2, "de goede update is gewoon uitgevoerd");
+  } finally {
+    mock.restore();
+  }
+
+  const allFail = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
+  try {
+    await assert.rejects(() => bulkMarkRead(["COMM-BAD1", "COMM-BAD2"]));
+  } finally {
+    allFail.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("getConversation: in_reply_to-ketting omhoog én omlaag, chronologisch gesorteerd", async () => {
+  const docs: Record<string, Record<string, unknown>> = {
+    "COMM-CA": { name: "COMM-CA", subject: "Offerte", sender: "jan@x.nl", communication_date: "2026-07-01 09:00:00", seen: 1, sent_or_received: "Received" },
+    "COMM-CB": { name: "COMM-CB", subject: "Re: Offerte", sender: "info@y.nl", communication_date: "2026-07-01 10:00:00", seen: 1, in_reply_to: "COMM-CA", sent_or_received: "Sent" },
+    "COMM-CC": { name: "COMM-CC", subject: "Re: Offerte", sender: "jan@x.nl", communication_date: "2026-07-01 11:00:00", seen: 0, in_reply_to: "COMM-CB", sent_or_received: "Received" },
+    "COMM-CD": { name: "COMM-CD", subject: "Re: Offerte", sender: "info@y.nl", communication_date: "2026-07-01 12:00:00", seen: 1, in_reply_to: "COMM-CC", sent_or_received: "Sent" },
+  };
+  const mock = installFetchMock((url) => {
+    const byName = filterValue(url, "name") as string[] | undefined;
+    if (byName) return rowsBody(byName.map((n) => docs[n]).filter(Boolean));
+    const byParent = filterValue(url, "in_reply_to") as string[] | undefined;
+    if (byParent) {
+      return rowsBody(Object.values(docs).filter((d) => byParent.includes(String(d.in_reply_to))));
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    // Start halverwege de thread: zowel de ouder als de kinderen moeten mee.
+    const thread = await getConversation("COMM-CB");
+    assert.deepEqual(thread.map((m) => m.name), ["COMM-CA", "COMM-CB", "COMM-CC", "COMM-CD"]);
+    assert.equal(thread[0].folder, "INBOX");
+    assert.equal(thread[1].folder, "Sent");
+    assert.equal(thread[2].seen, false);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("getConversation: onbekend bericht levert een lege lijst, lege naam kost geen call", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    assert.deepEqual(await getConversation(""), []);
+    assert.equal(mock.calls.length, 0);
+    assert.deepEqual(await getConversation("COMM-NOPE"), []);
+    assert.equal(mock.calls.length, 1, "één lookup, daarna stopt de closure");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("getQueueStatusFor: status per Communication, nieuwste rij wint", async () => {
+  const mock = installFetchMock((url) => {
+    assert.match(url, /^\/api\/resource\/Email Queue\?/);
+    assert.deepEqual(filterValue(url, "communication"), ["COMM-Q1", "COMM-Q2", "COMM-Q3"]);
+    return rowsBody([
+      { name: "EQ-3", communication: "COMM-Q1", status: "Sent" },
+      { name: "EQ-2", communication: "COMM-Q1", status: "Not Sent" },
+      { name: "EQ-1", reference_name: "COMM-Q2", status: "Error" },
+      { name: "EQ-0", communication: "COMM-ANDERS", status: "Sent" },
+    ]);
+  });
+  try {
+    const map = await getQueueStatusFor(["COMM-Q1", "COMM-Q2", "COMM-Q3", "COMM-Q1"]);
+    assert.deepEqual(map, { "COMM-Q1": "Sent", "COMM-Q2": "Error" });
+  } finally {
+    mock.restore();
+    invalidateCache("Email Queue");
+  }
+});
+
+test("getQueueStatusFor: leeg object bij 403 en zonder namen geen call", async () => {
+  invalidateCache("Email Queue");
+  await settleFetchDedup();
+  const mock = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
+  try {
+    assert.deepEqual(await getQueueStatusFor([]), {});
+    assert.equal(mock.calls.length, 0);
+    assert.deepEqual(await getQueueStatusFor(["COMM-Q9"]), {});
+  } finally {
+    mock.restore();
+    invalidateCache("Email Queue");
+  }
+});
+
+/* ─── Custom mappen op ERPNext-tags ─── */
+
+test("listCustomFolders: Tag-documenten met mail/-prefix worden mappen, teller via _user_tags", async () => {
+  invalidateCache("Tag");
+  await settleFetchDedup();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/resource/Tag?")) {
+      assert.ok(hasFilter(url, "name", "like", "mail/%"));
+      return rowsBody([
+        { name: "mail/Klanten" },
+        { name: "mail/Leveranciers" },
+        { name: "project-tag" }, // buiten de mail/-namespace ⇒ geen mailmap
+      ]);
+    }
+    if (url.startsWith("/api/method/frappe.client.get_count")) {
+      const tagFilter = filtersOf(url).find((f) => Array.isArray(f) && f[0] === "_user_tags");
+      assert.ok(tagFilter, "de teller filtert op _user_tags");
+      return { status: 200, body: { message: String(tagFilter[2]).includes("Klanten") ? 4 : 0 } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    const folders = await listCustomFolders();
+    assert.equal(folders.length, 2);
+    assert.deepEqual(folders[0], {
+      id: "tag:Klanten",
+      label: "Klanten",
+      unseen: 4,
+      kind: "custom",
+      tag: "Klanten",
+    });
+    assert.equal(folders[1].id, "tag:Leveranciers");
+    assert.equal(folders[1].unseen, 0);
+  } finally {
+    mock.restore();
+    invalidateCache("Tag");
+  }
+});
+
+test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de projectmappen", async () => {
+  invalidateCache("Tag");
+  invalidateCache("Communication");
+  invalidateCache("Project");
+  await settleFetchDedup();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/resource/Tag?")) return rowsBody([{ name: "mail/Archief" }]);
+    if (url.startsWith("/api/resource/Communication?")) return rowsBody([{ reference_name: "PROJ-0001" }]);
+    if (url.startsWith("/api/resource/Project?")) return rowsBody([{ name: "PROJ-0001", project_name: "Kade Noord" }]);
+    if (url.startsWith("/api/method/frappe.client.get_count")) {
+      return { status: 200, body: { message: countFor(url) } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    const folders = await listVirtualFolders();
+    assert.deepEqual(
+      folders.map((f) => f.kind),
+      ["inbox", "sent", "unread", "custom", "project"]
+    );
+    assert.equal(folders[3].id, "tag:Archief");
+  } finally {
+    mock.restore();
+    invalidateCache("Tag");
+    invalidateCache("Communication");
+    invalidateCache("Project");
+  }
+});
+
+test("listMailboxMessages: een tag-map filtert op _user_tags met de mail/-prefix", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await listMailboxMessages("tag:Klanten");
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "communication_type", "=", "Communication"));
+    assert.ok(hasFilter(url, "_user_tags", "like", "%mail/Klanten%"));
+    // Een custom map bevat zowel ontvangen als verzonden mail.
+    assert.ok(!filtersOf(url).some((f) => Array.isArray(f) && f[0] === "sent_or_received"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("createCustomFolder / deleteCustomFolder: Tag-document met mail/-prefix, label gevalideerd", async () => {
+  const mock = installFetchMock((url) => {
+    if (url === "/api/resource/Tag") return { status: 200, body: { data: { name: "mail/Klanten" } } };
+    return { status: 202, body: { message: "ok" } };
+  });
+  try {
+    await createCustomFolder("  Klanten  ");
+    assert.equal(mock.calls[0].url, "/api/resource/Tag");
+    assert.equal(mock.calls[0].init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), { name: "mail/Klanten" });
+
+    await deleteCustomFolder("Klanten");
+    assert.equal(mock.calls[1].url, "/api/resource/Tag/mail%2FKlanten");
+    assert.equal(mock.calls[1].init?.method, "DELETE");
+
+    const before = mock.calls.length;
+    await assert.rejects(() => createCustomFolder("   "), /leeg/i);
+    await assert.rejects(() => createCustomFolder("A,B"), /komma/i);
+    assert.equal(mock.calls.length, before, "een ongeldig label mag de server niet bereiken");
+  } finally {
+    mock.restore();
+    invalidateCache("Tag");
+  }
+});
+
+test("tagMessage / untagMessage: primair via de whitelisted tag-RPC", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { message: "mail/Klanten" } }));
+  try {
+    await tagMessage("COMM-T1", "Klanten");
+    assert.equal(mock.calls[0].url, "/api/method/frappe.desk.doctype.tag.tag.add_tag");
+    assert.equal(mock.calls[0].init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), {
+      tag: "mail/Klanten",
+      dt: "Communication",
+      dn: "COMM-T1",
+    });
+
+    await untagMessage("COMM-T1", "Klanten");
+    assert.equal(mock.calls[1].url, "/api/method/frappe.desk.doctype.tag.tag.remove_tag");
+    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), {
+      tag: "mail/Klanten",
+      dt: "Communication",
+      dn: "COMM-T1",
+    });
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("tagMessage: valt terug op _user_tags wanneer de tag-RPC niet beschikbaar is", async () => {
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.desk.doctype.tag.tag.")) {
+      return { status: 403, body: { exception: "Method not whitelisted" } };
+    }
+    if (url === "/api/resource/Communication/COMM-T2") {
+      return { status: 200, body: { data: { name: "COMM-T2", _user_tags: ",mail/Oud,mail/Klanten," } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await tagMessage("COMM-T2", "Klanten");
+    const put = mock.calls.find((c) => c.init?.method === "PUT");
+    assert.ok(put, "de fallback schrijft _user_tags rechtstreeks");
+    // Al aanwezig ⇒ niet dubbel toevoegen; lege segmenten verdwijnen.
+    assert.deepEqual(JSON.parse(String(put.init?.body)), { _user_tags: ",mail/Oud,mail/Klanten" });
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("untagMessage: fallback verwijdert alleen de eigen tag uit _user_tags", async () => {
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.desk.doctype.tag.tag.")) {
+      return { status: 404, body: { exception: "Not found" } };
+    }
+    if (url === "/api/resource/Communication/COMM-T3") {
+      return { status: 200, body: { data: { name: "COMM-T3", _user_tags: ",mail/Oud,mail/Klanten" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await untagMessage("COMM-T3", "Klanten");
+    const put = mock.calls.find((c) => c.init?.method === "PUT");
+    assert.ok(put);
+    assert.deepEqual(JSON.parse(String(put.init?.body)), { _user_tags: ",mail/Oud" });
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
   }
 });
