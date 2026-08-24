@@ -918,11 +918,15 @@ export const INTENTS: Intent[] = [
       { name: "content", type: "text", required: true, label: "Notitie" },
     ],
     execute: async (slots) => {
-      await callMethod("frappe.client.add_comment", {
+      // ERPNext v15 kent `frappe.client.add_comment` niet; de desk-variant
+      // is daar het equivalent en vereist ook `comment_email`.
+      const commentBy = defaultEmployee() || "Administrator";
+      await callMethod("frappe.desk.form.utils.add_comment", {
         reference_doctype: slots.reference_type,
         reference_name: slots.reference_name,
         content: slots.content,
-        comment_by: defaultEmployee() || "Administrator",
+        comment_email: commentBy,
+        comment_by: commentBy,
       });
       return `✓ Notitie toegevoegd aan ${slots.reference_type} ${slots.reference_name}`;
     },

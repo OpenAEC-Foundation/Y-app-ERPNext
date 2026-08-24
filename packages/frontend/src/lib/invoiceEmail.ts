@@ -458,7 +458,8 @@ export async function renderEmailTemplate(
  *
  * Multiple endpoint variants are tried because different Frappe versions
  * accept `format` vs `print_format` as the query-param name, and as a
- * last resort the whitelisted `frappe.www.printview.get_html` RPC method.
+ * last resort the whitelisted `frappe.www.printview.get_html_and_style` RPC
+ * (ERPNext v15; geeft `{html, style}` terug i.p.v. een HTML-string).
  *
  * @param doctype  ERPNext doctype, bv "Sales Invoice"
  * @param name     Doc name
@@ -483,7 +484,7 @@ export async function fetchPrintPreviewHtml(
   const endpoints = [
     `/printview?doctype=${enc(doctype)}&name=${enc(name)}&format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
     `/printview?doctype=${enc(doctype)}&name=${enc(name)}&print_format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
-    `/api/method/frappe.www.printview.get_html?doctype=${enc(doctype)}&name=${enc(name)}&format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
+    `/api/method/frappe.www.printview.get_html_and_style?doc=${enc(doctype)}&name=${enc(name)}&print_format=${enc(printFormat)}&no_letterhead=${noLetterhead}${bust}`,
   ];
   // Iframes loaded via `srcDoc` have base URL `about:srcdoc`, so relative
   // asset paths like `/files/…` don't resolve to this origin even with
@@ -515,8 +516,15 @@ export async function fetchPrintPreviewHtml(
       } else {
         try {
           const parsed = JSON.parse(text);
-          if (typeof parsed?.message === "string" && parsed.message.length > 100) {
-            return withBaseHref(parsed.message);
+          const msg = parsed?.message;
+          if (typeof msg === "string" && msg.length > 100) {
+            return withBaseHref(msg);
+          }
+          // ERPNext v15: get_html_and_style levert {html, style} — de stijl
+          // moet er zelf voorgeplakt worden voor een bruikbare preview.
+          if (msg && typeof msg === "object" && typeof msg.html === "string" && msg.html.length > 100) {
+            const style = typeof msg.style === "string" ? `<style>${msg.style}</style>` : "";
+            return withBaseHref(`${style}${msg.html}`);
           }
         } catch { /* not JSON */ }
       }

@@ -1668,7 +1668,9 @@ export default function InvoiceModal({
                 ) : (
                   <div className="space-y-2">
                     {attachments.map((file) => {
-                      const fileUrl = `/api/method/frappe.client.get_file?file_url=${encodeURIComponent(file.file_url)}`;
+                      // ERPNext v15 heeft geen `frappe.client.get_file`; de
+                      // File-URL is same-origin direct opvraagbaar.
+                      const fileUrl = file.file_url;
                       const isPdf = file.file_name?.toLowerCase().endsWith(".pdf");
                       const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file.file_name || "");
                       return (
