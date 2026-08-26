@@ -256,9 +256,16 @@ function BoekingenView({ viewMode }: { viewMode: ViewMode }) {
     setError(null);
     try {
       // Build timesheet filters based on date range
+      // OVERLAP met het datumbereik, niet "helemaal binnen het bereik".
+      // Een urenstaat loopt sinds het jaarmodel van januari tot december
+      // (lib/year-timesheet.ts), dus `start_date >= from AND end_date <= to`
+      // zou hem uit élk deel-bereik gooien en het overzicht leeg laten. Ook
+      // voor de oude week-sheets is dit een correctie: een week die over een
+      // maandgrens loopt viel voorheen uit de maandweergave. De begrenzing tot
+      // het bereik gebeurt hieronder al per regel op `from_time`.
       const tsFilters: unknown[][] = [];
-      if (dateRange.from) tsFilters.push(["start_date", ">=", dateRange.from]);
-      if (dateRange.to) tsFilters.push(["end_date", "<=", dateRange.to]);
+      if (dateRange.to) tsFilters.push(["start_date", "<=", dateRange.to]);
+      if (dateRange.from) tsFilters.push(["end_date", ">=", dateRange.from]);
 
       // Fetch timesheets in the date range
       const timesheets = await fetchAll<Timesheet>(

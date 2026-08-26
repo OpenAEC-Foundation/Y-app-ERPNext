@@ -1,6 +1,11 @@
 import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useIsMobile } from "../lib/useIsMobile";
-import { fetchList, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
+import { fetchList, fetchChildTable, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
+import {
+  aggregateHoursByEmployeeDay,
+  fetchTimesheetHourRows,
+  type EmployeeDayTotal,
+} from "../lib/timesheet-hours";
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
@@ -1268,18 +1273,18 @@ export default function Agenda() {
       }
 
       if (erpSources.timesheets) {
-        fetches.push(fetchList<{
-          name: string; title: string; start_date: string; end_date: string;
-          total_hours: number; employee_name: string;
-        }>("Timesheet", {
-          fields: ["name", "title", "start_date", "end_date", "total_hours", "employee_name"],
-          filters: [
-            ["start_date", ">=", dateRange.start],
-            ["start_date", "<=", dateRange.end],
-            ["docstatus", "=", 1],
-          ],
-          limit_page_length: 200,
-        }));
+        // Eén agenda-item per medewerker per DAG, uit de geboekte regels —
+        // niet één item per Timesheet. Sinds de urenstaat per jaar loopt
+        // (lib/year-timesheet.ts) zou een sheet-item één blok van twaalf
+        // maanden zijn, en het oude filter op `start_date` binnen het bereik
+        // liet hem buiten januari zelfs helemaal weg. Eén gedeelde fetch voor
+        // het hele zichtbare bereik, geen call per dag.
+        fetches.push(
+          fetchTimesheetHourRows(
+            { from: dateRange.start, to: dateRange.end },
+            { fetchList, fetchChildTable }
+          ).then(aggregateHoursByEmployeeDay)
+        );
         fetchLabels.push("timesheets");
       }
 
@@ -1310,12 +1315,13 @@ export default function Agenda() {
             }
           }
         } else if (label === "timesheets") {
-          for (const ts of result.value) {
+          for (const day of result.value as EmployeeDayTotal[]) {
             items.push({
-              id: `ts-${ts.name}`, title: ts.title || `${ts.employee_name} - ${ts.total_hours}u`,
-              start: ts.start_date, end: ts.end_date || undefined,
+              id: `ts-${day.employee}-${day.date}`,
+              title: `${day.employee_name || day.employee} - ${day.hours}u`,
+              start: day.date, end: undefined,
               allDay: true, type: "timesheet", color: TYPE_COLORS.timesheet,
-              owner: ts.employee_name,
+              owner: day.employee_name,
             });
           }
         }
