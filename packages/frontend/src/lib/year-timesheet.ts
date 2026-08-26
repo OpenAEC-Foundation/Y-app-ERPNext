@@ -78,12 +78,39 @@ export function bookingYear(date: string): number | null {
   return year;
 }
 
-/** De filters waarmee de jaarstaat van (medewerker, jaar) wordt opgezocht. */
+/**
+ * De filters waarmee de **gemarkeerde** jaarstaat van (medewerker, jaar) wordt
+ * opgezocht — een sheet die Y-next zelf al als jaarstaat heeft aangemerkt.
+ */
 export function yearSheetFilters(employee: string, year: number): unknown[][] {
   return [
     ["employee", "=", employee],
     ["docstatus", "=", 0],
     ["title", "=", yearSheetTitle(year)],
+    ["start_date", ">=", `${year}-01-01`],
+    ["start_date", "<=", `${year}-12-31`],
+  ];
+}
+
+/**
+ * De filters voor **adoptie**: élke concept-urenstaat van deze medewerker met
+ * een `start_date` in dit jaar, ongeacht de titel.
+ *
+ * WAAROM ADOPTIE — zonder deze tweede stap maakte de eerste boeking van elke
+ * medewerker gegarandeerd een nieuw document aan, óók als er al een handvol
+ * concept-weekstaten van dat jaar lag. Dat is niet alleen rommelig (twee
+ * parallelle urenstaten naast elkaar), het legde ook de naming-teller bloot:
+ * op de doelinstance stond `Document Naming Settings` voor prefix `TS-2026-`
+ * op 11 terwijl er al documenten tot `TS-2026-00294` bestonden, dus élke
+ * insert botste op "TS-2026-00012 already exists". En omdat een mislukte
+ * insert de tellerverhoging mee terugdraait, liep dat niet vanzelf los.
+ * Adoptie haalt het aanmaken uit het normale pad: bestaat er al een concept
+ * van dit jaar, dan wordt daar simpelweg aan toegevoegd.
+ */
+export function adoptableSheetFilters(employee: string, year: number): unknown[][] {
+  return [
+    ["employee", "=", employee],
+    ["docstatus", "=", 0],
     ["start_date", ">=", `${year}-01-01`],
     ["start_date", "<=", `${year}-12-31`],
   ];
@@ -101,7 +128,17 @@ export type FetchListFn = <T>(
 ) => Promise<T[]>;
 
 /**
- * Zoekt de bestaande concept-jaarstaat voor (medewerker, jaar-van-boekdatum).
+ * Zoekt de urenstaat waar een boeking van (medewerker, datum) in hoort.
+ *
+ * Twee stappen, in deze volgorde:
+ *  1. de **gemarkeerde** jaarstaat (`title = "Urenstaat <jaar>"`);
+ *  2. anders **adoptie**: de nieuwste concept-urenstaat van die medewerker met
+ *     een `start_date` in dit jaar, ongeacht de titel.
+ *
+ * Sorteren op `start_date desc, modified desc`: de sheet van de meest recente
+ * periode is de logische plek om vandaag aan toe te voegen (en bij gelijke
+ * datum de laatst aangeraakte). Bij adoptie zet de append-update meteen de
+ * titel-markering, zodat stap 1 het de volgende keer al vindt.
  *
  * Geeft `null` bij een lege/ongeldige medewerker of datum, en ook wanneer de
  * lookup faalt — de aanroeper valt dan terug op het aanmaakpad. Een mislukte
@@ -115,17 +152,54 @@ export async function resolveYearTimesheet(
 ): Promise<string | null> {
   const year = bookingYear(date);
   if (!employee || year === null) return null;
-  try {
+  const lookup = async (filters: unknown[][]) => {
     const list = await fetchList<{ name: string }>("Timesheet", {
       fields: ["name"],
-      filters: yearSheetFilters(employee, year),
+      filters,
       limit_page_length: 1,
-      order_by: "modified desc",
+      order_by: "start_date desc, modified desc",
     });
     return list.length > 0 ? list[0].name : null;
+  };
+  try {
+    return (
+      (await lookup(yearSheetFilters(employee, year))) ??
+      (await lookup(adoptableSheetFilters(employee, year)))
+    );
   } catch {
     return null;
   }
+}
+
+/**
+ * Herkent ERPNext's "naam bestaat al"-weigering bij een insert.
+ *
+ * Frappe gooit `frappe.exceptions.DuplicateEntryError` met een melding als
+ * *"Timesheet TS-2026-00012 already exists"*; afhankelijk van het pad komt dat
+ * als 409 of als 417 met de tekst in de body terug, dus we duck-typen op de
+ * tekst in plaats van op een status.
+ */
+export function isDuplicateNameError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  if (!message) return false;
+  return /DuplicateEntryError/i.test(message) || /already exists/i.test(message);
+}
+
+/**
+ * Een leesbare uitleg bij een duplicaat-naam, in plaats van ERPNext's kale
+ * *"Timesheet TS-2026-00012 already exists"* — die zegt een medewerker niets
+ * en verbergt dat het om een beheerdersinstelling gaat.
+ */
+export function duplicateNameHint(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  const name = /([A-Z][\w-]*-\d[\w-]*)\s+already exists/i.exec(message)?.[1];
+  return (
+    `De urenstaat kon niet worden aangemaakt: ERPNext wil de naam ${name || "uit de reeks"} ` +
+    "gebruiken, maar die bestaat al. De nummerreeks van Timesheet loopt achter op de " +
+    "bestaande documenten. Vraag een beheerder de tellerstand bij te werken via " +
+    "ERPNext → Instellingen → Document Naming Settings (prefix van de Timesheet-reeks, " +
+    "'Update Series Number' hoger zetten dan het hoogste bestaande nummer)."
+  );
 }
 
 /** Eén regel zoals de widget hem opbouwt vóór verzending. */
@@ -169,13 +243,28 @@ export function normalizeExistingTimeLogs(
     }));
 }
 
-/** De PUT-payload waarmee één nieuwe regel aan een bestaande jaarstaat wordt toegevoegd. */
+/**
+ * De PUT-payload waarmee één nieuwe regel aan de jaarstaat wordt toegevoegd.
+ *
+ * De titel-markering gaat **altijd** mee, niet alleen bij adoptie: dat is
+ * idempotent (bij een al gemarkeerde sheet verandert er niets) en het spaart
+ * een aparte "is dit een adoptie?"-vlag door de hele React-state heen. Zo is
+ * een geadopteerde weekstaat na één boeking gemarkeerd en vindt stap 1 van
+ * `resolveYearTimesheet` hem daarna direct.
+ *
+ * `start_date`/`end_date` gaan bewust NIET mee — die zijn read-only en leidt
+ * ERPNext zelf af uit de regels (`set_dates()`).
+ */
 export function buildAppendPayload(
   existingLogs: Record<string, unknown>[] | undefined | null,
   parent: string,
-  newLog: NewTimeLog
-): { time_logs: Record<string, unknown>[] } {
-  return { time_logs: [...normalizeExistingTimeLogs(existingLogs, parent), newLog] };
+  newLog: NewTimeLog,
+  year: number
+): { time_logs: Record<string, unknown>[]; title: string } {
+  return {
+    time_logs: [...normalizeExistingTimeLogs(existingLogs, parent), newLog],
+    title: yearSheetTitle(year),
+  };
 }
 
 /**
@@ -198,4 +287,80 @@ export function buildCreatePayload(params: {
   };
   if (params.company) payload.company = params.company;
   return payload;
+}
+
+/* ─────────────────────── Het boekpad zelf ─────────────────────── */
+
+/** De ERPNext-calls die `bookTimeLog` nodig heeft — injecteerbaar zodat het pad testbaar is. */
+export interface BookDeps {
+  fetchList: FetchListFn;
+  fetchDocument: <T>(doctype: string, name: string) => Promise<T>;
+  createDocument: <T>(doctype: string, data: Record<string, unknown>) => Promise<T>;
+  updateDocument: (doctype: string, name: string, data: Record<string, unknown>) => Promise<unknown>;
+}
+
+export interface BookResult {
+  /** De urenstaat waar de regel in terecht is gekomen. */
+  name: string;
+  /** True als er een nieuwe urenstaat is aangemaakt. */
+  created: boolean;
+}
+
+/**
+ * Boekt één regel: appenden aan de jaarstaat, of er één aanmaken.
+ *
+ * Volgorde:
+ *  1. `knownSheet` gebruiken als die bij dít jaar hoort (bespaart een lookup);
+ *  2. anders `resolveYearTimesheet` (gemarkeerde jaarstaat → adoptie);
+ *  3. anders aanmaken.
+ *
+ * **Duplicaat-vangnet.** Loopt het aanmaken stuk op een bestaande naam, dan
+ * wordt er *eerst opnieuw geresolved* — in de tussentijd kan een parallelle
+ * boeking (ander tabblad, andere gebruiker) al een sheet hebben gemaakt die we
+ * gewoon kunnen adopteren. Levert dat niets op, dan is de naming-teller van de
+ * instance achterhaald en heeft blind opnieuw proberen géén zin: Frappe draait
+ * de tellerverhoging bij een mislukte insert mee terug, dus de volgende poging
+ * kiest exact dezelfde naam. Daarom precies één herpoging, en anders een
+ * leesbare uitleg (`duplicateNameHint`) in plaats van een stille stranding of
+ * een oneindige lus.
+ */
+export async function bookTimeLog(
+  params: {
+    employee: string;
+    company?: string;
+    date: string;
+    newLog: NewTimeLog;
+    knownSheet?: { year: number; name: string } | null;
+  },
+  deps: BookDeps
+): Promise<BookResult> {
+  const { employee, company, date, newLog, knownSheet } = params;
+  const year = bookingYear(date);
+  if (!employee) throw new Error("Kies een medewerker voordat je boekt.");
+  if (year === null) throw new Error("Kies een geldige boekdatum.");
+
+  const appendTo = async (name: string): Promise<BookResult> => {
+    const existing = await deps.fetchDocument<{ time_logs?: Record<string, unknown>[] }>("Timesheet", name);
+    await deps.updateDocument("Timesheet", name, buildAppendPayload(existing.time_logs, name, newLog, year));
+    return { name, created: false };
+  };
+
+  const target =
+    knownSheet && knownSheet.year === year
+      ? knownSheet.name
+      : await resolveYearTimesheet(employee, date, deps.fetchList);
+  if (target) return appendTo(target);
+
+  try {
+    const doc = await deps.createDocument<{ name: string }>(
+      "Timesheet",
+      buildCreatePayload({ employee, company, year, newLog })
+    );
+    return { name: doc.name, created: true };
+  } catch (err) {
+    if (!isDuplicateNameError(err)) throw err;
+    const retry = await resolveYearTimesheet(employee, date, deps.fetchList);
+    if (retry) return appendTo(retry);
+    throw new Error(duplicateNameHint(err));
+  }
 }

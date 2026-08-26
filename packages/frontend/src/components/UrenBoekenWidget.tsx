@@ -5,12 +5,7 @@ import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../lib/i
 import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { fetchActivityTypes, fetchEmployeeActivityType } from "../lib/activityTypes";
 import { cleanBookingError } from "../lib/booking-error";
-import {
-  bookingYear,
-  buildAppendPayload,
-  buildCreatePayload,
-  resolveYearTimesheet,
-} from "../lib/year-timesheet";
+import { bookingYear, bookTimeLog, resolveYearTimesheet } from "../lib/year-timesheet";
 import { TimesheetDetailsTable } from "../pages/Timesheets";
 import type { TimesheetDetail as TSDetail, ProjectInfo } from "../lib/timesheetValidation";
 import {
@@ -521,33 +516,19 @@ export default function UrenBoekenWidget({
         is_billable: billable ? 1 : 0,
       };
 
-      let tsName: string;
-
       const year = bookingYear(date);
       if (year === null) {
         throw new Error(t("hours_widget.invalid_date", { defaultValue: "Kies een geldige boekdatum." }));
       }
 
-      // Eén urenstaat per medewerker per jaar: appenden aan de bestaande
-      // jaarstaat, of er één aanmaken met deze boeking als eerste regel.
-      // De gecachete waarde telt alleen als hij bij dít jaar hoort; anders
-      // (net van jaar gewisseld, effect nog niet klaar) opnieuw resolven.
-      const targetSheet =
-        yearTimesheet && yearTimesheet.year === year
-          ? yearTimesheet.name
-          : await resolveYearTimesheet(employee, date, fetchList);
+      // Het hele boekpad (jaarstaat zoeken → adopteren → anders aanmaken, met
+      // het duplicaat-vangnet) zit in lib/year-timesheet.ts, zodat het onder
+      // unit-tests kan. De widget houdt alleen de React-state over.
+      const { name: tsName } = await bookTimeLog(
+        { employee, company, date, newLog: newTimeLog, knownSheet: yearTimesheet },
+        { fetchList, fetchDocument, createDocument, updateDocument }
+      );
 
-      if (targetSheet) {
-        const existing = await fetchDocument<{ name: string; time_logs: Record<string, unknown>[] }>("Timesheet", targetSheet);
-        await updateDocument("Timesheet", targetSheet, buildAppendPayload(existing.time_logs, targetSheet, newTimeLog));
-        tsName = targetSheet;
-      } else {
-        const doc = await createDocument<{ name: string }>(
-          "Timesheet",
-          buildCreatePayload({ employee, company, year, newLog: newTimeLog })
-        );
-        tsName = doc.name;
-      }
       // Zonder dit blijft `yearTimesheet` op de oude waarde staan (de deps
       // [employee, date] wijzigen niet als je twee keer op dezelfde dag boekt),
       // en zou de vólgende boeking een tweede jaarstaat aanmaken i.p.v. een
