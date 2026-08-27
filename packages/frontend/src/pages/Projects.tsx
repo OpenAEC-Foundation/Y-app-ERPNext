@@ -6,6 +6,7 @@ import { useProjects, useCompanies, useEmployees } from "../lib/DataContext";
 import { getActiveInstanceId, getActiveCompany, getActiveEmployee } from "../lib/instances";
 import type { ProjectRecord } from "../lib/DataContext";
 import { geocodeAddress } from "../lib/geocode";
+import { SALES_INVOICE_ACTIVE_FILTER } from "../lib/invoice-docstatus";
 import {
   FolderKanban, RefreshCw, Search, Plus, FolderOpen, MapPin, Map as MapIcon,
   X, ExternalLink, Clock, CheckCircle2, ListTodo, CalendarDays,
@@ -420,7 +421,9 @@ export function ProjectDetail({
           ? fetchDocument<AddressDoc>("Address", addressName)
           : Promise.resolve(null),
         // Sales Invoice count
-        fetchCount("Sales Invoice", [["project", "=", project.name]]).catch(() => 0),
+        // `docstatus != 2`: concepten tellen mee, geannuleerde facturen niet
+        // (zonder filter telde ERPNext ook geannuleerde documenten mee).
+        fetchCount("Sales Invoice", [["project", "=", project.name], SALES_INVOICE_ACTIVE_FILTER]).catch(() => 0),
         // Timesheet count
         fetchCount("Timesheet", [["project", "=", project.name]]).catch(() => 0),
       ]);

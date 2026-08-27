@@ -50,6 +50,8 @@
   "mgmt.invoices_sent.title": "Invoices sent this month",
   "mgmt.invoices_sent.none": "No invoices sent in {{month}}",
   "mgmt.invoices_sent.summary": "{{count}} invoices in {{month}} — total {{amount}}",
+  "mgmt.invoices_sent.summary_with_drafts": "{{count}} invoices in {{month}} — total {{amount}} ({{draftCount}} still draft)",
+  "mgmt.invoices_sent.only_drafts": "{{count}} invoices in {{month}} — all still draft, total {{amount}}",
   "mgmt.vat.title": "VAT return",
   "mgmt.vat.not_due": "No return due yet",
   "mgmt.vat.in_window": "Filing window open — {{days}} days left",
@@ -2583,5 +2585,10 @@
   "y_next.mail_no_delete_permission": "No permission to permanently delete email — ask your administrator or run the provisioning",
   "y_next.mail_imap_folders_section": "IMAP folders",
   "y_next.mail_imap_folder_hint": "Synced from the email account \"{{account}}\"",
-  "y_next.mail_imap_folders_note": "For reference: these are the folders ERPNext fetches from the mail server. Fetched messages do not record their source folder, so filtering per IMAP folder is not possible."
+  "y_next.mail_imap_folders_note": "For reference: these are the folders ERPNext fetches from the mail server. Fetched messages do not record their source folder, so filtering per IMAP folder is not possible.",
+  "invoice_draft.badge": "Draft",
+  "invoice_draft.included": "Draft invoices are included: {{count}} draft · {{amount}}",
+  "invoice_draft.of_which": "of which draft: {{amount}}",
+  "invoice_draft.of_which_count": "of which {{count}} draft",
+  "invoice_draft.not_counted": "Not yet final: {{count}} draft · {{amount}} — not included in this overview"
 }

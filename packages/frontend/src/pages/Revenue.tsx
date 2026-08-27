@@ -6,6 +6,11 @@ import {
 import CompanySelect from "../components/CompanySelect";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import {
+  SALES_INVOICE_ACTIVE_FILTER,
+  draftShare,
+  isDraftInvoice,
+} from "../lib/invoice-docstatus";
 
 interface SalesInvoice {
   name: string;
@@ -13,6 +18,7 @@ interface SalesInvoice {
   posting_date: string;
   customer_name: string;
   company: string;
+  docstatus?: number;
 }
 
 interface MonthData {
@@ -21,6 +27,8 @@ interface MonthData {
   label: string;       // e.g. "Mei" or "Mei 2025" when period spans years
   count: number;
   revenue: number;
+  /** Deel van `revenue` dat nog uit conceptfacturen komt (docstatus 0). */
+  draftRevenue: number;
   prevRevenue: number;
   prevCount: number;
   cumRevenue: number;
@@ -134,8 +142,11 @@ export default function Revenue() {
     setLoading(true);
     setError(null);
     try {
+      // Concepten tellen mee, geannuleerde nooit — zie lib/invoice-docstatus.ts.
+      // Op instances waar facturen lang in concept blijven staan zou
+      // `docstatus = 1` het hele omzetoverzicht leeg laten.
       const baseFilters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_ACTIVE_FILTER,
       ];
       if (company) baseFilters.push(["company", "=", company]);
 
@@ -151,7 +162,7 @@ export default function Revenue() {
         ["posting_date", "<=", prevTo],
       ];
 
-      const fields: string[] = ["name", "net_total", "posting_date", "customer_name", "company"];
+      const fields: string[] = ["name", "net_total", "posting_date", "customer_name", "company", "docstatus"];
 
       const [current, prev] = await Promise.all([
         fetchAll<SalesInvoice>(
@@ -190,6 +201,7 @@ export default function Revenue() {
       label: p.label,
       count: 0,
       revenue: 0,
+      draftRevenue: 0,
       prevRevenue: 0,
       prevCount: 0,
       cumRevenue: 0,
@@ -206,6 +218,7 @@ export default function Revenue() {
       if (bucket) {
         bucket.count++;
         bucket.revenue += inv.net_total;
+        if (isDraftInvoice(inv)) bucket.draftRevenue += inv.net_total;
       }
     }
 
@@ -236,6 +249,9 @@ export default function Revenue() {
   // KPIs
   const totalRevenue = invoices.reduce((s, i) => s + i.net_total, 0);
   const prevTotalRevenue = prevInvoices.reduce((s, i) => s + i.net_total, 0);
+  // Conceptdeel apart houden: het telt mee in `totalRevenue`, maar de gebruiker
+  // moet kunnen zien hoeveel daarvan nog niet ingeboekt is.
+  const draft = useMemo(() => draftShare(invoices, (i) => i.net_total), [invoices]);
   const activeMonths = monthlyData.filter((m) => m.revenue > 0).length;
   const avgPerMonth = activeMonths > 0 ? totalRevenue / activeMonths : 0;
   const growthPct = prevTotalRevenue > 0
@@ -297,6 +313,17 @@ export default function Revenue() {
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
+      )}
+
+      {/* Concept-facturen tellen mee in alle cijfers op deze pagina — expliciet
+          benoemen zodat een conceptbedrag niet voor definitieve omzet doorgaat. */}
+      {!loading && draft.hasDrafts && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.included", { count: draft.draftCount, amount: euro(draft.draftAmount) })}
+        </div>
       )}
 
       {/* Filters */}
@@ -371,6 +398,11 @@ export default function Revenue() {
           <p className="text-2xl font-bold text-slate-800">
             {loading ? "..." : euro(totalRevenue)}
           </p>
+          {!loading && draft.hasDrafts && (
+            <p className="text-xs text-amber-700 mt-1">
+              {t("invoice_draft.of_which", { amount: euro(draft.draftAmount) })}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -395,6 +427,11 @@ export default function Revenue() {
           <p className="text-3xl font-bold text-slate-800">
             {loading ? "..." : invoices.length}
           </p>
+          {!loading && draft.hasDrafts && (
+            <p className="text-xs text-amber-700 mt-1">
+              {t("invoice_draft.of_which_count", { count: draft.draftCount })}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -473,6 +510,11 @@ export default function Revenue() {
                       {/* Tooltip */}
                       <div className="absolute -top-20 bg-slate-800 text-white text-xs px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 leading-tight">
                         <div>{m.label} ({m.year}): {euro(m.revenue)}</div>
+                        {m.draftRevenue > 0 && (
+                          <div className="text-amber-300">
+                            {t("invoice_draft.of_which", { amount: euro(m.draftRevenue) })}
+                          </div>
+                        )}
                         <div>{m.label} ({m.year - 1}): {euro(m.prevRevenue)}</div>
                         <div className="border-t border-slate-600 mt-1 pt-1">
                           {t("revenue.cumulative", { defaultValue: "Cumulatief" })}: {euro(m.cumRevenue)}
@@ -606,6 +648,11 @@ export default function Revenue() {
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">{m.count}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-slate-800 text-right">
                         {euro(m.revenue)}
+                        {m.draftRevenue > 0 && (
+                          <span className="block text-[11px] font-normal text-amber-700">
+                            {t("invoice_draft.of_which", { amount: euro(m.draftRevenue) })}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500 text-right">
                         {euro(m.prevRevenue)}
@@ -632,7 +679,14 @@ export default function Revenue() {
                 <tr className="bg-slate-50 font-semibold">
                   <td className="px-4 py-3 text-sm text-slate-800">{t("omzet.total")}</td>
                   <td className="px-4 py-3 text-sm text-slate-800 text-right">{invoices.length}</td>
-                  <td className="px-4 py-3 text-sm text-slate-800 text-right">{euro(totalRevenue)}</td>
+                  <td className="px-4 py-3 text-sm text-slate-800 text-right">
+                    {euro(totalRevenue)}
+                    {draft.hasDrafts && (
+                      <span className="block text-[11px] font-normal text-amber-700">
+                        {t("invoice_draft.of_which", { amount: euro(draft.draftAmount) })}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-slate-600 text-right">{euro(prevTotalRevenue)}</td>
                   <td className="px-4 py-3 text-sm text-right">
                     {prevTotalRevenue > 0 ? (

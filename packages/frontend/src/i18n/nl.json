@@ -50,6 +50,8 @@
   "mgmt.invoices_sent.title": "Facturen verstuurd deze maand",
   "mgmt.invoices_sent.none": "Geen facturen verstuurd in {{month}}",
   "mgmt.invoices_sent.summary": "{{count}} facturen in {{month}} — totaal {{amount}}",
+  "mgmt.invoices_sent.summary_with_drafts": "{{count}} facturen in {{month}} — totaal {{amount}} (waarvan {{draftCount}} concept)",
+  "mgmt.invoices_sent.only_drafts": "{{count}} facturen in {{month}} — alle nog concept, totaal {{amount}}",
   "mgmt.vat.title": "BTW-aangifte",
   "mgmt.vat.not_due": "Nog geen aangifte nodig",
   "mgmt.vat.in_window": "Aangifte-window open — nog {{days}} dagen",
@@ -2583,5 +2585,10 @@
   "y_next.mail_no_delete_permission": "Geen rechten om e-mail definitief te verwijderen — vraag je beheerder of draai de provisioning",
   "y_next.mail_imap_folders_section": "IMAP-mappen",
   "y_next.mail_imap_folder_hint": "Gesynchroniseerd vanuit het Email Account \"{{account}}\"",
-  "y_next.mail_imap_folders_note": "Ter informatie: dit zijn de mappen die ERPNext van de mailserver ophaalt. De opgehaalde berichten onthouden hun bronmap niet, dus er kan niet per IMAP-map gefilterd worden."
+  "y_next.mail_imap_folders_note": "Ter informatie: dit zijn de mappen die ERPNext van de mailserver ophaalt. De opgehaalde berichten onthouden hun bronmap niet, dus er kan niet per IMAP-map gefilterd worden.",
+  "invoice_draft.badge": "Concept",
+  "invoice_draft.included": "Conceptfacturen tellen mee: {{count}} concept · {{amount}}",
+  "invoice_draft.of_which": "waarvan concept: {{amount}}",
+  "invoice_draft.of_which_count": "waarvan {{count}} concept",
+  "invoice_draft.not_counted": "Nog niet definitief: {{count}} concept · {{amount}} — niet meegeteld in dit overzicht"
 }

@@ -11,6 +11,12 @@ import { useEmployees, useProjects, useDataLoading, type Employee } from "../lib
 import { HOLIDAYS } from "../lib/holidays";
 import { getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { fetchMissingDaysForEmployees } from "../lib/missingDays";
+import {
+  SALES_INVOICE_ACTIVE_FILTER,
+  SALES_INVOICE_FINAL_FILTER,
+  draftShare,
+  isDraftInvoice,
+} from "../lib/invoice-docstatus";
 
 /* ── Checkbox-based "done" tracker (BTW + payroll) ── */
 /* Was ooit een server-side instance_settings key "mgmt-done"; er is geen
@@ -544,13 +550,15 @@ function ManagementDashboardContent() {
     return { status: "attention", subtextKey: "mgmt.contracts.ending", subtextVars: { count: ending.length }, items };
   }, [dataLoading, activeEmployees, t]);
 
-  /* Check 7: Sales invoices > 30 days open */
+  /* Check 7: Sales invoices > 30 days open.
+     Blijft strikt op definitieve facturen: een conceptfactuur is niet naar de
+     klant verstuurd en dus geen openstaande vordering. */
   const [invoiceCheck, setInvoiceCheck] = useState<CheckResult>({ status: "loading", subtextKey: "mgmt.loading" });
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const invFilters: unknown[][] = [["docstatus", "=", 1], ["outstanding_amount", ">", 0]];
+        const invFilters: unknown[][] = [SALES_INVOICE_FINAL_FILTER, ["outstanding_amount", ">", 0]];
         if (defaultCompany) invFilters.push(["company", "=", defaultCompany]);
         const invoices = await fetchAll<{ name: string; customer_name: string; posting_date: string; outstanding_amount: number }>(
           "Sales Invoice",
@@ -582,8 +590,12 @@ function ManagementDashboardContent() {
     return () => { cancelled = true; };
   }, [defaultCompany]);
 
-  /* Check 7b: Were invoices sent in the current calendar month?
-     "Sent" = submitted Sales Invoice with posting_date in this month. */
+  /* Check 7b: Were invoices raised in the current calendar month?
+     Telt concept + definitief (`docstatus != 2`): op instances waar facturen
+     lang in concept blijven staan zou een submitted-only telling elke maand
+     "geen facturen" roepen terwijl het werk gedaan is. Het conceptdeel wordt
+     expliciet benoemd — zijn ze állemaal nog concept, dan blijft het een
+     aandachtspunt, want naar de klant is er dan nog niets. */
   const [invoicesSentCheck, setInvoicesSentCheck] = useState<CheckResult>({ status: "loading", subtextKey: "mgmt.loading" });
   useEffect(() => {
     let cancelled = false;
@@ -598,37 +610,48 @@ function ManagementDashboardContent() {
         const toStr = formatIsoDate(monthLast);
         const monthLabel = monthFirst.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
         const filters: unknown[][] = [
-          ["docstatus", "=", 1],
+          SALES_INVOICE_ACTIVE_FILTER,
           ["posting_date", ">=", fromStr],
           ["posting_date", "<=", toStr],
         ];
         if (defaultCompany) filters.push(["company", "=", defaultCompany]);
-        const invoices = await fetchAll<{ name: string; customer_name: string; posting_date: string; grand_total: number }>(
+        const invoices = await fetchAll<{ name: string; customer_name: string; posting_date: string; grand_total: number; docstatus?: number }>(
           "Sales Invoice",
-          ["name", "customer_name", "posting_date", "grand_total"],
+          ["name", "customer_name", "posting_date", "grand_total", "docstatus"],
           filters,
           "posting_date desc",
         );
         if (cancelled) return;
         const totalAmount = invoices.reduce((s, i) => s + (i.grand_total || 0), 0);
+        const share = draftShare(invoices, i => i.grand_total);
         const items: DetailItem[] = invoices.map(i => ({
-          label: `${i.customer_name || ""} — ${i.name}`,
+          label: `${i.customer_name || ""} — ${i.name}${isDraftInvoice(i) ? ` (${t("invoice_draft.badge")})` : ""}`,
           sub: `${formatDate(i.posting_date)} · ${(i.grand_total || 0).toLocaleString("nl-NL", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })}`,
         }));
+        const amountLabel = totalAmount.toLocaleString("nl-NL", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
         if (invoices.length === 0) {
           setInvoicesSentCheck({
             status: "attention",
             subtextKey: "mgmt.invoices_sent.none",
             subtextVars: { month: monthLabel },
           });
+        } else if (share.finalCount === 0) {
+          // Alles staat nog in concept: geteld, maar nog niets de deur uit.
+          setInvoicesSentCheck({
+            status: "attention",
+            subtextKey: "mgmt.invoices_sent.only_drafts",
+            subtextVars: { month: monthLabel, count: invoices.length, amount: amountLabel },
+            items,
+          });
         } else {
           setInvoicesSentCheck({
             status: "ok",
-            subtextKey: "mgmt.invoices_sent.summary",
+            subtextKey: share.hasDrafts ? "mgmt.invoices_sent.summary_with_drafts" : "mgmt.invoices_sent.summary",
             subtextVars: {
               month: monthLabel,
               count: invoices.length,
-              amount: totalAmount.toLocaleString("nl-NL", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }),
+              amount: amountLabel,
+              draftCount: share.draftCount,
             },
             items,
           });
@@ -638,7 +661,7 @@ function ManagementDashboardContent() {
       }
     })();
     return () => { cancelled = true; };
-  }, [defaultCompany]);
+  }, [defaultCompany, t]);
 
   /* Manual "done" tracker for BTW + payroll (stored in instance_settings) */
   const [doneMap, setDoneMap] = useState<DoneMap>({});

@@ -12,6 +12,10 @@ import {
 import CompanySelect from "../components/CompanySelect";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import {
+  SALES_INVOICE_FINAL_FILTER,
+  SALES_INVOICE_DRAFT_FILTER,
+} from "../lib/invoice-docstatus";
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -334,6 +338,8 @@ export default function LiquidityPlanning() {
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
+  /** Concepten — NIET in de prognose, alleen als losse teller. */
+  const [draftTotals, setDraftTotals] = useState<{ count: number; amount: number }>({ count: 0, amount: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -341,8 +347,12 @@ export default function LiquidityPlanning() {
     setLoading(true);
     setError(null);
     try {
+      // De prognose rekent op DEFINITIEVE facturen: een concept is niet naar de
+      // klant verstuurd, heeft dus geen afgesproken betaaltermijn, en het
+      // onderliggende werk zit hier al in als Sales Order — meetellen zou
+      // dubbeltellen. Het conceptbedrag wordt apart opgehaald en getoond.
       const siFilters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_FINAL_FILTER,
         ["outstanding_amount", ">", 0],
       ];
       const piFilters: unknown[][] = [
@@ -354,13 +364,16 @@ export default function LiquidityPlanning() {
         ["status", "not in", ["Closed", "Completed", "Cancelled"]],
       ];
 
+      const draftSiFilters: unknown[][] = [SALES_INVOICE_DRAFT_FILTER];
+
       if (company) {
         siFilters.push(["company", "=", company]);
         piFilters.push(["company", "=", company]);
         soFilters.push(["company", "=", company]);
+        draftSiFilters.push(["company", "=", company]);
       }
 
-      const [si, pi, so] = await Promise.all([
+      const [si, pi, so, draftSi] = await Promise.all([
         fetchAll<SalesInvoice>(
           "Sales Invoice",
           ["name", "outstanding_amount", "due_date", "posting_date", "status", "company"],
@@ -379,11 +392,21 @@ export default function LiquidityPlanning() {
           soFilters,
           "delivery_date asc"
         ),
+        fetchAll<{ name: string; grand_total: number }>(
+          "Sales Invoice",
+          ["name", "grand_total"],
+          draftSiFilters,
+          "posting_date asc"
+        ).catch(() => [] as { name: string; grand_total: number }[]),
       ]);
 
       setSalesInvoices(si);
       setPurchaseInvoices(pi);
       setSalesOrders(so);
+      setDraftTotals({
+        count: draftSi.length,
+        amount: draftSi.reduce((s, d) => s + (d.grand_total || 0), 0),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -520,6 +543,17 @@ export default function LiquidityPlanning() {
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* Concepten zitten NIET in de prognose (geen betaaltermijn, en het werk
+          telt al mee via de verkooporders) — wel zichtbaar maken. */}
+      {!loading && draftTotals.count > 0 && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.not_counted", { count: draftTotals.count, amount: euro(draftTotals.amount) })}
         </div>
       )}
 

@@ -50,6 +50,8 @@
   "mgmt.invoices_sent.title": "Diesen Monat versendete Rechnungen",
   "mgmt.invoices_sent.none": "Keine Rechnungen versendet im {{month}}",
   "mgmt.invoices_sent.summary": "{{count}} Rechnungen im {{month}} — gesamt {{amount}}",
+  "mgmt.invoices_sent.summary_with_drafts": "{{count}} Rechnungen im {{month}} — gesamt {{amount}} (davon {{draftCount}} Entwurf)",
+  "mgmt.invoices_sent.only_drafts": "{{count}} Rechnungen im {{month}} — alle noch Entwurf, gesamt {{amount}}",
   "mgmt.vat.title": "USt-Voranmeldung",
   "mgmt.vat.not_due": "Noch keine Meldung fällig",
   "mgmt.vat.in_window": "Abgabefrist offen — noch {{days}} Tage",
@@ -2569,5 +2571,10 @@
   "y_next.mail_no_delete_permission": "Keine Berechtigung zum endgültigen Löschen von E-Mails — wende dich an deinen Administrator oder führe das Provisioning aus",
   "y_next.mail_imap_folders_section": "IMAP-Ordner",
   "y_next.mail_imap_folder_hint": "Synchronisiert aus dem E-Mail-Konto \"{{account}}\"",
-  "y_next.mail_imap_folders_note": "Zur Information: Dies sind die Ordner, die ERPNext vom Mailserver abruft. Abgerufene Nachrichten speichern ihren Quellordner nicht, daher ist kein Filtern pro IMAP-Ordner möglich."
+  "y_next.mail_imap_folders_note": "Zur Information: Dies sind die Ordner, die ERPNext vom Mailserver abruft. Abgerufene Nachrichten speichern ihren Quellordner nicht, daher ist kein Filtern pro IMAP-Ordner möglich.",
+  "invoice_draft.badge": "Entwurf",
+  "invoice_draft.included": "Entwurfsrechnungen sind enthalten: {{count}} Entwürfe · {{amount}}",
+  "invoice_draft.of_which": "davon Entwurf: {{amount}}",
+  "invoice_draft.of_which_count": "davon {{count}} Entwürfe",
+  "invoice_draft.not_counted": "Noch nicht final: {{count}} Entwürfe · {{amount}} — in dieser Übersicht nicht enthalten"
 }

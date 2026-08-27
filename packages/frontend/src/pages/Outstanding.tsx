@@ -7,6 +7,10 @@ import CompanySelect from "../components/CompanySelect";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import {
+  SALES_INVOICE_FINAL_FILTER,
+  SALES_INVOICE_DRAFT_FILTER,
+} from "../lib/invoice-docstatus";
 
 interface OutstandingInvoice {
   name: string;
@@ -100,6 +104,7 @@ export default function Outstanding() {
   const { t } = useTranslation();
   const [company, setCompany] = useState(getActiveCompany());
   const [invoices, setInvoices] = useState<OutstandingInvoice[]>([]);
+  const [draftTotals, setDraftTotals] = useState<{ count: number; amount: number }>({ count: 0, amount: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState("");
@@ -109,23 +114,44 @@ export default function Outstanding() {
     setLoading(true);
     setError(null);
     try {
+      // Openstaand/DSO blijft strikt op DEFINITIEVE facturen: een concept is
+      // niet naar de klant verstuurd en dus geen vordering — meetellen zou de
+      // aging-analyse en de DSO vervuilen. Het conceptbedrag wordt hieronder
+      // wel apart opgehaald en als losse teller getoond.
       const filters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_FINAL_FILTER,
         ["outstanding_amount", ">", 0],
       ];
       if (company) filters.push(["company", "=", company]);
       if (fromDate) filters.push(["posting_date", ">=", fromDate]);
       if (toDate) filters.push(["posting_date", "<=", toDate]);
 
-      const list = await fetchAll<OutstandingInvoice>(
-        "Sales Invoice",
-        ["name", "customer_name", "grand_total", "net_total", "outstanding_amount",
-         "posting_date", "due_date", "status", "company", "contact_email"],
-        filters,
-        "posting_date desc"
-      );
+      const draftFilters: unknown[][] = [SALES_INVOICE_DRAFT_FILTER];
+      if (company) draftFilters.push(["company", "=", company]);
+      if (fromDate) draftFilters.push(["posting_date", ">=", fromDate]);
+      if (toDate) draftFilters.push(["posting_date", "<=", toDate]);
+
+      const [list, drafts] = await Promise.all([
+        fetchAll<OutstandingInvoice>(
+          "Sales Invoice",
+          ["name", "customer_name", "grand_total", "net_total", "outstanding_amount",
+           "posting_date", "due_date", "status", "company", "contact_email"],
+          filters,
+          "posting_date desc"
+        ),
+        fetchAll<{ name: string; grand_total: number }>(
+          "Sales Invoice",
+          ["name", "grand_total"],
+          draftFilters,
+          "posting_date desc"
+        ).catch(() => [] as { name: string; grand_total: number }[]),
+      ]);
 
       setInvoices(list);
+      setDraftTotals({
+        count: drafts.length,
+        amount: drafts.reduce((s, d) => s + (d.grand_total || 0), 0),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -217,6 +243,18 @@ export default function Outstanding() {
         <CompanySelect value={company} onChange={setCompany} />
         <DateRangeFilter fromDate={fromDate} toDate={toDate} onFromChange={setFromDate} onToChange={setToDate} />
       </div>
+
+      {/* Concepten zijn géén vordering en zitten dus niet in de cijfers
+          hieronder — wel als losse teller tonen, anders lijkt het alsof er
+          niets meer te factureren valt. */}
+      {!loading && draftTotals.count > 0 && (
+        <div className="mb-6 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.not_counted", { count: draftTotals.count, amount: euro(draftTotals.amount) })}
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

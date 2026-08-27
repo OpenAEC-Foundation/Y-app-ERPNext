@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import { SALES_INVOICE_DRAFT_FILTER } from "../lib/invoice-docstatus";
 
 /* ─── Types ─── */
 
@@ -90,6 +91,9 @@ export default function Jaarrekening() {
   const [bsEntries, setBsEntries] = useState<GLEntry[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [salarySlips, setSalarySlips] = useState<SalarySlip[]>([]);
+  /** Conceptfacturen in dit boekjaar — géén GL Entries, dus NIET in de cijfers
+   *  hieronder; alleen als informatieregel, zie de banner in de render. */
+  const [draftInvoices, setDraftInvoices] = useState<{ name: string; net_total: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -118,7 +122,17 @@ export default function Jaarrekening() {
 
       const glFields: string[] = ["account", "debit", "credit"];
 
-      const [plData, bsData, accts, salaryData] = await Promise.all([
+      // Concept-verkoopfacturen: puur ter informatie. De jaarrekening rekent op
+      // GL Entry en een concept heeft daar geen regels — meetellen kán niet en
+      // zou fiscaal ook niet mogen. Wel tonen hoeveel er nog klaarstaat.
+      const draftSiFilters: unknown[][] = [
+        SALES_INVOICE_DRAFT_FILTER,
+        ["posting_date", ">=", `${year}-01-01`],
+        ["posting_date", "<=", `${year}-12-31`],
+        ...(company ? [["company", "=", company]] : []),
+      ];
+
+      const [plData, bsData, accts, salaryData, draftSi] = await Promise.all([
         fetchAll<GLEntry>("GL Entry", glFields, plFilters),
         fetchAll<GLEntry>("GL Entry", glFields, bsFilters),
         fetchAll<Account>(
@@ -136,12 +150,18 @@ export default function Jaarrekening() {
             ...(company ? [["company", "=", company]] : []),
           ]
         ),
+        fetchAll<{ name: string; net_total: number }>(
+          "Sales Invoice",
+          ["name", "net_total"],
+          draftSiFilters
+        ).catch(() => [] as { name: string; net_total: number }[]),
       ]);
 
       setPlEntries(plData);
       setBsEntries(bsData);
       setAccounts(accts);
       setSalarySlips(salaryData);
+      setDraftInvoices(draftSi);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -397,6 +417,21 @@ export default function Jaarrekening() {
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* Concepten hebben geen boekingsregels en zitten dus niet in deze
+          cijfers — wel benoemen zodat duidelijk is dat er nog omzet
+          klaarstaat om ingeboekt te worden. */}
+      {!loading && draftInvoices.length > 0 && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.not_counted", {
+            count: draftInvoices.length,
+            amount: euro(draftInvoices.reduce((s, i) => s + (i.net_total || 0), 0)),
+          })}
         </div>
       )}
 

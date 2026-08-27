@@ -8,6 +8,11 @@ import {
   FileText, Receipt, Timer, BookOpen, RefreshCw, Mail,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import {
+  SALES_INVOICE_ACTIVE_FILTER,
+  SALES_INVOICE_FINAL_FILTER,
+  SALES_INVOICE_DRAFT_FILTER,
+} from "../lib/invoice-docstatus";
 
 /* ─── Types ─── */
 
@@ -310,10 +315,15 @@ export default function ErpNextOverview() {
 
     // ─── 6. Facturen ───
     try {
-      const [salesCount, purchaseCount, unpaidSales] = await Promise.all([
-        fetchCount("Sales Invoice", [["docstatus", "=", 1]]),
+      // Verkoopfacturen: concept + definitief (`docstatus != 2`), zodat de
+      // teller niet leeg oogt op een instance die facturen lang in concept
+      // laat staan. `unpaidSales` blijft strikt definitief — een concept is
+      // geen vordering.
+      const [salesCount, purchaseCount, unpaidSales, draftSales] = await Promise.all([
+        fetchCount("Sales Invoice", [SALES_INVOICE_ACTIVE_FILTER]),
         fetchCount("Purchase Invoice", [["docstatus", "=", 1]]),
-        fetchCount("Sales Invoice", [["docstatus", "=", 1], ["outstanding_amount", ">", 0]]),
+        fetchCount("Sales Invoice", [SALES_INVOICE_FINAL_FILTER, ["outstanding_amount", ">", 0]]),
+        fetchCount("Sales Invoice", [SALES_INVOICE_DRAFT_FILTER]),
       ]);
 
       checks.push({
@@ -321,7 +331,8 @@ export default function ErpNextOverview() {
         icon: FileText,
         status: salesCount > 0 ? "ok" : "warning",
         count: salesCount + purchaseCount,
-        details: t("erpnext_overview.invoices_details", { salesCount, purchaseCount, unpaidSales }),
+        details: t("erpnext_overview.invoices_details", { salesCount, purchaseCount, unpaidSales })
+          + (draftSales > 0 ? ` — ${t("invoice_draft.of_which_count", { count: draftSales })}` : ""),
       });
     } catch {
       checks.push({

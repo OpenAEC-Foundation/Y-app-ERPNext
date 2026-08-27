@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
-  RotateCcw, Server,
+  RotateCcw, Server, ReceiptText,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -111,7 +111,7 @@ import {
   buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
   formatAttachmentNames, isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
-import { getFileUrl } from "../lib/erpnext";
+import { getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
 import CreateFolderModal from "../components/mail/CreateFolderModal";
@@ -121,6 +121,15 @@ import ReadingPane from "../components/mail/ReadingPane";
 import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import {
+  detectPurchaseInvoice, plainTextFromHtml,
+  type InvoiceGuess, type SupplierHint,
+} from "../lib/invoice-detect";
+import {
+  dismissInvoiceSuggestion, fetchSupplierHints, readDismissedInvoiceSuggestions,
+  type BookingResult,
+} from "../lib/purchase-invoice";
 
 /* ─── Types ─── */
 
@@ -3865,6 +3874,17 @@ function ErpNextWebmail() {
   /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
   const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
 
+  /* ─── Inkoopfactuur-herkenning ─── */
+  /** Leveranciers + hun bekende adressen; leeg = herkenning staat uit. */
+  const [supplierHints, setSupplierHints] = useState<SupplierHint[]>([]);
+  /** Mails waarvan de gebruiker zei "dit is geen factuur" (per apparaat). */
+  const [dismissedInvoices, setDismissedInvoices] = useState<Set<string>>(
+    () => readDismissedInvoiceSuggestions(),
+  );
+  const [bookingFor, setBookingFor] = useState<{ msg: ErpMailMessage; guess: InvoiceGuess } | null>(null);
+  /** Melding na een geslaagde boeking, met een klikbaar factuurnummer. */
+  const [bookedNotice, setBookedNotice] = useState<BookingResult | null>(null);
+
   const [toast, setToast] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "message">("list");
 
@@ -3898,6 +3918,13 @@ function ErpNextWebmail() {
     listImapFolders()
       .then((rows) => { if (!cancelled) setImapFolders(rows); })
       .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
+    // Leverancierslijst voor de inkoopfactuur-herkenning. Eén keer per
+    // paginabezoek (de adapter cachet nog eens 10 minuten). Zonder leesrecht
+    // op Supplier blijft de lijst leeg en verschijnt er simpelweg geen
+    // labeltje — de rest van de webmail merkt er niets van.
+    fetchSupplierHints()
+      .then((rows) => { if (!cancelled) setSupplierHints(rows); })
+      .catch(() => { /* herkenning uit; geen foutmelding voor een hulpmiddel */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -4071,6 +4098,72 @@ function ErpNextWebmail() {
     [messages, unreadOnly, isUnreadFolder],
   );
 
+  /**
+   * Welke rijen in de lijst een "Inkoopfactuur"-labeltje krijgen.
+   *
+   * De lijst kent alleen onderwerp, afzender en `has_attachment` — geen
+   * bijlagenamen en geen body. De herkenning komt daarmee hooguit op `medium`
+   * uit; zodra de mail geopend is, herrekent `selectedInvoiceGuess` hem mét
+   * bijlagen en body. Dat is bewust: een labeltje in de lijst is een uitnodiging
+   * om te kijken, en het openen kost geen extra call (de body wordt toch al
+   * opgehaald).
+   */
+  const invoiceHints = useMemo(() => {
+    const out = new Map<string, InvoiceGuess>();
+    if (supplierHints.length === 0) return out;
+    for (const m of filteredMessages) {
+      if (m.reference?.doctype === "Purchase Invoice") continue;
+      if (dismissedInvoices.has(m.name)) continue;
+      const guess = detectPurchaseInvoice({
+        subject: m.subject,
+        sender: m.sender,
+        attachmentNames: [],
+        hasAttachment: m.hasAttachments,
+        mailDate: m.date,
+        direction: m.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      }, supplierHints);
+      if (guess.isLikely) out.set(m.name, guess);
+    }
+    return out;
+  }, [filteredMessages, supplierHints, dismissedInvoices]);
+
+  /** Dezelfde herkenning voor de geopende mail, nu mét bijlagen en body. */
+  const selectedInvoiceGuess = useMemo(() => {
+    if (!selected || supplierHints.length === 0) return null;
+    if (selected.reference?.doctype === "Purchase Invoice") return null;
+    if (dismissedInvoices.has(selected.name)) return null;
+    const guess = detectPurchaseInvoice({
+      subject: selected.subject,
+      sender: selected.sender,
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      hasAttachment: selected.hasAttachments,
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      mailDate: selected.date,
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+    }, supplierHints);
+    return guess.isLikely ? guess : null;
+  }, [selected, body, supplierHints, dismissedInvoices]);
+
+  const handleDismissInvoice = useCallback((name: string) => {
+    dismissInvoiceSuggestion(name);
+    setDismissedInvoices(readDismissedInvoiceSuggestions());
+  }, []);
+
+  /**
+   * Na een geslaagde boeking. De koppeling `Communication → Purchase Invoice`
+   * gaat ook lokaal meteen in de lijst en het leespaneel, zodat het labeltje
+   * verdwijnt en er in zijn plaats het factuurnummer staat — anders zou de
+   * gebruiker dezelfde mail nog eens kunnen boeken voordat de lijst ververst.
+   */
+  const handleInvoiceBooked = useCallback((communication: string, result: BookingResult) => {
+    setBookingFor(null);
+    setBookedNotice(result);
+    if (result.linkFailed) return;
+    const reference = { doctype: "Purchase Invoice", name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+  }, []);
+
   const customFolders = useMemo(() => folders.filter((f) => f.kind === "custom"), [folders]);
   const projectFolders = useMemo(() => folders.filter((f) => f.kind === "project"), [folders]);
   const fixedFolders = useMemo(
@@ -4139,6 +4232,9 @@ function ErpNextWebmail() {
     setSelected(msg);
     setDraft(null);
     setShowLinkPicker(false);
+    // De boekingsmelding hoort bij de vórige mail; hem laten staan zou het
+    // factuurnummer van mail A boven mail B tonen.
+    setBookedNotice(null);
     setBody(null);
     setThread([]);
     setBodyLoading(true);
@@ -5049,6 +5145,19 @@ function ErpNextWebmail() {
                                   <FolderKanban size={10} /> {msg.reference.name}
                                 </span>
                               )}
+                              {msg.reference?.doctype === "Purchase Invoice" && (
+                                <span title={t("y_next.pinv_booked_as", { name: msg.reference.name })}
+                                  className="text-[10px] text-indigo-600 truncate flex items-center gap-1">
+                                  <ReceiptText size={10} /> {msg.reference.name}
+                                </span>
+                              )}
+                              {invoiceHints.has(msg.name) && (
+                                <span
+                                  title={t("y_next.pinv_label_hint")}
+                                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                  <ReceiptText size={9} /> {t("y_next.pinv_label")}
+                                </span>
+                              )}
                               {/* Herkomst tonen zodra de rij niet uit de actieve map komt (zoekmodus). */}
                               {searching && (
                                 <span className="text-[10px] text-slate-400 truncate">
@@ -5180,6 +5289,15 @@ function ErpNextWebmail() {
 
                   {/* Projectkoppeling — native Communication-referentie */}
                   <div className="relative mt-2 flex items-center gap-2">
+                    {selected.reference?.doctype === "Purchase Invoice" && (
+                      <a
+                        href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(selected.reference.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">
+                        <ReceiptText size={11} /> {selected.reference.name}
+                        <ExternalLink size={9} />
+                      </a>
+                    )}
                     {selected.reference?.doctype === "Project" && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
                         <FolderKanban size={11} /> {selected.reference.name}
@@ -5211,6 +5329,64 @@ function ErpNextWebmail() {
                     )}
                   </div>
                 </div>
+
+                {/* Inkoopfactuur-suggestie. Staat bóven de conversatie en de
+                    body: het is een handeling, geen achtergrondinformatie. */}
+                {selectedInvoiceGuess && (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 flex-shrink-0">
+                    <ReceiptText size={14} className="text-amber-600 flex-shrink-0" />
+                    <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
+                    <span
+                      title={selectedInvoiceGuess.reasons
+                        .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                      {t(`y_next.pinv_confidence_${selectedInvoiceGuess.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => setBookingFor({ msg: selected, guess: selectedInvoiceGuess })}
+                      className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700 cursor-pointer">
+                      <ReceiptText size={11} /> {t("y_next.pinv_book")}
+                    </button>
+                    <button
+                      onClick={() => handleDismissInvoice(selected.name)}
+                      className="rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100 cursor-pointer">
+                      {t("y_next.pinv_dismiss")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Uitkomst van de boeking. Blijft staan tot de gebruiker hem
+                    wegklikt — een toast van vier seconden is te kort voor een
+                    factuurnummer dat je wilt aanklikken. */}
+                {bookedNotice && (
+                  <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800 flex-shrink-0">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>{t("y_next.pinv_booked_ok")} </span>
+                      <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(bookedNotice.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {bookedNotice.name}
+                      </a>
+                      {bookedNotice.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.pinv_attachments_failed", {
+                            names: bookedNotice.failedAttachments.join(", "),
+                          })}
+                        </p>
+                      )}
+                      {bookedNotice.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.pinv_link_failed")}</p>
+                      )}
+                    </div>
+                    <button onClick={() => setBookedNotice(null)} title={t("common.close")}
+                      className="rounded p-0.5 text-emerald-600 hover:bg-emerald-100 cursor-pointer">
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
 
                 {/* Conversatie — serverzijdig over de in_reply_to-graaf */}
                 {thread.length > 1 && (
@@ -5259,6 +5435,27 @@ function ErpNextWebmail() {
           </div>
         )}
       </div>
+
+      {bookingFor && (
+        <BookPurchaseInvoiceDialog
+          message={{
+            name: bookingFor.msg.name,
+            subject: bookingFor.msg.subject,
+            sender: bookingFor.msg.sender,
+            date: bookingFor.msg.date,
+            // Een Communication kan maar aan één document hangen; boeken
+            // vervangt de projectkoppeling. Het project gaat daarom mee naar
+            // het `project`-veld van de factuur in plaats van te verdwijnen.
+            ...(bookingFor.msg.reference?.doctype === "Project"
+              ? { project: bookingFor.msg.reference.name }
+              : {}),
+          }}
+          guess={bookingFor.guess}
+          suppliers={supplierHints}
+          onClose={() => setBookingFor(null)}
+          onBooked={(result) => handleInvoiceBooked(bookingFor.msg.name, result)}
+        />
+      )}
 
       {/* Contextmenu op een eigen map */}
       {folderMenu && selectedMenuFolder && (
