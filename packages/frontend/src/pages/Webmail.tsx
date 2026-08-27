@@ -123,6 +123,11 @@ import ComposeWindow from "../components/mail/ComposeWindow";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
+import AddRelationDialog from "../components/AddRelationDialog";
+import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
+import {
+  lookupExistingCached, primeRelationLookup, type ExistingRelation, type RelationResult,
+} from "../lib/erp-relation";
 import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
 import type { BookingResult } from "../lib/purchase-invoice";
 import {
@@ -3899,6 +3904,18 @@ function ErpNextWebmail() {
     { doctype: "Lead" | "Opportunity"; result: BookingResult } | null
   >(null);
 
+  /* ─── Afzender → relatie ─── */
+  /** Open staat de `AddRelationDialog` voor deze mail. */
+  const [relationFor, setRelationFor] = useState<ErpMailMessage | null>(null);
+  /**
+   * Is de afzender van de open mail al bekend in ERPNext? Het adres gaat mee
+   * in de state (zelfde patroon als `senderHistory`): zo kan de uitkomst van
+   * de vórige mail nooit heel even bij de huidige afzender horen.
+   */
+  const [senderRelation, setSenderRelation] = useState<
+    { email: string; found: ExistingRelation } | null
+  >(null);
+
   /* ─── Projectsuggestie ─── */
   const [projectHints, setProjectHints] = useState<
     { name: string; projectName: string; customer?: string }[]
@@ -4209,6 +4226,63 @@ function ErpNextWebmail() {
   const senderProjects = useMemo(
     () => (senderHistory.sender && senderHistory.sender === selected?.sender ? senderHistory.projects : []),
     [senderHistory, selected?.sender],
+  );
+
+  /* ─── Afzender → relatie: is dit adres al bekend in ERPNext? ─── */
+  /**
+   * Alleen bij ontvangen mail: bij verzonden mail ben jíj de afzender en valt
+   * er niets vast te leggen. De check loopt via `lookupExistingCached`, dus
+   * hooguit één keer per adres per sessie — vijf mails van dezelfde persoon
+   * openen kost één ronde queries, niet vijf.
+   */
+  const relationSender = selected && selected.folder !== MAIL_FOLDER_SENT ? selected.sender : "";
+  useEffect(() => {
+    // Geen afzender om na te kijken (verzonden mail, of nog niets open): niets
+    // te doen. Bewust géén `setSenderRelation(null)` — een uitslag draagt het
+    // adres waar hij bij hoort, dus een oude uitslag kan hier nooit doorheen
+    // lekken, en een setState in de effect-body is precies de cascade-render
+    // die React afraadt.
+    if (!relationSender) return;
+    let cancelled = false;
+    lookupExistingCached(relationSender)
+      .then((found) => { if (!cancelled) setSenderRelation({ email: relationSender, found }); })
+      // Mislukt de check (rechten, netwerk), dan telt het adres als onbekend:
+      // de knop verschijnt en ERPNext blijft bij het aanmaken zelf het vangnet.
+      .catch(() => { if (!cancelled) setSenderRelation({ email: relationSender, found: {} }); });
+    return () => { cancelled = true; };
+  }, [relationSender]);
+
+  /** `null` zolang de check loopt; de actie rendert dan nog niets. */
+  const relationExisting = senderRelation?.email === relationSender ? senderRelation.found : null;
+
+  /**
+   * Na het vastleggen. `createRelation` heeft de sessiecache al goedgezet op
+   * het adres uit de dialoog; hier gaat hij óók onder het adres uit de mail in
+   * de cache. Dat verschilt alleen wanneer de gebruiker het e-mailveld in de
+   * dialoog aanpaste — en dan zou de chip bij déze mail anders uitblijven
+   * terwijl er wel degelijk iets is aangemaakt.
+   */
+  const handleRelationCreated = useCallback((email: string, result: RelationResult) => {
+    const found: ExistingRelation = { contact: result.contact };
+    if (result.customer) found.customer = result.customer;
+    primeRelationLookup(email, found);
+    setSenderRelation({ email, found });
+  }, []);
+
+  /**
+   * De relatie-actie staat altijd op precies één plek: in de actiebalk van de
+   * herkende bedoeling als die er is, anders in de chipregel onder de kop.
+   * Kleur en opschrift verschillen per plek, de rest niet.
+   */
+  const relationSlot = (tone: RelationSlotTone, label: string) => (
+    relationSender ? (
+      <SenderRelationAction
+        existing={relationExisting}
+        tone={tone}
+        label={label}
+        onAdd={() => { if (selected) setRelationFor(selected); }}
+      />
+    ) : null
   );
 
   /**
@@ -5439,6 +5513,11 @@ function ErpNextWebmail() {
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
                       <FolderKanban size={11} /> {t("webmail.link_to_project")}
                     </button>
+                    {/* Is er geen bedoeling herkend, dan is dit de actiebalk
+                        van deze mail en hoort de relatie-actie hier. Staat er
+                        wél een factuur- of leadbalk, dan zit hij dáár — nooit
+                        op twee plekken tegelijk. */}
+                    {!selectedIntent && relationSlot("slate", t("y_next.rel_add_button"))}
                     {showLinkPicker && (
                       <div className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-lg border border-slate-200 z-50 flex flex-col max-h-72">
                         <div className="p-2 border-b border-slate-100">
@@ -5481,6 +5560,7 @@ function ErpNextWebmail() {
                       className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700 cursor-pointer">
                       <ReceiptText size={11} /> {t("y_next.pinv_book")}
                     </button>
+                    {relationSlot("amber", t("y_next.rel_add_button"))}
                     <button
                       onClick={() => handleDismissIntent(selected.name, "purchase-invoice")}
                       className="rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100 cursor-pointer">
@@ -5512,6 +5592,20 @@ function ErpNextWebmail() {
                       <UserPlus size={11} />
                       {t(selectedIntent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
                     </button>
+                    {/* Bundeling bij een onbekende afzender.
+                        "Maak er een lead van" en "leg hem vast als relatie"
+                        zijn twee antwoorden op dezelfde situatie. Ze als twee
+                        even zware knoppen naast elkaar zetten dwingt de
+                        gebruiker tot een keuze die hij op dat moment niet kan
+                        maken — en de verkeerde keuze is duur: een Lead die
+                        later een klant wordt, converteert ERPNext zélf naar
+                        Customer + Contact, andersom moet je het handwerk
+                        overdoen. Daarom blijft de Lead de primaire knop en
+                        staat de smallere variant ernaast als secundaire
+                        tekstknop: "Alleen als relatie vastleggen". Is de
+                        afzender al bekend, dan vervalt de keuze en staat hier
+                        alleen nog het chipje met het bestaande record. */}
+                    {relationSlot("violet", t("y_next.rel_only_relation"))}
                     <button
                       onClick={() => handleDismissIntent(selected.name, selectedIntent.kind === "quote-request" ? "quote-request" : "lead")}
                       className="cursor-pointer rounded px-2 py-1 text-[11px] text-violet-800 hover:bg-violet-100">
@@ -5722,6 +5816,20 @@ function ErpNextWebmail() {
           customers={intentCtx.customers}
           onClose={() => setLeadFor(null)}
           onCreated={(doctype, result) => handleLeadCreated(leadFor.msg.name, doctype, result)}
+        />
+      )}
+
+      {/* De dialoog sluit zichzelf niet na succes — hij toont eerst waar het
+          terechtkwam. De chip in de balk staat op dat moment al goed. */}
+      {relationFor && (
+        <AddRelationDialog
+          sender={{
+            email: relationFor.sender,
+            ...(relationFor.senderName ? { displayName: relationFor.senderName } : {}),
+            ...(body && selected?.name === relationFor.name ? { bodyText: body.html } : {}),
+          }}
+          onClose={() => setRelationFor(null)}
+          onCreated={(result) => handleRelationCreated(relationFor.sender, result)}
         />
       )}
 

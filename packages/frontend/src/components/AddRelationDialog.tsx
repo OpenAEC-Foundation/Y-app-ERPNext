@@ -24,8 +24,12 @@
  *   Contact in ERPNext. Meteen sluiten laat de gebruiker achter met de vraag
  *   of er nu iets gebeurd is en waar het terechtkwam.
  *
- * Nieuwe vertaalsleutels staan hier met `defaultValue`, zodat het scherm
- * volledig werkt zolang de NL/EN/DE-bundels nog niet bijgewerkt zijn.
+ * De vertaalsleutels staan in `nl.json` / `en.json` / `de.json` onder
+ * `y_next.rel_*`. Alleen de twee sleutels die uit een *code* worden opgebouwd
+ * — de herkenningsreden op het chipje en het veld dat nog leeg is — houden een
+ * `defaultValue`: die valt terug op de code zelf, zodat een code die de
+ * bundels nog niet kennen leesbaar blijft in plaats van als kale sleutel op
+ * het scherm te verschijnen.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -62,7 +66,7 @@ function RecognisedChip({ reasons, prefix }: { reasons: string[]; prefix: string
       title={t(`y_next.rel_reason_${reason.replace(/[:-]/g, "_")}`, { defaultValue: reason })}
       className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700"
     >
-      <Sparkles size={9} /> {t("y_next.rel_recognised", { defaultValue: "herkend" })}
+      <Sparkles size={9} /> {t("y_next.rel_recognised")}
     </span>
   );
 }
@@ -186,9 +190,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
       // `classifyRelationError` levert koppeltekens ("link-missing"); de
       // vertaalsleutels gebruiken underscores.
       const kind = classifyRelationError(err);
-      setError(t(`y_next.rel_error_${kind.replace(/-/g, "_")}`, {
-        defaultValue: RELATION_ERROR_FALLBACK[kind],
-      }));
+      setError(t(`y_next.rel_error_${kind.replace(/-/g, "_")}`));
     } finally {
       setSaving(false);
     }
@@ -219,7 +221,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
           <div className="min-w-0">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
               <UserPlus size={14} />
-              {t("y_next.rel_dialog_title", { defaultValue: "Afzender vastleggen als relatie" })}
+              {t("y_next.rel_dialog_title")}
             </h2>
             <p className="mt-0.5 truncate text-[11px] text-slate-500">
               {sender.displayName ? `${sender.displayName} · ` : ""}{parsed.email}
@@ -238,17 +240,17 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
               <p className="flex items-center gap-1.5 font-medium">
                 <CheckCircle2 size={14} />
                 {result.reused
-                  ? t("y_next.rel_done_reused", { defaultValue: "Dit adres was al bekend — niets dubbel aangemaakt." })
-                  : t("y_next.rel_done_created", { defaultValue: "Vastgelegd in ERPNext." })}
+                  ? t("y_next.rel_done_reused")
+                  : t("y_next.rel_done_created")}
               </p>
               <ul className="space-y-1 pl-5">
                 {result.customer && (
                   <li>
-                    {t("y_next.rel_customer", { defaultValue: "Relatie" })}: <DocLink doctype="Customer" name={result.customer} />
+                    {t("y_next.rel_customer")}: <DocLink doctype="Customer" name={result.customer} />
                   </li>
                 )}
                 <li>
-                  {t("y_next.rel_contact", { defaultValue: "Contactpersoon" })}: <DocLink doctype="Contact" name={result.contact} />
+                  {t("y_next.rel_contact")}: <DocLink doctype="Contact" name={result.contact} />
                 </li>
               </ul>
             </div>
@@ -258,24 +260,24 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
               {checking && (
                 <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
                   <Loader2 size={11} className="animate-spin" />
-                  {t("y_next.rel_checking", { defaultValue: "Controleren of dit adres al bekend is…" })}
+                  {t("y_next.rel_checking")}
                 </p>
               )}
               {!checking && alreadyKnown && (
                 <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
                   <p className="flex items-center gap-1.5 font-medium">
                     <Info size={12} />
-                    {t("y_next.rel_already_known", { defaultValue: "Dit adres is al bekend in ERPNext." })}
+                    {t("y_next.rel_already_known")}
                   </p>
                   <ul className="space-y-0.5 pl-5">
                     {existing?.contact && (
-                      <li>{t("y_next.rel_contact", { defaultValue: "Contactpersoon" })}: <DocLink doctype="Contact" name={existing.contact} /></li>
+                      <li>{t("y_next.rel_contact")}: <DocLink doctype="Contact" name={existing.contact} /></li>
                     )}
                     {existing?.customer && (
-                      <li>{t("y_next.rel_customer", { defaultValue: "Relatie" })}: <DocLink doctype="Customer" name={existing.customer} /></li>
+                      <li>{t("y_next.rel_customer")}: <DocLink doctype="Customer" name={existing.customer} /></li>
                     )}
                     {existing?.lead && (
-                      <li>{t("y_next.rel_lead", { defaultValue: "Lead" })}: {existing.lead}</li>
+                      <li>{t("y_next.rel_lead")}: {existing.lead}</li>
                     )}
                   </ul>
                 </div>
@@ -284,43 +286,39 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
               {/* ── No-reply / functiemailbox ── */}
               {parsed.reasons.includes("address:noreply") && (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                  {t("y_next.rel_noreply_warning", {
-                    defaultValue: "Dit lijkt een no-reply-adres. Er is bewust niets vooringevuld — controleer of je hier echt een contactpersoon van wilt maken.",
-                  })}
+                  {t("y_next.rel_noreply_warning")}
                 </p>
               )}
               {parsed.reasons.includes("address:role") && (
                 <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                  {t("y_next.rel_role_warning", {
-                    defaultValue: "Dit is een algemene mailbox (info@, facturen@ …). De naam komt uit het adres, niet uit een persoon.",
-                  })}
+                  {t("y_next.rel_role_warning")}
                 </p>
               )}
 
               {/* ── Contactpersoon ── */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block">
-                  {label(t("y_next.rel_first_name", { defaultValue: "Voornaam" }), "name")}
+                  {label(t("y_next.rel_first_name"), "name")}
                   <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
                     className={fieldClass("contactFirstName")} />
                 </label>
 
                 <label className="block">
-                  {label(t("y_next.rel_last_name", { defaultValue: "Achternaam" }))}
+                  {label(t("y_next.rel_last_name"))}
                   <input value={lastName} onChange={(e) => setLastName(e.target.value)}
                     className={fieldClass("contactLastName")} />
                 </label>
 
                 <label className="block">
-                  {label(t("y_next.rel_email", { defaultValue: "E-mailadres" }))}
+                  {label(t("y_next.rel_email"))}
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                     className={fieldClass("email")} />
                 </label>
 
                 <label className="block">
-                  {label(t("y_next.rel_phone", { defaultValue: "Telefoon" }), "phone")}
+                  {label(t("y_next.rel_phone"), "phone")}
                   <input value={phone} onChange={(e) => setPhone(e.target.value)}
-                    placeholder={t("y_next.rel_phone_placeholder", { defaultValue: "niet gevonden in de mail" })}
+                    placeholder={t("y_next.rel_phone_placeholder")}
                     className={fieldClass("phone")} />
                 </label>
               </div>
@@ -331,40 +329,38 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                   <input type="checkbox" checked={createCustomer} className="cursor-pointer"
                     onChange={(e) => setCreateCustomer(e.target.checked)} />
                   <Building2 size={13} className="text-slate-400" />
-                  {t("y_next.rel_also_customer", { defaultValue: "Ook als klant vastleggen" })}
+                  {t("y_next.rel_also_customer")}
                 </label>
 
                 {createCustomer ? (
                   <div className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-2">
                     <label className="block sm:col-span-2">
-                      {label(t("y_next.rel_customer_name", { defaultValue: "Bedrijfsnaam" }), "company")}
+                      {label(t("y_next.rel_customer_name"), "company")}
                       <input value={customerName} onChange={(e) => setCustomerName(e.target.value)}
                         className={fieldClass("customerName")} />
                     </label>
 
                     <label className="block">
-                      {label(t("y_next.rel_customer_group", { defaultValue: "Klantgroep" }))}
+                      {label(t("y_next.rel_customer_group"))}
                       <select value={customerGroup} onChange={(e) => setCustomerGroup(e.target.value)}
                         className={fieldClass("customerGroup")}>
-                        <option value="">{t("y_next.rel_pick_default", { defaultValue: "standaard van ERPNext" })}</option>
+                        <option value="">{t("y_next.rel_pick_default")}</option>
                         {(defaults?.customerGroups ?? []).map((g) => <option key={g} value={g}>{g}</option>)}
                       </select>
                     </label>
 
                     <label className="block">
-                      {label(t("y_next.rel_territory", { defaultValue: "Regio" }))}
+                      {label(t("y_next.rel_territory"))}
                       <select value={territory} onChange={(e) => setTerritory(e.target.value)}
                         className={fieldClass("territory")}>
-                        <option value="">{t("y_next.rel_pick_default", { defaultValue: "standaard van ERPNext" })}</option>
+                        <option value="">{t("y_next.rel_pick_default")}</option>
                         {(defaults?.territories ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </label>
                   </div>
                 ) : (
                   <p className="px-3 py-2 text-[11px] text-slate-500">
-                    {t("y_next.rel_contact_only", {
-                      defaultValue: "Alleen een contactpersoon — er wordt geen relatie aangemaakt.",
-                    })}
+                    {t("y_next.rel_contact_only")}
                   </p>
                 )}
               </div>
@@ -372,8 +368,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
               {missing.length > 0 && (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
                   {t("y_next.rel_missing_fields", {
-                    defaultValue: "Vul eerst in: {{fields}}",
-                    fields: missing.map((m) => t(`y_next.rel_${toKey(m)}`, { defaultValue: MISSING_FALLBACK[m] ?? m })).join(", "),
+                    fields: missing.map((m) => t(`y_next.rel_${toKey(m)}`, { defaultValue: m })).join(", "),
                   })}
                 </p>
               )}
@@ -388,9 +383,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
           <p className="text-[11px] text-slate-400">
             {result
               ? ""
-              : t("y_next.rel_footer_note", {
-                defaultValue: "De contactpersoon wordt aan de relatie gekoppeld.",
-              })}
+              : t("y_next.rel_footer_note")}
           </p>
           <div className="flex items-center gap-2">
             <button onClick={onClose} disabled={saving}
@@ -402,10 +395,10 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                 className="flex cursor-pointer items-center gap-1.5 rounded bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                 {saving
-                  ? t("y_next.rel_saving", { defaultValue: "Vastleggen…" })
+                  ? t("y_next.rel_saving")
                   : alreadyKnown
-                    ? t("y_next.rel_submit_known", { defaultValue: "Toch vastleggen" })
-                    : t("y_next.rel_submit", { defaultValue: "Vastleggen" })}
+                    ? t("y_next.rel_submit_known")
+                    : t("y_next.rel_submit")}
               </button>
             )}
           </div>
@@ -414,21 +407,6 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
     </div>
   );
 }
-
-/** Nederlandse terugval zolang de bundels de sleutels nog niet hebben. */
-const RELATION_ERROR_FALLBACK: Record<string, string> = {
-  permission: "Je hebt geen rechten om relaties of contactpersonen aan te maken in ERPNext.",
-  duplicate: "ERPNext heeft al een relatie of contactpersoon met deze gegevens.",
-  "link-missing": "Een gekozen klantgroep of regio bestaat niet (meer) in ERPNext.",
-  mandatory: "ERPNext mist nog een verplicht veld. Vul de gegevens aan en probeer opnieuw.",
-  generic: "Vastleggen is niet gelukt. Probeer het opnieuw.",
-};
-
-const MISSING_FALLBACK: Record<string, string> = {
-  contactFirstName: "voornaam",
-  email: "e-mailadres",
-  customerName: "bedrijfsnaam",
-};
 
 /** `contactFirstName` → `contact_first_name`: veldcodes camelCase, sleutels snake_case. */
 function toKey(field: string): string {

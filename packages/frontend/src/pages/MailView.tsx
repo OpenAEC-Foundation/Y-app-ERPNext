@@ -36,6 +36,11 @@ import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
+import AddRelationDialog from "../components/AddRelationDialog";
+import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
+import {
+  lookupExistingCached, primeRelationLookup, type ExistingRelation, type RelationResult,
+} from "../lib/erp-relation";
 import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
 import type { BookingResult } from "../lib/purchase-invoice";
 import {
@@ -1233,6 +1238,12 @@ function ErpNextMailView({ name }: { name: string }) {
    */
   const [localRef, setLocalRef] = useState<{ doctype: string; name: string } | null>(null);
 
+  /* ─── Afzender → relatie (zelfde gedrag als de webmail) ─── */
+  const [relationOpen, setRelationOpen] = useState(false);
+  const [senderRelation, setSenderRelation] = useState<
+    { email: string; found: ExistingRelation } | null
+  >(null);
+
   /* ─── Projectsuggestie ─── */
   const [projectHints, setProjectHints] = useState<ProjectHint[]>([]);
   /** Het adres gaat mee in de state — zie de toelichting in `Webmail.tsx`. */
@@ -1266,6 +1277,52 @@ function ErpNextMailView({ name }: { name: string }) {
   const senderProjects = useMemo(
     () => (senderHistory.sender === sender ? senderHistory.projects : []),
     [senderHistory, sender],
+  );
+
+  /* ─── Afzender → relatie: is dit adres al bekend in ERPNext? ─── */
+  /**
+   * Alleen bij ontvangen mail — bij verzonden mail ben jíj de afzender. De
+   * check loopt via `lookupExistingCached`, dus hooguit één keer per adres per
+   * sessie; de popout deelt die cache met de webmail in hetzelfde tabblad.
+   */
+  const relationSender = doc && doc.sent_or_received !== "Sent" ? sender : "";
+  useEffect(() => {
+    // Zie de toelichting bij dezelfde regel in `Webmail.tsx`.
+    if (!relationSender) return;
+    let cancelled = false;
+    lookupExistingCached(relationSender)
+      .then((found) => { if (!cancelled) setSenderRelation({ email: relationSender, found }); })
+      // Mislukt de check (rechten, netwerk), dan telt het adres als onbekend:
+      // de knop verschijnt en ERPNext blijft bij het aanmaken zelf het vangnet.
+      .catch(() => { if (!cancelled) setSenderRelation({ email: relationSender, found: {} }); });
+    return () => { cancelled = true; };
+  }, [relationSender]);
+
+  /** `null` zolang de check loopt; de actie rendert dan nog niets. */
+  const relationExisting = senderRelation?.email === relationSender ? senderRelation.found : null;
+
+  /** Zie de toelichting bij dezelfde functie in `Webmail.tsx`. */
+  const handleRelationCreated = (email: string, created: RelationResult) => {
+    const found: ExistingRelation = { contact: created.contact };
+    if (created.customer) found.customer = created.customer;
+    primeRelationLookup(email, found);
+    setSenderRelation({ email, found });
+  };
+
+  /**
+   * De relatie-actie staat altijd op precies één plek: in de actiebalk van de
+   * herkende bedoeling als die er is, anders in de chipregel onder de kop.
+   * Kleur en opschrift verschillen per plek, de rest niet.
+   */
+  const relationSlot = (tone: RelationSlotTone, label: string) => (
+    relationSender ? (
+      <SenderRelationAction
+        existing={relationExisting}
+        tone={tone}
+        label={label}
+        onAdd={() => setRelationOpen(true)}
+      />
+    ) : null
   );
 
   const reference = useMemo(
@@ -1432,6 +1489,11 @@ function ErpNextMailView({ name }: { name: string }) {
                 <ExternalLink size={9} />
               </a>
             )}
+            {/* Is er geen bedoeling herkend, dan is deze regel de actiebalk
+                van de mail en hoort de relatie-actie hier. Staat er wél een
+                factuur- of leadbalk, dan zit hij dáár — nooit op twee plekken
+                tegelijk. */}
+            {!intent && relationSlot("slate", t("y_next.rel_add_button"))}
           </div>
         </div>
 
@@ -1451,6 +1513,7 @@ function ErpNextMailView({ name }: { name: string }) {
               className="flex cursor-pointer items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700">
               <Receipt size={11} /> {t("y_next.pinv_book")}
             </button>
+            {relationSlot("amber", t("y_next.rel_add_button"))}
             <button
               onClick={() => { dismissMailSuggestion(name, "purchase-invoice"); setDismissed(readDismissedMailSuggestions()); }}
               className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
@@ -1478,6 +1541,10 @@ function ErpNextMailView({ name }: { name: string }) {
               <UserPlus size={11} />
               {t(intent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
             </button>
+            {/* Bundeling bij een onbekende afzender — dezelfde afweging als in
+                `Webmail.tsx`: de Lead blijft de primaire knop, "Alleen als
+                relatie vastleggen" staat ernaast als smallere tekstknop. */}
+            {relationSlot("violet", t("y_next.rel_only_relation"))}
             <button
               onClick={() => {
                 dismissMailSuggestion(name, intent.kind === "quote-request" ? "quote-request" : "lead");
@@ -1624,6 +1691,20 @@ function ErpNextMailView({ name }: { name: string }) {
             setCreated({ doctype, result });
             if (!result.linkFailed) setLocalRef({ doctype, name: result.name });
           }}
+        />
+      )}
+
+      {/* De dialoog sluit zichzelf niet na succes — hij toont eerst waar het
+          terechtkwam. De chip in de balk staat op dat moment al goed. */}
+      {relationOpen && doc && relationSender && (
+        <AddRelationDialog
+          sender={{
+            email: relationSender,
+            ...(doc.sender_full_name ? { displayName: doc.sender_full_name } : {}),
+            ...(body?.html ? { bodyText: body.html } : {}),
+          }}
+          onClose={() => setRelationOpen(false)}
+          onCreated={(created) => handleRelationCreated(relationSender, created)}
         />
       )}
     </div>

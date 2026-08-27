@@ -665,6 +665,50 @@ export async function lookupExisting(email: string): Promise<ExistingRelation> {
   return result;
 }
 
+/* ─────────────────── Sessiecache op de dubbelcheck ───────────────────── */
+
+/**
+ * Uitkomst van `lookupExisting` per adres, voor de duur van het tabblad.
+ *
+ * Het leespaneel wil bij élke geopende mail weten of de afzender al bekend
+ * is. Zonder cache kost dat vier lijstqueries per mail — ook als je vijf
+ * mails van dezelfde persoon achter elkaar opent. Bewust géén TTL: binnen
+ * één sessie verandert dit alleen dóór Y-next zelf (`createRelation`), en
+ * dat pad zet de cache meteen goed. Wie hem tóch wil vergeten (rolwissel,
+ * instance-wissel, iemand die het record in ERPNext aanmaakte) roept
+ * `invalidateRelationLookup()` aan.
+ */
+const lookupCache = new Map<string, ExistingRelation>();
+
+/** Zelfde uitkomst als `lookupExisting`, maar hooguit één keer per adres. */
+export async function lookupExistingCached(email: string): Promise<ExistingRelation> {
+  const address = normalizeEmail(email);
+  if (!isValidEmail(address)) return {};
+  const hit = lookupCache.get(address);
+  if (hit) return hit;
+  const found = await lookupExisting(address);
+  lookupCache.set(address, found);
+  return found;
+}
+
+/**
+ * Zet de uitkomst voor een adres vast zonder ERPNext te bevragen. Wordt
+ * aangeroepen zodra Y-next zelf iets heeft aangemaakt, zodat de volgende
+ * mail van dezelfde afzender meteen "bekend" toont in plaats van opnieuw de
+ * knop "Toevoegen als relatie".
+ */
+export function primeRelationLookup(email: string, found: ExistingRelation): void {
+  const address = normalizeEmail(email);
+  if (!isValidEmail(address)) return;
+  lookupCache.set(address, found);
+}
+
+/** Vergeet één adres, of (zonder argument) de hele sessiecache. */
+export function invalidateRelationLookup(email?: string): void {
+  if (email === undefined) { lookupCache.clear(); return; }
+  lookupCache.delete(normalizeEmail(email));
+}
+
 /** Bestaat er al een relatie met exact deze naam? Dan die hergebruiken. */
 async function findCustomerByName(customerName: string): Promise<string | null> {
   const name = customerName.trim();
@@ -703,6 +747,7 @@ export async function createRelation(draft: RelationDraft): Promise<RelationResu
   if (existing.contact) {
     const result: RelationResult = { contact: existing.contact, reused: true };
     if (existing.customer) result.customer = existing.customer;
+    primeRelationLookup(draft.email, existing);
     return result;
   }
 
@@ -721,6 +766,13 @@ export async function createRelation(draft: RelationDraft): Promise<RelationResu
   const contact = await createDocument<NamedRow>("Contact", buildContactPayload(draft, customer));
   const result: RelationResult = { contact: contact.name, reused: false };
   if (customer) result.customer = customer;
+  // De sessiecache meteen goedzetten: een volgende mail van dit adres hoort
+  // "bekend" te tonen, niet opnieuw de knop "Toevoegen als relatie".
+  primeRelationLookup(draft.email, {
+    contact: contact.name,
+    ...(customer ? { customer } : {}),
+    ...(existing.lead ? { lead: existing.lead } : {}),
+  });
   return result;
 }
 

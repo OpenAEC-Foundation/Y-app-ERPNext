@@ -10,10 +10,13 @@ import {
   humanizeDomain,
   isFreemailDomain,
   isNoReplyAddress,
+  invalidateRelationLookup,
   isRoleAddress,
   looksLikeCompanyName,
   lookupExisting,
+  lookupExistingCached,
   nameFromLocalPart,
+  primeRelationLookup,
   normalizePhone,
   parseSenderDetails,
   splitPersonName,
@@ -509,6 +512,71 @@ test("lookupExisting doet geen enkele call bij een onbruikbaar adres", async () 
   try {
     assert.deepEqual(await lookupExisting("geen adres"), {});
     assert.deepEqual(await lookupExisting(""), {});
+    assert.equal(mock.urls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+/* ─────────────────────── Sessiecache op de lookup ────────────────────── */
+
+/**
+ * De actiebalk in de webmail vraagt bij élke geopende mail of de afzender al
+ * bekend is. Deze cache is wat voorkomt dat vijf mails van dezelfde persoon
+ * vijf keer dezelfde vier lijstqueries kosten — en wat ervoor zorgt dat een
+ * net vastgelegde relatie meteen als "bekend" telt bij de volgende mail.
+ */
+
+test("lookupExistingCached bevraagt ERPNext maar één keer per adres", async () => {
+  const email = freshEmail();
+  const mock = installFetchMock([{ match: () => true, rows: [] }]);
+  try {
+    assert.deepEqual(await lookupExistingCached(email), {});
+    const afterFirst = mock.urls.length;
+    assert.ok(afterFirst > 0, "de eerste keer hoort ERPNext wél te bevragen");
+    // Tweede keer, en met andere hoofdletters: geen enkele extra call.
+    assert.deepEqual(await lookupExistingCached(email.toUpperCase()), {});
+    assert.equal(mock.urls.length, afterFirst);
+  } finally {
+    mock.restore();
+    invalidateRelationLookup(email);
+  }
+});
+
+test("primeRelationLookup maakt een adres bekend zonder ERPNext te bevragen", async () => {
+  const email = freshEmail();
+  primeRelationLookup(email.toUpperCase(), { contact: "Sanne-Voorbeeld B.V.", customer: "Voorbeeld B.V." });
+  const mock = installFetchMock([{ match: () => true, rows: [] }]);
+  try {
+    const found = await lookupExistingCached(email);
+    assert.equal(found.contact, "Sanne-Voorbeeld B.V.");
+    assert.equal(found.customer, "Voorbeeld B.V.");
+    assert.equal(mock.urls.length, 0);
+  } finally {
+    mock.restore();
+    invalidateRelationLookup(email);
+  }
+});
+
+test("invalidateRelationLookup laat het adres opnieuw bevragen", async () => {
+  const email = freshEmail();
+  primeRelationLookup(email, { contact: "Oud-Voorbeeld B.V." });
+  invalidateRelationLookup(email);
+  const mock = installFetchMock([{ match: () => true, rows: [] }]);
+  try {
+    assert.deepEqual(await lookupExistingCached(email), {});
+    assert.ok(mock.urls.length > 0);
+  } finally {
+    mock.restore();
+    invalidateRelationLookup();
+  }
+});
+
+test("een onbruikbaar adres komt niet in de cache terecht", async () => {
+  const mock = installFetchMock([{ match: () => true, rows: [] }]);
+  try {
+    primeRelationLookup("geen adres", { contact: "Mag-Niet-Blijven-Hangen" });
+    assert.deepEqual(await lookupExistingCached("geen adres"), {});
     assert.equal(mock.urls.length, 0);
   } finally {
     mock.restore();
