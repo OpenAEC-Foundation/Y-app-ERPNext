@@ -23,7 +23,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
 import { readMailBody, persistMailBody } from "../lib/mail-cache-db";
-import { fetchList, fetchDocument, getFileUrl } from "../lib/erpnext";
+import { fetchList, fetchDocument, getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
 import { getMessageBody, markRead } from "../lib/mail-erpnext";
 import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } from "../lib/email-project-links";
@@ -34,6 +34,15 @@ import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
+import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import {
+  detectPurchaseInvoice, plainTextFromHtml,
+  type SupplierHint,
+} from "../lib/invoice-detect";
+import {
+  dismissInvoiceSuggestion, fetchSupplierHints, readDismissedInvoiceSuggestions,
+  type BookingResult,
+} from "../lib/purchase-invoice";
 
 interface MailAddress {
   name: string;
@@ -1179,6 +1188,8 @@ interface ErpViewDoc {
   cc?: string;
   communication_date?: string;
   seen?: number | boolean;
+  has_attachment?: number | boolean;
+  sent_or_received?: string;
   reference_doctype?: string;
   reference_name?: string;
 }
@@ -1201,6 +1212,40 @@ function ErpNextMailView({ name }: { name: string }) {
   const [popupError, setPopupError] = useState("");
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState(500);
+
+  /* ─── Inkoopfactuur-herkenning (zelfde flow als in de webmail) ─── */
+  const [supplierHints, setSupplierHints] = useState<SupplierHint[]>([]);
+  const [dismissed, setDismissed] = useState(() => readDismissedInvoiceSuggestions());
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [booked, setBooked] = useState<BookingResult | null>(null);
+  /** Lokale spiegel van de koppeling, zodat de chip meteen bijwerkt. */
+  const [invoiceRef, setInvoiceRef] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSupplierHints()
+      .then((rows) => { if (!cancelled) setSupplierHints(rows); })
+      .catch(() => { /* herkenning uit; de lezer werkt gewoon verder */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const linkedInvoice = invoiceRef
+    || (doc?.reference_doctype === "Purchase Invoice" ? doc.reference_name || "" : "");
+
+  const invoiceGuess = useMemo(() => {
+    if (!doc || supplierHints.length === 0 || linkedInvoice) return null;
+    if (dismissed.has(name)) return null;
+    const guess = detectPurchaseInvoice({
+      subject: doc.subject || "",
+      sender: doc.sender || "",
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      hasAttachment: Boolean(doc.has_attachment),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      mailDate: doc.communication_date,
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+    }, supplierHints);
+    return guess.isLikely ? guess : null;
+  }, [doc, body, supplierHints, dismissed, linkedInvoice, name]);
 
   useEffect(() => {
     if (!name) return;
@@ -1284,12 +1329,68 @@ function ErpNextMailView({ name }: { name: string }) {
               Aan: {doc.recipients}{doc.cc ? ` · Cc: ${doc.cc}` : ""}
             </p>
           )}
-          {doc?.reference_doctype === "Project" && doc.reference_name && (
-            <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-              <FolderKanban size={11} /> {doc.reference_name}
-            </span>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {doc?.reference_doctype === "Project" && doc.reference_name && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+                <FolderKanban size={11} /> {doc.reference_name}
+              </span>
+            )}
+            {linkedInvoice && (
+              <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(linkedInvoice)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">
+                <Receipt size={11} /> {linkedInvoice}
+                <ExternalLink size={9} />
+              </a>
+            )}
+          </div>
         </div>
+
+        {invoiceGuess && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-6 py-2">
+            <Receipt size={14} className="flex-shrink-0 text-amber-600" />
+            <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
+            <span
+              title={invoiceGuess.reasons
+                .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+              {t(`y_next.pinv_confidence_${invoiceGuess.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => setBookingOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700">
+              <Receipt size={11} /> {t("y_next.pinv_book")}
+            </button>
+            <button
+              onClick={() => { dismissInvoiceSuggestion(name); setDismissed(readDismissedInvoiceSuggestions()); }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
+              {t("y_next.pinv_dismiss")}
+            </button>
+          </div>
+        )}
+
+        {booked && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t("y_next.pinv_booked_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(booked.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {booked.name}
+              </a>
+              {booked.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.pinv_attachments_failed", { names: booked.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {booked.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.pinv_link_failed")}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <iframe
           ref={frameRef}
@@ -1312,6 +1413,28 @@ function ErpNextMailView({ name }: { name: string }) {
           <p className="px-6 pb-4 text-xs text-red-600">{popupError}</p>
         )}
       </div>
+
+      {bookingOpen && doc && invoiceGuess && (
+        <BookPurchaseInvoiceDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+            ...(doc.reference_doctype === "Project" && doc.reference_name
+              ? { project: doc.reference_name }
+              : {}),
+          }}
+          guess={invoiceGuess}
+          suppliers={supplierHints}
+          onClose={() => setBookingOpen(false)}
+          onBooked={(result) => {
+            setBookingOpen(false);
+            setBooked(result);
+            if (!result.linkFailed) setInvoiceRef(result.name);
+          }}
+        />
+      )}
     </div>
   );
 }

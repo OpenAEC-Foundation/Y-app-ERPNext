@@ -319,15 +319,63 @@ export async function bookPurchaseInvoiceFromMail(args: {
 
   let linkFailed = false;
   try {
-    await updateDocument("Communication", args.communication, {
-      reference_doctype: "Purchase Invoice",
-      reference_name: name,
-    });
+    await linkCommunicationToInvoice(args.communication, name);
   } catch {
     linkFailed = true;
   }
 
   return { name, failedAttachments, linkFailed };
+}
+
+interface CommunicationLinkRow {
+  link_doctype?: string;
+  link_name?: string;
+}
+
+/**
+ * Hang de mail aan de factuur, op de twee manieren die ERPNext's
+ * desk-tijdlijn kent.
+ *
+ * Live geverifieerd op de doelinstance: `frappe.desk.form.load.get_docinfo`
+ * op de nieuwe factuur toont de mail **al** bij alleen `reference_doctype` +
+ * `reference_name`, en óók bij alleen een `timeline_links`-rij. Ze werken dus
+ * onafhankelijk van elkaar — vandaar dat de child-tabel-update hieronder
+ * best-effort is en de PUT hierboven leidend.
+ *
+ * Toch worden ze allebei gezet, want ze doen niet hetzelfde:
+ * `reference_*` is **enkelvoudig** (een Communication hangt aan één document),
+ * dus zodra de mail later aan een project wordt gekoppeld, verdwijnt de
+ * factuurverwijzing weer. `timeline_links` is een lijst en overleeft dat.
+ *
+ * **De bestaande rijen moeten mee.** Frappe vervangt een child-tabel volledig
+ * bij een PUT; de Communications in deze mailbox dragen al `Contact`-rijen
+ * (die ERPNext zelf bij het binnenhalen zet). Alleen de nieuwe rij sturen zou
+ * die stilzwijgend wissen — vandaar eerst lezen, dan aanvullen.
+ */
+async function linkCommunicationToInvoice(communication: string, invoice: string): Promise<void> {
+  await updateDocument("Communication", communication, {
+    reference_doctype: "Purchase Invoice",
+    reference_name: invoice,
+    // Frappe's eigen aanduiding voor "hangt aan een document"; hij kleurt de
+    // rij in de desk-lijst. Raakt `email_status` (Open/Spam/Trash) niet, dus
+    // de Prullenbak-logica van de webmail blijft ongemoeid.
+    status: "Linked",
+  });
+  try {
+    const doc = await fetchDocument<{ timeline_links?: CommunicationLinkRow[] }>(
+      "Communication", communication,
+    );
+    const existing = doc.timeline_links ?? [];
+    if (existing.some((l) => l.link_doctype === "Purchase Invoice" && l.link_name === invoice)) return;
+    await updateDocument("Communication", communication, {
+      timeline_links: [
+        ...existing.map((l) => ({ link_doctype: l.link_doctype, link_name: l.link_name })),
+        { link_doctype: "Purchase Invoice", link_name: invoice },
+      ],
+    });
+  } catch {
+    // De tijdlijn werkt al via `reference_*`; dit was de duurzame extra.
+  }
 }
 
 /* ──────────────────────── "Nee, geen factuur" ────────────────────────── */

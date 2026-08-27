@@ -469,6 +469,11 @@ function matchSupplier(signals: InvoiceSignals, suppliers: SupplierHint[]): Supp
       consider({ supplier: hint.name, score: 55, reason: "supplier:attachment" });
       continue;
     }
+    // 5. Naam ergens in de mailtekst. Zwak en met opzet als laatste: élke mail
+    //    van een afzender draagt diens bedrijfsnaam in de handtekening, dus
+    //    dit "herkent" ook een mailtje met onderwerp "test". Het telt daarom
+    //    lichter mee (zie `SUPPLIER_WEIGHTS`) en kan nooit alleen een
+    //    suggestie opleveren.
     if (bodyHay && bodyHay.includes(` ${needle} `)) {
       consider({ supplier: hint.name, score: 35 + needle.length, reason: "supplier:body" });
     }
@@ -526,7 +531,10 @@ export function detectPurchaseInvoice(
   else if (hasSomeAttachment) { score += 1; reasons.push("attachment:present"); }
 
   const supplier = matchSupplier(signals, suppliers);
-  if (supplier) { score += 3; reasons.push(supplier.reason); }
+  if (supplier) {
+    score += supplier.reason === "supplier:body" ? 2 : 3;
+    reasons.push(supplier.reason);
+  }
 
   const invoiceNo = findInvoiceNo(signals);
   if (invoiceNo) { score += 1; reasons.push(invoiceNo.reason); }
@@ -543,10 +551,23 @@ export function detectPurchaseInvoice(
     return { isLikely: false, confidence: "low", reasons: ["negative:other-document"] };
   }
 
+  /**
+   * Harde eis: érgens moet het woord "factuur" (of een variant) staan.
+   *
+   * Zonder deze poort haalde een mailtje met onderwerp "test" al `medium`,
+   * puur omdat de handtekening van de afzender een leveranciersnaam bevat en
+   * er een plaatje aan hing — en een doorgestuurde set loonstroken haalde het
+   * ook, omdat de bestandsnaam op een factuurnummer lijkt. Beide zijn echte
+   * mails uit deze mailbox. Punten stapelen is prima om te wégen hoe zeker
+   * iets is, maar niet om te bepalen *of* het over een factuur gaat.
+   */
+  const anyWord = wordInSubject || wordInAttachment || wordInBody;
+
   const confidence: InvoiceConfidence =
-    supplier && strongWord && hasPdf ? "high"
-      : score >= 4 ? "medium"
-        : "low";
+    !anyWord ? "low"
+      : supplier && strongWord && hasPdf ? "high"
+        : score >= 4 ? "medium"
+          : "low";
 
   const guess: InvoiceGuess = {
     isLikely: confidence !== "low",

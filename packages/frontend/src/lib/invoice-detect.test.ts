@@ -225,6 +225,50 @@ test("verzonden mail wordt nooit als inkoopfactuur aangeboden", () => {
   assert.deepEqual(guess.reasons, ["negative:sent"]);
 });
 
+test("de handtekening van de afzender maakt van 'test' geen factuur", () => {
+  // Echte mail uit de instance. Elke mail van dit adres draagt "3BM
+  // Bouwtechniek V.O.F." in de handtekening; zonder de factuurwoord-eis
+  // haalde deze mail `medium` op leveranciersnaam + bijlage alleen.
+  const guess = detectPurchaseInvoice(signals({
+    subject: "test",
+    sender: "maarten@3bm.co.nl",
+    attachmentNames: ["Outlook-kzymgmpg.png"],
+    mailDate: "2026-08-24 10:27:20",
+    bodyText: "Met vriendelijke groet, Maarten Vroegindeweij 3BM Bouwtechniek V.O.F. "
+      + "Burgemeester de Raadtsingel 31 3311 JG Dordrecht 3bm.co.nl",
+  }), SUPPLIERS);
+  assert.equal(guess.isLikely, false);
+  assert.equal(guess.confidence, "low");
+});
+
+test("doorgestuurde loonstroken zijn geen factuur, ook niet met PDF", () => {
+  // Ook echt: de bestandsnaam bevat genoeg cijfers om op een factuurnummer te
+  // lijken, en de handtekening levert een leverancier. Alleen het ontbreken
+  // van élk factuurwoord houdt dit tegen.
+  const guess = detectPurchaseInvoice(signals({
+    subject: "Fwd: Impertio Studio B.V., Periodeverslagen Maandelijks 2026-7/2",
+    sender: "maarten@3bm.co.nl",
+    attachmentNames: ["Loonstroken_Maandelijks_2026_7_2.pdf"],
+    mailDate: "2026-08-04 01:21:07",
+    bodyText: "Met vriendelijke groet, Maarten Vroegindeweij 3BM Bouwtechniek V.O.F.",
+  }), SUPPLIERS);
+  assert.equal(guess.isLikely, false);
+  assert.equal(guess.confidence, "low");
+});
+
+test("factuurwoord alleen in de body is genoeg om de poort te passeren", () => {
+  const guess = detectPurchaseInvoice(signals({
+    subject: "Bijgaand het overzicht",
+    sender: "info@jbs-multimedia.nl",
+    attachmentNames: ["2026-0451.pdf"],
+    mailDate: "2026-08-04 09:00:00",
+    bodyText: "Beste, hierbij de factuur voor de geleverde werkzaamheden.",
+  }), SUPPLIERS);
+  assert.equal(guess.isLikely, true);
+  assert.equal(guess.confidence, "medium");
+  assert.equal(guess.supplier, "JBS multimedia B.V.");
+});
+
 test("kale mail zonder bijlage en zonder factuurwoord scoort laag", () => {
   const guess = detectPurchaseInvoice(signals({
     subject: "Kennismaking",
