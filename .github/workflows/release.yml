@@ -1,0 +1,594 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag om te bouwen (bv. v0.31.2). Leeg = versie uit het manifest van de gekozen branch (handmatige run)."
+        required: false
+        default: ""
+
+concurrency:
+  # Per versie een eigen group: een nieuwe deploy-dispatch voor v0.31.3 mag een
+  # nog lopende build van v0.31.2 NIET afschieten (dat gaf half-gevulde releases).
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ─── Step 1: Create draft release ───
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+      version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
+
+      - name: Get version
+        id: get-version
+        run: |
+          # Voorkeur: expliciete input (door deploy-server na het taggen
+          # meegegeven → tag-gedreven, altijd de juiste release). Leeg (handmatige
+          # run zonder input) → val terug op de manifest-versie van deze checkout.
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=v$(node -p "require('./packages/frontend/package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or reuse release
+        # Idempotent: hergebruik de (notes-rijke) release die deploy-server.yml al
+        # aanmaakte voor dit tag; bestaat 'ie nog niet, maak een draft aan.
+        # LET OP: getReleaseByTag geeft GEEN drafts terug (alleen gepubliceerde);
+        # deploy maakt de release als DRAFT aan, dus we matchen via listReleases
+        # op tag_name — anders zou hier een tweede draft voor dezelfde tag ontstaan.
+        id: create
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const version = '${{ steps.get-version.outputs.version }}';
+            const { owner, repo } = context.repo;
+            const all = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
+            let rel = all.find(r => r.tag_name === version) || null;
+            if (!rel) {
+              rel = (await github.rest.repos.createRelease({
+                owner, repo,
+                tag_name: version,
+                name: `Y-app ${version}`,
+                body: '## Downloads\n\nZie CHANGELOG.md voor de wijzigingen in deze versie.',
+                draft: true,
+                prerelease: false,
+              })).data;
+            }
+            return rel.id;
+
+  # ─── Step 2: Desktop builds (Windows, macOS, Linux) ───
+  build-desktop:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+            target: linux
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            target: macos
+          - platform: windows-latest
+            args: ""
+            target: windows-system
+          - platform: windows-latest
+            args: ""
+            target: windows-user
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust targets (macOS universal)
+        if: matrix.target == 'macos'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Install Linux dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/desktop/src-tauri/target
+          key: ${{ matrix.target }}-rust-${{ hashFiles('packages/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.target }}-rust-
+
+      - name: Install frontend dependencies (shared components)
+        run: |
+          cd packages/frontend
+          npm install --legacy-peer-deps
+
+      - name: Install desktop frontend dependencies
+        run: |
+          cd packages/desktop
+          npm install --legacy-peer-deps
+
+      - name: Set user install mode (Windows user variant)
+        if: matrix.target == 'windows-user'
+        shell: pwsh
+        run: |
+          $conf = Get-Content packages/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if (-not $conf.bundle.windows.nsis) {
+            $conf.bundle.windows | Add-Member -NotePropertyName nsis -NotePropertyValue @{}
+          }
+          $conf.bundle.windows.nsis.installMode = "currentUser"
+          $conf | ConvertTo-Json -Depth 10 | Set-Content packages/desktop/src-tauri/tauri.conf.json
+
+      - name: Purge stale NSIS installers from cached target dir
+        if: contains(matrix.target, 'windows')
+        shell: pwsh
+        run: |
+          # actions/cache restores packages/desktop/src-tauri/target as-is,
+          # which carries over bundle/nsis/*-setup.exe from previous runs.
+          # Our upload steps glob that directory, so stale installers would
+          # hitch a ride into every release. Nuke them before the build so
+          # only the current version's exe lands here.
+          $NSIS_DIR = "packages/desktop/src-tauri/target/release/bundle/nsis"
+          if (Test-Path $NSIS_DIR) {
+            Get-ChildItem "$NSIS_DIR/*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -Verbose
+          }
+
+      - name: Build Tauri app (with release upload)
+        if: matrix.target != 'windows-user'
+        uses: tauri-apps/tauri-action@action-v0.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # createUpdaterArtifacts:true (tauri.conf.json) vereist deze bij het
+          # bundelen — anders faalt de build. De .sig die hier ontstaat is voor
+          # macOS/Linux meteen correct; voor Windows wordt 'ie later opnieuw
+          # gemaakt (na Authenticode) door de sign-updater job.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: packages/desktop
+          tauriScript: npx tauri
+          args: ${{ matrix.args }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          # latest.json wordt centraal en autoritatief gemaakt in de
+          # sign-updater job (na Windows-Authenticode) — niet per matrix-leg,
+          # dat zou een race + een stale Windows-signature geven.
+          includeUpdaterJson: false
+
+      - name: Build Tauri app (user installer — no release upload)
+        if: matrix.target == 'windows-user'
+        uses: tauri-apps/tauri-action@action-v0.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: packages/desktop
+          tauriScript: npx tauri
+          args: ${{ matrix.args }}
+          includeUpdaterJson: false
+
+      - name: Authenticode sign Windows installer
+        if: contains(matrix.target, 'windows')
+        uses: azure/trusted-signing-action@v1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          cache-dependencies: false
+          files-folder: ${{ github.workspace }}/packages/desktop/src-tauri/target/release/bundle/nsis
+          files-folder-filter: exe
+          files-folder-depth: 1
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Re-upload signed Windows installer (system variant)
+        # tauri-action uploaded the unsigned .exe BEFORE the signing step ran.
+        # Overwrite the release asset with the now-signed file from disk.
+        if: matrix.target == 'windows-system'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ needs.create-release.outputs.version }}"
+          Get-ChildItem "packages/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" |
+            ForEach-Object { gh release upload $VERSION $_.FullName --clobber --repo "${{ github.repository }}" }
+
+      - name: Upload user installer to release
+        if: matrix.target == 'windows-user'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ needs.create-release.outputs.version }}"
+          $NSIS_DIR = "packages/desktop/src-tauri/target/release/bundle/nsis"
+          $EXE = Get-ChildItem "$NSIS_DIR/*-setup.exe" | Select-Object -First 1
+          $NEW_NAME = $EXE.Name -replace '_x64-setup\.exe$', '_x64_user-setup.exe'
+          $NEW_PATH = Join-Path $EXE.DirectoryName $NEW_NAME
+          Rename-Item $EXE.FullName $NEW_PATH
+          gh release upload $VERSION "$NEW_PATH" --clobber --repo "${{ github.repository }}"
+
+  # ─── Step 3: Android build ───
+  build-android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/desktop/src-tauri/target
+          key: android-rust-${{ hashFiles('packages/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: android-rust-
+
+      - name: Install frontend dependencies (shared components)
+        run: |
+          cd packages/frontend
+          npm install --legacy-peer-deps
+
+      - name: Install desktop frontend dependencies
+        run: |
+          cd packages/desktop
+          npm install --legacy-peer-deps
+
+      - name: Initialize Android project
+        working-directory: packages/desktop
+        run: npx tauri android init
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - name: Generate Y-app icons for Android
+        # `tauri android init` populates mipmap-*/ic_launcher.* with default
+        # Tauri icons. Regenerate from icons/icon.png so the launcher and
+        # task switcher show the Y-app brand.
+        working-directory: packages/desktop
+        run: npx tauri icon src-tauri/icons/icon.png
+
+      - name: Patch AndroidManifest.xml — backup + biometric permissions
+        working-directory: packages/desktop
+        # Two patches:
+        # 1. Disable Auto Backup / D2D transfer for the Stronghold vault. If
+        #    Android restores vault.hold without the matching stronghold-salt.txt
+        #    (or vice versa), Stronghold fails with BadFileKey and the user is
+        #    locked out with no in-app recovery path.
+        # 2. Add USE_BIOMETRIC permission so tauri-plugin-biometric can show
+        #    the fingerprint prompt on the unlock screen.
+        run: |
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          if [ ! -f "$MANIFEST" ]; then
+            echo "AndroidManifest.xml not found at $MANIFEST"
+            exit 1
+          fi
+          if grep -q 'android:allowBackup' "$MANIFEST"; then
+            echo "android:allowBackup already set — skipping"
+          else
+            sed -i 's|<application|<application android:allowBackup="false" android:fullBackupContent="false"|' "$MANIFEST"
+          fi
+          if grep -q 'android.permission.USE_BIOMETRIC' "$MANIFEST"; then
+            echo "USE_BIOMETRIC already declared — skipping"
+          else
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.USE_BIOMETRIC" />' "$MANIFEST"
+          fi
+          echo "--- Patched AndroidManifest.xml ---"
+          grep -E '(<application|USE_BIOMETRIC)' "$MANIFEST" | head -5
+
+      - name: Patch Android theme — light status bar icons on dark background
+        working-directory: packages/desktop
+        run: |
+          RES_DIR=src-tauri/gen/android/app/src/main/res/values
+          mkdir -p "$RES_DIR"
+          cat > "$RES_DIR/styles.xml" << 'STYLES'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowLightStatusBar">false</item>
+              <item name="android:statusBarColor">#0f172a</item>
+              <item name="android:navigationBarColor">#0f172a</item>
+            </style>
+          </resources>
+          STYLES
+          # Apply theme to the application
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          if grep -q 'android:theme' "$MANIFEST"; then
+            echo "android:theme already set — replacing"
+            sed -i 's|android:theme="[^"]*"|android:theme="@style/AppTheme"|' "$MANIFEST"
+          else
+            sed -i 's|<application|<application android:theme="@style/AppTheme"|' "$MANIFEST"
+          fi
+          echo "--- Status bar theme applied ---"
+
+      - name: Build Android APK
+        working-directory: packages/desktop
+        run: npx tauri android build --apk --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - name: Decode Android signing keystore
+        # Decodes the persistent release keystore from a repo secret so every
+        # build is signed with the SAME key. Without this, every CI run would
+        # generate a fresh throwaway keystore and Android would refuse to
+        # install a new APK over the previous one (signatures do not match).
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64 secret is not set. Generate a keystore once locally with keytool, base64-encode it, and add it (plus ANDROID_KEYSTORE_PASS and ANDROID_KEY_ALIAS) as repo secrets. See docs."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/y-app-release.jks"
+          echo "Keystore decoded: $(wc -c < "$RUNNER_TEMP/y-app-release.jks") bytes"
+
+      - name: Sign APK
+        id: sign-apk
+        working-directory: packages/desktop
+        env:
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          UNSIGNED_APK=$(find src-tauri/gen/android -name "*-unsigned.apk" -type f | head -1)
+          if [ -z "$UNSIGNED_APK" ]; then
+            echo "No unsigned APK found"
+            exit 1
+          fi
+          APK_DIR=$(dirname "$UNSIGNED_APK")
+
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+
+          ALIGNED_APK="$APK_DIR/app-universal-release-aligned.apk"
+          "${BUILD_TOOLS}zipalign" -v 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+
+          SIGNED_APK="$APK_DIR/y-app-desktop-release.apk"
+          "${BUILD_TOOLS}apksigner" sign \
+            --ks "$RUNNER_TEMP/y-app-release.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASS" \
+            --key-pass "pass:$KEYSTORE_PASS" \
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
+
+          "${BUILD_TOOLS}apksigner" verify --verbose "$SIGNED_APK"
+          echo "signed_apk=$SIGNED_APK" >> $GITHUB_OUTPUT
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/y-app-release.jks"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apk
+          path: packages/desktop/src-tauri/gen/android/**/y-app-desktop-release.apk
+          if-no-files-found: warn
+
+      - name: Upload APK to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          SIGNED_APK=$(find packages/desktop/src-tauri/gen/android -name "y-app-desktop-release.apk" -type f | head -1)
+          if [ -n "$SIGNED_APK" ]; then
+            gh release upload "$VERSION" "$SIGNED_APK" --clobber --repo "${{ github.repository }}"
+          fi
+
+  # ─── Step 4: Server bundle ───
+  build-server:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: |
+          cd packages/server
+          npm install --legacy-peer-deps
+          npm run build
+      - name: Upload server bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          for file in packages/server/dist/*.cjs packages/server/dist/*.js; do
+            [ -f "$file" ] && gh release upload "$VERSION" "$file" --clobber --repo "${{ github.repository }}" || true
+          done
+
+  # ─── Step 4b: Updater manifest (latest.json) — MUST run after Authenticode ───
+  # De Windows-installer wordt NA de tauri-action-upload opnieuw ondertekend met
+  # Authenticode ("Re-upload signed Windows installer"). De minisign-handtekening
+  # van de updater moet over dat DEFINITIEVE bestand gaan. Daarom bouwen we
+  # latest.json hier, ná build-desktop: we downloaden de uiteindelijke assets van
+  # de release, ondertekenen ze opnieuw met de updater-key, en publiceren één
+  # autoritatief latest.json. Race-vrij (één producer) en Authenticode-correct.
+  sign-updater:
+    needs: [create-release, build-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Tauri CLI (voor `tauri signer sign`)
+        run: npm install -g @tauri-apps/cli@^2
+
+      - name: Download definitieve installer-assets van de release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          mkdir -p dl
+          # Alleen de updater-doelen: NSIS setup.exe (system-variant),
+          # macOS .app.tar.gz, Linux .AppImage. De user-variant sluiten we in
+          # het node-script uit (die valt buiten de auto-updater).
+          gh release download "$VERSION" --repo "${{ github.repository }}" --dir dl \
+            --pattern "*-setup.exe" \
+            --pattern "*.app.tar.gz" \
+            --pattern "*.AppImage" || true
+          echo "--- gedownloade assets ---"
+          ls -la dl || true
+
+      - name: Onderteken de definitieve assets met de updater-key
+        id: sign
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            # Geen hard falen: zonder secret publiceert de release gewoon (zoals
+            # vóór de updater), alleen zonder latest.json — de in-app updater
+            # slaat deze release dan over. Zet het secret om updates te signen.
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY secret ontbreekt — updater-manifest (latest.json) wordt overgeslagen voor deze release."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          shopt -s nullglob
+          for f in dl/*-setup.exe dl/*.app.tar.gz dl/*.AppImage; do
+            case "$f" in
+              *_user-setup.exe) echo "skip user-variant: $f"; continue;;
+            esac
+            echo "signing: $f"
+            tauri signer sign -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
+          done
+          echo "--- .sig-bestanden ---"
+          ls -la dl/*.sig || true
+
+      - name: Bouw latest.json
+        if: steps.sign.outputs.signed == 'true'
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}" REPO="${{ github.repository }}" node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const tag = process.env.VERSION;                 // bv. v0.31.2
+          const version = tag.replace(/^v/, '');           // bv. 0.31.2
+          const base = `https://github.com/${process.env.REPO}/releases/download/${tag}/`;
+          const dir = 'dl';
+          const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+          const sig = (file) => fs.readFileSync(path.join(dir, file + '.sig'), 'utf8').trim();
+          const has = (file) => file && fs.existsSync(path.join(dir, file + '.sig'));
+          const platforms = {};
+
+          const win = files.find((f) => /-setup\.exe$/.test(f) && !/_user-setup\.exe$/.test(f));
+          if (has(win)) platforms['windows-x86_64'] = { signature: sig(win), url: base + win };
+
+          const mac = files.find((f) => /\.app\.tar\.gz$/.test(f));
+          if (has(mac)) {
+            const entry = { signature: sig(mac), url: base + mac };
+            platforms['darwin-x86_64'] = entry;   // universal build → beide arch-keys
+            platforms['darwin-aarch64'] = entry;
+          }
+
+          const lin = files.find((f) => /\.AppImage$/.test(f));
+          if (has(lin)) platforms['linux-x86_64'] = { signature: sig(lin), url: base + lin };
+
+          if (Object.keys(platforms).length === 0) {
+            console.error('Geen ondertekende updater-assets gevonden — latest.json zou leeg zijn.');
+            process.exit(1);
+          }
+
+          const manifest = {
+            version,
+            notes: `Y-app ${tag}. Zie de release-pagina voor de wijzigingen.`,
+            pub_date: new Date().toISOString(),
+            platforms,
+          };
+          fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2));
+          console.log(JSON.stringify(manifest, null, 2));
+          NODE
+
+      - name: Upload latest.json naar de release
+        if: steps.sign.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release upload "$VERSION" latest.json --clobber --repo "${{ github.repository }}"
+
+  # ─── Step 5: Publish release ───
+  publish-release:
+    needs: [create-release, build-desktop, build-android, build-server, sign-updater]
+    runs-on: ubuntu-latest
+    # Publiceer ALLEEN als álle builds + de updater-signing slaagden. Faalt er
+    # één, dan blijft de release een draft (onzichtbaar voor niet-maintainers)
+    # i.p.v. een stil gepubliceerde, half-lege release. Dit was bug 1
+    # (`if: always()`). NB: een ONTBREKEND signing-secret is géén failure —
+    # sign-updater slaat dan met een warning over en de release publiceert
+    # gewoon (alleen zonder latest.json).
+    if: >-
+      needs.build-desktop.result == 'success' &&
+      needs.build-android.result == 'success' &&
+      needs.build-server.result == 'success' &&
+      needs.sign-updater.result == 'success'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.version || github.ref_name }}
+      - name: Publish release
+        uses: actions/github-script@v8
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              draft: false,
+              prerelease: false
+            });

@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Minimale capabilities voor de Y-next Android-webview-wrapper.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}

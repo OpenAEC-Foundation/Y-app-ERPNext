@@ -1,0 +1,67 @@
+name: Debug Logs Pull
+
+# Triggers handmatig via GitHub UI. Haalt pm2-logs van de productie-VPS
+# en uploadt ze als workflow-artifact. Bedoeld om server-side errors te
+# diagnosticeren zonder dat we direct SSH-toegang nodig hebben.
+#
+# Gebruik: Actions → Debug Logs Pull → Run workflow → kies optioneel
+# een filter (bv. "[mail]" of "[getCredentials]"). Wacht ~30s, download
+# het artifact via "gh run download <run-id>".
+
+on:
+  workflow_dispatch:
+    inputs:
+      lines:
+        description: 'Aantal log-regels'
+        default: '1000'
+        required: false
+      filter:
+        description: 'Optionele grep-filter (bv. "[mail]" of "shared")'
+        default: ''
+        required: false
+
+jobs:
+  pull-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull pm2 logs
+        run: |
+          mkdir -p logs
+          LINES="${{ github.event.inputs.lines }}"
+          FILTER="${{ github.event.inputs.filter }}"
+
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "pm2 logs y-app --lines $LINES --nostream --err" \
+            > logs/pm2-err.log 2>&1 || true
+
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "pm2 logs y-app --lines $LINES --nostream --out" \
+            > logs/pm2-out.log 2>&1 || true
+
+          if [ -n "$FILTER" ]; then
+            grep -F "$FILTER" logs/pm2-err.log > logs/filtered-err.log 2>/dev/null || true
+            grep -F "$FILTER" logs/pm2-out.log > logs/filtered-out.log 2>/dev/null || true
+          fi
+
+          echo "=== pm2-err.log line count ==="
+          wc -l logs/pm2-err.log
+          echo "=== pm2-out.log line count ==="
+          wc -l logs/pm2-out.log
+          if [ -n "$FILTER" ]; then
+            echo "=== filtered-err.log line count ==="
+            wc -l logs/filtered-err.log 2>/dev/null || echo "0 (no matches)"
+          fi
+
+      - name: Upload logs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pm2-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7

@@ -1,0 +1,24 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Y-app Desktop",
+  "windows": ["main", "popout-*"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "shell:default",
+    "shell:allow-open",
+    "stronghold:default",
+    "deep-link:default",
+    "notification:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "args": true,
+          "name": "binaries/node",
+          "sidecar": true
+        }
+      ]
+    }
+  ]
+}

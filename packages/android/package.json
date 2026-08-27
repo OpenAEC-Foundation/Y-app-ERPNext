@@ -1,0 +1,8 @@
+{
+  "name": "@y-app/android",
+  "private": true,
+  "version": "0.1.0",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1"
+  }
+}

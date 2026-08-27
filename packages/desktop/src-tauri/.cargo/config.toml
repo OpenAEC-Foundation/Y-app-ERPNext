@@ -1,0 +1,8 @@
+# Tauri desktop build configuration
+
+[env]
+# Point libsodium-sys-stable to local pre-downloaded archives so that
+# cargo check/build works offline or in restricted network environments.
+# The sodium-dist/ directory contains the libsodium source and MSVC prebuilt
+# archives needed by tauri-plugin-stronghold's transitive dependency.
+SODIUM_DIST_DIR = { value = "sodium-dist", relative = true }

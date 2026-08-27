@@ -1,0 +1,9 @@
+{
+  "identifier": "android-only",
+  "description": "Capabilities that only apply on Android — biometric prompt for the vault unlock screen.",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": [
+    "biometric:default"
+  ]
+}

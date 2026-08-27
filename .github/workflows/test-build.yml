@@ -1,0 +1,105 @@
+name: Test Build (Windows)
+
+# Doel: een Windows-installer bouwen om desktop-fixes te TESTEN zonder een
+# publieke release. Géén tag, géén GitHub Release, géén versiebump, géén
+# /api/app-version-wijziging en dus géén update-melding voor gebruikers.
+# De installer verschijnt als workflow-artifact op de run-pagina; download 'm
+# daar, installeer lokaal en test. Pas als een build bewezen werkt draaien we
+# de echte release (deploy-server.yml + release.yml).
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: test-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  build-windows-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/desktop/src-tauri/target
+          key: windows-system-rust-${{ hashFiles('packages/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-system-rust-
+
+      - name: Install frontend dependencies (shared components)
+        run: |
+          cd packages/frontend
+          npm install --legacy-peer-deps
+
+      - name: Install desktop frontend dependencies
+        run: |
+          cd packages/desktop
+          npm install --legacy-peer-deps
+
+      - name: Set user install mode
+        shell: pwsh
+        run: |
+          $conf = Get-Content packages/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if (-not $conf.bundle.windows.nsis) {
+            $conf.bundle.windows | Add-Member -NotePropertyName nsis -NotePropertyValue @{}
+          }
+          $conf.bundle.windows.nsis.installMode = "currentUser"
+          $conf | ConvertTo-Json -Depth 10 | Set-Content packages/desktop/src-tauri/tauri.conf.json
+
+      - name: Purge stale NSIS installers from cached target dir
+        shell: pwsh
+        run: |
+          $NSIS_DIR = "packages/desktop/src-tauri/target/release/bundle/nsis"
+          if (Test-Path $NSIS_DIR) {
+            Get-ChildItem "$NSIS_DIR/*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force -Verbose
+          }
+
+      - name: Build Tauri app (no release upload)
+        uses: tauri-apps/tauri-action@action-v0.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: packages/desktop
+          tauriScript: npx tauri
+
+      - name: Authenticode sign Windows installer
+        uses: azure/trusted-signing-action@v1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          cache-dependencies: false
+          files-folder: ${{ github.workspace }}/packages/desktop/src-tauri/target/release/bundle/nsis
+          files-folder-filter: exe
+          files-folder-depth: 1
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload installer as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: y-app-windows-test-installer
+          path: packages/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

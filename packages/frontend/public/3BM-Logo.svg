@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 50" fill="none">
+  <!-- Background pill -->
+  <rect x="0" y="5" width="50" height="40" rx="8" fill="#45b6a8"/>
+  <!-- 3 in the pill -->
+  <text x="25" y="34" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="28" fill="white">3</text>
+  <!-- BM text -->
+  <text x="60" y="36" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="30" fill="white">BM</text>
+  <!-- Tagline -->
+  <text x="60" y="47" font-family="system-ui, -apple-system, sans-serif" font-weight="400" font-size="7" fill="#45b6a8" letter-spacing="2">BOUWTECHNIEK</text>
+</svg>
