@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invalidateCache } from "./erpnext.ts";
+import { resetSessionUserCache } from "./session.ts";
 import {
   listVirtualFolders,
   listMailboxMessages,
@@ -20,6 +21,7 @@ import {
   bulkMarkUnread,
   getConversation,
   getSignature,
+  resetSignatureCache,
   getQueueStatusFor,
   listCustomFolders,
   createCustomFolder,
@@ -565,15 +567,57 @@ test("hasEnabledEmailAccount: true bij 403 (geen leesrecht) — 'kan niet vastst
 });
 
 /*
- * De twee getSignature-tests staan bewust vóór de 404-test hieronder:
- * die markeert `Email Account` als ontbrekend DocType, en erpnext.ts houdt
- * dat voor de rest van het proces vast (geen netwerkcall meer, altijd een
- * lege lijst). Verplaatst naar achteren zouden ze stil op die cache lopen.
+ * De getSignature-tests staan bewust vóór de 404-test hieronder: die
+ * markeert `Email Account` als ontbrekend DocType, en erpnext.ts houdt dat
+ * voor de rest van het proces vast (geen netwerkcall meer, altijd een lege
+ * lijst). Verplaatst naar achteren zouden ze stil op die cache lopen.
  */
-test("getSignature: signature van het standaard uitgaande Email Account", async () => {
+/**
+ * `getSignature` onthoudt zijn antwoord voor de duur van de sessie en
+ * `session.ts` onthoudt de ingelogde user. Elke test hieronder moet dus met
+ * een schone lei beginnen, anders leest de tweede het antwoord van de eerste.
+ */
+async function resetSignatureState(): Promise<void> {
+  resetSignatureCache();
+  resetSessionUserCache();
   invalidateCache("Email Account");
+  invalidateCache("User");
   await settleFetchDedup();
+}
+
+test("getSignature: de eigen User.email_signature gaat vóór het Email Account", async () => {
+  await resetSignatureState();
   const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: { email_signature: "<p>Bjorn Fidder</p>" } } };
+    }
+    throw new Error(`Email Account had niet bevraagd mogen worden: ${url}`);
+  });
+  try {
+    assert.equal(await getSignature(), "<p>Bjorn Fidder</p>");
+    // Tweede aanroep komt uit de sessiecache — geen extra request.
+    const before = mock.calls.length;
+    assert.equal(await getSignature(), "<p>Bjorn Fidder</p>");
+    assert.equal(mock.calls.length, before);
+  } finally {
+    mock.restore();
+    await resetSignatureState();
+  }
+});
+
+test("getSignature: valt terug op het standaard uitgaande Email Account zonder eigen handtekening", async () => {
+  await resetSignatureState();
+  const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    // Lege `email_signature` op de eigen User → doorlopen naar Email Account.
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: { email_signature: "" } } };
+    }
     assert.ok(hasFilter(url, "default_outgoing", "=", 1));
     return rowsBody([{ name: "OpenAEC Mail", signature: "<p>Met vriendelijke groet</p>" }]);
   });
@@ -581,28 +625,53 @@ test("getSignature: signature van het standaard uitgaande Email Account", async 
     assert.equal(await getSignature(), "<p>Met vriendelijke groet</p>");
   } finally {
     mock.restore();
-    invalidateCache("Email Account");
+    await resetSignatureState();
+  }
+});
+
+test("getSignature: 403 op de eigen User is geen fout — de terugval blijft werken", async () => {
+  await resetSignatureState();
+  const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 403, body: { exception: "No permission" } };
+    }
+    return rowsBody([{ name: "OpenAEC Mail", signature: "<p>Groet</p>" }]);
+  });
+  try {
+    assert.equal(await getSignature(), "<p>Groet</p>");
+  } finally {
+    mock.restore();
+    await resetSignatureState();
   }
 });
 
 test("getSignature: lege string bij 403 en bij een account zonder handtekening", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
+  await resetSignatureState();
   const denied = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
   try {
     assert.equal(await getSignature(), "");
   } finally {
     denied.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
+    await resetSignatureState();
   }
 
-  const empty = installFetchMock(() => rowsBody([{ name: "OpenAEC Mail" }]));
+  const empty = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: {} } };
+    }
+    return rowsBody([{ name: "OpenAEC Mail" }]);
+  });
   try {
     assert.equal(await getSignature(), "");
   } finally {
     empty.restore();
-    invalidateCache("Email Account");
+    await resetSignatureState();
   }
 });
 

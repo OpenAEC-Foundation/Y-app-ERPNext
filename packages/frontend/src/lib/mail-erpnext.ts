@@ -46,6 +46,7 @@ import {
   ApiError,
   type FileInfo,
 } from "./erpnext.ts";
+import { resolveSessionUser } from "./session.ts";
 
 /** Een Communication zoals de Webmail-UI hem consumeert. */
 export interface ErpMailMessage {
@@ -882,22 +883,63 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
 }
 
 /**
- * De handtekening van het standaard uitgaande Email Account, als HTML.
+ * De handtekening van de ingelogde medewerker, als HTML.
+ *
+ * Twee bronnen, in deze volgorde:
+ *
+ * 1. **`User.email_signature`** van de eigen gebruiker. Dat is de persoonlijke
+ *    handtekening — naam, functie, eigen nummer — en dus wat er onder een mail
+ *    hoort te staan. `scripts/generate-signatures.mjs` vult dit veld voor
+ *    iedere medewerker uniform. Frappe staat elke gebruiker zijn eigen
+ *    User-doc toe te lezen, dus dit pad werkt zonder extra rechten.
+ * 2. **`Email Account.signature`** van het standaard uitgaande account, als
+ *    terugval voor gebruikers die (nog) geen eigen handtekening hebben.
  *
  * `Email Account` is geen breed leesbaar DocType: een gewone medewerker
- * krijgt hier een 403. Dat mag de compose-view niet breken — een mail zonder
+ * krijgt daar een 403. Dat mag de compose-view niet breken — een mail zonder
  * handtekening is prima, een compose-scherm dat niet opent niet. Elke fout
- * (403, ontbrekend doctype, netwerk) levert daarom een lege string op.
+ * (403, ontbrekend doctype, netwerk) levert daarom een lege string op, op
+ * beide niveaus.
+ *
+ * Het resultaat wordt voor de duur van de sessie onthouden: de handtekening
+ * verandert niet tussen twee compose-vensters door, en zonder cache zou elke
+ * Webmail-mount opnieuw twee requests doen. `resetSignatureCache()` wist hem
+ * (uitloggen, en het opruimpad in tests).
  */
+let cachedSignature: string | null = null;
+
+/** Vergeet de onthouden handtekening (uitloggen, en het opruimpad in tests). */
+export function resetSignatureCache(): void {
+  cachedSignature = null;
+}
+
 export async function getSignature(): Promise<string> {
+  if (cachedSignature !== null) return cachedSignature;
+
+  const user = await resolveSessionUser();
+  if (user) {
+    try {
+      const doc = await fetchDocument<{ email_signature?: string }>("User", user);
+      const own = toStr(doc?.email_signature);
+      if (own.trim()) {
+        cachedSignature = own;
+        return own;
+      }
+    } catch {
+      // Geen leesrecht of netwerkfout — val terug op het Email Account.
+    }
+  }
+
   try {
     const rows = await fetchList<{ signature?: string }>("Email Account", {
       fields: ["name", "signature"],
       filters: [["default_outgoing", "=", 1]],
       limit_page_length: 1,
     });
-    return toStr(rows[0]?.signature);
+    cachedSignature = toStr(rows[0]?.signature);
+    return cachedSignature;
   } catch {
+    cachedSignature = "";
     return "";
   }
 }
