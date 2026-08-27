@@ -135,6 +135,51 @@ export function appendSignature(html: string, signature: string): string {
 }
 
 /**
+ * De handtekening zoals hij voor **dit** bericht geldt.
+ *
+ * Het opstelvenster toont de handtekening live onder het typveld en heeft een
+ * schakelaar om hem voor één bericht weg te laten. Zowel die preview als het
+ * verzendpad leiden hun inhoud van deze functie af — één bron van waarheid,
+ * zodat wat de gebruiker ziet ook is wat er verstuurd wordt. Zonder deze
+ * gedeelde afleiding is de klassieke fout: preview uit, maar de verzendcode
+ * plakt hem alsnog aan (of andersom).
+ */
+export function effectiveSignature(signature: string, include: boolean): string {
+  if (!include) return "";
+  return (signature || "").trim();
+}
+
+export interface OutgoingHtmlInput {
+  /** Wat de gebruiker typte, al omgezet naar HTML. */
+  bodyHtml: string;
+  /** De volledige handtekening-HTML (leeg = de gebruiker heeft er geen). */
+  signature: string;
+  /** Staat de handtekening-schakelaar aan voor dit bericht? */
+  includeSignature: boolean;
+  /** Geciteerde originele mail (HTML); leeg bij een nieuw bericht. */
+  quoteHtml?: string;
+}
+
+/**
+ * De volledige HTML-body van een uitgaand bericht.
+ *
+ * Volgorde is die van elke mailclient: getypte tekst → handtekening → citaat.
+ * De handtekening gaat dus **boven** het citaat, niet helemaal onderaan, want
+ * anders staat hij bij een lange draad buiten beeld. `appendSignature` houdt
+ * het idempotent: een handtekening die al in de body staat komt er niet nog
+ * eens bij.
+ */
+export function buildOutgoingHtml(input: OutgoingHtmlInput): string {
+  const typed = appendSignature(
+    input.bodyHtml,
+    effectiveSignature(input.signature, input.includeSignature)
+  );
+  const quote = (input.quoteHtml || "").trim();
+  if (!quote) return typed;
+  return `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${quote}</blockquote>`;
+}
+
+/**
  * De bijlagen van een doorgestuurd bericht als leesbare opsomming.
  *
  * Doorsturen hangt de originele bestanden **niet** opnieuw aan: die staan als

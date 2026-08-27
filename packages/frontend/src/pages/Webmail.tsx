@@ -108,8 +108,8 @@ import {
   type ErpMailMessage, type ErpMailFolder, type ErpImapFolder,
 } from "../lib/mail-erpnext";
 import {
-  appendSignature, buildReplyRecipients, formatAttachmentNames,
-  isValidFolderLabel, prefixSubject,
+  buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
+  formatAttachmentNames, isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
 import { getFileUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
@@ -3768,6 +3768,11 @@ interface ErpDraft {
   quoteHtml: string;
   /** Leesbare "Op <datum> schreef <naam>"-regel bij het citaat. */
   quoteLabel: string;
+  /**
+   * Gaat de handtekening onder dít bericht mee? Standaard ja; het
+   * opstelvenster toont hem live en laat hem per bericht uitzetten.
+   */
+  includeSignature: boolean;
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
   files: MailAttachmentFile[];
@@ -4483,6 +4488,7 @@ function ErpNextWebmail() {
     setDraft({
       mode: "new", to: "", cc: "", bcc: "", subject: "", body: "",
       quoteHtml: "", quoteLabel: "",
+      includeSignature: true,
       reference: folderReference(),
       files: [],
     });
@@ -4508,6 +4514,7 @@ function ErpNextWebmail() {
       body: "",
       quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
       quoteLabel: label,
+      includeSignature: true,
       inReplyTo: msg.name,
       reference: msg.reference,
       files: [],
@@ -4538,6 +4545,7 @@ function ErpNextWebmail() {
       body: "",
       quoteHtml: `<p>${textBodyToHtml(label)}</p>${attachLine}${body?.html || ""}`,
       quoteLabel: label,
+      includeSignature: true,
       reference: msg.reference,
       files: [],
     });
@@ -4551,11 +4559,15 @@ function ErpNextWebmail() {
     setToast(t("webmail.message_sending"));
     // De handtekening zit niet in het tekstvak (dat is platte tekst, de
     // handtekening is HTML) maar wordt hier onder de getypte tekst gezet —
-    // vóór het citaat, zoals elke mailclient doet.
-    const typed = appendSignature(textBodyToHtml(draft.body), signature);
-    const html = draft.quoteHtml
-      ? `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${draft.quoteHtml}</blockquote>`
-      : typed;
+    // vóór het citaat, zoals elke mailclient doet. `buildOutgoingHtml` deelt
+    // zijn handtekening-afleiding met de preview in het opstelvenster, dus
+    // een uitgezette schakelaar betekent hier ook echt geen handtekening.
+    const html = buildOutgoingHtml({
+      bodyHtml: textBodyToHtml(draft.body),
+      signature,
+      includeSignature: draft.includeSignature,
+      quoteHtml: draft.quoteHtml,
+    });
     try {
       await sendMail({
         to: draft.to.trim(),
@@ -5109,7 +5121,7 @@ function ErpNextWebmail() {
               <ErpComposePane
                 draft={draft}
                 sending={sending}
-                hasSignature={Boolean(signature)}
+                signature={signature}
                 onChange={setDraft}
                 onSend={() => void handleSend()}
                 onClose={() => setDraft(null)}
@@ -5283,10 +5295,11 @@ function ErpNextWebmail() {
  * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
  * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
  */
-function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClose }: {
+function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }: {
   draft: ErpDraft;
   sending: boolean;
-  hasSignature: boolean;
+  /** Volledige handtekening-HTML; "" = de gebruiker heeft er geen. */
+  signature: string;
   onChange: (next: ErpDraft) => void;
   onSend: () => void;
   onClose: () => void;
@@ -5296,6 +5309,10 @@ function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClos
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
   const set = <K extends keyof ErpDraft>(key: K, value: ErpDraft[K]) => onChange({ ...draft, [key]: value });
+  // Dezelfde afleiding als het verzendpad: staat hier iets, dan gaat exact dat
+  // mee de deur uit. Leeg → geen preview én geen handtekening in de mail.
+  const previewSignature = effectiveSignature(signature, draft.includeSignature);
+  const hasSignature = Boolean((signature || "").trim());
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -5348,10 +5365,37 @@ function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClos
         placeholder={t("webmail.editor_placeholder")}
         className="flex-1 min-h-0 w-full px-4 py-3 text-sm text-slate-800 resize-none focus:outline-none" />
 
+      {/* Handtekening zoals hij verstuurd wordt — niet een belofte dat er
+          later iets aangeplakt wordt, maar de echte HTML, hier al zichtbaar.
+          Staat bewust boven het citaat: dat is ook de volgorde in de mail. */}
       {hasSignature && (
-        <p className="px-4 pb-1 text-[11px] text-slate-400 flex-shrink-0">
-          {t("y_next.mail_signature_appended")}
-        </p>
+        <div className="mx-4 mb-2 rounded border border-slate-200 bg-slate-50/70 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {t("y_next.mail_signature_label")}
+            </span>
+            <button type="button"
+              onClick={() => set("includeSignature", !draft.includeSignature)}
+              title={draft.includeSignature
+                ? t("y_next.mail_signature_toggle_off")
+                : t("y_next.mail_signature_toggle_on")}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-slate-200 hover:text-slate-600 cursor-pointer">
+              {draft.includeSignature ? <Eye size={12} /> : <EyeOff size={12} />}
+              {draft.includeSignature
+                ? t("y_next.mail_signature_toggle_off")
+                : t("y_next.mail_signature_toggle_on")}
+            </button>
+          </div>
+          {previewSignature ? (
+            <div
+              className="max-h-40 overflow-auto px-3 pb-2 text-sm text-slate-700 [&_img]:inline-block [&_img]:max-w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: previewSignature }} />
+          ) : (
+            <p className="px-3 pb-2 text-[11px] italic text-slate-400">
+              {t("y_next.mail_signature_omitted")}
+            </p>
+          )}
+        </div>
       )}
 
       {draft.quoteLabel && (
