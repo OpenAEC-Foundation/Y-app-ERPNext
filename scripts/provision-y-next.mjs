@@ -346,7 +346,98 @@ export const DEFAULT_NAMING_SERIES_DOCTYPES = [
   "Delivery Note",
   "Task",
   "Project",
+  // Y-next maakt deze twee rechtstreeks vanuit de webmail aan ("mail → lead"
+  // en "mail → offerteaanvraag"). Loopt hun teller achter op de bestaande
+  // documenten, dan is dat een permanente blokkade: Frappe telt de reeks niet
+  // op bij een mislukte insert, dus elke poging kiest hetzelfde bezette
+  // nummer. Precies wat ACC-PINV- eerder overkwam.
+  "Lead",
+  "Opportunity",
 ];
+
+/* ─────────────────────────── Stamgegevens ─────────────────────────────── */
+
+/**
+ * Stamrecords die Y-next verwacht maar die geen enkele ERPNext-installatie
+ * standaard meebrengt.
+ *
+ * Nu één: de **bron "Email"**. Y-next zet die op een lead of offerteaanvraag
+ * die uit een mail is ontstaan, zodat je in het CRM kunt zien waar het vandaan
+ * kwam. Twee dingen zijn hierbij niet vanzelfsprekend:
+ *
+ * - Het veld heet in ERPNext v16 `utm_source` en verwijst naar **UTM Source**;
+ *   `Lead Source` bestaat niet meer. De foutmelding praat wél nog over
+ *   "Source" ("Could not find Source: Email"), wat de zoektocht misleidt.
+ * - `UTM Source` heeft `autoname: prompt`, dus de `name` moet **expliciet** in
+ *   de payload. Zonder die sleutel faalt het aanmaken met "Please set the
+ *   document name" en niet met iets over de bron.
+ *
+ * De frontend werkt ook zónder dit record: `createLeadFromMail` laat het veld
+ * weg wanneer de bron ontbreekt. Deze fase is er om het CRM compleet te maken,
+ * niet om de functie te laten werken.
+ *
+ * @type {{ doctype: string, name: string, payload: object }[]}
+ */
+export const DEFAULT_MASTER_RECORDS = [
+  {
+    doctype: "UTM Source",
+    name: "Email",
+    payload: {
+      name: "Email",
+      source_name: "Email",
+      details: "Binnengekomen via e-mail (Y-next mailherkenning).",
+    },
+  },
+];
+
+/**
+ * Maakt de stamrecords aan die nog niet bestaan. Idempotent, en tolerant voor
+ * een installatie zonder de bijbehorende doctype (dan `skipped`) — een
+ * Frappe-only site zonder ERPNext-CRM hoort niet op deze stap te stranden.
+ *
+ * @returns {Promise<{ created: string[], existing: string[], skipped: string[] }>}
+ */
+export async function ensureMasterRecords({ baseUrl, token, records = DEFAULT_MASTER_RECORDS }) {
+  const authHeader = `token ${token}`;
+  const created = [];
+  const existing = [];
+  const skipped = [];
+
+  for (const record of records) {
+    const label = `${record.doctype} "${record.name}"`;
+    const base = `${baseUrl}/api/resource/${encodeURIComponent(record.doctype)}`;
+    const getRes = await safeFetch(`${base}/${encodeURIComponent(record.name)}`, {
+      headers: { Authorization: authHeader },
+    });
+    if (getRes.ok) {
+      console.log(`${label} bestaat al — overgeslagen [HTTP ${getRes.status}].`);
+      existing.push(label);
+      continue;
+    }
+    if (getRes.status !== 404) {
+      throw new Error(`Opzoeken ${label} mislukt: HTTP ${getRes.status}.`);
+    }
+    const postRes = await safeFetch(base, {
+      method: "POST",
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify(record.payload),
+    });
+    if (postRes.ok) {
+      console.log(`${label} aangemaakt [HTTP ${postRes.status}].`);
+      created.push(label);
+      continue;
+    }
+    // 404 op de POST betekent dat de doctype zelf ontbreekt; dat is geen fout
+    // maar een installatie zonder ERPNext-CRM.
+    if (postRes.status === 404) {
+      console.log(`${label} overgeslagen — doctype niet aanwezig [HTTP ${postRes.status}].`);
+      skipped.push(label);
+      continue;
+    }
+    throw new Error(`Aanmaken ${label} mislukt: HTTP ${postRes.status}.`);
+  }
+  return { created, existing, skipped };
+}
 
 /**
  * Vult een Frappe naming-series-sjabloon (bv. `"TS-.YYYY.-"`) in tot de
@@ -582,7 +673,7 @@ export async function ensureNamingSeries({ baseUrl, token, doctypes = DEFAULT_NA
  * rechten- of teller-regel kan over een net aangemaakte/gecontroleerde
  * doctype gaan.
  * @param {{ baseUrl: string, token: string }} params
- * @returns {Promise<{ created: string[], existing: string[], permissions: { added: string[], updated: string[], unchanged: string[] }, namingSeries: { updated: object[], unchanged: object[], skipped: object[] } }>}
+ * @returns {Promise<{ created: string[], existing: string[], permissions: { added: string[], updated: string[], unchanged: string[] }, masterRecords: { created: string[], existing: string[], skipped: string[] }, namingSeries: { updated: object[], unchanged: object[], skipped: object[] } }>}
  */
 export async function provision({ baseUrl, token }) {
   const definitions = [buildMeetingNoteDoctype(), buildSettingDoctype()];
@@ -594,18 +685,21 @@ export async function provision({ baseUrl, token }) {
     else existing.push(definition.name);
   }
   const permissions = await ensurePermissions({ baseUrl, token });
+  const masterRecords = await ensureMasterRecords({ baseUrl, token });
   const namingSeries = await ensureNamingSeries({ baseUrl, token });
-  return { created, existing, permissions, namingSeries };
+  return { created, existing, permissions, masterRecords, namingSeries };
 }
 
 async function main() {
   const { baseUrl, token } = requiredEnv(process.env);
   console.log(`Provisioning Y-next tegen ${baseUrl} ...`);
-  const { created, existing, permissions, namingSeries } = await provision({ baseUrl, token });
+  const { created, existing, permissions, masterRecords, namingSeries } = await provision({ baseUrl, token });
   console.log(
     `Klaar. Aangemaakt: ${created.join(", ") || "geen"}. Al aanwezig: ${existing.join(", ") || "geen"}. ` +
       `Rechten — rol-rijen toegevoegd: ${permissions.added.length}, gezet: ${permissions.updated.length}, ` +
       `ongewijzigd: ${permissions.unchanged.length}. ` +
+      `Stamgegevens — aangemaakt: ${masterRecords.created.length}, al aanwezig: ${masterRecords.existing.length}, ` +
+      `overgeslagen: ${masterRecords.skipped.length}. ` +
       `Naamreeksen — bijgewerkt: ${namingSeries.updated.length}, ongewijzigd: ${namingSeries.unchanged.length}, ` +
       `overgeslagen: ${namingSeries.skipped.length}.`
   );

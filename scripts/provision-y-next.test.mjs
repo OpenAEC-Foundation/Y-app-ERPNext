@@ -6,6 +6,8 @@ import {
   buildMeetingNoteDoctype,
   buildSettingDoctype,
   buildPermissionRules,
+  ensureMasterRecords,
+  DEFAULT_MASTER_RECORDS,
   ensurePermissions,
   provision,
   DEFAULT_NAMING_SERIES_DOCTYPES,
@@ -205,9 +207,17 @@ test("buildSettingDoctype: geen rol All (API weigert die), System Manager heeft 
   assert.equal(byRole["Projects User"].delete, 0);
 });
 
+/** Elke call van de stamgegevens-fase (`ensureMasterRecords`). */
+const isMasterUrl = (url) => DEFAULT_MASTER_RECORDS.some(
+  (r) => url.includes(`/api/resource/${encodeURIComponent(r.doctype)}`)
+);
+/** Doet alsof het stamrecord er al is, zodat de fase geen POST doet. */
+const satisfiedMasterHandler = () => ({ status: 200, body: { data: { name: "Email" } } });
+
 test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async () => {
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) return satisfiedPermsHandler(url);
+    if (isMasterUrl(url)) return satisfiedMasterHandler();
     if (/\/api\/resource\/DocType\//.test(url)) {
       return { status: 200, body: { data: { name: "existing" } } };
     }
@@ -229,6 +239,7 @@ test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async ()
 test("provision: maakt een DocType aan wanneer GET 404 geeft", async () => {
   const mock = installFetchMock((url, init) => {
     if (isPermUrl(url)) return satisfiedPermsHandler(url);
+    if (isMasterUrl(url)) return satisfiedMasterHandler();
     if (/\/api\/resource\/DocType\//.test(url) && (!init || init.method === undefined)) {
       return { status: 404, body: { exc_type: "DoesNotExistError" } };
     }
@@ -300,6 +311,7 @@ test("provision: gooit een fout bij een onverwachte GET-status (niet 200/404)", 
 test("provision: verstuurt de Authorization-header met token-prefix, maar logt nooit het token", async () => {
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) return satisfiedPermsHandler(url);
+    if (isMasterUrl(url)) return satisfiedMasterHandler();
     if (/\/api\/resource\/DocType\//.test(url)) {
       return { status: 200, body: { data: { name: "existing" } } };
     }
@@ -318,6 +330,78 @@ test("provision: verstuurt de Authorization-header met token-prefix, maar logt n
     mock.restore();
     logSpy.restore();
   }
+});
+
+/* ─────────────────────── Stamgegevens (ensureMasterRecords) ────────────────────── */
+
+test("DEFAULT_MASTER_RECORDS: de bron Email draagt een expliciete name (UTM Source = autoname prompt)", () => {
+  const email = DEFAULT_MASTER_RECORDS.find((r) => r.doctype === "UTM Source" && r.name === "Email");
+  assert.ok(email, "de bron Email hoort in de stamgegevens te staan");
+  // Zonder `name` in de payload faalt de insert met "Please set the document name".
+  assert.equal(email.payload.name, "Email");
+  assert.equal(email.payload.source_name, "Email");
+});
+
+test("ensureMasterRecords: bestaand record levert geen POST op", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "Email" } } }));
+  try {
+    const result = await ensureMasterRecords({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
+    assert.deepEqual(result.created, []);
+    assert.equal(result.existing.length, DEFAULT_MASTER_RECORDS.length);
+    assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureMasterRecords: ontbrekend record wordt aangemaakt met de volledige payload", async () => {
+  const mock = installFetchMock((url, init) => {
+    if (!init || init.method === undefined) return { status: 404, body: { exc_type: "DoesNotExistError" } };
+    if (init.method === "POST") return { status: 200, body: { data: { name: "Email" } } };
+    throw new Error(`Onverwachte call: ${init.method} ${url}`);
+  });
+  try {
+    const result = await ensureMasterRecords({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
+    assert.equal(result.created.length, DEFAULT_MASTER_RECORDS.length);
+    assert.deepEqual(result.existing, []);
+    const post = mock.calls.find((c) => c.init?.method === "POST");
+    assert.deepEqual(JSON.parse(post.init.body), DEFAULT_MASTER_RECORDS[0].payload);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureMasterRecords: een site zonder die doctype wordt overgeslagen, niet afgebroken", async () => {
+  // Een Frappe-only installatie zonder ERPNext-CRM heeft geen UTM Source. De
+  // frontend laat het bronveld dan gewoon weg; provisioning hoort daar niet op
+  // te stranden.
+  const mock = installFetchMock(() => ({ status: 404, body: { exc_type: "DoesNotExistError" } }));
+  try {
+    const result = await ensureMasterRecords({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
+    assert.deepEqual(result.created, []);
+    assert.equal(result.skipped.length, DEFAULT_MASTER_RECORDS.length);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureMasterRecords: een onverwachte status gooit met de status erin", async () => {
+  const mock = installFetchMock(() => ({ status: 500, body: { exc: "boom" } }));
+  try {
+    await assert.rejects(
+      () => ensureMasterRecords({ baseUrl: "https://example.frappe.cloud", token: "key:secret" }),
+      /500/
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test("DEFAULT_NAMING_SERIES_DOCTYPES: Lead en Opportunity horen erbij", () => {
+  // Y-next maakt die twee vanuit de webmail aan; een achterlopende teller is
+  // daar een permanente blokkade (Frappe telt niet op bij een mislukte insert).
+  assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes("Lead"));
+  assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes("Opportunity"));
 });
 
 /* ────────────────────────── Rechten (ensurePermissions) ────────────────────────── */

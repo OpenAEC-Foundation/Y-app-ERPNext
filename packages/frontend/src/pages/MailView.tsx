@@ -18,7 +18,7 @@ import {
   Reply, ReplyAll, Forward, Paperclip, Loader2,
   Trash2, FolderKanban, ChevronDown, ExternalLink, Zap,
   X, Send, RefreshCw, Bold, Italic, Underline,
-  CheckSquare, FileBarChart, Receipt, User, Plus, Check,
+  CheckSquare, FileBarChart, Receipt, User, Plus, Check, UserPlus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
@@ -35,14 +35,19 @@ import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import CreateLeadDialog from "../components/CreateLeadDialog";
+import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
+import type { BookingResult } from "../lib/purchase-invoice";
 import {
-  detectPurchaseInvoice, plainTextFromHtml,
-  type SupplierHint,
-} from "../lib/invoice-detect";
+  classifyMailIntent, classifySender,
+  type MailIntentContext,
+} from "../lib/mail-intent";
+import { fetchMailIntentContext } from "../lib/lead";
 import {
-  dismissInvoiceSuggestion, fetchSupplierHints, readDismissedInvoiceSuggestions,
-  type BookingResult,
-} from "../lib/purchase-invoice";
+  dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
+} from "../lib/mail-suggestions";
+import { suggestProject, type ProjectHint, type ProjectSuggestion } from "../lib/project-suggest";
+import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
 
 interface MailAddress {
   name: string;
@@ -1213,39 +1218,115 @@ function ErpNextMailView({ name }: { name: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState(500);
 
-  /* ─── Inkoopfactuur-herkenning (zelfde flow als in de webmail) ─── */
-  const [supplierHints, setSupplierHints] = useState<SupplierHint[]>([]);
-  const [dismissed, setDismissed] = useState(() => readDismissedInvoiceSuggestions());
+  /* ─── Mailherkenning (zelfde flow en dezelfde modules als de webmail) ─── */
+  const [intentCtx, setIntentCtx] = useState<MailIntentContext>(
+    () => ({ suppliers: [], customers: [] }),
+  );
+  const [dismissed, setDismissed] = useState(() => readDismissedMailSuggestions());
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [leadOpen, setLeadOpen] = useState(false);
   const [booked, setBooked] = useState<BookingResult | null>(null);
-  /** Lokale spiegel van de koppeling, zodat de chip meteen bijwerkt. */
-  const [invoiceRef, setInvoiceRef] = useState("");
+  const [created, setCreated] = useState<{ doctype: "Lead" | "Opportunity"; result: BookingResult } | null>(null);
+  /**
+   * Lokale spiegel van de koppeling, zodat de chip meteen bijwerkt zonder de
+   * hele Communication opnieuw op te halen.
+   */
+  const [localRef, setLocalRef] = useState<{ doctype: string; name: string } | null>(null);
+
+  /* ─── Projectsuggestie ─── */
+  const [projectHints, setProjectHints] = useState<ProjectHint[]>([]);
+  /** Het adres gaat mee in de state — zie de toelichting in `Webmail.tsx`. */
+  const [senderHistory, setSenderHistory] = useState<{ sender: string; projects: string[] }>(
+    () => ({ sender: "", projects: [] }),
+  );
+  const [projectError, setProjectError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    fetchSupplierHints()
-      .then((rows) => { if (!cancelled) setSupplierHints(rows); })
+    fetchMailIntentContext()
+      .then((ctx) => { if (!cancelled) setIntentCtx(ctx); })
       .catch(() => { /* herkenning uit; de lezer werkt gewoon verder */ });
+    fetchProjectHints()
+      .then((rows) => { if (!cancelled) setProjectHints(rows); })
+      .catch(() => { /* geen projectsuggestie in de popout */ });
     return () => { cancelled = true; };
   }, []);
 
-  const linkedInvoice = invoiceRef
-    || (doc?.reference_doctype === "Purchase Invoice" ? doc.reference_name || "" : "");
+  const sender = doc?.sender || "";
+  useEffect(() => {
+    if (!sender) return;
+    let cancelled = false;
+    fetchSenderProjectHistory(sender)
+      .then((rows) => { if (!cancelled) setSenderHistory({ sender, projects: rows }); })
+      .catch(() => { /* signaal valt weg; de andere blijven */ });
+    return () => { cancelled = true; };
+  }, [sender]);
 
-  const invoiceGuess = useMemo(() => {
-    if (!doc || supplierHints.length === 0 || linkedInvoice) return null;
-    if (dismissed.has(name)) return null;
-    const guess = detectPurchaseInvoice({
+  // Gememoiseerd — zie de toelichting bij dezelfde regel in `Webmail.tsx`.
+  const senderProjects = useMemo(
+    () => (senderHistory.sender === sender ? senderHistory.projects : []),
+    [senderHistory, sender],
+  );
+
+  const reference = useMemo(
+    () => localRef
+      ?? (doc?.reference_doctype && doc.reference_name
+        ? { doctype: doc.reference_doctype, name: doc.reference_name }
+        : null),
+    [localRef, doc],
+  );
+  const linkedInvoice = reference?.doctype === "Purchase Invoice" ? reference.name : "";
+  const linkedLead = reference && (reference.doctype === "Lead" || reference.doctype === "Opportunity")
+    ? reference
+    : null;
+
+  const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
+
+  const intent = useMemo(() => {
+    if (!doc || !herkenningAan) return null;
+    const guess = classifyMailIntent({
       subject: doc.subject || "",
       sender: doc.sender || "",
+      senderName: doc.sender_full_name || "",
       attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
       hasAttachment: Boolean(doc.has_attachment),
       bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
       mailDate: doc.communication_date,
       direction: doc.sent_or_received === "Sent" ? "sent" : "received",
-    }, supplierHints);
-    return guess.isLikely ? guess : null;
-  }, [doc, body, supplierHints, dismissed, linkedInvoice, name]);
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+    }, intentCtx);
+    if (guess.kind === "none") return null;
+    if (isMailSuggestionDismissed(dismissed, name, guess.kind)) return null;
+    return guess;
+  }, [doc, body, intentCtx, dismissed, reference, name, herkenningAan]);
+
+  const projectSuggestion: ProjectSuggestion | null = useMemo(() => {
+    if (!doc || projectHints.length === 0) return null;
+    if (isMailSuggestionDismissed(dismissed, name, "project")) return null;
+    const facts = classifySender(doc.sender || "", intentCtx);
+    return suggestProject({
+      subject: doc.subject || "",
+      sender: doc.sender || "",
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      senderProjects,
+      ...(facts.customer ? { senderCustomer: facts.customer } : {}),
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+      intentKind: intent?.kind ?? "none",
+    }, projectHints);
+  }, [doc, body, projectHints, senderProjects, intentCtx, dismissed, reference, intent, name]);
+
+  async function handleLinkProject(project: string) {
+    setProjectError("");
+    setLocalRef({ doctype: "Project", name: project });
+    try {
+      await linkMailToProject(name, project, doc?.sender);
+    } catch {
+      setLocalRef(null);
+      setProjectError(t("y_next.proj_suggest_failed"));
+    }
+  }
 
   useEffect(() => {
     if (!name) return;
@@ -1330,10 +1411,18 @@ function ErpNextMailView({ name }: { name: string }) {
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {doc?.reference_doctype === "Project" && doc.reference_name && (
+            {reference?.doctype === "Project" && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-                <FolderKanban size={11} /> {doc.reference_name}
+                <FolderKanban size={11} /> {reference.name}
               </span>
+            )}
+            {linkedLead && (
+              <a href={`${getErpNextLinkUrl()}/${linkedLead.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(linkedLead.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
+                <UserPlus size={11} /> {linkedLead.name}
+                <ExternalLink size={9} />
+              </a>
             )}
             {linkedInvoice && (
               <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(linkedInvoice)}`}
@@ -1346,16 +1435,16 @@ function ErpNextMailView({ name }: { name: string }) {
           </div>
         </div>
 
-        {invoiceGuess && (
+        {intent?.kind === "purchase-invoice" && (
           <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-6 py-2">
             <Receipt size={14} className="flex-shrink-0 text-amber-600" />
             <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
             <span
-              title={invoiceGuess.reasons
+              title={intent.reasons
                 .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
                 .join(" · ")}
               className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-              {t(`y_next.pinv_confidence_${invoiceGuess.confidence}`)}
+              {t(`y_next.pinv_confidence_${intent.confidence}`)}
             </span>
             <div className="flex-1" />
             <button onClick={() => setBookingOpen(true)}
@@ -1363,10 +1452,95 @@ function ErpNextMailView({ name }: { name: string }) {
               <Receipt size={11} /> {t("y_next.pinv_book")}
             </button>
             <button
-              onClick={() => { dismissInvoiceSuggestion(name); setDismissed(readDismissedInvoiceSuggestions()); }}
+              onClick={() => { dismissMailSuggestion(name, "purchase-invoice"); setDismissed(readDismissedMailSuggestions()); }}
               className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
               {t("y_next.pinv_dismiss")}
             </button>
+          </div>
+        )}
+
+        {(intent?.kind === "lead" || intent?.kind === "quote-request") && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-6 py-2">
+            <UserPlus size={14} className="flex-shrink-0 text-violet-600" />
+            <span className="text-xs font-medium text-violet-900">
+              {t(intent.kind === "quote-request" ? "y_next.quote_banner" : "y_next.lead_banner")}
+            </span>
+            <span
+              title={intent.reasons
+                .map((r) => t(`y_next.intent_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+              {t(`y_next.lead_confidence_${intent.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => setLeadOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700">
+              <UserPlus size={11} />
+              {t(intent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
+            </button>
+            <button
+              onClick={() => {
+                dismissMailSuggestion(name, intent.kind === "quote-request" ? "quote-request" : "lead");
+                setDismissed(readDismissedMailSuggestions());
+              }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-violet-800 hover:bg-violet-100">
+              {t("y_next.lead_dismiss")}
+            </button>
+          </div>
+        )}
+
+        {/* Projectsuggestie. De popout kent geen conversatie, dus hij leunt op
+            het projectnummer/de projectnaam in de mail, de historie van de
+            afzender en (als versterking) de klant. */}
+        {projectSuggestion && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-6 py-2">
+            <FolderKanban size={14} className="flex-shrink-0 text-emerald-600" />
+            <span className="text-xs text-emerald-900">
+              {t("y_next.proj_suggest_banner", {
+                project: projectHints.find((p) => p.name === projectSuggestion.project)?.projectName
+                  ?? projectSuggestion.project,
+              })}
+            </span>
+            <span
+              title={projectSuggestion.reasons
+                .map((r) => t(`y_next.proj_suggest_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+              {t(`y_next.proj_suggest_confidence_${projectSuggestion.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => void handleLinkProject(projectSuggestion.project)}
+              className="flex cursor-pointer items-center gap-1.5 rounded bg-emerald-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-emerald-700">
+              <FolderKanban size={11} /> {t("y_next.proj_suggest_link")}
+            </button>
+            <button
+              onClick={() => { dismissMailSuggestion(name, "project"); setDismissed(readDismissedMailSuggestions()); }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+              {t("y_next.proj_suggest_dismiss")}
+            </button>
+          </div>
+        )}
+        {projectError && <p className="border-b border-red-100 bg-red-50 px-6 py-2 text-[11px] text-red-700">{projectError}</p>}
+
+        {created && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t(created.doctype === "Opportunity" ? "y_next.lead_quote_created_ok" : "y_next.lead_created_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/${created.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(created.result.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {created.result.name}
+              </a>
+              {created.result.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.lead_attachments_failed", { names: created.result.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {created.result.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -1414,24 +1588,41 @@ function ErpNextMailView({ name }: { name: string }) {
         )}
       </div>
 
-      {bookingOpen && doc && invoiceGuess && (
+      {bookingOpen && doc && intent?.kind === "purchase-invoice" && intent.invoice && (
         <BookPurchaseInvoiceDialog
           message={{
             name,
             subject: doc.subject || "",
             sender: doc.sender || "",
             date: doc.communication_date || "",
-            ...(doc.reference_doctype === "Project" && doc.reference_name
-              ? { project: doc.reference_name }
-              : {}),
+            ...(reference?.doctype === "Project" ? { project: reference.name } : {}),
           }}
-          guess={invoiceGuess}
-          suppliers={supplierHints}
+          guess={intent.invoice}
+          suppliers={intentCtx.suppliers as SupplierHint[]}
           onClose={() => setBookingOpen(false)}
           onBooked={(result) => {
             setBookingOpen(false);
             setBooked(result);
-            if (!result.linkFailed) setInvoiceRef(result.name);
+            if (!result.linkFailed) setLocalRef({ doctype: "Purchase Invoice", name: result.name });
+          }}
+        />
+      )}
+
+      {leadOpen && doc && (intent?.kind === "lead" || intent?.kind === "quote-request") && (
+        <CreateLeadDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+          }}
+          intent={intent}
+          customers={intentCtx.customers}
+          onClose={() => setLeadOpen(false)}
+          onCreated={(doctype, result) => {
+            setLeadOpen(false);
+            setCreated({ doctype, result });
+            if (!result.linkFailed) setLocalRef({ doctype, name: result.name });
           }}
         />
       )}

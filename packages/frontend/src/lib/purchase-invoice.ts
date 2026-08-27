@@ -6,25 +6,10 @@
  * ERPNext: leveranciers en rekeningen ophalen, standaardwaarden onthouden, en
  * de daadwerkelijke boeking uitvoeren.
  *
- * De boeking bestaat uit drie stappen die bewust **niet** één transactie zijn,
- * omdat ERPNext ze niet als één transactie aanbiedt:
- *
- *   1. de concept-inkoopfactuur aanmaken (`Purchase Invoice`, docstatus 0);
- *   2. de PDF('s) van de mail aan die factuur hangen;
- *   3. de mail aan de factuur koppelen (`Communication.reference_*`).
- *
- * Alleen stap 1 mag de hele actie laten mislukken. Stap 2 en 3 zijn
- * verrijkingen: is de factuur er eenmaal, dan is "de bijlage hing er niet aan"
- * een mededeling en geen reden om de gebruiker te laten denken dat er niets
- * gebeurd is (waarna hij het nog eens probeert en een dubbele factuur maakt).
- * `BookingResult` draagt de deelfouten daarom apart mee.
- *
- * **De bijlage wordt niet opnieuw geüpload.** Het bestand staat al als `File`
- * op de Communication; er komt een tweede `File`-rij bij die naar dezelfde
- * `file_url` wijst. Live geverifieerd op de doelinstance: de koppeling werkt,
- * en het verwijderen van die tweede rij laat het fysieke bestand én de
- * oorspronkelijke koppeling ongemoeid. Opnieuw uploaden zou een tweede kopie
- * van elke factuur-PDF op de schijf zetten.
+ * De boeking zelf (aanmaken + bijlagen + mail koppelen) staat in
+ * `communication-link.ts`: die drie stappen zijn identiek voor elk document dat
+ * Y-next vanuit een mail aanmaakt, en horen dus niet per doctype herhaald te
+ * worden. Wat hier blijft, is alles wat *specifiek* aan een inkoopfactuur is.
  */
 
 import {
@@ -34,7 +19,17 @@ import {
   fetchList,
   updateDocument,
 } from "./erpnext.ts";
+import {
+  createDocumentFromMail,
+  type MailAttachmentRef,
+  type MailDocumentResult,
+} from "./communication-link.ts";
 import type { SupplierHint } from "./invoice-detect.ts";
+import {
+  dismissMailSuggestion,
+  isMailSuggestionDismissed,
+  readDismissedMailSuggestions,
+} from "./mail-suggestions.ts";
 import {
   buildPurchaseInvoicePayload,
   type PurchaseInvoiceInput,
@@ -268,158 +263,63 @@ export async function savePurchaseInvoiceDefaults(
 
 /* ─────────────────────────────── Boeken ──────────────────────────────── */
 
-export interface BookingAttachment {
-  /** File-docname van de bijlage op de Communication (alleen ter herkenning). */
-  name: string;
-  fileName: string;
-  fileUrl: string;
-  isPrivate: boolean;
-}
+/** @deprecated Gebruik `MailAttachmentRef`; blijft staan als bekende naam. */
+export type BookingAttachment = MailAttachmentRef;
 
-export interface BookingResult {
-  /** Docname van de aangemaakte concept-inkoopfactuur. */
-  name: string;
-  /** Bijlagen die niet gekoppeld konden worden (de factuur bestaat wél). */
-  failedAttachments: string[];
-  /** `true` als de mail niet aan de factuur gekoppeld kon worden. */
-  linkFailed: boolean;
-}
+/** @deprecated Gebruik `MailDocumentResult`; blijft staan als bekende naam. */
+export type BookingResult = MailDocumentResult;
 
 /**
  * Maak de concept-inkoopfactuur, hang de gekozen bijlagen eraan en koppel de
- * mail. Gooit alleen wanneer stap 1 mislukt — zie de moduletoelichting.
+ * mail. Gooit alleen wanneer het aanmaken zelf mislukt — zie
+ * `createDocumentFromMail`.
  */
-export async function bookPurchaseInvoiceFromMail(args: {
+export function bookPurchaseInvoiceFromMail(args: {
   input: PurchaseInvoiceInput;
   /** Communication-docname van de mail. */
   communication: string;
   attachments: BookingAttachment[];
 }): Promise<BookingResult> {
-  const created = await createDocument<{ name: string }>(
-    "Purchase Invoice",
-    buildPurchaseInvoicePayload(args.input),
-  );
-  const name = created?.name;
-  if (!name) throw new Error("ERPNext gaf geen factuurnummer terug");
-
-  const failedAttachments: string[] = [];
-  for (const att of args.attachments) {
-    try {
-      await createDocument("File", {
-        file_url: att.fileUrl,
-        file_name: att.fileName,
-        is_private: att.isPrivate ? 1 : 0,
-        attached_to_doctype: "Purchase Invoice",
-        attached_to_name: name,
-      });
-    } catch {
-      failedAttachments.push(att.fileName);
-    }
-  }
-
-  let linkFailed = false;
-  try {
-    await linkCommunicationToInvoice(args.communication, name);
-  } catch {
-    linkFailed = true;
-  }
-
-  return { name, failedAttachments, linkFailed };
-}
-
-interface CommunicationLinkRow {
-  link_doctype?: string;
-  link_name?: string;
-}
-
-/**
- * Hang de mail aan de factuur, op de twee manieren die ERPNext's
- * desk-tijdlijn kent.
- *
- * Live geverifieerd op de doelinstance: `frappe.desk.form.load.get_docinfo`
- * op de nieuwe factuur toont de mail **al** bij alleen `reference_doctype` +
- * `reference_name`, en óók bij alleen een `timeline_links`-rij. Ze werken dus
- * onafhankelijk van elkaar — vandaar dat de child-tabel-update hieronder
- * best-effort is en de PUT hierboven leidend.
- *
- * Toch worden ze allebei gezet, want ze doen niet hetzelfde:
- * `reference_*` is **enkelvoudig** (een Communication hangt aan één document),
- * dus zodra de mail later aan een project wordt gekoppeld, verdwijnt de
- * factuurverwijzing weer. `timeline_links` is een lijst en overleeft dat.
- *
- * **De bestaande rijen moeten mee.** Frappe vervangt een child-tabel volledig
- * bij een PUT; de Communications in deze mailbox dragen al `Contact`-rijen
- * (die ERPNext zelf bij het binnenhalen zet). Alleen de nieuwe rij sturen zou
- * die stilzwijgend wissen — vandaar eerst lezen, dan aanvullen.
- */
-async function linkCommunicationToInvoice(communication: string, invoice: string): Promise<void> {
-  await updateDocument("Communication", communication, {
-    reference_doctype: "Purchase Invoice",
-    reference_name: invoice,
-    // Frappe's eigen aanduiding voor "hangt aan een document"; hij kleurt de
-    // rij in de desk-lijst. Raakt `email_status` (Open/Spam/Trash) niet, dus
-    // de Prullenbak-logica van de webmail blijft ongemoeid.
-    status: "Linked",
+  return createDocumentFromMail({
+    doctype: "Purchase Invoice",
+    payload: buildPurchaseInvoicePayload(args.input),
+    communication: args.communication,
+    attachments: args.attachments,
   });
-  try {
-    const doc = await fetchDocument<{ timeline_links?: CommunicationLinkRow[] }>(
-      "Communication", communication,
-    );
-    const existing = doc.timeline_links ?? [];
-    if (existing.some((l) => l.link_doctype === "Purchase Invoice" && l.link_name === invoice)) return;
-    await updateDocument("Communication", communication, {
-      timeline_links: [
-        ...existing.map((l) => ({ link_doctype: l.link_doctype, link_name: l.link_name })),
-        { link_doctype: "Purchase Invoice", link_name: invoice },
-      ],
-    });
-  } catch {
-    // De tijdlijn werkt al via `reference_*`; dit was de duurzame extra.
-  }
 }
 
 /* ──────────────────────── "Nee, geen factuur" ────────────────────────── */
 
-const DISMISS_KEY = "y_next_not_purchase_invoice";
-/** Zoveel afwijzingen worden onthouden; daarna valt de oudste eruit. */
-const DISMISS_CAP = 500;
-
 /**
- * Onthoud dat een mail géén inkoopfactuur is.
- *
- * Bewust **localStorage** en niet het tag-mechanisme of `Y Next Setting`. Een
- * tag zou als zichtbare mailmap in de mappenlijst opduiken (zie
- * `MAIL_TAG_NAME_PREFIX` in `mail-erpnext.ts`), en `Y Next Setting` is
- * System-Manager-only voor schrijven — dan zou "Nee, geen factuur" voor een
- * gewone medewerker een 403 opleveren en dus niets doen. Prijs: de afwijzing
- * geldt per apparaat. Dat is acceptabel omdat het effect klein en omkeerbaar
- * is (het labeltje verschijnt elders opnieuw), terwijl een knop die niets doet
- * dat niet is.
- *
- * De *positieve* kant heeft deze opslag niet nodig: een geboekte mail draagt
- * `reference_doctype = "Purchase Invoice"` en is daarmee server-side, voor
- * iedereen, als afgehandeld herkenbaar.
+ * Onthoud dat een mail géén inkoopfactuur is. De opslag zelf (en het waarom
+ * van localStorage) staat in `mail-suggestions.ts`, die dezelfde afwijzing ook
+ * voor leads, offerteaanvragen en projectsuggesties bijhoudt. Deze twee
+ * functies blijven bestaan omdat ze de bekende namen zijn op de aanroepplekken.
  */
 export function dismissInvoiceSuggestion(communication: string): void {
-  try {
-    const list = readDismissed().filter((n) => n !== communication);
-    list.push(communication);
-    localStorage.setItem(DISMISS_KEY, JSON.stringify(list.slice(-DISMISS_CAP)));
-  } catch { /* quota — dan komt de suggestie terug, meer niet */ }
+  dismissMailSuggestion(communication, "purchase-invoice");
 }
 
+/**
+ * De weggeklikte inkoopfactuur-voorstellen als set van Communication-docnames,
+ * zodat bestaande aanroepers `set.has(name)` kunnen blijven doen.
+ */
 export function readDismissedInvoiceSuggestions(): Set<string> {
-  return new Set(readDismissed());
+  const all = readDismissedMailSuggestions();
+  const out = new Set<string>();
+  for (const entry of all) {
+    const [kind, ...rest] = entry.split("::");
+    const name = rest.join("::");
+    if (kind === "purchase-invoice" && name) out.add(name);
+  }
+  // Defensief: `isMailSuggestionDismissed` is de gezaghebbende test; dit is
+  // alleen de platgeslagen vorm ervan voor de bestaande aanroepers.
+  return out;
 }
 
-function readDismissed(): string[] {
-  try {
-    const raw = localStorage.getItem(DISMISS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
+/** Directe variant voor code die de gedeelde set al in handen heeft. */
+export function isInvoiceSuggestionDismissed(dismissed: Set<string>, communication: string): boolean {
+  return isMailSuggestionDismissed(dismissed, communication, "purchase-invoice");
 }
 
 /* ─────────────────────────── Foutvertaling ───────────────────────────── */

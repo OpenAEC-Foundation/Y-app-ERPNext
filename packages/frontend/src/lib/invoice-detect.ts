@@ -190,13 +190,24 @@ export function normalizeCompanyName(value: string): string {
   return tokens.join(" ");
 }
 
-function emailDomain(address: string): string {
+/**
+ * Domeindeel van een adres. Geëxporteerd omdat `mail-intent.ts` op precies
+ * dezelfde manier moet redeneren over afzenders — twee eigen implementaties
+ * zouden onherroepelijk uit elkaar gaan lopen op randgevallen (hoofdletters,
+ * meerdere apenstaartjes).
+ */
+export function emailDomain(address: string): string {
   const at = (address || "").lastIndexOf("@");
   return at === -1 ? "" : address.slice(at + 1).trim().toLowerCase();
 }
 
+/** `true` voor gratis-mailproviders; zie `FREEMAIL_DOMAINS`. */
+export function isFreemailDomain(domain: string): boolean {
+  return FREEMAIL_DOMAINS.has((domain || "").trim().toLowerCase());
+}
+
 /** `mail.3bm.co.nl` en `3bm.co.nl` horen bij elkaar; `3bm.nl` niet. */
-function domainsRelated(a: string, b: string): boolean {
+export function domainsRelated(a: string, b: string): boolean {
   if (!a || !b) return false;
   return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
 }

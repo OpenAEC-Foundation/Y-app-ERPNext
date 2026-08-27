@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
-  RotateCcw, Server, ReceiptText,
+  RotateCcw, Server, ReceiptText, UserPlus,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -122,14 +122,19 @@ import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import CreateLeadDialog from "../components/CreateLeadDialog";
+import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
+import type { BookingResult } from "../lib/purchase-invoice";
 import {
-  detectPurchaseInvoice, plainTextFromHtml,
-  type InvoiceGuess, type SupplierHint,
-} from "../lib/invoice-detect";
+  classifyMailIntent, classifySender,
+  type MailIntent, type MailIntentContext,
+} from "../lib/mail-intent";
+import { fetchMailIntentContext } from "../lib/lead";
 import {
-  dismissInvoiceSuggestion, fetchSupplierHints, readDismissedInvoiceSuggestions,
-  type BookingResult,
-} from "../lib/purchase-invoice";
+  dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
+} from "../lib/mail-suggestions";
+import { suggestProject, type ProjectSuggestion } from "../lib/project-suggest";
+import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
 
 /* ─── Types ─── */
 
@@ -3874,16 +3879,40 @@ function ErpNextWebmail() {
   /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
   const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
 
-  /* ─── Inkoopfactuur-herkenning ─── */
-  /** Leveranciers + hun bekende adressen; leeg = herkenning staat uit. */
-  const [supplierHints, setSupplierHints] = useState<SupplierHint[]>([]);
-  /** Mails waarvan de gebruiker zei "dit is geen factuur" (per apparaat). */
-  const [dismissedInvoices, setDismissedInvoices] = useState<Set<string>>(
-    () => readDismissedInvoiceSuggestions(),
+  /* ─── Mailherkenning: inkoopfactuur / lead / offerteaanvraag / project ─── */
+  /**
+   * Leveranciers, klanten en eigen maildomeinen — alles wat `classifyMailIntent`
+   * nodig heeft. Leeg = herkenning staat uit (bv. zonder leesrecht op Supplier
+   * en Customer); de webmail merkt daar verder niets van.
+   */
+  const [intentCtx, setIntentCtx] = useState<MailIntentContext>(
+    () => ({ suppliers: [], customers: [] }),
   );
-  const [bookingFor, setBookingFor] = useState<{ msg: ErpMailMessage; guess: InvoiceGuess } | null>(null);
+  /** Mails waarvan de gebruiker zei "dit is het niet" (per apparaat, per soort). */
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissedMailSuggestions());
+  const [bookingFor, setBookingFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
+  const [leadFor, setLeadFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
   /** Melding na een geslaagde boeking, met een klikbaar factuurnummer. */
   const [bookedNotice, setBookedNotice] = useState<BookingResult | null>(null);
+  /** Melding na een aangemaakte lead/offerteaanvraag. */
+  const [createdNotice, setCreatedNotice] = useState<
+    { doctype: "Lead" | "Opportunity"; result: BookingResult } | null
+  >(null);
+
+  /* ─── Projectsuggestie ─── */
+  const [projectHints, setProjectHints] = useState<
+    { name: string; projectName: string; customer?: string }[]
+  >([]);
+  /**
+   * Projecten waaraan eerdere mails van de afzender van de open mail hingen.
+   * Het adres gaat mee in de state: zo hoeft er bij een wissel geen
+   * synchrone reset te gebeuren en kan de historie van de vórige afzender
+   * nooit even meetellen voor de huidige.
+   */
+  const [senderHistory, setSenderHistory] = useState<{ sender: string; projects: string[] }>(
+    () => ({ sender: "", projects: [] }),
+  );
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   const [toast, setToast] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "message">("list");
@@ -3918,13 +3947,18 @@ function ErpNextWebmail() {
     listImapFolders()
       .then((rows) => { if (!cancelled) setImapFolders(rows); })
       .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
-    // Leverancierslijst voor de inkoopfactuur-herkenning. Eén keer per
-    // paginabezoek (de adapter cachet nog eens 10 minuten). Zonder leesrecht
-    // op Supplier blijft de lijst leeg en verschijnt er simpelweg geen
+    // Leveranciers, klanten en eigen maildomeinen voor de mailherkenning. Eén
+    // keer per paginabezoek (de modules cachen nog eens 10 minuten). Zonder
+    // leesrecht blijven de lijsten leeg en verschijnt er simpelweg geen
     // labeltje — de rest van de webmail merkt er niets van.
-    fetchSupplierHints()
-      .then((rows) => { if (!cancelled) setSupplierHints(rows); })
+    fetchMailIntentContext()
+      .then((ctx) => { if (!cancelled) setIntentCtx(ctx); })
       .catch(() => { /* herkenning uit; geen foutmelding voor een hulpmiddel */ });
+    // Projecten voor de "hoort dit bij…"-suggestie. Alleen naam, projectnaam
+    // en klant — zie `fetchProjectHints`.
+    fetchProjectHints()
+      .then((rows) => { if (!cancelled) setProjectHints(rows); })
+      .catch(() => { /* geen projectsuggestie; de handmatige koppelknop blijft */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -4103,51 +4137,103 @@ function ErpNextWebmail() {
    *
    * De lijst kent alleen onderwerp, afzender en `has_attachment` — geen
    * bijlagenamen en geen body. De herkenning komt daarmee hooguit op `medium`
-   * uit; zodra de mail geopend is, herrekent `selectedInvoiceGuess` hem mét
+   * uit; zodra de mail geopend is, herrekent `selectedIntent` hem mét
    * bijlagen en body. Dat is bewust: een labeltje in de lijst is een uitnodiging
    * om te kijken, en het openen kost geen extra call (de body wordt toch al
    * opgehaald).
    */
-  const invoiceHints = useMemo(() => {
-    const out = new Map<string, InvoiceGuess>();
-    if (supplierHints.length === 0) return out;
+  const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
+
+  const listIntents = useMemo(() => {
+    const out = new Map<string, MailIntent>();
+    if (!herkenningAan) return out;
     for (const m of filteredMessages) {
-      if (m.reference?.doctype === "Purchase Invoice") continue;
-      if (dismissedInvoices.has(m.name)) continue;
-      const guess = detectPurchaseInvoice({
+      const intent = classifyMailIntent({
         subject: m.subject,
         sender: m.sender,
+        senderName: m.senderName,
         attachmentNames: [],
         hasAttachment: m.hasAttachments,
         mailDate: m.date,
         direction: m.folder === MAIL_FOLDER_SENT ? "sent" : "received",
-      }, supplierHints);
-      if (guess.isLikely) out.set(m.name, guess);
+        ...(m.reference?.doctype ? { linkedDoctype: m.reference.doctype } : {}),
+      }, intentCtx);
+      if (intent.kind === "none") continue;
+      if (isMailSuggestionDismissed(dismissed, m.name, intent.kind)) continue;
+      out.set(m.name, intent);
     }
     return out;
-  }, [filteredMessages, supplierHints, dismissedInvoices]);
+  }, [filteredMessages, intentCtx, dismissed, herkenningAan]);
 
   /** Dezelfde herkenning voor de geopende mail, nu mét bijlagen en body. */
-  const selectedInvoiceGuess = useMemo(() => {
-    if (!selected || supplierHints.length === 0) return null;
-    if (selected.reference?.doctype === "Purchase Invoice") return null;
-    if (dismissedInvoices.has(selected.name)) return null;
-    const guess = detectPurchaseInvoice({
+  const selectedIntent = useMemo(() => {
+    if (!selected || !herkenningAan) return null;
+    const intent = classifyMailIntent({
       subject: selected.subject,
       sender: selected.sender,
+      senderName: selected.senderName,
       attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
       hasAttachment: selected.hasAttachments,
       bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
       mailDate: selected.date,
       direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
-    }, supplierHints);
-    return guess.isLikely ? guess : null;
-  }, [selected, body, supplierHints, dismissedInvoices]);
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+    }, intentCtx);
+    if (intent.kind === "none") return null;
+    if (isMailSuggestionDismissed(dismissed, selected.name, intent.kind)) return null;
+    return intent;
+  }, [selected, body, intentCtx, dismissed, herkenningAan]);
 
-  const handleDismissInvoice = useCallback((name: string) => {
-    dismissInvoiceSuggestion(name);
-    setDismissedInvoices(readDismissedInvoiceSuggestions());
+  const handleDismissIntent = useCallback((name: string, kind: Parameters<typeof dismissMailSuggestion>[1]) => {
+    dismissMailSuggestion(name, kind);
+    setDismissed(readDismissedMailSuggestions());
   }, []);
+
+  /**
+   * Historie van de afzender: projecten waaraan eerdere mails van dit adres
+   * gekoppeld zijn. Alleen ophalen voor de mail die openstaat — voor elke rij
+   * in de lijst zou dit een query per bericht betekenen.
+   */
+  useEffect(() => {
+    const sender = selected?.sender;
+    if (!sender) return;
+    let cancelled = false;
+    fetchSenderProjectHistory(sender)
+      .then((rows) => { if (!cancelled) setSenderHistory({ sender, projects: rows }); })
+      .catch(() => { /* signaal valt weg; de andere drie blijven */ });
+    return () => { cancelled = true; };
+  }, [selected?.sender]);
+
+  // Gememoiseerd: een verse array bij elke render zou de `useMemo` van de
+  // projectsuggestie elke keer opnieuw laten rekenen.
+  const senderProjects = useMemo(
+    () => (senderHistory.sender && senderHistory.sender === selected?.sender ? senderHistory.projects : []),
+    [senderHistory, selected?.sender],
+  );
+
+  /**
+   * "Hoort dit bij project X?" — alleen wanneer er geen andere bedoeling is
+   * herkend (hooguit één voorstel per mail) en de mail nog nergens aan hangt.
+   */
+  const projectSuggestion: ProjectSuggestion | null = useMemo(() => {
+    if (!selected || projectHints.length === 0) return null;
+    if (isMailSuggestionDismissed(dismissed, selected.name, "project")) return null;
+    const facts = classifySender(selected.sender, intentCtx);
+    return suggestProject({
+      subject: selected.subject,
+      sender: selected.sender,
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      threadProjects: thread
+        .filter((m) => m.name !== selected.name && m.reference?.doctype === "Project")
+        .map((m) => m.reference!.name),
+      senderProjects,
+      ...(facts.customer ? { senderCustomer: facts.customer } : {}),
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+      intentKind: selectedIntent?.kind ?? "none",
+    }, projectHints);
+  }, [selected, body, thread, senderProjects, projectHints, intentCtx, dismissed, selectedIntent]);
 
   /**
    * Na een geslaagde boeking. De koppeling `Communication → Purchase Invoice`
@@ -4160,6 +4246,20 @@ function ErpNextWebmail() {
     setBookedNotice(result);
     if (result.linkFailed) return;
     const reference = { doctype: "Purchase Invoice", name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+  }, []);
+
+  /** Idem voor een aangemaakte lead of offerteaanvraag. */
+  const handleLeadCreated = useCallback((
+    communication: string,
+    doctype: "Lead" | "Opportunity",
+    result: BookingResult,
+  ) => {
+    setLeadFor(null);
+    setCreatedNotice({ doctype, result });
+    if (result.linkFailed) return;
+    const reference = { doctype, name: result.name };
     setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
     setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
   }, []);
@@ -4690,11 +4790,15 @@ function ErpNextWebmail() {
     const msg = selected;
     if (!msg) return;
     setShowLinkPicker(false);
+    setProjectPickerOpen(false);
     const reference = { doctype: "Project", name: projectName };
     setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
     setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
     try {
-      await linkToDocument(msg.name, "Project", projectName);
+      // `linkMailToProject` zet `reference_*` én een `timeline_links`-rij, zodat
+      // de mail in de projecttijdlijn blijft staan ook als hij later aan iets
+      // anders wordt gekoppeld — zie `communication-link.ts`.
+      await linkMailToProject(msg.name, projectName, msg.sender);
       setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
       refreshFolders();
     } catch (err) {
@@ -5151,13 +5255,32 @@ function ErpNextWebmail() {
                                   <ReceiptText size={10} /> {msg.reference.name}
                                 </span>
                               )}
-                              {invoiceHints.has(msg.name) && (
-                                <span
-                                  title={t("y_next.pinv_label_hint")}
-                                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
-                                  <ReceiptText size={9} /> {t("y_next.pinv_label")}
+                              {(msg.reference?.doctype === "Lead" || msg.reference?.doctype === "Opportunity") && (
+                                <span title={t("y_next.lead_created_as", { name: msg.reference.name })}
+                                  className="flex items-center gap-1 truncate text-[10px] text-violet-600">
+                                  <UserPlus size={10} /> {msg.reference.name}
                                 </span>
                               )}
+                              {/* Voorstel: inkoopfactuur, lead of offerteaanvraag — hooguit één per rij. */}
+                              {(() => {
+                                const hint = listIntents.get(msg.name);
+                                if (!hint) return null;
+                                if (hint.kind === "purchase-invoice") {
+                                  return (
+                                    <span title={t("y_next.pinv_label_hint")}
+                                      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                      <ReceiptText size={9} /> {t("y_next.pinv_label")}
+                                    </span>
+                                  );
+                                }
+                                const quote = hint.kind === "quote-request";
+                                return (
+                                  <span title={t(quote ? "y_next.quote_label_hint" : "y_next.lead_label_hint")}
+                                    className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 text-[10px] font-medium text-violet-800">
+                                    <UserPlus size={9} /> {t(quote ? "y_next.quote_label" : "y_next.lead_label")}
+                                  </span>
+                                );
+                              })()}
                               {/* Herkomst tonen zodra de rij niet uit de actieve map komt (zoekmodus). */}
                               {searching && (
                                 <span className="text-[10px] text-slate-400 truncate">
@@ -5303,6 +5426,15 @@ function ErpNextWebmail() {
                         <FolderKanban size={11} /> {selected.reference.name}
                       </span>
                     )}
+                    {(selected.reference?.doctype === "Lead" || selected.reference?.doctype === "Opportunity") && (
+                      <a
+                        href={`${getErpNextLinkUrl()}/${selected.reference.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(selected.reference.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
+                        <UserPlus size={11} /> {selected.reference.name}
+                        <ExternalLink size={9} />
+                      </a>
+                    )}
                     <button onClick={() => { setShowLinkPicker((v) => !v); setProjectSearch(""); }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
                       <FolderKanban size={11} /> {t("webmail.link_to_project")}
@@ -5332,27 +5464,148 @@ function ErpNextWebmail() {
 
                 {/* Inkoopfactuur-suggestie. Staat bóven de conversatie en de
                     body: het is een handeling, geen achtergrondinformatie. */}
-                {selectedInvoiceGuess && (
+                {selectedIntent?.kind === "purchase-invoice" && (
                   <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 flex-shrink-0">
                     <ReceiptText size={14} className="text-amber-600 flex-shrink-0" />
                     <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
                     <span
-                      title={selectedInvoiceGuess.reasons
+                      title={selectedIntent.reasons
                         .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
                         .join(" · ")}
                       className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                      {t(`y_next.pinv_confidence_${selectedInvoiceGuess.confidence}`)}
+                      {t(`y_next.pinv_confidence_${selectedIntent.confidence}`)}
                     </span>
                     <div className="flex-1" />
                     <button
-                      onClick={() => setBookingFor({ msg: selected, guess: selectedInvoiceGuess })}
+                      onClick={() => setBookingFor({ msg: selected, intent: selectedIntent })}
                       className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700 cursor-pointer">
                       <ReceiptText size={11} /> {t("y_next.pinv_book")}
                     </button>
                     <button
-                      onClick={() => handleDismissInvoice(selected.name)}
+                      onClick={() => handleDismissIntent(selected.name, "purchase-invoice")}
                       className="rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100 cursor-pointer">
                       {t("y_next.pinv_dismiss")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Lead / offerteaanvraag — zelfde plek en vorm als de
+                    factuurbalk, in een eigen kleur zodat je in één oogopslag
+                    ziet dat dit het verkoopspoor is. */}
+                {(selectedIntent?.kind === "lead" || selectedIntent?.kind === "quote-request") && (
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-5 py-2">
+                    <UserPlus size={14} className="flex-shrink-0 text-violet-600" />
+                    <span className="text-xs font-medium text-violet-900">
+                      {t(selectedIntent.kind === "quote-request" ? "y_next.quote_banner" : "y_next.lead_banner")}
+                    </span>
+                    <span
+                      title={selectedIntent.reasons
+                        .map((r) => t(`y_next.intent_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+                      {t(`y_next.lead_confidence_${selectedIntent.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => setLeadFor({ msg: selected, intent: selectedIntent })}
+                      className="flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700">
+                      <UserPlus size={11} />
+                      {t(selectedIntent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
+                    </button>
+                    <button
+                      onClick={() => handleDismissIntent(selected.name, selectedIntent.kind === "quote-request" ? "quote-request" : "lead")}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-violet-800 hover:bg-violet-100">
+                      {t("y_next.lead_dismiss")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Projectsuggestie — bewust subtieler dan de twee balken
+                    hierboven: dit stelt geen nieuw document voor, alleen een
+                    koppeling die met één klik weer te veranderen is. */}
+                {projectSuggestion && (
+                  <div className="relative flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-5 py-2">
+                    <FolderKanban size={14} className="flex-shrink-0 text-emerald-600" />
+                    <span className="text-xs text-emerald-900">
+                      {t("y_next.proj_suggest_banner", {
+                        project: projectHints.find((p) => p.name === projectSuggestion.project)?.projectName
+                          ?? projectSuggestion.project,
+                      })}
+                    </span>
+                    <span
+                      title={projectSuggestion.reasons
+                        .map((r) => t(`y_next.proj_suggest_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                      {t(`y_next.proj_suggest_confidence_${projectSuggestion.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => void linkToProject(projectSuggestion.project)}
+                      className="flex cursor-pointer items-center gap-1.5 rounded bg-emerald-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-emerald-700">
+                      <FolderKanban size={11} /> {t("y_next.proj_suggest_link")}
+                    </button>
+                    <button
+                      onClick={() => { setProjectPickerOpen((v) => !v); setProjectSearch(""); }}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+                      {t("y_next.proj_suggest_other")}
+                    </button>
+                    <button
+                      onClick={() => handleDismissIntent(selected.name, "project")}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+                      {t("y_next.proj_suggest_dismiss")}
+                    </button>
+                    {projectPickerOpen && (
+                      <div className="absolute right-5 top-full z-50 mt-1 flex max-h-72 w-80 flex-col rounded-lg border border-slate-200 bg-white shadow-lg">
+                        <div className="border-b border-slate-100 p-2">
+                          <input type="search" autoFocus value={projectSearch}
+                            onChange={(e) => setProjectSearch(e.target.value)}
+                            placeholder={t("webmail.search_project")}
+                            className="w-full rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-1">
+                          {projectMatches.length === 0 ? (
+                            <p className="px-3 py-2 text-xs italic text-slate-400">{t("webmail.no_results")}</p>
+                          ) : projectMatches.map((p) => (
+                            <button key={p.name}
+                              onClick={() => { setProjectPickerOpen(false); void linkToProject(p.name); }}
+                              className="w-full cursor-pointer truncate px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                              {p.name}{p.project_name ? ` — ${p.project_name}` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Uitkomst van een aangemaakte lead/offerteaanvraag. */}
+                {createdNotice && (
+                  <div className="flex flex-shrink-0 flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>
+                        {t(createdNotice.doctype === "Opportunity" ? "y_next.lead_quote_created_ok" : "y_next.lead_created_ok")}{" "}
+                      </span>
+                      <a href={`${getErpNextLinkUrl()}/${createdNotice.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(createdNotice.result.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {createdNotice.result.name}
+                      </a>
+                      {createdNotice.result.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.lead_attachments_failed", {
+                            names: createdNotice.result.failedAttachments.join(", "),
+                          })}
+                        </p>
+                      )}
+                      {createdNotice.result.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+                      )}
+                    </div>
+                    <button onClick={() => setCreatedNotice(null)} title={t("common.close")}
+                      className="cursor-pointer rounded p-0.5 text-emerald-600 hover:bg-emerald-100">
+                      <X size={12} />
                     </button>
                   </div>
                 )}
@@ -5450,10 +5703,25 @@ function ErpNextWebmail() {
               ? { project: bookingFor.msg.reference.name }
               : {}),
           }}
-          guess={bookingFor.guess}
-          suppliers={supplierHints}
+          guess={bookingFor.intent.invoice!}
+          suppliers={intentCtx.suppliers as SupplierHint[]}
           onClose={() => setBookingFor(null)}
           onBooked={(result) => handleInvoiceBooked(bookingFor.msg.name, result)}
+        />
+      )}
+
+      {leadFor && (leadFor.intent.kind === "lead" || leadFor.intent.kind === "quote-request") && (
+        <CreateLeadDialog
+          message={{
+            name: leadFor.msg.name,
+            subject: leadFor.msg.subject,
+            sender: leadFor.msg.sender,
+            date: leadFor.msg.date,
+          }}
+          intent={leadFor.intent}
+          customers={intentCtx.customers}
+          onClose={() => setLeadFor(null)}
+          onCreated={(doctype, result) => handleLeadCreated(leadFor.msg.name, doctype, result)}
         />
       )}
 
