@@ -47,6 +47,13 @@ import {
   type FileInfo,
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
+import {
+  buildConnectionQueries,
+  isConnectionFolder,
+  loadConnectionIndex,
+  messageMatchesSelection,
+  parseConnectionFolder,
+} from "./mail-connections.ts";
 
 /** Een Communication zoals de Webmail-UI hem consumeert. */
 export interface ErpMailMessage {
@@ -117,10 +124,6 @@ export const MAIL_TAG_FOLDER_PREFIX = "tag:";
  */
 export const MAIL_TAG_NAME_PREFIX = "mail/";
 
-/** Hoeveel projectmappen maximaal in de mappenlijst verschijnen. */
-const MAX_PROJECT_FOLDERS = 50;
-/** Hoeveel recente Communications de projectdiscovery scant. */
-const PROJECT_DISCOVERY_WINDOW = 200;
 /** Hoeveel custom (tag-)mappen maximaal in de mappenlijst verschijnen. */
 const MAX_CUSTOM_FOLDERS = 50;
 /** Standaard paginagrootte van de berichtenlijst. */
@@ -129,8 +132,6 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_CONVERSATION_MESSAGES = 25;
 /** Standaard aantal treffers van een zoekactie. */
 const DEFAULT_SEARCH_LIMIT = 50;
-/** Hoeveel Email Accounts de IMAP-mappensectie maximaal uitleest. */
-const MAX_IMAP_ACCOUNTS = 5;
 
 /* ─── Prullenbak: Frappe's eigen `Communication.email_status` ─── */
 
@@ -188,11 +189,20 @@ function toStr(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-/** Docname van de projectmap-id (`project:PROJ-0001` → `PROJ-0001`). */
+/**
+ * Project van een map-id, of `null`. Kent twee vormen: de connectie-selectie
+ * (`conn:project:Project:PROJ-0001`) die de connectiekolom gebruikt, en de
+ * oudere `project:`-map-id — die staat nog in localStorage van iedereen die
+ * de vorige versie open had en mag daar niet stilletjes op Postvak IN
+ * uitkomen.
+ */
 export function projectOfFolder(folderId: string): string | null {
-  return folderId.startsWith(MAIL_PROJECT_FOLDER_PREFIX)
-    ? folderId.slice(MAIL_PROJECT_FOLDER_PREFIX.length)
-    : null;
+  if (folderId.startsWith(MAIL_PROJECT_FOLDER_PREFIX)) {
+    return folderId.slice(MAIL_PROJECT_FOLDER_PREFIX.length) || null;
+  }
+  const sel = parseConnectionFolder(folderId);
+  if (sel && sel.category === "project" && sel.docname) return sel.docname;
+  return null;
 }
 
 /** Tag-label van de custom map-id (`tag:Klanten` → `Klanten`). */
@@ -306,6 +316,12 @@ export async function listMailboxMessages(
   folderId: string,
   opts?: { limit?: number; start?: number; search?: string }
 ): Promise<ErpMailMessage[]> {
+  if (isConnectionFolder(folderId)) {
+    const page = await connectionSlice(
+      folderId, opts?.search?.trim() ?? "", opts?.start ?? 0, opts?.limit ?? DEFAULT_PAGE_SIZE,
+    );
+    return page.messages;
+  }
   const search = opts?.search?.trim();
   const params: {
     fields: string[];
@@ -340,6 +356,9 @@ export async function listMailboxMessagesPaged(
   folderId: string,
   opts: { start: number; limit: number; search?: string }
 ): Promise<ErpMailPage> {
+  if (isConnectionFolder(folderId)) {
+    return connectionSlice(folderId, opts.search?.trim() ?? "", opts.start, opts.limit);
+  }
   const limit = opts.limit;
   const messages = await listMailboxMessages(folderId, {
     limit,
@@ -347,6 +366,100 @@ export async function listMailboxMessagesPaged(
     search: opts.search,
   });
   return { messages, hasMore: messages.length === limit };
+}
+
+/* ─── Connecties: filteren op waar de mail aan hangt ─── */
+
+/**
+ * Hoeveel rijen per tak worden opgehaald ten opzichte van het gevraagde
+ * venster. De serverqueries leveren bewust een superset (zie
+ * `mail-connections.ts`); het nafilter snijdt daar weer uit, dus zonder marge
+ * zou een volle pagina half gevuld terugkomen.
+ */
+const CONNECTION_OVERFETCH = 2;
+/** Harde bovengrens op die marge — één klik mag nooit de halve mailbox halen. */
+const CONNECTION_MAX_FETCH = 200;
+
+/**
+ * Berichten van een connectie-selectie: de vereniging van de takken uit
+ * `buildConnectionQueries`, ontdubbeld, nagefilterd op de momentopname en
+ * chronologisch gesneden.
+ *
+ * **Waarom de vereniging client-side wordt gemaakt en niet met `or_filters`.**
+ * `or_filters` is al bezet door de zoekterm — zoeken binnen een connectie zou
+ * de connectiefilter anders overschrijven. Twee AND-only queries parallel is
+ * bovendien voorspelbaarder dan één query waarin de OR-tak over een
+ * child-join loopt.
+ */
+async function connectionSlice(
+  folderId: string,
+  term: string,
+  start: number,
+  limit: number,
+): Promise<ErpMailPage> {
+  const sel = parseConnectionFolder(folderId);
+  // Bewust géén terugval op Postvak IN: een onbekende connectie-map is een
+  // lege selectie, en "hier staat niets" is eerlijker dan stilletjes iets
+  // anders tonen.
+  if (!sel) return { messages: [], hasMore: false };
+
+  const index = await loadConnectionIndex().catch(() => null);
+  const specs = buildConnectionQueries(sel, index);
+  if (specs.length === 0) return { messages: [], hasMore: false };
+
+  const window = start + limit;
+  const fetchLimit = Math.min(window * CONNECTION_OVERFETCH, CONNECTION_MAX_FETCH);
+  const orFilters = term
+    ? [["subject", "like", `%${term}%`], ["sender", "like", `%${term}%`]]
+    : undefined;
+
+  const pages = await Promise.all(specs.map(async (spec) => {
+    const params: {
+      fields: string[];
+      filters: unknown[][];
+      or_filters?: unknown[][];
+      order_by: string;
+      limit_page_length: number;
+      group_by?: string;
+    } = {
+      fields: SEARCH_FIELDS,
+      filters: [
+        ["communication_type", "=", "Communication"],
+        NOT_TRASHED,
+        ...spec.filters,
+      ],
+      order_by: "communication_date desc",
+      limit_page_length: fetchLimit,
+    };
+    if (orFilters) params.or_filters = orFilters;
+    if (spec.groupBy) params.group_by = spec.groupBy;
+    // Eén tak mag de andere niet meeslepen: een doctype dat op deze instance
+    // niet bestaat (geen CRM-app, dus geen Lead) hoort een lege tak te geven.
+    return fetchList<Record<string, unknown>>("Communication", params).catch(() => []);
+  }));
+
+  const seenNames = new Set<string>();
+  const merged: ErpMailMessage[] = [];
+  let anyFull = false;
+  for (const rows of pages) {
+    if (rows.length >= fetchLimit) anyFull = true;
+    for (const row of rows) {
+      const name = toStr(row.name);
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+      if (!messageMatchesSelection(index, name, sel)) continue;
+      // De richting van de rij, niet de connectie-map: een connectie bevat
+      // zowel ontvangen als verzonden mail, en de UI leidt uit `folder` af of
+      // een rij een afzender- of een geadresseerde-regel krijgt.
+      merged.push(mapMessage(row, folderForRow(row)));
+    }
+  }
+  merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  return {
+    messages: merged.slice(start, window),
+    hasMore: merged.length > window || anyFull,
+  };
 }
 
 /**
@@ -384,70 +497,6 @@ export async function searchMessages(
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
   });
   return rows.map((row) => mapMessage(row, folderForRow(row)));
-}
-
-/**
- * Projectmappen: de projecten waaraan recent gemaild is. Eén platte lijst-
- * query levert de kandidaten (aggregates zijn niet toegestaan), daarna één
- * `get_count` per uniek project voor de ongelezen-teller.
- */
-async function listProjectFolders(): Promise<ErpMailFolder[]> {
-  const rows = await fetchList<{ reference_name?: string }>("Communication", {
-    fields: ["reference_name", "communication_date"],
-    filters: [
-      ["communication_type", "=", "Communication"],
-      NOT_TRASHED,
-      ["reference_doctype", "=", "Project"],
-    ],
-    order_by: "communication_date desc",
-    limit_page_length: PROJECT_DISCOVERY_WINDOW,
-  });
-
-  const unique: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const name = row?.reference_name;
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    unique.push(name);
-    if (unique.length >= MAX_PROJECT_FOLDERS) break;
-  }
-  if (unique.length === 0) return [];
-
-  const labels = new Map<string, string>();
-  try {
-    const projects = await fetchList<{ name: string; project_name?: string }>("Project", {
-      fields: ["name", "project_name"],
-      filters: [["name", "in", unique]],
-      limit_page_length: unique.length,
-    });
-    for (const p of projects) {
-      if (p?.name) labels.set(p.name, p.project_name || p.name);
-    }
-  } catch {
-    // Geen leesrecht op Project (of de call faalde) — de docname is een
-    // prima label, dat is geen reden om de hele mappenlijst te laten vallen.
-  }
-
-  const counts = await Promise.all(
-    unique.map((project) =>
-      fetchCount("Communication", [
-        ["communication_type", "=", "Communication"],
-        NOT_TRASHED,
-        ["reference_doctype", "=", "Project"],
-        ["reference_name", "=", project],
-        ["seen", "=", 0],
-      ]).catch(() => 0)
-    )
-  );
-
-  return unique.map((project, i) => ({
-    id: `${MAIL_PROJECT_FOLDER_PREFIX}${project}`,
-    label: labels.get(project) || project,
-    unseen: counts[i],
-    kind: "project" as const,
-    project,
-  }));
 }
 
 /**
@@ -586,19 +635,26 @@ export async function untagMessage(name: string, label: string): Promise<void> {
 }
 
 /**
- * De virtuele mappenlijst: de vaste mappen, de custom (tag-)mappen en de
- * projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom zijn
- * teller; de Prullenbak telt zijn eigen ongelezen berichten.
+ * De vaste mappen plus de eigen (tag-)mappen.
+ *
+ * Projectmappen staan hier bewust **niet** meer bij: een project is geen map
+ * maar een *connectie*, en de connectiekolom leidt die — samen met klanten,
+ * inkoopfacturen, offertes en leads — af uit ERPNext' eigen koppelingen (zie
+ * `mail-connections.ts`). Eén project als map en een klant niet, terwijl beide
+ * gewoon een gekoppeld document zijn, was de inconsistentie die dat model
+ * verving.
+ *
+ * "Ongelezen" is een view op Postvak IN en deelt daarom zijn teller; de
+ * Prullenbak telt zijn eigen ongelezen berichten.
  */
 export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
-  const [unseen, trashUnseen, customFolders, projectFolders] = await Promise.all([
+  const [unseen, trashUnseen, customFolders] = await Promise.all([
     unseenCount().catch(() => 0),
     fetchCount("Communication", [
       ...filtersForFolder(MAIL_FOLDER_TRASH),
       ["seen", "=", 0],
     ]).catch(() => 0),
     listCustomFolders().catch(() => [] as ErpMailFolder[]),
-    listProjectFolders().catch(() => [] as ErpMailFolder[]),
   ]);
   return [
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
@@ -606,84 +662,7 @@ export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
     { id: MAIL_FOLDER_UNREAD, label: "Ongelezen", unseen, kind: "unread" },
     { id: MAIL_FOLDER_TRASH, label: "Prullenbak", unseen: trashUnseen, kind: "trash" },
     ...customFolders,
-    ...projectFolders,
   ];
-}
-
-/* ─── IMAP-mappen van het gekoppelde Email Account (alleen-lezen) ─── */
-
-/** Eén rij uit de `imap_folder`-child-table van een Email Account. */
-export interface ErpImapFolder {
-  /** Docname van het Email Account waar deze rij bij hoort. */
-  account: string;
-  /** IMAP-mapnaam zoals ERPNext hem synchroniseert (bv. `INBOX`). */
-  folderName: string;
-  /** Doctype waar mail uit deze map aan gehangen wordt; meestal leeg. */
-  appendTo?: string;
-}
-
-/**
- * De IMAP-mappen die ERPNext daadwerkelijk synchroniseert.
- *
- * **Waarom dit alleen-lezen informatie is en geen mapfilter.** De
- * `imap_folder`-child-table bepaalt wélke IMAP-mappen ERPNext ophaalt, maar
- * de binnengehaalde `Communication` legt de bronmap **niet** vast: het veld
- * `Communication.imap_folder` bestaat wel (Data, hidden, read-only) maar staat
- * op de doelinstance op `NULL` voor élk bericht — ook voor de mails die net
- * via de INBOX-rij zijn gesynct. Er is dus geen kolom om per map op te
- * filteren, en `uid` alléén helpt niet: dat is een per-map-teller, die na een
- * tweede maprij niet meer uniek is.
- *
- * Gevolg: extra rijen toevoegen laat méér mail binnenkomen, maar alles komt
- * in één ongedifferentieerde stroom terecht. Deze functie voedt daarom een
- * informatieve sectie in de mappenkolom — géén klikbare filters die niets
- * zouden filteren.
- *
- * `Email Account` is geen breed leesbaar DocType; bij een 403 (of welke fout
- * dan ook) komt er een lege lijst terug en verdwijnt de sectie stilletjes.
- */
-export async function listImapFolders(): Promise<ErpImapFolder[]> {
-  try {
-    const accounts = await fetchList<{ name: string }>("Email Account", {
-      fields: ["name"],
-      filters: [["enable_incoming", "=", 1], ["use_imap", "=", 1]],
-      order_by: "name asc",
-      limit_page_length: MAX_IMAP_ACCOUNTS,
-    });
-    if (accounts.length === 0) return [];
-
-    // De child-table komt niet mee in een lijstquery — die zit alleen in het
-    // volledige document. Eén doc-fetch per account, parallel.
-    const docs = await Promise.all(
-      accounts.map((acc) =>
-        fetchDocument<{ imap_folder?: { folder_name?: string; append_to?: string }[] }>(
-          "Email Account",
-          acc.name
-        )
-          .then((doc) => ({ account: acc.name, rows: doc?.imap_folder ?? [] }))
-          .catch(() => ({ account: acc.name, rows: [] as { folder_name?: string; append_to?: string }[] }))
-      )
-    );
-
-    const out: ErpImapFolder[] = [];
-    const seen = new Set<string>();
-    for (const { account, rows } of docs) {
-      for (const row of rows) {
-        const folderName = toStr(row?.folder_name).trim();
-        if (!folderName) continue;
-        const key = `${account} ${folderName}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const entry: ErpImapFolder = { account, folderName };
-        const appendTo = toStr(row?.append_to).trim();
-        if (appendTo) entry.appendTo = appendTo;
-        out.push(entry);
-      }
-    }
-    return out;
-  } catch {
-    return [];
-  }
 }
 
 /** Volledige mailinhoud (HTML) plus de op de Communication gehangen Files. */

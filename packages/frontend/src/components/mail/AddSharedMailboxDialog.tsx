@@ -52,8 +52,12 @@ export default function AddSharedMailboxDialog({ onAdd, onCancel, existingEmails
 
   return (
     <div className="fixed inset-0 z-[55] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+      {/* Bewust een lichte sluier (10%) in plaats van de gebruikelijke 40%: de
+          mailtekst eronder moet leesbaar blijven terwijl dit venster open staat
+          — je opent het juist om iets uit die mail over te nemen. De schaduw en
+          de rand van het paneel doen het scheiden, niet het verduisteren. */}
+      <div className="absolute inset-0 bg-slate-900/10" onClick={onCancel} />
+      <div className="relative bg-white rounded-xl shadow-2xl ring-1 ring-slate-900/10 w-full max-w-md mx-4">
         <div className="px-6 py-4 border-b border-slate-200">
           <h3 className="text-sm font-semibold text-slate-800">{t("webmail.add_shared_mailbox")}</h3>
           <p className="text-xs text-slate-500 mt-1">{t("webmail.add_shared_description")}</p>

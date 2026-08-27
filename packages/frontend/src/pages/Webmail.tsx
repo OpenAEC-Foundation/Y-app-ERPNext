@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
-  RotateCcw, Server, ReceiptText, UserPlus,
+  RotateCcw, ReceiptText, UserPlus, Link2,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -100,13 +100,20 @@ import {
   markRead, markUnread, sendMail, linkToDocument, hasEnabledEmailAccount,
   projectOfFolder, searchMessages,
   moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
-  deleteForever, bulkDeleteForever, listImapFolders,
+  deleteForever, bulkDeleteForever,
   bulkMarkRead, bulkMarkUnread, getConversation, getSignature,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
   unseenCount,
   MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
-  type ErpMailMessage, type ErpMailFolder, type ErpImapFolder,
+  type ErpMailMessage, type ErpMailFolder,
 } from "../lib/mail-erpnext";
+import {
+  categoryOfDoctype, connectionFolderId, describeConnectionFolder, invalidateConnectionIndex,
+  isConnectionFolder, loadConnectionIndex, peekConnectionIndex,
+  type ConnectionIndex, type ConnectionObject, type MailConnection,
+} from "../lib/mail-connections";
+import ConnectionNav from "../components/mail/ConnectionNav";
+import MailConnectionChips from "../components/mail/MailConnectionChips";
 import {
   buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
   formatAttachmentNames, isValidFolderLabel, prefixSubject,
@@ -135,6 +142,7 @@ import {
   type MailIntent, type MailIntentContext,
 } from "../lib/mail-intent";
 import { fetchMailIntentContext } from "../lib/lead";
+import { fetchIntentBodies, pickIntentBodyCandidates } from "../lib/mail-intent-bodies";
 import {
   dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
 } from "../lib/mail-suggestions";
@@ -3817,6 +3825,14 @@ async function fetchErpSlice(
   start: number,
   limit: number,
 ): Promise<{ rows: ErpMailMessage[]; hasMore: boolean }> {
+  // Zoeken bínnen een connectie blijft binnen die connectie. Voor de gewone
+  // mappen is zoeken bewust wél mapoverstijgend (dat is wat je van een
+  // zoekbalk verwacht), maar een connectie is een *selectie* die de gebruiker
+  // zelf heeft aangezet — die mag een toetsaanslag niet stilletjes opheffen.
+  if (isConnectionFolder(folder)) {
+    const page = await listMailboxMessagesPaged(folder, { start, limit, search: term });
+    return { rows: page.messages, hasMore: page.hasMore };
+  }
   if (term) {
     const window = start + limit;
     const rows = await searchMessages(term, { limit: window });
@@ -3882,7 +3898,33 @@ function ErpNextWebmail() {
   const [queueStatus, setQueueStatus] = useState<Record<string, string>>({});
 
   /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
-  const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
+  /**
+   * Momentopname van de koppelingen. Wordt **lui** geladen: bij het openen van
+   * een mail (voor de connectiechips) of bij het uitklappen van de
+   * connectiekolom — niet bij het openen van de mailpagina, zodat die niet
+   * eerst op drie extra queries wacht.
+   */
+  const [connIndex, setConnIndex] = useState<ConnectionIndex | null>(() => peekConnectionIndex());
+  /** Bumpen zodra er iets aan de koppelingen verandert (koppelen, weggooien). */
+  const [connToken, setConnToken] = useState(0);
+
+  /** Vraag de momentopname op (en ververs hem na een koppelactie). */
+  const ensureConnIndex = useCallback((force?: boolean) => {
+    loadConnectionIndex(force ? { force: true } : undefined)
+      .then(setConnIndex)
+      .catch(() => { /* connecties zijn een navigatiehulp; de lijst werkt door */ });
+  }, []);
+
+  /**
+   * Er is iets aan de koppelingen veranderd. De momentopname is dan verouderd
+   * én de connectiekolom moet opnieuw tellen — maar alleen als hij al eens
+   * geladen is: anders zou een koppelactie de luiheid tenietdoen.
+   */
+  const connectionsChanged = useCallback(() => {
+    invalidateConnectionIndex();
+    setConnToken((n) => n + 1);
+    if (peekConnectionIndex()) ensureConnIndex(true);
+  }, [ensureConnIndex]);
 
   /* ─── Mailherkenning: inkoopfactuur / lead / offerteaanvraag / project ─── */
   /**
@@ -3957,13 +3999,6 @@ function ErpNextWebmail() {
     getSignature()
       .then((sig) => { if (!cancelled) setSignature(sig); })
       .catch(() => { /* mail zonder handtekening is geen fout */ });
-    // De IMAP-mappenlijst verandert alleen wanneer een beheerder het Email
-    // Account aanpast — één keer per paginabezoek volstaat. De adapter geeft
-    // bij een 403 (geen leesrecht op Email Account) gewoon [] terug, waarmee
-    // de sectie stilletjes verdwijnt.
-    listImapFolders()
-      .then((rows) => { if (!cancelled) setImapFolders(rows); })
-      .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
     // Leveranciers, klanten en eigen maildomeinen voor de mailherkenning. Eén
     // keer per paginabezoek (de modules cachen nog eens 10 minuten). Zonder
     // leesrecht blijven de lijsten leeg en verschijnt er simpelweg geen
@@ -4161,10 +4196,55 @@ function ErpNextWebmail() {
    */
   const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
 
+  /**
+   * Mailteksten van de twijfelgevallen in de zichtbare lijst.
+   *
+   * Zonder tekst haalt een offerteaanvraag of lead waarvan het bewijs in de
+   * body staat de drempel niet, en verschijnt het label pas bij het openen van
+   * de mail — terwijl het in de inbox hoort te staan, net als het
+   * inkoopfactuurlabel. Zie `mail-intent-bodies.ts` voor waarom dit ná de
+   * eerste render gebeurt en niet als extra veld in de lijstquery.
+   */
+  const [intentBodies, setIntentBodies] = useState<Map<string, string>>(() => new Map());
+
+  // `intentBodies` staat bewust in de deps: `fetchIntentBodies` zet élke
+  // gevraagde naam in de map (ook de mails zonder bruikbare tekst), dus de
+  // volgende ronde levert een lege kandidatenlijst en het effect komt tot
+  // stilstand. Een ref zou hier alleen de lus verbergen, niet voorkomen.
+  useEffect(() => {
+    if (!herkenningAan || filteredMessages.length === 0) return;
+    const names = pickIntentBodyCandidates(
+      filteredMessages.map((m) => ({
+        name: m.name,
+        subject: m.subject,
+        sender: m.sender,
+        senderName: m.senderName,
+        date: m.date,
+        hasAttachments: m.hasAttachments,
+        sent: m.folder === MAIL_FOLDER_SENT,
+        ...(m.reference?.doctype ? { linkedDoctype: m.reference.doctype } : {}),
+      })),
+      intentCtx,
+      new Set(intentBodies.keys()),
+    );
+    if (names.length === 0) return;
+    let cancelled = false;
+    void fetchIntentBodies(names).then((fetched) => {
+      if (cancelled || fetched.size === 0) return;
+      setIntentBodies((prev) => {
+        const next = new Map(prev);
+        for (const [k, v] of fetched) next.set(k, v);
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [filteredMessages, intentCtx, herkenningAan, intentBodies]);
+
   const listIntents = useMemo(() => {
     const out = new Map<string, MailIntent>();
     if (!herkenningAan) return out;
     for (const m of filteredMessages) {
+      const bodyText = intentBodies.get(m.name);
       const intent = classifyMailIntent({
         subject: m.subject,
         sender: m.sender,
@@ -4173,6 +4253,7 @@ function ErpNextWebmail() {
         hasAttachment: m.hasAttachments,
         mailDate: m.date,
         direction: m.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+        ...(bodyText ? { bodyText } : {}),
         ...(m.reference?.doctype ? { linkedDoctype: m.reference.doctype } : {}),
       }, intentCtx);
       if (intent.kind === "none") continue;
@@ -4180,7 +4261,7 @@ function ErpNextWebmail() {
       out.set(m.name, intent);
     }
     return out;
-  }, [filteredMessages, intentCtx, dismissed, herkenningAan]);
+  }, [filteredMessages, intentCtx, dismissed, herkenningAan, intentBodies]);
 
   /** Dezelfde herkenning voor de geopende mail, nu mét bijlagen en body. */
   const selectedIntent = useMemo(() => {
@@ -4322,7 +4403,8 @@ function ErpNextWebmail() {
     const reference = { doctype: "Purchase Invoice", name: result.name };
     setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
     setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
-  }, []);
+    connectionsChanged();
+  }, [connectionsChanged]);
 
   /** Idem voor een aangemaakte lead of offerteaanvraag. */
   const handleLeadCreated = useCallback((
@@ -4336,18 +4418,55 @@ function ErpNextWebmail() {
     const reference = { doctype, name: result.name };
     setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
     setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
-  }, []);
+    connectionsChanged();
+  }, [connectionsChanged]);
 
   const customFolders = useMemo(() => folders.filter((f) => f.kind === "custom"), [folders]);
-  const projectFolders = useMemo(() => folders.filter((f) => f.kind === "project"), [folders]);
   const fixedFolders = useMemo(
     () => folders.filter((f) => f.kind !== "project" && f.kind !== "custom"),
     [folders],
   );
+  /**
+   * Leesbare naam van een map- of connectie-selectie. Connecties staan niet in
+   * `folders` (ze komen uit de momentopname), dus die krijgen hun eigen
+   * afleiding: "Projecten" of "Projecten · Kade Noord".
+   */
   const folderLabel = useCallback(
-    (id: string) => folders.find((f) => f.id === id)?.label || id,
-    [folders],
+    (id: string) => {
+      const conn = describeConnectionFolder(id, connIndex);
+      if (conn) {
+        const cat = t(conn.category.labelKey);
+        return conn.objectLabel ? `${cat} · ${conn.objectLabel}` : cat;
+      }
+      return folders.find((f) => f.id === id)?.label || id;
+    },
+    [folders, connIndex, t],
   );
+
+  /* ─── Connecties: momentopname, chips en koppel-acties ─── */
+
+  /**
+   * De connecties van de geopende mail.
+   *
+   * De momentopname is de bron, maar niet de enige: een koppeling die zojuist
+   * in dit scherm is gemaakt (factuur geboekt, project gekozen) staat er nog
+   * niet in en zou dan tot de volgende verversing onzichtbaar zijn. De live
+   * `reference` van de rij wordt daarom altijd meegenomen.
+   */
+  const selectedConnections = useMemo<MailConnection[]>(() => {
+    if (!selected) return [];
+    const out = [...(connIndex?.byMessage.get(selected.name) ?? [])];
+    const ref = selected.reference;
+    if (ref) {
+      const category = categoryOfDoctype(ref.doctype);
+      if (category && !out.some((c) => c.doctype === ref.doctype && c.name === ref.name)) {
+        out.push({ doctype: ref.doctype, name: ref.name, label: ref.name, category });
+      }
+    }
+    return out;
+  }, [selected, connIndex]);
+
+
 
   /* ─── Aflever-status van verzonden mail ─── */
   const sentNames = useMemo(
@@ -4404,6 +4523,9 @@ function ErpNextWebmail() {
 
   const openMessage = useCallback(async (msg: ErpMailMessage) => {
     setSelected(msg);
+    // Eerste geopende mail is het moment waarop de connecties nodig zijn — en
+    // laat genoeg dat de mailpagina er niet op wacht.
+    ensureConnIndex();
     setDraft(null);
     setShowLinkPicker(false);
     // De boekingsmelding hoort bij de vórige mail; hem laten staan zou het
@@ -4425,7 +4547,7 @@ function ErpNextWebmail() {
     } finally {
       setBodyLoading(false);
     }
-  }, [applySeen, isMobile, t]);
+  }, [applySeen, isMobile, t, ensureConnIndex]);
 
   /* ─── Conversatie: serverzijdig over de in_reply_to-graaf ─── */
   const selectedName = selected?.name ?? "";
@@ -4518,9 +4640,12 @@ function ErpNextWebmail() {
       // Deelfouten slikt de bulk-adapter in, dus alleen een verse lijst vertelt
       // wat er werkelijk gebeurd is.
       refreshFolders();
+      // Een weggegooide mail hoort ook uit zijn connecties te verdwijnen: de
+      // momentopname sluit getrashte mail uit.
+      connectionsChanged();
       silentReload();
     }
-  }, [refreshFolders, selectedName, silentReload]);
+  }, [connectionsChanged, refreshFolders, selectedName, silentReload]);
 
   /**
    * Naar de Prullenbak. Bewust géén bevestiging: de actie is omkeerbaar, en
@@ -4682,7 +4807,8 @@ function ErpNextWebmail() {
     }
     setChecked(new Set());
     refreshFolders();
-  }, [refreshFolders, silentReload, t]);
+    connectionsChanged();
+  }, [connectionsChanged, refreshFolders, silentReload, t]);
 
   /* ─── Slepen ─── */
 
@@ -4709,6 +4835,27 @@ function ErpNextWebmail() {
     if (folder.kind === "trash") { void handleTrash(names); return; }
     void assignToFolder(folder, names);
   }, [assignToFolder, handleTrash]);
+
+  /**
+   * Sleep een mail op een connectie-object. Alleen projecten zijn een zinnig
+   * doel: dat is de koppeling die Y-next zelf zet. Een klant volgt uit het
+   * e-mailadres en een factuur uit het boeken — die "toewijzen" zou een
+   * onwaarheid vastleggen.
+   */
+  const handleDropOnConnection = useCallback((obj: ConnectionObject, e: React.DragEvent) => {
+    e.preventDefault();
+    const fromRef = dragNamesRef.current;
+    const names = fromRef.length > 0
+      ? fromRef
+      : (e.dataTransfer.getData("text/plain") || "").split(",").filter(Boolean);
+    dragNamesRef.current = [];
+    if (names.length === 0 || obj.doctype !== "Project") return;
+    void assignToFolder(
+      { id: connectionFolderId({ category: obj.category, doctype: obj.doctype, docname: obj.name }),
+        label: obj.label, unseen: 0, kind: "project", project: obj.name },
+      names,
+    );
+  }, [assignToFolder]);
 
   /* ─── Eigen mappen: aanmaken en verwijderen ─── */
 
@@ -4875,6 +5022,7 @@ function ErpNextWebmail() {
       await linkMailToProject(msg.name, projectName, msg.sender);
       setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
       refreshFolders();
+      connectionsChanged();
     } catch (err) {
       setToast(t("webmail.link_create_error", { message: err instanceof Error ? err.message : String(err) }));
     }
@@ -4988,7 +5136,19 @@ function ErpNextWebmail() {
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {fixedFolders.map(renderFolderButton)}
 
-        {/* Eigen mappen — ERPNext-tags, dus wél aan te maken en te verwijderen */}
+        {/* Connecties — de hoofdstructuur. Een mail hoort bij de documenten
+            waar hij aan hangt (project, klant, inkoopfactuur, offerte, lead),
+            en kan er dus in meerdere tegelijk staan. */}
+        <ConnectionNav
+          activeFolder={activeFolder}
+          onSelect={(id) => { switchFolder(id); if (isMobile) setMobilePane("list"); }}
+          onDropOnObject={handleDropOnConnection}
+          reloadToken={connToken}
+        />
+
+        {/* Eigen mappen — ERPNext-tags. Blijven bestaan als handmatig label,
+            maar staan onder de connecties: ze zijn de uitzondering, niet de
+            ordening. */}
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <span className="text-[10px] uppercase tracking-wide text-slate-400">
             {t("y_next.mail_folders_section")}
@@ -5020,50 +5180,10 @@ function ErpNextWebmail() {
           <p className="px-3 py-1 text-[11px] text-slate-400 italic">{t("y_next.mail_no_custom_folders")}</p>
         )}
         {customFolders.map(renderFolderButton)}
-
-        {projectFolders.length > 0 && (
-          <>
-            <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
-              {t("nav.projects")}
-            </div>
-            {projectFolders.map(renderFolderButton)}
-          </>
-        )}
-
-        {/* IMAP-mappen — bewust alleen-lezen. ERPNext haalt deze mappen op,
-            maar legt per binnengehaalde mail niet vast uit wélke map hij komt
-            (`Communication.imap_folder` blijft leeg), dus er valt niet op te
-            filteren. Klikbare rijen zouden hier niets doen. */}
-        {imapFolders.length > 0 && (
-          <>
-            <div className="flex items-center gap-1 px-3 pt-3 pb-1">
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                {t("y_next.mail_imap_folders_section")}
-              </span>
-              <Info size={10} className="text-slate-300" aria-hidden />
-            </div>
-            {imapFolders.map((f) => (
-              <div
-                key={`${f.account}::${f.folderName}`}
-                title={t("y_next.mail_imap_folder_hint", { account: f.account })}
-                className="flex items-center gap-2 px-3 py-1 text-xs text-slate-400 cursor-default"
-              >
-                <Server size={12} className="text-slate-300 flex-shrink-0" />
-                <span className="truncate flex-1">{f.folderName}</span>
-                {f.appendTo && (
-                  <span className="text-[10px] text-slate-400 truncate">{f.appendTo}</span>
-                )}
-              </div>
-            ))}
-            <p className="px-3 pt-0.5 text-[10px] leading-snug text-slate-400 italic">
-              {t("y_next.mail_imap_folders_note")}
-            </p>
-          </>
-        )}
       </div>
       <div className="flex items-start gap-1.5 px-3 py-2 border-t border-slate-200 text-[10px] leading-snug text-slate-400">
         <Info size={11} className="mt-0.5 flex-shrink-0" />
-        <span>{t("y_next.mail_direct_note")}</span>
+        <span>{t("y_next.conn_note")}</span>
       </div>
     </>
   );
@@ -5135,6 +5255,11 @@ function ErpNextWebmail() {
                   {folders.map((f) => (
                     <option key={f.id} value={f.id}>{f.label}{f.unseen ? ` (${f.unseen})` : ""}</option>
                   ))}
+                  {/* Een connectie staat niet in `folders`; zonder deze optie
+                      zou de selector op mobiel leeg staan bij een connectie. */}
+                  {isConnectionFolder(activeFolder) && (
+                    <option value={activeFolder}>{folderLabel(activeFolder)}</option>
+                  )}
                 </select>
               </div>
             )}
@@ -5142,9 +5267,21 @@ function ErpNextWebmail() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-semibold text-slate-800 truncate">
-                    {searching ? t("y_next.mail_search_results") : folderLabel(activeFolder)}
+                    {searching && !isConnectionFolder(activeFolder)
+                      ? t("y_next.mail_search_results")
+                      : folderLabel(activeFolder)}
                   </span>
                   <span className="text-xs text-slate-400">{filteredMessages.length}</span>
+                  {/* Filtert de lijst op een connectie? Dan hoort dat zichtbaar
+                      te zijn én in één klik weg te kunnen — anders lijkt een
+                      lege lijst een lege mailbox. */}
+                  {isConnectionFolder(activeFolder) && (
+                    <button onClick={() => switchFolder(MAIL_FOLDER_INBOX)}
+                      title={t("y_next.conn_clear")}
+                      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 cursor-pointer flex-shrink-0">
+                      <Link2 size={9} /> {t("y_next.conn_clear")} <X size={9} />
+                    </button>
+                  )}
                 </div>
                 {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
                 {!isUnreadFolder && (
@@ -5484,31 +5621,17 @@ function ErpNextWebmail() {
                     </div>
                   </div>
 
-                  {/* Projectkoppeling — native Communication-referentie */}
-                  <div className="relative mt-2 flex items-center gap-2">
-                    {selected.reference?.doctype === "Purchase Invoice" && (
-                      <a
-                        href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(selected.reference.name)}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">
-                        <ReceiptText size={11} /> {selected.reference.name}
-                        <ExternalLink size={9} />
-                      </a>
-                    )}
-                    {selected.reference?.doctype === "Project" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-                        <FolderKanban size={11} /> {selected.reference.name}
-                      </span>
-                    )}
-                    {(selected.reference?.doctype === "Lead" || selected.reference?.doctype === "Opportunity") && (
-                      <a
-                        href={`${getErpNextLinkUrl()}/${selected.reference.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(selected.reference.name)}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
-                        <UserPlus size={11} /> {selected.reference.name}
-                        <ExternalLink size={9} />
-                      </a>
-                    )}
+                  {/* Alle connecties van deze mail. Niet alleen
+                      `reference_*` (dat is enkelvoudig en toont dus alleen de
+                      laatst gemaakte koppeling) maar de vereniging met de
+                      `Communication Link`-child-tabel — zie mail-connections.ts. */}
+                  <div className="relative mt-2 flex flex-wrap items-center gap-2">
+                    <MailConnectionChips
+                      connections={selectedConnections}
+                      onOpen={(conn) => switchFolder(connectionFolderId({
+                        category: conn.category, doctype: conn.doctype, docname: conn.name,
+                      }))}
+                    />
                     <button onClick={() => { setShowLinkPicker((v) => !v); setProjectSearch(""); }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
                       <FolderKanban size={11} /> {t("webmail.link_to_project")}

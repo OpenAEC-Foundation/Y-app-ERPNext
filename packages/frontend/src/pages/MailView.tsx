@@ -31,6 +31,11 @@ import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
 import { MessageAttachments } from "../components/MessageAttachments";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import MailConnectionChips from "../components/mail/MailConnectionChips";
+import {
+  categoryOfDoctype, loadConnectionIndex, peekConnectionIndex,
+  type ConnectionIndex, type MailConnection,
+} from "../lib/mail-connections";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
@@ -1332,10 +1337,33 @@ function ErpNextMailView({ name }: { name: string }) {
         : null),
     [localRef, doc],
   );
-  const linkedInvoice = reference?.doctype === "Purchase Invoice" ? reference.name : "";
-  const linkedLead = reference && (reference.doctype === "Lead" || reference.doctype === "Opportunity")
-    ? reference
-    : null;
+  /**
+   * Alle connecties van deze mail, niet alleen `reference_*`. Dat veld is
+   * enkelvoudig, dus het toonde altijd alleen de laatst gemaakte koppeling —
+   * zie `mail-connections.ts`. De momentopname wordt hier lui geladen; hij is
+   * gedeeld met de webmail en dus in dezelfde tab meestal al warm.
+   */
+  const [connIndex, setConnIndex] = useState<ConnectionIndex | null>(() => peekConnectionIndex());
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    loadConnectionIndex()
+      .then((idx) => { if (!cancelled) setConnIndex(idx); })
+      .catch(() => { /* chips zijn context, geen blokkade */ });
+    return () => { cancelled = true; };
+  }, [name]);
+
+  const connections = useMemo<MailConnection[]>(() => {
+    if (!name) return [];
+    const out = [...(connIndex?.byMessage.get(name) ?? [])];
+    if (reference) {
+      const category = categoryOfDoctype(reference.doctype);
+      if (category && !out.some((c) => c.doctype === reference.doctype && c.name === reference.name)) {
+        out.push({ doctype: reference.doctype, name: reference.name, label: reference.name, category });
+      }
+    }
+    return out;
+  }, [name, connIndex, reference]);
 
   const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
 
@@ -1468,27 +1496,7 @@ function ErpNextMailView({ name }: { name: string }) {
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {reference?.doctype === "Project" && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-                <FolderKanban size={11} /> {reference.name}
-              </span>
-            )}
-            {linkedLead && (
-              <a href={`${getErpNextLinkUrl()}/${linkedLead.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(linkedLead.name)}`}
-                target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
-                <UserPlus size={11} /> {linkedLead.name}
-                <ExternalLink size={9} />
-              </a>
-            )}
-            {linkedInvoice && (
-              <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(linkedInvoice)}`}
-                target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">
-                <Receipt size={11} /> {linkedInvoice}
-                <ExternalLink size={9} />
-              </a>
-            )}
+            <MailConnectionChips connections={connections} />
             {/* Is er geen bedoeling herkend, dan is deze regel de actiebalk
                 van de mail en hoort de relatie-actie hier. Staat er wél een
                 factuur- of leadbalk, dan zit hij dáár — nooit op twee plekken

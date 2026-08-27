@@ -476,6 +476,15 @@ export async function fetchList<T = Record<string, unknown>>(
     limit_page_length?: number;
     limit_start?: number;
     order_by?: string;
+    /**
+     * `GROUP BY`-expressie. Nodig zodra een filter op een **child-tabel**
+     * staat (bv. `["Communication Link", "link_doctype", "=", "Project"]`):
+     * Frappe joint die tabel er dan bij en levert de parent één keer per
+     * gematchte child-rij op. Live geverifieerd op de doelinstance: dezelfde
+     * query gaf 94 rijen voor 36 verschillende Communications, en `distinct=1`
+     * hielp daar niet tegen — alleen `group_by` ontdubbelt.
+     */
+    group_by?: string;
   }
 ): Promise<T[]> {
   // Doctype confirmed missing on this instance (no app installed for it) —
@@ -508,6 +517,9 @@ export async function fetchList<T = Record<string, unknown>>(
   }
   if (params?.order_by) {
     searchParams.set("order_by", params.order_by);
+  }
+  if (params?.group_by) {
+    searchParams.set("group_by", params.group_by);
   }
 
   const url = buildApiUrl(`/api/resource/${doctype}`, searchParams);

@@ -16,7 +16,6 @@ import {
   bulkMoveToTrash,
   bulkRestoreFromTrash,
   bulkDeleteForever,
-  listImapFolders,
   bulkMarkRead,
   bulkMarkUnread,
   getConversation,
@@ -112,34 +111,14 @@ function countFor(url: string): number {
   return isProject ? 2 : 7;
 }
 
-test("listVirtualFolders: Inbox/Verzonden/Ongelezen/Prullenbak plus projectmappen, tellingen via get_count (nooit een SQL-aggregate)", async () => {
+test("listVirtualFolders: alleen de vaste mappen (projecten zijn connecties, geen mappen), tellingen via get_count (nooit een SQL-aggregate)", async () => {
+  invalidateCache("Tag");
+  await settleFetchDedup();
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/method/frappe.client.get_count")) {
       return { status: 200, body: { message: countFor(url) } };
     }
-    if (url.startsWith("/api/resource/Communication")) {
-      return {
-        status: 200,
-        body: {
-          data: [
-            { reference_name: "PROJ-0001" },
-            { reference_name: "PROJ-0002" },
-            { reference_name: "PROJ-0001" },
-          ],
-        },
-      };
-    }
-    if (url.startsWith("/api/resource/Project")) {
-      return {
-        status: 200,
-        body: {
-          data: [
-            { name: "PROJ-0001", project_name: "Kade Noord" },
-            { name: "PROJ-0002", project_name: "" },
-          ],
-        },
-      };
-    }
+    if (url.startsWith("/api/resource/Tag")) return rowsBody([]);
     throw new Error(`unexpected url: ${url}`);
   });
   try {
@@ -160,25 +139,19 @@ test("listVirtualFolders: Inbox/Verzonden/Ongelezen/Prullenbak plus projectmappe
     // De Prullenbak telt zijn eigen ongelezen berichten, niet die van INBOX.
     assert.equal(trash.unseen, 3);
 
-    const projects = folders.filter((f) => f.kind === "project");
-    assert.equal(projects.length, 2, "duplicate reference_name rows collapse to one folder each");
-    assert.equal(projects[0].id, "project:PROJ-0001");
-    assert.equal(projects[0].project, "PROJ-0001");
-    assert.equal(projects[0].label, "Kade Noord");
-    assert.equal(projects[0].unseen, 2);
-    // Project zonder project_name valt terug op de docname als label.
-    assert.equal(projects[1].label, "PROJ-0002");
+    // Projecten horen sinds de connectiekolom niet meer in de mappenlijst: ze
+    // zijn een gekoppeld document, net als een klant of een inkoopfactuur.
+    assert.equal(folders.filter((f) => f.kind === "project").length, 0);
+    // ... en er wordt dus ook geen projectdiscovery meer gedaan.
+    assert.ok(!mock.calls.some((c) => c.url.startsWith("/api/resource/Project")));
 
     // Geen enkele call mag een SQL-aggregate in `fields` smokkelen (417 op v16).
     for (const call of mock.calls) {
       assert.doesNotMatch(call.url, /count%28|count\(/i);
     }
-    // De projectdiscovery vraagt om Communications met een Project-referentie.
-    const discovery = mock.calls.find((c) => c.url.startsWith("/api/resource/Communication"));
-    assert.ok(discovery);
-    assert.ok(hasFilter(discovery.url, "reference_doctype", "=", "Project"));
   } finally {
     mock.restore();
+    invalidateCache("Tag");
   }
 });
 
@@ -676,79 +649,12 @@ test("getSignature: lege string bij 403 en bij een account zonder handtekening",
 });
 
 /*
- * LET OP — deze `Email Account`-tests staan bewust vóór
+ * LET OP — élke test die `Email Account` leest hoort bewust vóór
  * "hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt". Die test
  * markeert `Email Account` via de 404-DoesNotExistError als ontbrekend
  * DocType, en `erpnext.ts` houdt dat voor de rest van het proces vast (geen
  * netwerkcall meer, altijd een lege lijst).
  */
-
-test("listImapFolders: leest de imap_folder-child-table van elk incoming IMAP-account", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
-  const mock = installFetchMock((url) => {
-    if (url.startsWith("/api/resource/Email Account?")) {
-      return rowsBody([{ name: "OpenAEC Mail" }]);
-    }
-    if (url.startsWith("/api/resource/Email%20Account/") || url.startsWith("/api/resource/Email Account/")) {
-      return {
-        status: 200,
-        body: {
-          data: {
-            name: "OpenAEC Mail",
-            imap_folder: [
-              { folder_name: "INBOX", append_to: "" },
-              { folder_name: "Projecten", append_to: "Issue" },
-              // Rijen zonder mapnaam (of dubbel) horen niet in de lijst.
-              { folder_name: "  ", append_to: "" },
-              { folder_name: "INBOX", append_to: "" },
-            ],
-          },
-        },
-      };
-    }
-    throw new Error(`unexpected url: ${url}`);
-  });
-  try {
-    const rows = await listImapFolders();
-    assert.deepEqual(rows, [
-      { account: "OpenAEC Mail", folderName: "INBOX" },
-      { account: "OpenAEC Mail", folderName: "Projecten", appendTo: "Issue" },
-    ]);
-    const listCall = mock.calls.find((c) => c.url.startsWith("/api/resource/Email Account?"));
-    assert.ok(listCall);
-    assert.ok(hasFilter(listCall.url, "enable_incoming", "=", 1));
-    assert.ok(hasFilter(listCall.url, "use_imap", "=", 1));
-  } finally {
-    mock.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-});
-
-test("listImapFolders: lege lijst bij 403 (Email Account is geen breed leesbaar DocType)", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
-  const forbidden = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
-  try {
-    assert.deepEqual(await listImapFolders(), []);
-  } finally {
-    forbidden.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-
-  // Geen accounts -> geen doc-fetch, dus ook geen lege sectie met ruis.
-  const none = installFetchMock(() => rowsBody([]));
-  try {
-    assert.deepEqual(await listImapFolders(), []);
-    assert.equal(none.calls.length, 1);
-  } finally {
-    none.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-});
 
 test("hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt (404 DoesNotExistError)", async () => {
   invalidateCache("Email Account");
@@ -1200,15 +1106,12 @@ test("listCustomFolders: Tag-documenten met mail/-prefix worden mappen, teller v
   }
 });
 
-test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de projectmappen", async () => {
+test("listVirtualFolders: eigen (tag-)mappen komen ná de vaste mappen", async () => {
   invalidateCache("Tag");
   invalidateCache("Communication");
-  invalidateCache("Project");
   await settleFetchDedup();
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/resource/Tag?")) return rowsBody([{ name: "mail/Archief" }]);
-    if (url.startsWith("/api/resource/Communication?")) return rowsBody([{ reference_name: "PROJ-0001" }]);
-    if (url.startsWith("/api/resource/Project?")) return rowsBody([{ name: "PROJ-0001", project_name: "Kade Noord" }]);
     if (url.startsWith("/api/method/frappe.client.get_count")) {
       return { status: 200, body: { message: countFor(url) } };
     }
@@ -1218,14 +1121,13 @@ test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de proje
     const folders = await listVirtualFolders();
     assert.deepEqual(
       folders.map((f) => f.kind),
-      ["inbox", "sent", "unread", "trash", "custom", "project"]
+      ["inbox", "sent", "unread", "trash", "custom"]
     );
     assert.equal(folders[4].id, "tag:Archief");
   } finally {
     mock.restore();
     invalidateCache("Tag");
     invalidateCache("Communication");
-    invalidateCache("Project");
   }
 });
 

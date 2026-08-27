@@ -215,8 +215,12 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
   /* ─────────────────────────────── Render ───────────────────────────── */
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
-      <div className="w-full max-w-xl rounded-xl bg-white shadow-xl">
+    // Bewust een lichte sluier (10%) in plaats van de gebruikelijke 40%: de
+    // mailtekst eronder moet leesbaar blijven terwijl dit venster open staat —
+    // je opent het juist om iets uit die mail over te nemen. De schaduw en de
+    // rand van het paneel doen het scheiden, niet het verduisteren.
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/10 p-4 sm:p-8">
+      <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div className="min-w-0">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
