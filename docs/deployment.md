@@ -164,9 +164,10 @@ Remove-Item Env:\YNEXT_API_TOKEN
 
 - Het script is **idempotent**: opnieuw draaien op een site waar de DocTypes
   al bestaan doet niets kapot en overschrijft geen bestaande data.
-- Het maakt twee custom DocTypes aan: **`Y Meeting Note`** (vergadernotities)
-  en **`Y Next Setting`** (generieke sleutel/waarde-opslag, o.a. voor de
-  extensies-configuratie).
+- Het maakt de custom DocTypes aan: **`Y Meeting Note`** (vergadernotities),
+  **`Y Next Setting`** (generieke sleutel/waarde-opslag, o.a. voor de
+  extensies-configuratie en het kilometertarief), en de drie doctypes voor
+  kilometers en onkosten — zie de sectie "Kilometers & onkosten" hieronder.
 - **`YNEXT_API_TOKEN`** is verplicht, zelfde formaat en zelfde
   geheimhoudingsregels als bij `npm run deploy` hierboven — nooit in `.env`,
   commits, logs of buildoutput.
@@ -224,12 +225,18 @@ incident:
 
 - Voor een declaratieve doctype-lijst (`DEFAULT_NAMING_SERIES_DOCTYPES`:
   Timesheet, Purchase Invoice, Sales Invoice, Quotation, Sales Order,
-  Delivery Note, Task, Project) leest het script per doctype de
-  `naming_series`-veldopties uit de DocType-meta, vult de datumtokens
-  (`.YYYY.` e.d.) in tot de concrete prefix van vandaag (bv. `TS-.YYYY.-` →
-  `TS-2026-`), en bepaalt per prefix de hoogste bestaande documentnaam via
-  een gefilterde, aflopend gesorteerde query (`name like "<prefix>%"`,
-  `order_by=name desc`, `limit 1`).
+  Delivery Note, Task, Project, Lead, Opportunity, plus de HRMS-doctypes
+  Travel Request, Leave Application, Leave Allocation en Expense Claim) leest
+  het script per doctype de `naming_series`-veldopties uit de DocType-meta,
+  vult de datumtokens (`.YYYY.` e.d.) in tot de concrete prefix van vandaag
+  (bv. `TS-.YYYY.-` → `TS-2026-`), en bepaalt per prefix de hoogste bestaande
+  documentnaam via een gefilterde, aflopend gesorteerde query
+  (`name like "<prefix>%"`, `order_by=name desc`, `limit 1`).
+- Heeft een doctype géén `naming_series`-veld maar wél een expressie-autoname
+  met teller (`HR-TRQ-.YYYY.-.#####` op Travel Request), dan wordt die
+  gebruikt: zo'n reeks loopt via dezelfde `tabSeries`-teller en kan dus net zo
+  goed vastlopen. De `#`-placeholder hoort niet bij de prefix — die stopt bij
+  het eerste `#`-teken.
 - De huidige tellerstand wordt gelezen en gezet via het whitelisted
   `Document Naming Settings`-pad (`run_doc_method` met `get_current` /
   `update_series_start`, System Manager-only voor de schrijfkant) —
@@ -254,3 +261,114 @@ incident:
 "ongewijzigd" (idempotentie bevestigd). Nadien is via de API een concept-
 `Purchase Invoice` aangemaakt (`ACC-PINV-2026-00043`, > `-00042`) om te
 bevestigen dat het inkoopfactuur-pad weer werkt, en meteen weer verwijderd.
+
+### Kilometers & onkosten — eigen doctypes, géén HRMS
+
+Kilometerregistratie en onkosten draaien op **eigen** custom DocTypes die het
+provisioningscript via de REST-API aanmaakt. De app **HRMS** (Frappe HR) wordt
+op deze installatie bewust niet geïnstalleerd, dus `Travel Request` en
+`Expense Claim` bestaan hier niet — en HRMS' Travel Request is sowieso een
+dienstreis-aanvraag (vlucht, hotel, visum) zonder datum-, afstands- of
+bedragveld.
+
+| DocType | Wat erin staat | Naming |
+|---|---|---|
+| `Y Km Registratie` | één document per rit: medewerker, datum, van/naar, kilometers, retour, project, tarief, bedrag, status | `format:YKM-{YYYY}-{#####}` |
+| `Y Onkosten` | één document per bon: medewerker, datum, soort, bedrag, btw, project, leverancier, status | `format:YON-{YYYY}-{#####}` |
+| `Y Onkostensoort` | de soortenlijst (stamtabel) | `field:soort_naam` |
+
+**Eén document per rit/bon** in plaats van een maandstaat met child-rijen. Dat
+maakt goedkeuren per stuk mogelijk en laat Frappe's `if_owner`-rechten het werk
+doen — die werken op documentniveau, niet op child-rijen.
+
+**Het bonnetje is een gewone ERPNext-bijlage** (`File` met
+`attached_to_doctype: "Y Onkosten"`), geen eigen veld: zo komen meerdere
+bijlagen, de bestaande uploadroute en de ERPNext-bestandsrechten vanzelf mee.
+
+#### Rechten (waarom `if_owner`)
+
+`buildKmRegistratieDoctype` / `buildOnkostenDoctype` zetten de DocPerms bij het
+aanmaken van het DocType:
+
+- **`Employee` en `Projects User`** krijgen op permlevel 0
+  `read/write/create/delete` **met `if_owner: 1`**. Frappe past die vlag op alle
+  vlaggen van die rij toe, dus een medewerker ziet en wijzigt uitsluitend
+  documenten waarvan hij zelf de `owner` is. Geen User Permission, geen
+  server-side query-condition, geen filter in de frontend nodig. `delete` staat
+  erbij omdat een rit in Y-next een heel document is: zonder delete kan een
+  verkeerd ingevoerde boeking niet meer weg.
+- **`System Manager`** (de werkgever) heeft dezelfde rechten **zonder**
+  `if_owner`, plus als enige `write` op **permlevel 1**.
+- **`goedgekeurd_door` en `goedgekeurd_op` staan op permlevel 1.** Alleen de
+  werkgever kan die vullen; medewerkers mogen ze wél lezen (zien wie hun
+  declaratie heeft goedgekeurd). `status` staat bewust op permlevel 0, want de
+  medewerker moet zelf van Concept naar Ingediend kunnen. **Gevolg:** wie de
+  API rechtstreeks aanroept kan zijn eigen record op "Goedgekeurd" zetten, maar
+  kan de goedkeurstempel niet vullen — een goedgekeurd record zonder
+  `goedgekeurd_door` is dus zichtbaar onecht, en het overzicht markeert dat met
+  een waarschuwingsteken. Dat is **tamper-evidence, geen tamper-proofing**:
+  echte afdwinging vereist een server-side hook, en die is zonder Bench niet
+  beschikbaar.
+
+Let op: de DocPerms worden **bij het aanmaken** van het DocType meegestuurd.
+Bestaat het DocType al, dan raakt het script ze niet meer aan (zelfde gedrag
+als bij `Y Meeting Note` / `Y Next Setting`). Wil je ze wijzigen, pas dan de
+rechten in de ERPNext-UI aan of verwijder het DocType eerst.
+
+#### Kilometertarief
+
+Het tarief staat als rij in `Y Next Setting` onder de sleutel **`km-tarief`**,
+met **€ 0,23** als startwaarde (de gangbare onbelaste kilometervergoeding).
+Schrijven op dat doctype is System-Manager-only — precies de bedoeling: een
+medewerker mag zijn eigen vergoeding niet ophogen. De werkgever wijzigt het in
+Y-next op het tabblad **Goedkeuren** van de onkostenpagina.
+
+`ensureMasterRecords` doet eerst een GET, dus **een door de werkgever aangepast
+tarief overleeft elke volgende provisioning-run.**
+
+De boeking neemt het tarief over in `tarief_per_km` op het document zelf en
+berekent `bedrag` = `kilometers × (retour ? 2 : 1) × tarief`. Een latere
+tariefwijziging herrekent dus niets van wat al geboekt is.
+
+#### Naamreeksen: de gedeelde `format:`-teller
+
+`Y Km Registratie` en `Y Onkosten` staan in `DEFAULT_NAMING_SERIES_DOCTYPES`,
+maar de naamreeksen-fase meldt ze als **`no-naming-series`** — en dat is
+correct. Frappe's `_format_autoname` parseert elk `{…}`-blok van een
+`format:`-autoname apart, waardoor de teller-placeholder in `tabSeries` onder
+de **lege** sleutel terechtkomt. Dat is één gedeelde, altijd oplopende teller
+(die `Y Meeting Note` al gebruikt). Zo'n teller kan niet achterlopen op
+bestaande documenten en dus ook niet vastlopen; er valt niets te herstellen.
+
+Zichtbaar gevolg: de nummers zijn **niet aaneengesloten** — de eerste rit kan
+`YKM-2026-00005` heten omdat vergadernotities en onkosten uit dezelfde teller
+tellen. Dat is cosmetisch en verandert niets aan de uniciteit. De entries staan
+in de lijst zodat de fase ze automatisch meepakt als het naamschema ooit naar
+een `naming_series`-veld verhuist.
+
+#### Wat een run aanmaakt
+
+```powershell
+$env:YNEXT_API_TOKEN = "<API key>:<API secret>"
+node scripts/provision-y-next.mjs
+Remove-Item Env:\YNEXT_API_TOKEN
+```
+
+- DocTypes: `Y Onkostensoort`, `Y Km Registratie`, `Y Onkosten` (plus de al
+  bestaande `Y Meeting Note` en `Y Next Setting`).
+- Stamgegevens: onkostensoorten **Reiskosten, Parkeren, Materiaal, Verblijf,
+  Overig** en de instelling `km-tarief` = `0.23`.
+- De HRMS-rechten- en naamreeksregels die nog in het script staan worden
+  overgeslagen zolang die app niet geïnstalleerd is; ze doen dan niets.
+
+**Verifiëren na de run** (read-only): open `/expenses` in Y-next. De
+zijbalkkop "Onkosten" verschijnt zodra `Y Km Registratie` bestaat (de
+doctype-probe in `lib/module-access.ts`); staat er nog "De kilometer- en
+onkostenmodule is nog niet ingericht", dan is het script niet gedraaid of mist
+de gebruiker leesrecht.
+
+#### Verlof
+
+Verlof (`/leave`) draait nog wél op HRMS' `Leave Application` /
+`Leave Allocation` en blijft daarom de melding "module niet beschikbaar" tonen
+zolang HRMS ontbreekt. Dat is een aparte beslissing.

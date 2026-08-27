@@ -1,273 +1,78 @@
-import { Fragment, useEffect, useState, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { fetchList, fetchAll, fetchDocument, updateDocument, callMethod, getErpNextLinkUrl } from "../lib/erpnext";
 import {
-  RefreshCw, Filter, Search, ExternalLink,
-  Car, Clock, CheckCircle, FileText, Plus, ChevronRight, AlertTriangle,
+  ApiError, deleteDocument, fetchAttachments, getFileUrl, isDoctypeMissing, uploadFile,
+} from "../lib/erpnext";
+import {
+  Car, CheckCircle, Clock, FileText, Receipt, RefreshCw, Search, Send, XCircle,
+  AlertTriangle, Paperclip, Filter, Euro,
 } from "lucide-react";
-import CompanySelect from "../components/CompanySelect";
-import DateRangeFilter from "../components/DateRangeFilter";
-import { QuickKmBooking } from "./dashboard";
-import { getActiveCompany } from "../lib/instances";
+import { QuickKmBooking, StatusBadge, formatEuro } from "./dashboard/QuickKmBooking";
+import { useEmployees, useProjects } from "../lib/DataContext";
 import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { useTranslation } from "react-i18next";
-import { useEmployees } from "../lib/DataContext";
-import { fetchEmployeeShiftWorkdays } from "../lib/missingDays";
-import { getEmployeeHolidaySet } from "../lib/employeeHolidays";
-import { isHoliday } from "../lib/holidays";
+import { resolveSessionUser } from "../lib/session";
+import {
+  DECLARATIE_STATUSSEN, KM_DOCTYPE, ONKOSTEN_DOCTYPE,
+  beoordeel, createOnkosten, dienIn,
+  fetchKmRegistraties, fetchOnkosten, fetchOnkostensoorten,
+  formatErpDate, totaleKilometers,
+  type DeclaratieStatus, type KmRegistratie, type Onkostenpost,
+} from "../lib/declaraties";
+import { DEFAULT_KM_TARIEF, fetchKmTarief, saveKmTarief } from "../lib/kmTarief";
 
-interface TravelRequest {
-  name: string;
-  employee: string;
-  employee_name: string;
-  company: string;
-  custom_from_date: string;
-  custom_to_date: string;
-  custom_total_distance: number;
-  docstatus: number;
-  travel_type: string;
+/**
+ * Kilometers & onkosten.
+ *
+ * Draait op Y-next' eigen doctypes `Y Km Registratie` en `Y Onkosten` — zie
+ * `lib/declaraties.ts` voor waarom dat geen HRMS `Travel Request` /
+ * `Expense Claim` meer is.
+ *
+ * Vier tabbladen. De eerste drie zijn er voor iedereen: een medewerker ziet
+ * dankzij `if_owner` server-side alléén zijn eigen documenten, dus er is geen
+ * apart medewerkersscherm nodig. "Goedkeuren" is werkgeversgebied.
+ */
+
+type ExpensesTab = "boeken" | "onkosten" | "overzicht" | "goedkeuren";
+const VALID_TABS: ExpensesTab[] = ["boeken", "onkosten", "overzicht", "goedkeuren"];
+
+/** Eerste en laatste dag van de kalendermaand van `d`. */
+function monthRange(d: Date): { from: string; to: string } {
+  return {
+    from: formatErpDate(new Date(d.getFullYear(), d.getMonth(), 1)),
+    to: formatErpDate(new Date(d.getFullYear(), d.getMonth() + 1, 0)),
+  };
 }
 
-type KmDateRangePreset = "vorige_week" | "vorige_4_weken" | "vorige_maand" | "dit_jaar" | "alle_drafts";
-const KM_PRESET_LABELS: Record<KmDateRangePreset, string> = {
-  vorige_4_weken: "Vorige 4 weken",
-  vorige_week: "Vorige week",
-  vorige_maand: "Vorige maand",
-  dit_jaar: "Dit jaar",
-  alle_drafts: "Alle drafts",
-};
-function getKmDateRange(preset: KmDateRangePreset): { from: string | null; to: string } {
-  const now = new Date();
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  // Always cap "to" at the last day of the previous completed month — we
-  // never list TRs from a still-running month.
-  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-  const to = fmt(prevMonthEnd);
-  switch (preset) {
-    case "vorige_week": {
-      const dayOfWeek = now.getDay();
-      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const thisMonday = new Date(now); thisMonday.setDate(now.getDate() - diffToMonday);
-      const lastMonday = new Date(thisMonday); lastMonday.setDate(thisMonday.getDate() - 7);
-      const lastSunday = new Date(thisMonday); lastSunday.setDate(thisMonday.getDate() - 1);
-      return { from: fmt(lastMonday), to: fmt(lastSunday) };
-    }
-    case "vorige_4_weken": {
-      const dayOfWeek = now.getDay();
-      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const thisMonday = new Date(now); thisMonday.setDate(now.getDate() - diffToMonday);
-      const fourWeeksAgo = new Date(thisMonday); fourWeeksAgo.setDate(thisMonday.getDate() - 28);
-      const lastSunday = new Date(thisMonday); lastSunday.setDate(thisMonday.getDate() - 1);
-      return { from: fmt(fourWeeksAgo), to: fmt(lastSunday) };
-    }
-    case "vorige_maand": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { from: fmt(first), to: fmt(last) };
-    }
-    case "dit_jaar": {
-      return { from: `${now.getFullYear()}-01-01`, to };
-    }
-    case "alle_drafts": {
-      return { from: null, to };
-    }
-  }
+function formatKm(value: number): string {
+  return `${value.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km`;
 }
 
-const docstatusColors: Record<number, string> = {
-  0: "bg-slate-100 text-slate-600",  // Draft
-  1: "bg-green-100 text-green-700",  // Submitted
-  2: "bg-red-100 text-red-700",      // Cancelled
-};
-
-const docstatusLabel: Record<number, string> = {
-  0: "Draft",
-  1: "Submitted",
-  2: "Cancelled",
-};
-
-function MyKmOverzicht() {
+/**
+ * Vertaalt een mislukte schrijfactie. Een 403 op deze doctypes betekent bijna
+ * altijd `if_owner`: het document is niet van deze gebruiker. Dat expliciet
+ * zeggen scheelt een zoektocht — een generieke "mislukt" laat de gebruiker
+ * denken dat de app hapert.
+ */
+function useDeclaratieError() {
   const { t } = useTranslation();
-  // Val terug op de ERPNext-sessiegebruiker als er geen "standaard
-  // medewerker" is ingesteld — anders toont dit paneel voor iedereen zonder
-  // die instelling permanent "Selecteer een medewerker in Instellingen",
-  // ook als de sessie prima naar een Employee-record te herleiden is.
-  const allEmployees = useEmployees();
-  const employee = useSessionEmployeeId(allEmployees);
-  const [trName, setTrName] = useState("");
-  const [totalKm, setTotalKm] = useState(0);
-  const [itinerary, setItinerary] = useState<ItineraryRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editRow, setEditRow] = useState<Partial<ItineraryRow>>({});
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!employee) { setLoading(false); return; }
-    setLoading(true);
-    fetchList<{ name: string; custom_total_distance: number }>(
-      "Travel Request",
-      {
-        fields: ["name", "custom_total_distance"],
-        filters: [["employee", "=", employee]],
-        limit_page_length: 1,
-        order_by: "custom_from_date desc",
-      }
-    ).then(async (reqs) => {
-      if (reqs.length === 0) { setItinerary([]); setLoading(false); return; }
-      setTrName(reqs[0].name);
-      setTotalKm(reqs[0].custom_total_distance || 0);
-      try {
-        const doc = await fetchDocument<{ itinerary: ItineraryRow[] }>("Travel Request", reqs[0].name);
-        setItinerary((doc.itinerary || []).sort((a, b) => (b.departure_date || "").localeCompare(a.departure_date || "")));
-      } catch { setItinerary([]); }
-    }).catch(() => setItinerary([]))
-      .finally(() => setLoading(false));
-  }, [employee]);
-
-  function startEdit(idx: number) {
-    setEditingIdx(idx);
-    setEditRow({ ...itinerary[idx] });
-  }
-
-  async function saveEdit() {
-    if (editingIdx === null || !trName) return;
-    setSaving(true);
-    try {
-      const updated = [...itinerary];
-      updated[editingIdx] = { ...updated[editingIdx], ...editRow } as ItineraryRow;
-      await updateDocument("Travel Request", trName, { itinerary: updated, custom_total_distance: updated.reduce((s, it) => s + (it.custom_distance || 0), 0) });
-      setItinerary(updated);
-      setTotalKm(updated.reduce((s, it) => s + (it.custom_distance || 0), 0));
-      setEditingIdx(null);
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
-  }
-
-  async function deleteRow(idx: number) {
-    if (!trName) return;
-    const updated = itinerary.filter((_, i) => i !== idx);
-    try {
-      await updateDocument("Travel Request", trName, { itinerary: updated, custom_total_distance: updated.reduce((s, it) => s + (it.custom_distance || 0), 0) });
-      setItinerary(updated);
-      setTotalKm(updated.reduce((s, it) => s + (it.custom_distance || 0), 0));
-    } catch { /* ignore */ }
-  }
-
-  const now = new Date();
-  const monthName = now.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Car size={18} className="text-y-teal" />
-        <h3 className="font-semibold text-slate-800">Km overzicht — {monthName}</h3>
-        {trName && (
-          <a href={`${getErpNextLinkUrl()}/travel-request/${trName}`} target="_blank" rel="noopener noreferrer"
-            className="ml-auto text-xs text-y-teal hover:underline">
-            {trName} ({totalKm.toFixed(0)} km)
-          </a>
-        )}
-      </div>
-
-      {loading ? (
-        <p className="text-center text-slate-400 py-4 text-sm">{t("common.loading")}</p>
-      ) : !employee ? (
-        <p className="text-center text-slate-400 py-4 text-sm">{t("y_next.no_employee_link")}</p>
-      ) : itinerary.length === 0 ? (
-        <p className="text-center text-slate-400 py-4 text-sm">{t("expenses.no_trips_this_month", { defaultValue: "No trips this month" })}</p>
-      ) : (
-        <div className="overflow-y-auto max-h-[500px]">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200 text-xs text-slate-500">
-                <th className="text-left py-2 pr-2">{t("common.date", { defaultValue: "Date" })}</th>
-                <th className="text-left py-2 pr-2">{t("dashboard.km_from_short")}</th>
-                <th className="text-left py-2 pr-2">{t("dashboard.km_to_short")}</th>
-                <th className="text-right py-2 pr-2">Km</th>
-                <th className="text-left py-2">{t("common.type")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {itinerary.map((it, i) => (
-                editingIdx === i ? (
-                  <tr key={i} className="border-b border-slate-200 bg-y-teal/5">
-                    <td className="py-1 pr-1"><input type="date" value={(editRow.departure_date || "").split(" ")[0]} onChange={e => setEditRow({ ...editRow, departure_date: e.target.value })} className="w-full px-1 py-1 border border-slate-200 rounded text-xs" /></td>
-                    <td className="py-1 pr-1"><input type="text" value={editRow.travel_from || ""} onChange={e => setEditRow({ ...editRow, travel_from: e.target.value })} className="w-full px-1 py-1 border border-slate-200 rounded text-xs" /></td>
-                    <td className="py-1 pr-1"><input type="text" value={editRow.travel_to || ""} onChange={e => setEditRow({ ...editRow, travel_to: e.target.value })} className="w-full px-1 py-1 border border-slate-200 rounded text-xs" /></td>
-                    <td className="py-1 pr-1"><input type="number" step="0.1" value={editRow.custom_distance || ""} onChange={e => setEditRow({ ...editRow, custom_distance: parseFloat(e.target.value) || 0 })} className="w-16 px-1 py-1 border border-slate-200 rounded text-xs text-right" /></td>
-                    <td className="py-1 flex items-center gap-1">
-                      <select value={editRow.custom_journey_type || "Return"} onChange={e => setEditRow({ ...editRow, custom_journey_type: e.target.value })} className="px-1 py-1 border border-slate-200 rounded text-xs">
-                        <option value="Return">{t("dashboard.km_return_short")}</option>
-                        <option value="Single">{t("dashboard.km_single_short")}</option>
-                      </select>
-                      <button onClick={saveEdit} disabled={saving} className="px-1.5 py-1 bg-y-teal text-white rounded text-xs cursor-pointer disabled:opacity-50">&#10003;</button>
-                      <button onClick={() => setEditingIdx(null)} className="px-1.5 py-1 text-slate-400 hover:text-slate-600 text-xs cursor-pointer">&#10005;</button>
-                      <button onClick={() => { deleteRow(i); setEditingIdx(null); }} className="px-1.5 py-1 text-red-400 hover:text-red-600 text-xs cursor-pointer" title={t("common.delete_tooltip")}>&#128465;</button>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 group">
-                    <td className="py-2 pr-2 text-slate-600 whitespace-nowrap">
-                      {it.departure_date?.split(" ")[0] || "-"}
-                    </td>
-                    <td className="py-2 pr-2 text-slate-700 truncate max-w-[160px]" title={it.travel_from}>
-                      {it.travel_from?.split(",")[0]?.split("\n")[0] || "-"}
-                    </td>
-                    <td className="py-2 pr-2 text-slate-700 truncate max-w-[160px]" title={it.travel_to}>
-                      {it.travel_to?.split(",")[0]?.split("\n")[0] || "-"}
-                    </td>
-                    <td className="py-2 pr-2 text-right font-medium">
-                      {(it.custom_distance || 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}
-                    </td>
-                    <td className="py-2 text-slate-500 text-xs flex items-center gap-1">
-                      {it.custom_journey_type === "Return" ? t("dashboard.km_return_short") : t("dashboard.km_single_short")}
-                      <button onClick={() => startEdit(i)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-y-teal cursor-pointer ml-auto" title={t("common.edit")}>
-                        &#9998;
-                      </button>
-                    </td>
-                  </tr>
-                )
-              ))}
-              <tr className="border-t-2 border-slate-300 font-semibold">
-                <td colSpan={3} className="py-2 text-slate-700">Totaal ({itinerary.length} ritten)</td>
-                <td className="py-2 text-right text-slate-800">
-                  {itinerary.reduce((s, it) => s + (it.custom_distance || 0), 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}
-                </td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface ItineraryRow {
-  travel_from: string;
-  travel_to: string;
-  custom_distance: number;
-  departure_date: string;
-  custom_journey_type: string;
-  custom_travel_cost: number;
+  return useCallback((err: unknown, fallbackKey: string): string => {
+    if (err instanceof ApiError && err.status === 403) return t("declaraties.not_your_record");
+    return err instanceof Error && err.message ? err.message : t(fallbackKey);
+  }, [t]);
 }
 
 export default function Expenses() {
   const { t } = useTranslation();
-  const employees = useEmployees();
   const [searchParams, setSearchParams] = useSearchParams();
-  type ExpensesTab = "boeken" | "overzicht" | "goedkeuren";
-  const validTabs: ExpensesTab[] = ["boeken", "overzicht", "goedkeuren"];
   const tabFromUrl = searchParams.get("tab");
-  const initialTab: ExpensesTab = (validTabs.includes(tabFromUrl as ExpensesTab) ? tabFromUrl : "boeken") as ExpensesTab;
+  const initialTab: ExpensesTab = (VALID_TABS.includes(tabFromUrl as ExpensesTab) ? tabFromUrl : "boeken") as ExpensesTab;
   const [activeTab, setActiveTab] = useState<ExpensesTab>(initialTab);
   const viewMode = (localStorage.getItem("view_mode") || "employer");
 
   // Sync state when URL changes (e.g. user re-clicks the dashboard card).
   useEffect(() => {
-    if (validTabs.includes(tabFromUrl as ExpensesTab) && tabFromUrl !== activeTab) {
+    if (VALID_TABS.includes(tabFromUrl as ExpensesTab) && tabFromUrl !== activeTab) {
       setActiveTab(tabFromUrl as ExpensesTab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -280,794 +85,866 @@ export default function Expenses() {
     setSearchParams(next, { replace: true });
   }
 
-  const [requests, setRequests] = useState<TravelRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [company, setCompany] = useState(getActiveCompany());
-  const [statusFilter, setStatusFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  // Expanded TR rows + cached itinerary so re-opening doesn't re-fetch.
-  const [expandedTr, setExpandedTr] = useState<Set<string>>(new Set());
-  const [itineraryByTr, setItineraryByTr] = useState<Map<string, ItineraryRow[]>>(new Map());
-  const [loadingTr, setLoadingTr] = useState<string | null>(null);
-
-  // Anomaly-analysis context, shared with KmGoedkeurenView via
-  // analyzeTravelRequest(). Built from the loaded TR list.
-  const [shiftWorkdaysOv, setShiftWorkdaysOv] = useState<Map<string, Set<string>>>(new Map());
-  const [empHolidaysOv, setEmpHolidaysOv] = useState<Map<string, Set<string>>>(new Map());
-  const [onLeaveSetOv, setOnLeaveSetOv] = useState<Set<string>>(new Set());
-
-  async function toggleTrExpand(name: string) {
-    if (expandedTr.has(name)) {
-      setExpandedTr(prev => { const n = new Set(prev); n.delete(name); return n; });
-      return;
-    }
-    setExpandedTr(prev => new Set(prev).add(name));
-    if (itineraryByTr.has(name)) return;
-    setLoadingTr(name);
-    try {
-      const doc = await fetchDocument<{ itinerary?: ItineraryRow[] }>("Travel Request", name);
-      const rows = (doc.itinerary || []).slice().sort((a, b) =>
-        (a.departure_date || "").localeCompare(b.departure_date || ""),
-      );
-      setItineraryByTr(prev => new Map(prev).set(name, rows));
-    } catch {
-      setItineraryByTr(prev => new Map(prev).set(name, []));
-    } finally {
-      setLoadingTr(null);
-    }
-  }
-
-  // Employee names belonging to the selected company
-  const companyEmployeeNames = useMemo(() => {
-    if (!company) return null;
-    return new Set(employees.filter(e => e.company === company).map(e => e.employee_name));
-  }, [employees, company]);
-
-  async function loadData() {
-    setLoading(true);
-    setError(null);
-    try {
-      const filters: unknown[][] = [
-        ["docstatus", "!=", 2],
-      ];
-      if (statusFilter === "Draft") filters.push(["docstatus", "=", 0]);
-      if (statusFilter === "Submitted") filters.push(["docstatus", "=", 1]);
-      if (fromDate) filters.push(["custom_from_date", ">=", fromDate]);
-      if (toDate) filters.push(["custom_to_date", "<=", toDate]);
-
-      const list = await fetchList<TravelRequest>("Travel Request", {
-        fields: [
-          "name", "employee", "employee_name", "company",
-          "custom_from_date", "custom_to_date", "custom_total_distance",
-          "docstatus", "travel_type",
-        ],
-        filters,
-        limit_page_length: 200,
-        order_by: "custom_from_date desc",
-      });
-      // Filter client-side on employees of the selected company
-      const filtered = companyEmployeeNames
-        ? list.filter(r => companyEmployeeNames.has(r.employee_name))
-        : list;
-      setRequests(filtered);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("common.unknown_error"));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadData();
-  }, [company, statusFilter, fromDate, toDate, companyEmployeeNames]);
-
-  // Per-employee shift workdays for anomaly detection in Overzicht.
-  useEffect(() => {
-    if (requests.length === 0) return;
-    let cancelled = false;
-    const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-    fetchEmployeeShiftWorkdays(ids).then(m => { if (!cancelled) setShiftWorkdaysOv(m); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [requests]);
-
-  // Per-employee Holiday List.
-  useEffect(() => {
-    if (requests.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-      const m = new Map<string, Set<string>>();
-      await Promise.all(ids.map(async (id) => {
-        try { m.set(id, await getEmployeeHolidaySet(id)); } catch { /* ignore */ }
-      }));
-      if (!cancelled) setEmpHolidaysOv(m);
-    })();
-    return () => { cancelled = true; };
-  }, [requests]);
-
-  // Approved leaves overlapping the loaded TR range.
-  useEffect(() => {
-    if (requests.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-      // Use the min/max dates across the loaded requests for the range.
-      let minFrom = ""; let maxTo = "";
-      for (const r of requests) {
-        if (r.custom_from_date && (!minFrom || r.custom_from_date < minFrom)) minFrom = r.custom_from_date;
-        if (r.custom_to_date && (!maxTo || r.custom_to_date > maxTo)) maxTo = r.custom_to_date;
-      }
-      if (!minFrom || !maxTo) return;
-      try {
-        const leaves = await fetchAll<{ employee: string; from_date: string; to_date: string }>(
-          "Leave Application",
-          ["employee", "from_date", "to_date"],
-          [
-            ["employee", "in", ids],
-            ["from_date", "<=", maxTo],
-            ["to_date", ">=", minFrom],
-            ["docstatus", "=", 1],
-          ],
-        );
-        const set = new Set<string>();
-        const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        for (const lv of leaves) {
-          if (!lv.from_date || !lv.to_date) continue;
-          const f = new Date(lv.from_date + "T12:00:00");
-          const u = new Date(lv.to_date + "T12:00:00");
-          const cur = new Date(f);
-          while (cur <= u) { set.add(`${lv.employee}|${fmt(cur)}`); cur.setDate(cur.getDate() + 1); }
-        }
-        if (!cancelled) setOnLeaveSetOv(set);
-      } catch {
-        if (!cancelled) setOnLeaveSetOv(new Set());
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [requests]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return requests;
-    const q = search.toLowerCase();
-    return requests.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.employee_name?.toLowerCase().includes(q)
-    );
-  }, [requests, search]);
-
-  // Group by employee — same layout as Timesheets Goedkeuren.
-  const groupedByEmployee = useMemo(() => {
-    const map = new Map<string, TravelRequest[]>();
-    for (const r of filtered) {
-      const key = r.employee_name || "(onbekend)";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
-    }
-    // Sort each employee's TRs newest-first; sort employees alphabetically.
-    for (const list of map.values()) {
-      list.sort((a, b) => (b.custom_from_date || "").localeCompare(a.custom_from_date || ""));
-    }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
-
-  const totalDistance = requests.reduce((s, r) => s + (r.custom_total_distance || 0), 0);
-  const draftCount = requests.filter((r) => r.docstatus === 0).length;
-  const submittedCount = requests.filter((r) => r.docstatus === 1).length;
+  const tabs: { id: ExpensesTab; label: string; icon: typeof Car; employerOnly?: boolean }[] = [
+    { id: "boeken", label: t("declaraties.tab_km"), icon: Car },
+    { id: "onkosten", label: t("declaraties.tab_expenses"), icon: Receipt },
+    { id: "overzicht", label: t("declaraties.tab_overview"), icon: FileText },
+    { id: "goedkeuren", label: t("declaraties.tab_approve"), icon: CheckCircle, employerOnly: true },
+  ];
 
   return (
     <div className="p-3 sm:p-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-800">{t("onkosten.title")}</h2>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6">
-        <button onClick={() => selectTab("boeken")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-            activeTab === "boeken" ? "bg-y-teal text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-          }`}>
-          <Car size={16} /> Km boeken
-        </button>
-        <button onClick={() => { selectTab("overzicht"); loadData(); }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-            activeTab === "overzicht" ? "bg-y-teal text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-          }`}>
-          <FileText size={16} /> Overzicht
-        </button>
-        {viewMode === "employer" && (
-          <button onClick={() => selectTab("goedkeuren")}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {tabs.filter((tab) => !tab.employerOnly || viewMode === "employer").map((tab) => (
+          <button key={tab.id} onClick={() => selectTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-              activeTab === "goedkeuren" ? "bg-y-teal text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              activeTab === tab.id ? "bg-y-teal text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}>
-            <CheckCircle size={16} /> Goedkeuren
+            <tab.icon size={16} /> {tab.label}
           </button>
-        )}
+        ))}
       </div>
 
-      {/* Km boeken tab — invoer links, eigen ritten rechts */}
       {activeTab === "boeken" && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <QuickKmBooking hideRecentTrips />
-          <MyKmOverzicht />
+          <MijnKilometers />
         </div>
       )}
 
-      {/* Goedkeuren tab (employer-only) */}
-      {activeTab === "goedkeuren" && viewMode === "employer" && <KmGoedkeurenView />}
-
-      {/* Overzicht tab */}
-      {activeTab === "overzicht" && (<div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <a
-            href={`${getErpNextLinkUrl()}/travel-request/new`}
-            target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-y-teal rounded-lg hover:bg-y-teal-dark"
-          >
-            <Plus size={14} /> {t("common.new")}
-          </a>
-          <a
-            href={`${getErpNextLinkUrl()}/travel-request`}
-            target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-          >
-            <ExternalLink size={14} /> ERPNext
-          </a>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> {t("common.refresh")}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
-      )}
-
-      {/* Filters */}
-      <div className="mb-4 flex items-center gap-3">
-        <Filter size={16} className="text-slate-400" />
-        <CompanySelect value={company} onChange={setCompany} />
-        <DateRangeFilter fromDate={fromDate} toDate={toDate} onFromChange={setFromDate} onToChange={setToDate} />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
-        >
-          <option value="">{t("common.all_statuses")}</option>
-          <option value="Draft">Draft</option>
-          <option value="Submitted">Submitted</option>
-        </select>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-y-teal/10 rounded-lg"><Car className="text-y-teal" size={20} /></div>
-            <p className="text-sm text-slate-500">{t("onkosten.total_km")}</p>
-          </div>
-          <p className="text-2xl font-bold text-slate-800">{loading ? "..." : `${totalDistance.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km`}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-orange-100 rounded-lg"><Clock className="text-orange-600" size={20} /></div>
-            <p className="text-sm text-slate-500">Draft</p>
-          </div>
-          <p className="text-2xl font-bold text-orange-600">{loading ? "..." : draftCount}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-green-100 rounded-lg"><CheckCircle className="text-green-600" size={20} /></div>
-            <p className="text-sm text-slate-500">Submitted</p>
-          </div>
-          <p className="text-2xl font-bold text-green-600">{loading ? "..." : submittedCount}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-purple-100 rounded-lg"><FileText className="text-purple-600" size={20} /></div>
-            <p className="text-sm text-slate-500">{t("onkosten.total_claims")}</p>
-          </div>
-          <p className="text-3xl font-bold text-slate-800">{loading ? "..." : requests.length}</p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="mb-4 relative">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder={t("onkosten.search_placeholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-y-teal text-sm"
-        />
-      </div>
-
-      {/* Employee-grouped cards (same layout as Timesheets Goedkeuren) */}
-      {loading ? (
-        <div className="text-center text-slate-400 py-12">{t("common.loading")}</div>
-      ) : groupedByEmployee.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center text-slate-400">
-          {t("onkosten.no_requests_found")}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {groupedByEmployee.map(([empName, reqs]) => {
-            const empTotalKm = reqs.reduce((s, r) => s + (r.custom_total_distance || 0), 0);
-            return (
-              <div key={empName} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-y-teal flex items-center justify-center text-white text-xs font-bold">
-                      {empName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="font-semibold text-slate-700">{empName}</span>
-                  </div>
-                  <span className="text-sm text-slate-500">
-                    {empTotalKm.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km totaal
-                  </span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {reqs.map((req) => {
-                    const isOpen = expandedTr.has(req.name);
-                    const itinerary = itineraryByTr.get(req.name);
-                    const isItineraryLoading = loadingTr === req.name;
-                    const analysis = itinerary ? analyzeTravelRequest(
-                      req.employee, req.custom_from_date, req.custom_to_date, itinerary,
-                      shiftWorkdaysOv, empHolidaysOv, onLeaveSetOv,
-                    ) : null;
-                    const anomalyCount = analysis
-                      ? itinerary!.reduce((s, r) => {
-                          const f = analysis.flagsForRow(r);
-                          return s + (f.onNonWorkday || f.deviantKm || f.duplicateDate ? 1 : 0);
-                        }, 0) + analysis.missingDays.length
-                      : 0;
-                    return (
-                      <div key={req.name}>
-                        <div className="px-4 py-3 flex items-center justify-between hover:bg-slate-50">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleTrExpand(req.name)}
-                              className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
-                            >
-                              <ChevronRight size={16} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                            </button>
-                            <a
-                              href={`${getErpNextLinkUrl()}/travel-request/${req.name}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="text-sm font-mono text-y-teal hover:underline"
-                            >
-                              {req.name}
-                            </a>
-                            <span className="text-sm text-slate-500">{req.custom_from_date} – {req.custom_to_date}</span>
-                            <span className="text-sm font-medium text-slate-700">
-                              {(req.custom_total_distance || 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km
-                            </span>
-                            {anomalyCount > 0 && (
-                              <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                                <AlertTriangle size={12} /> {anomalyCount}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${docstatusColors[req.docstatus] ?? "bg-slate-100 text-slate-600"}`}>
-                              {docstatusLabel[req.docstatus] ?? "Unknown"}
-                            </span>
-                            <a
-                              href={`${getErpNextLinkUrl()}/travel-request/${req.name}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="px-3 py-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
-                            >
-                              {t("timesheets.view", { defaultValue: "Bekijken" })}
-                            </a>
-                          </div>
-                        </div>
-                        {/* Expanded itinerary with anomaly highlighting */}
-                        {isOpen && (
-                          <div className="px-4 pb-3 border-t border-slate-100 bg-slate-50/50">
-                            {isItineraryLoading && !itinerary ? (
-                              <div className="text-xs text-slate-400 py-3">{t("common.loading")}</div>
-                            ) : !itinerary ? null : (
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="text-xs text-slate-500">
-                                    <th className="text-left px-2 py-2 font-medium">{t("common.date", { defaultValue: "Datum" })}</th>
-                                    <th className="text-left px-2 py-2 font-medium">Dag</th>
-                                    <th className="text-left px-2 py-2 font-medium">{t("dashboard.km_from_short", { defaultValue: "Van" })}</th>
-                                    <th className="text-left px-2 py-2 font-medium">{t("dashboard.km_to_short", { defaultValue: "Naar" })}</th>
-                                    <th className="text-left px-2 py-2 font-medium">{t("common.type", { defaultValue: "Type" })}</th>
-                                    <th className="text-right px-2 py-2 font-medium">Km</th>
-                                    <th className="text-right px-2 py-2 font-medium">€</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {itinerary.map((row, i) => {
-                                    const f = analysis ? analysis.flagsForRow(row) : { onNonWorkday: false, deviantKm: false, duplicateDate: false };
-                                    const rowBg = f.onNonWorkday || f.duplicateDate ? "bg-amber-50" : "";
-                                    const kmCls = f.deviantKm ? "bg-amber-100 text-amber-800 font-semibold rounded px-1" : "";
-                                    const day = (row.departure_date || "").slice(0, 10);
-                                    const dt = day ? new Date(day + "T12:00:00") : null;
-                                    const dayName = dt ? NL_DAY_NAMES_EN[dt.getDay()] : "";
-                                    return (
-                                      <tr key={i} className={`border-t border-slate-100 ${rowBg}`}>
-                                        <td className="px-2 py-1.5 text-slate-600">{day}</td>
-                                        <td className="px-2 py-1.5 text-slate-500">{dayName}</td>
-                                        <td className="px-2 py-1.5 text-slate-700">{row.travel_from}</td>
-                                        <td className="px-2 py-1.5 text-slate-700">{row.travel_to}</td>
-                                        <td className="px-2 py-1.5 text-slate-500">{row.custom_journey_type}</td>
-                                        <td className="px-2 py-1.5 text-right">
-                                          <span className={kmCls}>
-                                            {(row.custom_distance || 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}
-                                          </span>
-                                        </td>
-                                        <td className="px-2 py-1.5 text-right text-slate-500">
-                                          {row.custom_travel_cost
-                                            ? `€ ${row.custom_travel_cost.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                            : ""}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                  {analysis?.missingDays.map((m, i) => (
-                                    <tr key={`miss-${i}`} className="border-t border-slate-100 bg-orange-50 text-orange-800">
-                                      <td className="px-2 py-1.5">{m.date}</td>
-                                      <td className="px-2 py-1.5 italic">{m.dayName}</td>
-                                      <td className="px-2 py-1.5 italic" colSpan={4}>
-                                        Geen km geboekt op deze werkdag
-                                      </td>
-                                      <td className="px-2 py-1.5"></td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                            {analysis && analysis.mode > 0 && (
-                              <p className="mt-2 text-[10px] text-slate-400">
-                                Baseline (modus woon-werk): {analysis.mode.toLocaleString("nl-NL")} km
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+      {activeTab === "onkosten" && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <OnkostenBoeken />
+          <MijnOnkosten />
         </div>
       )}
 
-      {/* Summary */}
-      {!loading && filtered.length > 0 && (
-        <div className="mt-2 px-3 py-2 bg-slate-50 rounded-lg flex items-center justify-between text-sm">
-          <span className="text-slate-500">{filtered.length} declaraties</span>
-          <span className="font-semibold text-slate-700">
-            Totaal: {filtered.reduce((s, r) => s + (r.custom_total_distance || 0), 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km
-          </span>
-        </div>
-      )}
-    </div>)}
+      {activeTab === "overzicht" && <DeclaratieOverzicht />}
+
+      {activeTab === "goedkeuren" && viewMode === "employer" && <GoedkeurenView />}
     </div>
   );
 }
 
-/* ─── Km Goedkeuren ───
-   Employer-only tab that mirrors the Timesheets Goedkeuren UX:
-   - draft Travel Requests only (docstatus=0)
-   - period filter (default "dit_jaar"), never current month
-   - per-medewerker cards, chevron to expand TR → itinerary rows
-   - Goedkeuren button per TR (frappe.client.submit with full doc)
-   - per-row highlight: km on a non-shift day, missing-day rows
-   - anomaly highlight: km value deviating from the mode (commute baseline),
-     and multiple rows on the same date
-*/
-
-const NL_DAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-interface ItineraryRowFull {
-  travel_from?: string;
-  travel_to?: string;
-  custom_distance?: number;
-  departure_date?: string;
-  custom_journey_type?: string;
-  custom_travel_cost?: number;
+/** De melding wanneer het provisioningscript nog niet gedraaid is. */
+function ModuleNotice({ show }: { show: boolean }) {
+  const { t } = useTranslation();
+  if (!show) return null;
+  return (
+    <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm flex items-start gap-2">
+      <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+      <span>{t("declaraties.doctypes_missing")}</span>
+    </div>
+  );
 }
 
-interface RowFlags {
-  onNonWorkday: boolean;
-  deviantKm: boolean;
-  duplicateDate: boolean;
-}
-
-interface ItineraryAnalysis {
-  mode: number;
-  flagsForRow(r: ItineraryRowFull): RowFlags;
-  missingDays: { date: string; dayName: string }[];
-}
+/* ─────────────────────── Km boeken: eigen ritten ─────────────────────── */
 
 /**
- * Anomaly analysis for a Travel Request's itinerary, shared by the
- * Overzicht and Goedkeuren tabs.
- *
- * Detects:
- *  - rows on a non-shift day (or holiday / leave day)
- *  - rows with km value deviating from the mode (commute baseline)
- *  - multiple rows on the same date
- *  - shift workdays in the TR range with no itinerary row at all
+ * De eigen ritten van deze maand, met een bulkknop om alle concepten in één
+ * keer in te dienen — dat is wat een medewerker aan het eind van de maand
+ * daadwerkelijk doet.
  */
-function analyzeTravelRequest(
-  employee: string,
-  customFromDate: string,
-  customToDate: string,
-  rows: ItineraryRowFull[],
-  shiftWorkdays: Map<string, Set<string>>,
-  empHolidays: Map<string, Set<string>>,
-  onLeaveSet: Set<string>,
-): ItineraryAnalysis {
-  const workdays = shiftWorkdays.get(employee);
-  const holidays = empHolidays.get(employee) || new Set<string>();
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-  // Mode = most common km value across the rows = the commute baseline.
-  const kmCounts = new Map<number, number>();
-  for (const r of rows) {
-    const km = Math.round((r.custom_distance || 0) * 10) / 10;
-    if (km <= 0) continue;
-    kmCounts.set(km, (kmCounts.get(km) || 0) + 1);
-  }
-  let mode = 0; let modeCount = 0;
-  for (const [km, c] of kmCounts) if (c > modeCount) { mode = km; modeCount = c; }
-
-  const datesSeen = new Map<string, number>();
-  for (const r of rows) {
-    if (!r.departure_date) continue;
-    const d = r.departure_date.slice(0, 10);
-    datesSeen.set(d, (datesSeen.get(d) || 0) + 1);
-  }
-
-  function flagsForRow(r: ItineraryRowFull): RowFlags {
-    const day = (r.departure_date || "").slice(0, 10);
-    const dateObj = day ? new Date(day + "T12:00:00") : null;
-    const dayName = dateObj ? NL_DAY_NAMES_EN[dateObj.getDay()] : "";
-    const isShiftDay = workdays ? workdays.has(dayName) : false;
-    const isHol: boolean = day ? (holidays.has(day) || !!isHoliday(day, dateObj!.getFullYear())) : false;
-    const isLeave = day ? onLeaveSet.has(`${employee}|${day}`) : false;
-    const onNonWorkday: boolean = Boolean(day) && (!isShiftDay || isHol || isLeave);
-    const km = Math.round((r.custom_distance || 0) * 10) / 10;
-    const deviantKm: boolean = mode > 0 && km > 0 && km !== mode;
-    const duplicateDate: boolean = Boolean(day) && (datesSeen.get(day) || 0) > 1;
-    return { onNonWorkday, deviantKm, duplicateDate };
-  }
-
-  const missingDays: { date: string; dayName: string }[] = [];
-  if (workdays && customFromDate && customToDate) {
-    const f = new Date(customFromDate + "T12:00:00");
-    const u = new Date(customToDate + "T12:00:00");
-    const seenDates = new Set<string>();
-    for (const r of rows) if (r.departure_date) seenDates.add(r.departure_date.slice(0, 10));
-    const cur = new Date(f);
-    while (cur <= u) {
-      const dStr = fmt(cur);
-      const dayName = NL_DAY_NAMES_EN[cur.getDay()];
-      const isShiftDay = workdays.has(dayName);
-      const isHol = holidays.has(dStr) || !!isHoliday(dStr, cur.getFullYear());
-      const isLeave = onLeaveSet.has(`${employee}|${dStr}`);
-      if (isShiftDay && !isHol && !isLeave && !seenDates.has(dStr)) {
-        missingDays.push({ date: dStr, dayName });
-      }
-      cur.setDate(cur.getDate() + 1);
-    }
-  }
-
-  return { mode, flagsForRow, missingDays };
-}
-
-function KmGoedkeurenView() {
+function MijnKilometers() {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
-  const company = getActiveCompany();
+  const employee = useSessionEmployeeId(allEmployees);
+  const describeError = useDeclaratieError();
 
-  const [datePreset, setDatePreset] = useState<KmDateRangePreset>("dit_jaar");
-  const [requests, setRequests] = useState<TravelRequest[]>([]);
+  const [ritten, setRitten] = useState<KmRegistratie[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
-  const [expandedTr, setExpandedTr] = useState<Set<string>>(new Set());
-  const [itineraryByTr, setItineraryByTr] = useState<Map<string, ItineraryRowFull[]>>(new Map());
-  const [loadingTr, setLoadingTr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [doctypeMissing, setDoctypeMissing] = useState(false);
+  const [maand] = useState(() => new Date());
 
-  // Per-employee shift workdays + holidays + leave days. Used to highlight
-  // anomalies in the itinerary rows (km on a non-shift day, missing-day
-  // rows the employee should have driven).
-  const [shiftWorkdays, setShiftWorkdays] = useState<Map<string, Set<string>>>(new Map());
-  const [empHolidays, setEmpHolidays] = useState<Map<string, Set<string>>>(new Map());
-  const [onLeaveSet, setOnLeaveSet] = useState<Set<string>>(new Set());
+  const range = useMemo(() => monthRange(maand), [maand]);
 
-  const dateRange = useMemo(() => getKmDateRange(datePreset), [datePreset]);
-
-  async function loadData() {
+  const load = useCallback(async () => {
+    if (!employee) { setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
-      const filters: unknown[][] = [
-        ["docstatus", "=", 0],
-        // Never list TRs that overlap the current (still-running) month.
-        ["custom_to_date", "<=", dateRange.to],
-      ];
-      if (dateRange.from) filters.push(["custom_from_date", ">=", dateRange.from]);
-      const list = await fetchAll<TravelRequest>(
-        "Travel Request",
-        ["name", "employee", "employee_name", "company", "custom_from_date", "custom_to_date", "custom_total_distance", "docstatus", "travel_type"],
-        filters,
-        "employee_name asc, custom_from_date asc",
-      );
-      // Filter by company via the employee's company.
-      const filtered = company
-        ? list.filter((r) => {
-            const emp = allEmployees.find((e) => e.name === r.employee);
-            return !emp || emp.company === company;
-          })
-        : list;
-      setRequests(filtered);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Onbekende fout");
+      setRitten(await fetchKmRegistraties({ employee, vanaf: range.from, tot: range.to }));
+    } catch (err) {
+      setError(describeError(err, "common.unknown_error"));
     } finally {
       setLoading(false);
+      setDoctypeMissing(isDoctypeMissing(KM_DOCTYPE));
     }
-  }
-  useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [datePreset, company]);
+  }, [employee, range.from, range.to, describeError]);
 
-  // Fetch shift workdays per employee in the loaded set.
-  useEffect(() => {
-    if (requests.length === 0) return;
-    let cancelled = false;
-    const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-    fetchEmployeeShiftWorkdays(ids).then(m => { if (!cancelled) setShiftWorkdays(m); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [requests]);
+  useEffect(() => { load(); }, [load]);
 
-  // Fetch holiday list per employee.
-  useEffect(() => {
-    if (requests.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-      const m = new Map<string, Set<string>>();
-      await Promise.all(ids.map(async (id) => {
-        try { m.set(id, await getEmployeeHolidaySet(id)); } catch { /* ignore */ }
-      }));
-      if (!cancelled) setEmpHolidays(m);
-    })();
-    return () => { cancelled = true; };
-  }, [requests]);
+  const concepten = useMemo(() => ritten.filter((r) => r.status === "Concept"), [ritten]);
 
-  // Approved leaves overlapping the date range.
-  useEffect(() => {
-    if (requests.length === 0 || !dateRange.from) return;
-    let cancelled = false;
-    (async () => {
-      const ids = Array.from(new Set(requests.map(r => r.employee).filter(Boolean)));
-      try {
-        const leaves = await fetchAll<{ employee: string; from_date: string; to_date: string }>(
-          "Leave Application",
-          ["employee", "from_date", "to_date"],
-          [
-            ["employee", "in", ids],
-            ["from_date", "<=", dateRange.to],
-            ["to_date", ">=", dateRange.from],
-            ["docstatus", "=", 1],
-          ],
-        );
-        const set = new Set<string>();
-        const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        for (const lv of leaves) {
-          if (!lv.from_date || !lv.to_date) continue;
-          const f = new Date(lv.from_date + "T12:00:00");
-          const u = new Date(lv.to_date + "T12:00:00");
-          const cur = new Date(f);
-          while (cur <= u) { set.add(`${lv.employee}|${fmt(cur)}`); cur.setDate(cur.getDate() + 1); }
-        }
-        if (!cancelled) setOnLeaveSet(set);
-      } catch { if (!cancelled) setOnLeaveSet(new Set()); }
-    })();
-    return () => { cancelled = true; };
-  }, [requests, dateRange.from, dateRange.to]);
-
-  async function toggleTrExpand(name: string) {
-    if (expandedTr.has(name)) {
-      setExpandedTr(prev => { const n = new Set(prev); n.delete(name); return n; });
-      return;
-    }
-    setExpandedTr(prev => new Set(prev).add(name));
-    if (itineraryByTr.has(name)) return;
-    setLoadingTr(name);
-    try {
-      const doc = await fetchDocument<{ itinerary?: ItineraryRowFull[] }>("Travel Request", name);
-      const rows = (doc.itinerary || []).slice().sort((a, b) =>
-        (a.departure_date || "").localeCompare(b.departure_date || ""),
-      );
-      setItineraryByTr(prev => new Map(prev).set(name, rows));
-    } catch {
-      setItineraryByTr(prev => new Map(prev).set(name, []));
-    } finally {
-      setLoadingTr(null);
-    }
-  }
-
-  async function handleApprove(req: TravelRequest) {
-    setSubmittingId(req.name);
+  async function dienConceptenIn() {
+    setBusy(true);
     setError(null);
     try {
-      const doc = await fetchDocument("Travel Request", req.name);
-      await callMethod("frappe.client.submit", { doc: JSON.stringify(doc) });
-      setRequests(prev => prev.filter(r => r.name !== req.name));
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error("[travel-request approve]", req.name, e);
-      setError(e instanceof Error && e.message ? `Goedkeuren mislukt: ${e.message}` : "Goedkeuren mislukt");
+      for (const rit of concepten) await dienIn(KM_DOCTYPE, rit.name);
+      await load();
+    } catch (err) {
+      setError(describeError(err, "declaraties.submit_failed"));
     } finally {
-      setSubmittingId(null);
+      setBusy(false);
     }
   }
 
-  // Group by employee, employees alphabetical.
-  const grouped = useMemo(() => {
-    const map = new Map<string, TravelRequest[]>();
-    for (const r of requests) {
-      const key = r.employee_name || r.employee || "(onbekend)";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
+  async function verwijder(rit: KmRegistratie) {
+    setError(null);
+    try {
+      await deleteDocument(KM_DOCTYPE, rit.name);
+      setRitten((prev) => prev.filter((r) => r.name !== rit.name));
+    } catch (err) {
+      setError(describeError(err, "common.delete_failed"));
     }
-    for (const list of map.values()) {
-      list.sort((a, b) => (a.custom_from_date || "").localeCompare(b.custom_from_date || ""));
-    }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [requests]);
+  }
 
-  function analyzeItinerary(req: TravelRequest, rows: ItineraryRowFull[]) {
-    return analyzeTravelRequest(req.employee, req.custom_from_date, req.custom_to_date, rows, shiftWorkdays, empHolidays, onLeaveSet);
+  const totaalKm = ritten.reduce((s, r) => s + totaleKilometers(r), 0);
+  const totaalBedrag = ritten.reduce((s, r) => s + (r.bedrag || 0), 0);
+  const monthName = maand.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Car size={18} className="text-y-teal" />
+        <h3 className="font-semibold text-slate-800">{t("declaraties.my_km_title", { month: monthName })}</h3>
+        {concepten.length > 0 && (
+          <button onClick={dienConceptenIn} disabled={busy}
+            className="ml-auto flex items-center gap-1 px-2.5 py-1 bg-y-teal text-white rounded-lg text-xs hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer">
+            <Send size={12} /> {t("declaraties.submit_all", { count: concepten.length })}
+          </button>
+        )}
+      </div>
+
+      {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      <ModuleNotice show={!loading && doctypeMissing} />
+
+      {loading ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("common.loading")}</p>
+      ) : doctypeMissing ? null : !employee ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("y_next.no_employee_link")}</p>
+      ) : ritten.length === 0 ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("expenses.no_trips_this_month", { defaultValue: "Geen ritten deze maand" })}</p>
+      ) : (
+        <div className="overflow-y-auto max-h-[500px]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-slate-200 text-xs text-slate-500">
+                <th className="text-left py-2 pr-2">{t("common.date", { defaultValue: "Datum" })}</th>
+                <th className="text-left py-2 pr-2">{t("dashboard.km_from_short")}</th>
+                <th className="text-left py-2 pr-2">{t("dashboard.km_to_short")}</th>
+                <th className="text-right py-2 pr-2">Km</th>
+                <th className="text-right py-2 pr-2">€</th>
+                <th className="text-left py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ritten.map((rit) => (
+                <tr key={rit.name} className="border-b border-slate-100 hover:bg-slate-50 group">
+                  <td className="py-2 pr-2 text-slate-600 whitespace-nowrap">{rit.datum}</td>
+                  <td className="py-2 pr-2 text-slate-700 truncate max-w-[160px]" title={rit.van}>{rit.van?.split(",")[0] || "-"}</td>
+                  <td className="py-2 pr-2 text-slate-700 truncate max-w-[160px]" title={rit.naar}>{rit.naar?.split(",")[0] || "-"}</td>
+                  <td className="py-2 pr-2 text-right font-medium">{formatKm(totaleKilometers(rit))}</td>
+                  <td className="py-2 pr-2 text-right text-slate-600">{formatEuro(rit.bedrag || 0)}</td>
+                  <td className="py-2 flex items-center gap-1">
+                    <StatusBadge status={rit.status} />
+                    {rit.status === "Concept" && (
+                      <button onClick={() => verwijder(rit)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-red-400 hover:text-red-600 cursor-pointer ml-auto"
+                        title={t("common.delete_tooltip")}>&#128465;</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-slate-300 font-semibold">
+                <td colSpan={3} className="py-2 text-slate-700">{t("declaraties.total_trips", { count: ritten.length })}</td>
+                <td className="py-2 text-right text-slate-800">{formatKm(totaalKm)}</td>
+                <td className="py-2 text-right text-slate-800">{formatEuro(totaalBedrag)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ────────────────────────── Onkosten boeken ────────────────────────── */
+
+/**
+ * Een onkostenpost invoeren. Het bonnetje is een gewone ERPNext-bijlage: het
+ * document wordt eerst aangemaakt en het bestand daarna aan die naam gehangen
+ * (`upload_file` heeft een bestaande docname nodig). Mislukt alléén de upload,
+ * dan blijft de post staan met een waarschuwing — beter dan de hele boeking
+ * weggooien omdat een foto niet doorkwam.
+ */
+function OnkostenBoeken() {
+  const { t } = useTranslation();
+  const allEmployees = useEmployees();
+  const projects = useProjects();
+  const sessionEmployee = useSessionEmployeeId(allEmployees);
+
+  const [employee, setEmployee] = useState("");
+  const [datum, setDatum] = useState(() => formatErpDate(new Date()));
+  const [soort, setSoort] = useState("");
+  const [soorten, setSoorten] = useState<string[]>([]);
+  const [bedrag, setBedrag] = useState("");
+  const [btw, setBtw] = useState("");
+  const [omschrijving, setOmschrijving] = useState("");
+  const [project, setProject] = useState("");
+  const [leverancier, setLeverancier] = useState("");
+  const [bon, setBon] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [warning, setWarning] = useState("");
+  const [error, setError] = useState("");
+  const [doctypeMissing, setDoctypeMissing] = useState(false);
+
+  useEffect(() => { if (!employee && sessionEmployee) setEmployee(sessionEmployee); }, [employee, sessionEmployee]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOnkostensoorten()
+      .then((rows) => { if (!cancelled) { setSoorten(rows); setSoort((prev) => prev || rows[0] || ""); } })
+      .catch(() => { if (!cancelled) setSoorten([]); })
+      .finally(() => { if (!cancelled) setDoctypeMissing(isDoctypeMissing(ONKOSTEN_DOCTYPE)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const activeEmployees = useMemo(() => allEmployees.filter((e) => e.status === "Active"), [allEmployees]);
+  const openProjects = useMemo(() => projects.filter((p) => p.status !== "Cancelled"), [projects]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!employee || !soort || !bedrag) return;
+    setSubmitting(true);
+    setError("");
+    setWarning("");
+    setSuccess("");
+    try {
+      const doc = await createOnkosten({
+        employee,
+        datum,
+        soort,
+        bedrag: parseFloat(bedrag),
+        btwBedrag: btw ? parseFloat(btw) : undefined,
+        omschrijving: omschrijving || undefined,
+        project: project || undefined,
+        leverancier: leverancier || undefined,
+      });
+      if (bon) {
+        try {
+          // Privé, want een bon is bedrijfsadministratie: een publieke
+          // File-URL is voor iedereen met de link leesbaar.
+          await uploadFile(bon, ONKOSTEN_DOCTYPE, doc.name, true);
+        } catch {
+          setWarning(t("declaraties.receipt_upload_failed", { name: doc.name }));
+        }
+      }
+      setSuccess(t("declaraties.expense_booked", { name: doc.name, amount: formatEuro(parseFloat(bedrag)) }));
+      setBedrag("");
+      setBtw("");
+      setOmschrijving("");
+      setLeverancier("");
+      setBon(null);
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) setError(t("declaraties.create_forbidden"));
+      else setError(err instanceof Error ? err.message : t("common.unknown_error"));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Receipt size={18} className="text-y-teal" />
+        <h3 className="font-semibold text-slate-800">{t("declaraties.book_expense")}</h3>
+      </div>
+
+      <ModuleNotice show={doctypeMissing} />
+      {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
+      {warning && <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">{warning}</div>}
+      {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("common.employee_required")}</label>
+            <select value={employee} onChange={(e) => setEmployee(e.target.value)} required
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
+              <option value="">{t("common.select")}</option>
+              {activeEmployees.map((emp) => <option key={emp.name} value={emp.name}>{emp.employee_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("common.date_required")}</label>
+            <input type="date" value={datum} onChange={(e) => setDatum(e.target.value)} required
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.kind_required")}</label>
+            <select value={soort} onChange={(e) => setSoort(e.target.value)} required
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
+              {soorten.length === 0 && <option value="">{t("common.select")}</option>}
+              {soorten.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.amount_required")}</label>
+            <input type="number" step="0.01" min="0" value={bedrag} onChange={(e) => setBedrag(e.target.value)} required
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.vat_optional")}</label>
+            <input type="number" step="0.01" min="0" value={btw} onChange={(e) => setBtw(e.target.value)}
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.supplier_optional")}</label>
+            <input type="text" value={leverancier} onChange={(e) => setLeverancier(e.target.value)}
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.project_optional")}</label>
+            <select value={project} onChange={(e) => setProject(e.target.value)}
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
+              <option value="">{t("common.select")}</option>
+              {openProjects.map((p) => <option key={p.name} value={p.name}>{p.project_name || p.name}</option>)}
+            </select>
+          </div>
+        </div>
+
         <div>
-          <h3 className="text-lg font-semibold text-slate-800">Kilometers goedkeuren</h3>
-          <p className="text-sm text-slate-500">
-            {dateRange.from ? `${dateRange.from} t/m ${dateRange.to}` : `Alle drafts t/m ${dateRange.to}`}
-            {company && <span className="ml-2 text-slate-400">· {company}</span>}
-          </p>
+          <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.description_optional")}</label>
+          <textarea value={omschrijving} onChange={(e) => setOmschrijving(e.target.value)} rows={2}
+            className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+        </div>
+
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.receipt_optional")}</label>
+            <input type="file" accept="image/*,application/pdf"
+              onChange={(e) => setBon(e.target.files?.[0] ?? null)}
+              className="w-full text-xs text-slate-600 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-slate-100 file:text-slate-700 cursor-pointer" />
+          </div>
+          <button type="submit" disabled={submitting || doctypeMissing || !employee || !soort || !bedrag}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer">
+            <Send size={14} /> {submitting ? "..." : t("declaraties.book")}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ────────────────────── Onkosten: eigen overzicht ────────────────────── */
+
+function MijnOnkosten() {
+  const { t } = useTranslation();
+  const allEmployees = useEmployees();
+  const employee = useSessionEmployeeId(allEmployees);
+  const describeError = useDeclaratieError();
+
+  const [posten, setPosten] = useState<Onkostenpost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [doctypeMissing, setDoctypeMissing] = useState(false);
+  const [maand] = useState(() => new Date());
+  const range = useMemo(() => monthRange(maand), [maand]);
+
+  const load = useCallback(async () => {
+    if (!employee) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      setPosten(await fetchOnkosten({ employee, vanaf: range.from, tot: range.to }));
+    } catch (err) {
+      setError(describeError(err, "common.unknown_error"));
+    } finally {
+      setLoading(false);
+      setDoctypeMissing(isDoctypeMissing(ONKOSTEN_DOCTYPE));
+    }
+  }, [employee, range.from, range.to, describeError]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const concepten = useMemo(() => posten.filter((p) => p.status === "Concept"), [posten]);
+
+  async function dienConceptenIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const post of concepten) await dienIn(ONKOSTEN_DOCTYPE, post.name);
+      await load();
+    } catch (err) {
+      setError(describeError(err, "declaraties.submit_failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verwijder(post: Onkostenpost) {
+    setError(null);
+    try {
+      await deleteDocument(ONKOSTEN_DOCTYPE, post.name);
+      setPosten((prev) => prev.filter((p) => p.name !== post.name));
+    } catch (err) {
+      setError(describeError(err, "common.delete_failed"));
+    }
+  }
+
+  const totaal = posten.reduce((s, p) => s + (p.bedrag || 0), 0);
+  const monthName = maand.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Receipt size={18} className="text-y-teal" />
+        <h3 className="font-semibold text-slate-800">{t("declaraties.my_expenses_title", { month: monthName })}</h3>
+        {concepten.length > 0 && (
+          <button onClick={dienConceptenIn} disabled={busy}
+            className="ml-auto flex items-center gap-1 px-2.5 py-1 bg-y-teal text-white rounded-lg text-xs hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer">
+            <Send size={12} /> {t("declaraties.submit_all", { count: concepten.length })}
+          </button>
+        )}
+      </div>
+
+      {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      <ModuleNotice show={!loading && doctypeMissing} />
+
+      {loading ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("common.loading")}</p>
+      ) : doctypeMissing ? null : !employee ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("y_next.no_employee_link")}</p>
+      ) : posten.length === 0 ? (
+        <p className="text-center text-slate-400 py-4 text-sm">{t("declaraties.no_expenses_this_month")}</p>
+      ) : (
+        <div className="overflow-y-auto max-h-[500px]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-slate-200 text-xs text-slate-500">
+                <th className="text-left py-2 pr-2">{t("common.date", { defaultValue: "Datum" })}</th>
+                <th className="text-left py-2 pr-2">{t("declaraties.kind")}</th>
+                <th className="text-left py-2 pr-2">{t("declaraties.description")}</th>
+                <th className="text-right py-2 pr-2">€</th>
+                <th className="text-left py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {posten.map((post) => (
+                <tr key={post.name} className="border-b border-slate-100 hover:bg-slate-50 group">
+                  <td className="py-2 pr-2 text-slate-600 whitespace-nowrap">{post.datum}</td>
+                  <td className="py-2 pr-2 text-slate-700">{post.soort}</td>
+                  <td className="py-2 pr-2 text-slate-600 truncate max-w-[200px]" title={post.omschrijving}>{post.omschrijving || "-"}</td>
+                  <td className="py-2 pr-2 text-right font-medium">{formatEuro(post.bedrag || 0)}</td>
+                  <td className="py-2 flex items-center gap-1">
+                    <StatusBadge status={post.status} />
+                    {post.status === "Concept" && (
+                      <button onClick={() => verwijder(post)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-red-400 hover:text-red-600 cursor-pointer ml-auto"
+                        title={t("common.delete_tooltip")}>&#128465;</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-slate-300 font-semibold">
+                <td colSpan={3} className="py-2 text-slate-700">{t("declaraties.total_expenses", { count: posten.length })}</td>
+                <td className="py-2 text-right text-slate-800">{formatEuro(totaal)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────── Overzicht ─────────────────────────── */
+
+interface TabelRij {
+  name: string;
+  datum: string;
+  employee: string;
+  omschrijving: string;
+  extra: string;
+  bedrag: number;
+  status: DeclaratieStatus;
+  goedgekeurdDoor?: string;
+}
+
+/**
+ * Alles wat deze gebruiker mag zien, gefilterd op periode/status/medewerker.
+ * Voor een medewerker levert dit dankzij `if_owner` automatisch alleen zijn
+ * eigen declaraties op — er is dus geen aparte werkgeversvariant nodig.
+ */
+function DeclaratieOverzicht() {
+  const { t } = useTranslation();
+  const allEmployees = useEmployees();
+  const describeError = useDeclaratieError();
+
+  const [vanaf, setVanaf] = useState(() => formatErpDate(new Date(new Date().getFullYear(), 0, 1)));
+  const [tot, setTot] = useState(() => formatErpDate(new Date()));
+  const [status, setStatus] = useState<DeclaratieStatus | "">("");
+  const [employee, setEmployee] = useState("");
+  const [zoek, setZoek] = useState("");
+
+  const [ritten, setRitten] = useState<KmRegistratie[]>([]);
+  const [posten, setPosten] = useState<Onkostenpost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [doctypeMissing, setDoctypeMissing] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const filter = { vanaf, tot, status: status || undefined, employee: employee || undefined };
+    try {
+      const [km, on] = await Promise.all([fetchKmRegistraties(filter), fetchOnkosten(filter)]);
+      setRitten(km);
+      setPosten(on);
+    } catch (err) {
+      setError(describeError(err, "common.unknown_error"));
+    } finally {
+      setLoading(false);
+      setDoctypeMissing(isDoctypeMissing(KM_DOCTYPE) && isDoctypeMissing(ONKOSTEN_DOCTYPE));
+    }
+  }, [vanaf, tot, status, employee, describeError]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const naamVan = useCallback(
+    (id: string) => allEmployees.find((e) => e.name === id)?.employee_name || id,
+    [allEmployees],
+  );
+
+  const q = zoek.trim().toLowerCase();
+  const zichtbareRitten = useMemo(
+    () => (!q ? ritten : ritten.filter((r) => `${r.name} ${naamVan(r.employee)} ${r.van} ${r.naar}`.toLowerCase().includes(q))),
+    [ritten, q, naamVan],
+  );
+  const zichtbarePosten = useMemo(
+    () => (!q ? posten : posten.filter((p) => `${p.name} ${naamVan(p.employee)} ${p.soort} ${p.omschrijving}`.toLowerCase().includes(q))),
+    [posten, q, naamVan],
+  );
+
+  const totaalKm = zichtbareRitten.reduce((s, r) => s + totaleKilometers(r), 0);
+  const totaalKmBedrag = zichtbareRitten.reduce((s, r) => s + (r.bedrag || 0), 0);
+  const totaalOnkosten = zichtbarePosten.reduce((s, p) => s + (p.bedrag || 0), 0);
+  const openCount = [...zichtbareRitten, ...zichtbarePosten].filter((d) => d.status === "Ingediend").length;
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-3 flex-wrap">
+        <Filter size={16} className="text-slate-400" />
+        <input type="date" value={vanaf} onChange={(e) => setVanaf(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm" />
+        <input type="date" value={tot} onChange={(e) => setTot(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm" />
+        <select value={status} onChange={(e) => setStatus(e.target.value as DeclaratieStatus | "")}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm">
+          <option value="">{t("common.all_statuses")}</option>
+          {DECLARATIE_STATUSSEN.map((s) => (
+            <option key={s} value={s}>{t(`declaraties.status_${s.toLowerCase()}`, { defaultValue: s })}</option>
+          ))}
+        </select>
+        <select value={employee} onChange={(e) => setEmployee(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm">
+          <option value="">{t("declaraties.all_employees")}</option>
+          {allEmployees.map((e) => <option key={e.name} value={e.name}>{e.employee_name}</option>)}
+        </select>
+        <button onClick={load} disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer text-sm">
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> {t("common.refresh")}
+        </button>
+      </div>
+
+      {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
+      <ModuleNotice show={!loading && doctypeMissing} />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <KpiCard icon={Car} tint="teal" label={t("onkosten.total_km")} value={loading ? "..." : formatKm(totaalKm)} />
+        <KpiCard icon={Euro} tint="teal" label={t("declaraties.km_amount")} value={loading ? "..." : formatEuro(totaalKmBedrag)} />
+        <KpiCard icon={Receipt} tint="purple" label={t("declaraties.expenses_amount")} value={loading ? "..." : formatEuro(totaalOnkosten)} />
+        <KpiCard icon={Clock} tint="orange" label={t("declaraties.open_count")} value={loading ? "..." : String(openCount)} />
+      </div>
+
+      <div className="mb-4 relative">
+        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input type="text" placeholder={t("onkosten.search_placeholder")} value={zoek} onChange={(e) => setZoek(e.target.value)}
+          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-y-teal text-sm" />
+      </div>
+
+      {loading ? (
+        <div className="text-center text-slate-400 py-12">{t("common.loading")}</div>
+      ) : (
+        <div className="space-y-6">
+          <DeclaratieTabel
+            title={t("declaraties.tab_km")}
+            leeg={t("declaraties.no_km_found")}
+            rows={zichtbareRitten.map((r) => ({
+              name: r.name,
+              datum: r.datum,
+              employee: naamVan(r.employee),
+              omschrijving: `${r.van?.split(",")[0] || "?"} → ${r.naar?.split(",")[0] || "?"}${r.retour ? " (retour)" : ""}`,
+              extra: formatKm(totaleKilometers(r)),
+              bedrag: r.bedrag || 0,
+              status: r.status,
+              goedgekeurdDoor: r.goedgekeurd_door,
+            }))}
+          />
+          <DeclaratieTabel
+            title={t("declaraties.tab_expenses")}
+            leeg={t("declaraties.no_expenses_found")}
+            rows={zichtbarePosten.map((p) => ({
+              name: p.name,
+              datum: p.datum,
+              employee: naamVan(p.employee),
+              omschrijving: p.omschrijving || "-",
+              extra: p.soort,
+              bedrag: p.bedrag || 0,
+              status: p.status,
+              goedgekeurdDoor: p.goedgekeurd_door,
+            }))}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiCard({ icon: Icon, tint, label, value }: { icon: typeof Car; tint: "teal" | "orange" | "purple"; label: string; value: string }) {
+  const tints = {
+    teal: "bg-y-teal/10 text-y-teal",
+    orange: "bg-orange-100 text-orange-600",
+    purple: "bg-purple-100 text-purple-600",
+  } as const;
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div className="flex items-center gap-3 mb-1">
+        <div className={`p-2 rounded-lg ${tints[tint]}`}><Icon size={20} /></div>
+        <p className="text-sm text-slate-500">{label}</p>
+      </div>
+      <p className="text-2xl font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function DeclaratieTabel({ title, leeg, rows }: { title: string; leeg: string; rows: TabelRij[] }) {
+  const { t } = useTranslation();
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <span className="font-semibold text-slate-700">{title}</span>
+        <span className="text-sm text-slate-500">{formatEuro(rows.reduce((s, r) => s + r.bedrag, 0))}</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-slate-400">{leeg}</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-slate-500 border-b border-slate-100">
+              <th className="text-left px-4 py-2 font-medium">{t("common.date", { defaultValue: "Datum" })}</th>
+              <th className="text-left px-2 py-2 font-medium">{t("common.employee", { defaultValue: "Medewerker" })}</th>
+              <th className="text-left px-2 py-2 font-medium">{t("declaraties.description")}</th>
+              <th className="text-left px-2 py-2 font-medium"></th>
+              <th className="text-right px-2 py-2 font-medium">€</th>
+              <th className="text-left px-4 py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.name} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{row.datum}</td>
+                <td className="px-2 py-2 text-slate-700">{row.employee}</td>
+                <td className="px-2 py-2 text-slate-600">{row.omschrijving}</td>
+                <td className="px-2 py-2 text-slate-500">{row.extra}</td>
+                <td className="px-2 py-2 text-right font-medium">{formatEuro(row.bedrag)}</td>
+                <td className="px-4 py-2">
+                  <StatusBadge status={row.status} />
+                  {/* Een "Goedgekeurd" zonder goedkeurstempel kan niet van de
+                      werkgever komen: die twee velden staan op permlevel 1. */}
+                  {row.status === "Goedgekeurd" && !row.goedgekeurdDoor && (
+                    <span className="ml-1 text-[10px] text-amber-700" title={t("declaraties.unstamped_hint")}>⚠</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────── Goedkeuren ─────────────────────────── */
+
+/** De velden van een bijlage die dit scherm gebruikt. */
+interface Bijlage { name: string; file_url: string; file_name: string }
+
+interface TeBeoordelen {
+  doctype: string;
+  name: string;
+  datum: string;
+  employee: string;
+  regel: string;
+  bedrag: number;
+}
+
+/**
+ * Werkgeversweergave: alles met status "Ingediend", per stuk, per medewerker
+ * of in bulk goed te keuren. Bevat ook het kilometertarief — de enige
+ * instelling die bij dit scherm hoort.
+ */
+function GoedkeurenView() {
+  const { t } = useTranslation();
+  const allEmployees = useEmployees();
+  const describeError = useDeclaratieError();
+
+  const [ritten, setRitten] = useState<KmRegistratie[]>([]);
+  const [posten, setPosten] = useState<Onkostenpost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [geselecteerd, setGeselecteerd] = useState<Set<string>>(new Set());
+  const [gebruiker, setGebruiker] = useState<string | null>(null);
+  const [bijlagen, setBijlagen] = useState<Map<string, Bijlage[]>>(new Map());
+
+  useEffect(() => { resolveSessionUser().then(setGebruiker).catch(() => setGebruiker(null)); }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [km, on] = await Promise.all([
+        fetchKmRegistraties({ status: "Ingediend" }),
+        fetchOnkosten({ status: "Ingediend" }),
+      ]);
+      setRitten(km);
+      setPosten(on);
+      setGeselecteerd(new Set());
+      // Bonnen zijn gewone bijlagen; ze per post ophalen houdt de lijstquery
+      // licht en is begrensd door het aantal ingediende posten.
+      const paren = await Promise.all(on.map(async (p): Promise<[string, Bijlage[]]> => {
+        try { return [p.name, await fetchAttachments(ONKOSTEN_DOCTYPE, p.name)]; }
+        catch { return [p.name, []]; }
+      }));
+      setBijlagen(new Map(paren));
+    } catch (err) {
+      setError(describeError(err, "common.unknown_error"));
+    } finally {
+      setLoading(false);
+    }
+  }, [describeError]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const naamVan = useCallback(
+    (id: string) => allEmployees.find((e) => e.name === id)?.employee_name || id,
+    [allEmployees],
+  );
+
+  const items: TeBeoordelen[] = useMemo(() => [
+    ...ritten.map((r) => ({
+      doctype: KM_DOCTYPE,
+      name: r.name,
+      datum: r.datum,
+      employee: naamVan(r.employee),
+      regel: `${r.van?.split(",")[0] || "?"} → ${r.naar?.split(",")[0] || "?"} · ${formatKm(totaleKilometers(r))}`,
+      bedrag: r.bedrag || 0,
+    })),
+    ...posten.map((p) => ({
+      doctype: ONKOSTEN_DOCTYPE,
+      name: p.name,
+      datum: p.datum,
+      employee: naamVan(p.employee),
+      regel: `${p.soort}${p.omschrijving ? ` · ${p.omschrijving}` : ""}`,
+      bedrag: p.bedrag || 0,
+    })),
+  ].sort((a, b) => (a.employee.localeCompare(b.employee) || a.datum.localeCompare(b.datum))), [ritten, posten, naamVan]);
+
+  const perMedewerker = useMemo(() => {
+    const map = new Map<string, TeBeoordelen[]>();
+    for (const item of items) {
+      if (!map.has(item.employee)) map.set(item.employee, []);
+      map.get(item.employee)!.push(item);
+    }
+    return Array.from(map.entries());
+  }, [items]);
+
+  function toggle(key: string) {
+    setGeselecteerd((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * Beoordeelt één of meer declaraties. Een 403 hier betekent dat deze
+   * gebruiker geen schrijfrecht op **permlevel 1** heeft — dus geen System
+   * Manager is. Dat is de bedoelde grens, en de melding zegt dat ook.
+   */
+  async function beoordeelItems(lijst: TeBeoordelen[], status: "Goedgekeurd" | "Afgewezen") {
+    if (lijst.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      for (const item of lijst) {
+        await beoordeel(item.doctype, item.name, status, gebruiker || "");
+      }
+      await load();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) setError(t("declaraties.approve_forbidden"));
+      else setError(describeError(err, "declaraties.approve_failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const geselecteerdeItems = items.filter((i) => geselecteerd.has(`${i.doctype}:${i.name}`));
+
+  return (
+    <div>
+      <KmTariefInstelling />
+
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-800">{t("declaraties.approve_title")}</h3>
+          <p className="text-sm text-slate-500">{t("declaraties.approve_subtitle", { count: items.length })}</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
-            {(Object.keys(KM_PRESET_LABELS) as KmDateRangePreset[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setDatePreset(p)}
-                className={`px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
-                  datePreset === p ? "bg-y-teal text-white" : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {KM_PRESET_LABELS[p]}
+          {geselecteerdeItems.length > 0 && (
+            <>
+              <button onClick={() => beoordeelItems(geselecteerdeItems, "Goedgekeurd")} disabled={busy}
+                className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 cursor-pointer">
+                <CheckCircle size={14} /> {t("declaraties.approve_selected", { count: geselecteerdeItems.length })}
               </button>
-            ))}
-          </div>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer text-sm"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Verversen
+              <button onClick={() => beoordeelItems(geselecteerdeItems, "Afgewezen")} disabled={busy}
+                className="flex items-center gap-1 px-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-sm hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+                <XCircle size={14} /> {t("declaraties.reject")}
+              </button>
+            </>
+          )}
+          <button onClick={load} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer text-sm">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> {t("common.refresh")}
           </button>
         </div>
       </div>
@@ -1076,158 +953,117 @@ function KmGoedkeurenView() {
 
       {loading ? (
         <div className="text-center text-slate-400 py-12">{t("common.loading")}</div>
-      ) : grouped.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
           <CheckCircle size={40} className="text-green-500 mx-auto mb-3" />
-          <p className="text-slate-600 font-medium">Alles goedgekeurd</p>
-          <p className="text-sm text-slate-400 mt-1">Geen draft-aanvragen om te beoordelen.</p>
+          <p className="text-slate-600 font-medium">{t("declaraties.nothing_to_approve")}</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {grouped.map(([empName, reqs]) => {
-            const empTotalKm = reqs.reduce((s, r) => s + (r.custom_total_distance || 0), 0);
-            return (
-              <div key={empName} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-y-teal flex items-center justify-center text-white text-xs font-bold">
-                      {empName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="font-semibold text-slate-700">{empName}</span>
+          {perMedewerker.map(([naam, rijen]) => (
+            <div key={naam} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-y-teal flex items-center justify-center text-white text-xs font-bold">
+                    {naam.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </div>
-                  <span className="text-sm text-slate-500">
-                    {empTotalKm.toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km totaal
-                  </span>
+                  <span className="font-semibold text-slate-700">{naam}</span>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {reqs.map((req) => {
-                    const isOpen = expandedTr.has(req.name);
-                    const itinerary = itineraryByTr.get(req.name);
-                    const isItineraryLoading = loadingTr === req.name;
-                    const analysis = itinerary ? analyzeItinerary(req, itinerary) : null;
-                    const anomalyCount = analysis
-                      ? itinerary!.reduce((s, r) => {
-                          const f = analysis.flagsForRow(r);
-                          return s + (f.onNonWorkday || f.deviantKm || f.duplicateDate ? 1 : 0);
-                        }, 0) + analysis.missingDays.length
-                      : 0;
-                    return (
-                      <Fragment key={req.name}>
-                        <div className="px-4 py-3 flex items-center justify-between hover:bg-slate-50">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleTrExpand(req.name)}
-                              className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
-                            >
-                              <ChevronRight size={16} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                            </button>
-                            <a
-                              href={`${getErpNextLinkUrl()}/travel-request/${req.name}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="text-sm font-mono text-y-teal hover:underline"
-                            >
-                              {req.name}
-                            </a>
-                            <span className="text-sm text-slate-500">{req.custom_from_date} – {req.custom_to_date}</span>
-                            <span className="text-sm font-medium text-slate-700">
-                              {(req.custom_total_distance || 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} km
-                            </span>
-                            {anomalyCount > 0 && (
-                              <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                                <AlertTriangle size={12} /> {anomalyCount}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <a
-                              href={`${getErpNextLinkUrl()}/travel-request/${req.name}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="px-3 py-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
-                            >
-                              Bekijken
-                            </a>
-                            <button
-                              onClick={() => handleApprove(req)}
-                              disabled={submittingId === req.name}
-                              className="px-3 py-1.5 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 cursor-pointer flex items-center gap-1"
-                            >
-                              <CheckCircle size={14} />
-                              {submittingId === req.name ? "Bezig..." : "Goedkeuren"}
-                            </button>
-                          </div>
-                        </div>
-                        {isOpen && (
-                          <div className="px-4 pb-3 border-t border-slate-100 bg-slate-50/50">
-                            {isItineraryLoading && !itinerary ? (
-                              <div className="text-xs text-slate-400 py-3">{t("common.loading")}</div>
-                            ) : !itinerary ? null : (
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="text-xs text-slate-500">
-                                    <th className="text-left px-2 py-2 font-medium">Datum</th>
-                                    <th className="text-left px-2 py-2 font-medium">Dag</th>
-                                    <th className="text-left px-2 py-2 font-medium">Van</th>
-                                    <th className="text-left px-2 py-2 font-medium">Naar</th>
-                                    <th className="text-left px-2 py-2 font-medium">Type</th>
-                                    <th className="text-right px-2 py-2 font-medium">Km</th>
-                                    <th className="text-right px-2 py-2 font-medium">€</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {itinerary.map((row, i) => {
-                                    const f = analysis ? analysis.flagsForRow(row) : { onNonWorkday: false, deviantKm: false, duplicateDate: false };
-                                    const rowBg = f.onNonWorkday || f.duplicateDate ? "bg-amber-50" : "";
-                                    const kmCls = f.deviantKm ? "bg-amber-100 text-amber-800 font-semibold rounded px-1" : "";
-                                    const day = (row.departure_date || "").slice(0, 10);
-                                    const dt = day ? new Date(day + "T12:00:00") : null;
-                                    const dayName = dt ? NL_DAY_NAMES_EN[dt.getDay()] : "";
-                                    return (
-                                      <tr key={i} className={`border-t border-slate-100 ${rowBg}`}>
-                                        <td className="px-2 py-1.5 text-slate-600">{day}</td>
-                                        <td className="px-2 py-1.5 text-slate-500">{dayName}</td>
-                                        <td className="px-2 py-1.5 text-slate-700">{row.travel_from}</td>
-                                        <td className="px-2 py-1.5 text-slate-700">{row.travel_to}</td>
-                                        <td className="px-2 py-1.5 text-slate-500">{row.custom_journey_type}</td>
-                                        <td className="px-2 py-1.5 text-right">
-                                          <span className={kmCls}>
-                                            {(row.custom_distance || 0).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}
-                                          </span>
-                                        </td>
-                                        <td className="px-2 py-1.5 text-right text-slate-500">
-                                          {row.custom_travel_cost ? `€ ${row.custom_travel_cost.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                  {analysis?.missingDays.map((m, i) => (
-                                    <tr key={`miss-${i}`} className="border-t border-slate-100 bg-orange-50 text-orange-800">
-                                      <td className="px-2 py-1.5">{m.date}</td>
-                                      <td className="px-2 py-1.5 italic">{m.dayName}</td>
-                                      <td className="px-2 py-1.5 italic" colSpan={4}>
-                                        Geen km geboekt op deze werkdag
-                                      </td>
-                                      <td className="px-2 py-1.5"></td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                            {analysis && analysis.mode > 0 && (
-                              <p className="mt-2 text-[10px] text-slate-400">
-                                Baseline (modus woon-werk): {analysis.mode.toLocaleString("nl-NL")} km
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </Fragment>
-                    );
-                  })}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-500">{formatEuro(rijen.reduce((s, r) => s + r.bedrag, 0))}</span>
+                  <button onClick={() => beoordeelItems(rijen, "Goedgekeurd")} disabled={busy}
+                    className="px-3 py-1.5 text-xs text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 cursor-pointer">
+                    {t("declaraties.approve_all")}
+                  </button>
                 </div>
               </div>
-            );
-          })}
+              <div className="divide-y divide-slate-100">
+                {rijen.map((rij) => {
+                  const key = `${rij.doctype}:${rij.name}`;
+                  const bonnen = bijlagen.get(rij.name) || [];
+                  return (
+                    <Fragment key={key}>
+                      <div className="px-4 py-3 flex items-center gap-3 hover:bg-slate-50">
+                        <input type="checkbox" checked={geselecteerd.has(key)} onChange={() => toggle(key)}
+                          className="cursor-pointer" />
+                        <span className="text-xs font-mono text-slate-400 w-36 shrink-0 truncate">{rij.name}</span>
+                        <span className="text-sm text-slate-500 w-24 shrink-0">{rij.datum}</span>
+                        <span className="text-sm text-slate-700 flex-1 truncate">{rij.regel}</span>
+                        {bonnen.map((bon) => (
+                          <a key={bon.name} href={getFileUrl(bon.file_url)} target="_blank" rel="noopener noreferrer"
+                            className="text-slate-400 hover:text-y-teal" title={bon.file_name}>
+                            <Paperclip size={14} />
+                          </a>
+                        ))}
+                        <span className="text-sm font-medium text-slate-700 w-24 text-right">{formatEuro(rij.bedrag)}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => beoordeelItems([rij], "Goedgekeurd")} disabled={busy}
+                            title={t("declaraties.approve")}
+                            className="px-2 py-1 text-xs text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 cursor-pointer">
+                            <CheckCircle size={12} />
+                          </button>
+                          <button onClick={() => beoordeelItems([rij], "Afgewezen")} disabled={busy}
+                            title={t("declaraties.reject")}
+                            className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50 cursor-pointer">
+                            <XCircle size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ────────────────────── Instelling: kilometertarief ────────────────────── */
+
+/**
+ * Het kilometertarief. Klein blok bovenaan het werkgeverstabblad, want dat is
+ * de enige plek waar de instelling betekenis heeft. Schrijven kan alleen als
+ * System Manager (`Y Next Setting`); lukt dat niet, dan zegt de melding dat —
+ * niet "opgeslagen".
+ */
+function KmTariefInstelling() {
+  const { t } = useTranslation();
+  const [tarief, setTarief] = useState<string>("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "forbidden">("idle");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchKmTarief().then((value) => { if (!cancelled) setTarief(String(value)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function opslaan() {
+    const value = Number(tarief.replace(",", "."));
+    if (!Number.isFinite(value) || value <= 0) return;
+    setStatus("saving");
+    const result = await saveKmTarief(value);
+    setStatus(result === "saved" ? "saved" : "forbidden");
+  }
+
+  return (
+    <div className="mb-6 bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-end gap-3">
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.km_rate_label")}</label>
+        <input type="number" step="0.01" min="0" value={tarief} onChange={(e) => { setTarief(e.target.value); setStatus("idle"); }}
+          className="w-28 px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+      </div>
+      <button onClick={opslaan} disabled={status === "saving"}
+        className="px-3 py-2 bg-y-teal text-white rounded-lg text-sm hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer">
+        {t("common.save", { defaultValue: "Opslaan" })}
+      </button>
+      <p className="text-xs text-slate-500 flex-1 min-w-[16rem]">
+        {t("declaraties.km_rate_hint", { amount: String(DEFAULT_KM_TARIEF) })}
+      </p>
+      {status === "saved" && <span className="text-xs text-green-600">{t("declaraties.km_rate_saved")}</span>}
+      {status === "forbidden" && <span className="text-xs text-red-600">{t("declaraties.km_rate_forbidden")}</span>}
     </div>
   );
 }

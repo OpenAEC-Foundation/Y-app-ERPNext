@@ -6,11 +6,17 @@ import {
   buildMeetingNoteDoctype,
   buildSettingDoctype,
   buildPermissionRules,
+  buildKmRegistratieDoctype,
+  buildOnkostenDoctype,
+  buildOnkostensoortDoctype,
   ensureMasterRecords,
   DEFAULT_MASTER_RECORDS,
   ensurePermissions,
   provision,
   DEFAULT_NAMING_SERIES_DOCTYPES,
+  KM_TARIEF_SETTING_KEY,
+  DEFAULT_KM_TARIEF,
+  isExpressionSeriesAutoname,
   expandNamingSeriesPrefix,
   parseSeriesNumber,
   ensureNamingSeries,
@@ -58,6 +64,15 @@ function isPermUrl(url) {
 }
 
 /**
+ * De bestaanscheck die `ensurePermissions` per doctype doet:
+ * GET /api/resource/DocType/<naam> voor een doctype dat NIET door dit
+ * script zelf wordt aangemaakt.
+ */
+function isDoctypeProbeUrl(url) {
+  return /\/api\/resource\/DocType\/[^/]+$/.test(url) && !isOwnDoctypeUrl(url);
+}
+
+/**
  * Antwoordt op de Permission Manager-calls alsof élke regel uit
  * buildPermissionRules al goed staat — zo raken de DocType-tests niet
  * verstrikt in de rechtenfase.
@@ -82,8 +97,16 @@ function satisfiedPermsHandler(url) {
   return { status: 200, body: { message: [...byRow.values()] } };
 }
 
+/** De DocTypes die dit script zelf aanmaakt (fase 1). */
+const OWN_DOCTYPES = ["Y Meeting Note", "Y Next Setting", "Y Onkostensoort", "Y Km Registratie", "Y Onkosten"];
+
+/** true voor een GET op de DocType-meta van één van onze eigen doctypes. */
+function isOwnDoctypeUrl(url) {
+  return OWN_DOCTYPES.some((name) => url.includes(`DocType/${encodeURIComponent(name)}`));
+}
+
 /**
- * Alleen de calls naar /api/resource/DocType voor de twee custom
+ * Alleen de calls naar /api/resource/DocType voor de eigen
  * provisioning-doctypes (dus zonder de rechtenfase en zonder de
  * naamreeksen-fase — die laatste bevraagt /api/resource/DocType/<kern-doctype>
  * óók, voor de naming_series-meta-check).
@@ -91,8 +114,7 @@ function satisfiedPermsHandler(url) {
 function doctypeCalls(calls) {
   return calls.filter(
     (c) =>
-      c.url.includes("DocType/Y%20Meeting%20Note") ||
-      c.url.includes("DocType/Y%20Next%20Setting") ||
+      isOwnDoctypeUrl(c.url) ||
       // De aanmaak-POST gaat naar /api/resource/DocType zonder naam-suffix.
       /\/api\/resource\/DocType$/.test(c.url)
   );
@@ -225,12 +247,14 @@ test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async ()
   });
   try {
     const result = await provision({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
-    assert.deepEqual(result.existing.sort(), ["Y Meeting Note", "Y Next Setting"]);
+    assert.deepEqual(result.existing.sort(), ["Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort"]);
     assert.deepEqual(result.created, []);
     const calls = doctypeCalls(mock.calls);
     assert.equal(calls.filter((c) => c.init?.method === "POST").length, 0);
-    // Beide DocTypes moeten opgezocht zijn.
-    assert.equal(calls.filter((c) => c.init?.method === undefined || c.init?.method === "GET").length, 2);
+    // Elk eigen DocType moet opgezocht zijn. Tellen op unieke URL, want de
+    // naamreeksen-fase vraagt de meta van de declaratie-doctypes nogmaals op.
+    const opgezocht = new Set(calls.filter((c) => !c.init?.method).map((c) => c.url));
+    assert.equal(opgezocht.size, OWN_DOCTYPES.length);
   } finally {
     mock.restore();
   }
@@ -250,10 +274,10 @@ test("provision: maakt een DocType aan wanneer GET 404 geeft", async () => {
   });
   try {
     const result = await provision({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
-    assert.deepEqual(result.created.sort(), ["Y Meeting Note", "Y Next Setting"]);
+    assert.deepEqual(result.created.sort(), ["Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort"]);
     assert.deepEqual(result.existing, []);
     const postCalls = doctypeCalls(mock.calls).filter((c) => c.init?.method === "POST");
-    assert.equal(postCalls.length, 2);
+    assert.equal(postCalls.length, OWN_DOCTYPES.length);
     for (const call of postCalls) {
       const bodyText = call.init.body;
       assert.doesNotMatch(bodyText, /key:secret/);
@@ -263,22 +287,27 @@ test("provision: maakt een DocType aan wanneer GET 404 geeft", async () => {
   }
 });
 
-test("provision: draait de rechtenfase ná de doctype-fase, en de naamreeksen-fase ná de rechtenfase", async () => {
+test("provision: draait de fasen in volgorde — doctypes, rechten, stamgegevens, naamreeksen", async () => {
   const order = [];
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) {
       order.push("perm");
       return satisfiedPermsHandler(url);
     }
-    if (url.includes("DocType/Y%20Meeting%20Note") || url.includes("DocType/Y%20Next%20Setting")) {
+    if (isOwnDoctypeUrl(url)) {
       order.push("doctype");
       return { status: 200, body: { data: { name: "existing" } } };
     }
-    // Alle overige calls horen bij de naamreeksen-fase (DocType-meta-checks
-    // voor de acht kern-doctypes). Deze mock geeft ze geen `fields`, dus
-    // `ensureNamingSeries` stopt meteen na de meta-check — geen naming_series
-    // gevonden, geen vervolgcalls.
-    order.push("naming");
+    if (isMasterUrl(url)) {
+      order.push("master");
+      return satisfiedMasterHandler();
+    }
+    // De overgebleven /api/resource/DocType/<naam>-calls zijn óf de
+    // bestaanscheck van de rechtenfase, óf de meta-check van de
+    // naamreeksen-fase. Beide krijgen hetzelfde "bestaat, maar zonder
+    // fields"-antwoord; de naamreeksen-fase stopt daardoor meteen na de
+    // meta-check (geen naming_series, geen vervolgcalls). Ze worden niet in
+    // `order` opgenomen omdat ze niet één fase kenmerken.
     return { status: 200, body: { data: { name: "existing" } } };
   });
   try {
@@ -286,11 +315,16 @@ test("provision: draait de rechtenfase ná de doctype-fase, en de naamreeksen-fa
     assert.equal(result.permissions.unchanged.length, buildPermissionRules().length);
     assert.deepEqual(result.permissions.added, []);
     assert.deepEqual(result.permissions.updated, []);
+    assert.deepEqual(result.permissions.skipped, []);
     assert.equal(result.namingSeries.skipped.length, DEFAULT_NAMING_SERIES_DOCTYPES.length);
     assert.equal(result.namingSeries.updated.length, 0);
-    // Doctype-fase vóór rechtenfase, rechtenfase vóór naamreeksen-fase.
-    assert.equal(order.lastIndexOf("doctype") < order.indexOf("perm"), true);
-    assert.equal(order.lastIndexOf("perm") < order.indexOf("naming"), true);
+    // De doctype-fase komt eerst en is compleet vóór de eerste rechten-call;
+    // daarna volgen rechten en stamgegevens. (De naamreeksen-fase raakt de
+    // declaratie-doctypes nogmaals aan, vandaar de slice in plaats van
+    // lastIndexOf.)
+    assert.deepEqual(order.slice(0, OWN_DOCTYPES.length), OWN_DOCTYPES.map(() => "doctype"));
+    assert.equal(order[OWN_DOCTYPES.length], "perm");
+    assert.equal(order.lastIndexOf("perm") < order.indexOf("master"), true);
   } finally {
     mock.restore();
   }
@@ -462,9 +496,19 @@ test("ensurePermissions: zet Communication-delete voor Projects User zonder de b
   }
 });
 
-/** Bouwt een fetch-mock voor de Permission Manager met een instelbare perm-tabel. */
+/**
+ * Bouwt een fetch-mock voor de Permission Manager met een instelbare
+ * perm-tabel. Elk doctype dat in `rowsByDoctype` voorkomt "bestaat"; de rest
+ * geeft 404 op de bestaanscheck, zodat een test ook het overslaan kan meten.
+ */
 function installPermMock(rowsByDoctype) {
   return installFetchMock((url, init) => {
+    if (isDoctypeProbeUrl(url)) {
+      const doctype = decodeURIComponent(url.split("/api/resource/DocType/")[1]);
+      return rowsByDoctype[doctype]
+        ? { status: 200, body: { data: { name: doctype } } }
+        : { status: 404, body: { exc_type: "DoesNotExistError" } };
+    }
     if (url.includes(".get_permissions")) {
       const doctype = decodeURIComponent(new URL(url).searchParams.get("doctype") || "");
       return { status: 200, body: { message: rowsByDoctype[doctype] || [] } };
@@ -953,6 +997,254 @@ test("ensureNamingSeries: DEFAULT_NAMING_SERIES_DOCTYPES bevat minstens de gevra
     "Task",
     "Project",
   ]) {
+    assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes(dt), `mist ${dt}`);
+  }
+});
+
+/* ─────────────────── HRMS-voorbereiding (Frappe HR) ───────────────────
+ * De km-, onkosten- en verlofschermen draaien op doctypes die pas bestaan
+ * zodra HRMS geïnstalleerd is. Deze tests bewaken twee dingen tegelijk:
+ * (1) dat de regels/velden/records er straks staan, en (2) dat een run
+ * vandaag — zónder HRMS — er niet op stukloopt.
+ */
+
+test("buildPermissionRules: HRMS — Employee mag Travel Requests lezen/schrijven/aanmaken, maar niet verwijderen of indienen", () => {
+  const rules = buildPermissionRules();
+  const forTr = rules.filter((r) => r.doctype === "Travel Request");
+  assert.deepEqual(
+    forTr.map((r) => `${r.role}/${r.ptype}=${r.value}`).sort(),
+    ["Employee/create=1", "Employee/read=1", "Employee/write=1"],
+  );
+});
+
+test("buildPermissionRules: HRMS — Leave Allocation krijgt alleen leesrecht voor Employee", () => {
+  const forAlloc = buildPermissionRules().filter((r) => r.doctype === "Leave Allocation");
+  // Schrijven/aanmaken zou een medewerker zichzelf verlofdagen laten toekennen.
+  assert.deepEqual(forAlloc.map((r) => `${r.role}/${r.ptype}`), ["Employee/read"]);
+});
+
+test("buildPermissionRules: HRMS — geen enkele regel geeft delete, submit, cancel of amend", () => {
+  const hrmsDoctypes = new Set(["Travel Request", "Leave Application", "Leave Allocation", "Expense Claim"]);
+  for (const rule of buildPermissionRules()) {
+    if (!hrmsDoctypes.has(rule.doctype)) continue;
+    assert.ok(
+      ["read", "write", "create"].includes(rule.ptype),
+      `${rule.doctype}/${rule.role} zou ${rule.ptype} krijgen — te ruim voor een medewerker`,
+    );
+  }
+  // Alle vier de doctypes uit de opdracht komen daadwerkelijk voor.
+  const covered = new Set(buildPermissionRules().map((r) => r.doctype));
+  for (const dt of hrmsDoctypes) assert.ok(covered.has(dt), `mist regels voor ${dt}`);
+});
+
+test("ensurePermissions: een doctype dat niet bestaat wordt overgeslagen — geen enkele Permission Manager-call", async () => {
+  // Precies de stand van vandaag: HRMS is niet geinstalleerd. De bestaanscheck
+  // is er omdat get_permissions op een onbekend doctype HTTP 200 met een lege
+  // lijst teruggeeft — zonder check zou dit een `add` sturen en de run breken.
+  const mock = installPermMock({ ToDo: [{ role: "Projects User", permlevel: 0, if_owner: 0, read: 1, delete: 1 }] });
+  const logs = installConsoleLogSpy();
+  try {
+    const result = await ensurePermissions({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      rules: [
+        { doctype: "ToDo", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
+        { doctype: "Travel Request", role: "Employee", permlevel: 0, ptype: "read", value: 1 },
+        { doctype: "Travel Request", role: "Employee", permlevel: 0, ptype: "write", value: 1 },
+      ],
+    });
+    assert.deepEqual(result.skipped, [
+      "Travel Request/Employee/0/read",
+      "Travel Request/Employee/0/write",
+    ]);
+    assert.deepEqual(result.unchanged, ["ToDo/Projects User/0/delete"]);
+    assert.deepEqual(result.added, []);
+    assert.deepEqual(result.updated, []);
+    // Een bestaanscheck voor twee regels op hetzelfde doctype, en geen enkele
+    // perm-call voor het ontbrekende doctype.
+    const trProbes = mock.calls.filter((c) => c.url.includes("DocType/Travel%20Request"));
+    assert.equal(trProbes.length, 1);
+    assert.equal(mock.calls.filter((c) => c.url.includes("Travel%20Request") && isPermUrl(c.url)).length, 0);
+    assert.match(logs.lines.join("\n"), /Travel Request.*bestaat niet/);
+  } finally {
+    logs.restore();
+    mock.restore();
+  }
+});
+
+test("DEFAULT_MASTER_RECORDS: de onkostensoorten dragen het autoname-veld (field:soort_naam)", () => {
+  const soorten = DEFAULT_MASTER_RECORDS.filter((r) => r.doctype === "Y Onkostensoort");
+  assert.deepEqual(soorten.map((r) => r.name), ["Reiskosten", "Parkeren", "Materiaal", "Verblijf", "Overig"]);
+  for (const s of soorten) {
+    // autoname is `field:soort_naam`, dus dat veld moet gelijk zijn aan de naam
+    // waarop de bestaanscheck zoekt — anders maakt elke run een duplicaat aan.
+    assert.equal(s.payload.soort_naam, s.name);
+    assert.equal(s.payload.actief, 1);
+  }
+});
+
+test("DEFAULT_MASTER_RECORDS: het kilometertarief staat als rij in Y Next Setting", () => {
+  const tarief = DEFAULT_MASTER_RECORDS.find((r) => r.doctype === "Y Next Setting");
+  assert.ok(tarief, "zonder dit record start een verse site zonder tarief");
+  assert.equal(tarief.name, KM_TARIEF_SETTING_KEY);
+  assert.equal(tarief.payload.setting_key, KM_TARIEF_SETTING_KEY);
+  // De waarde is de gangbare onbelaste kilometervergoeding; `ensureMasterRecords`
+  // doet eerst een GET, dus een door de werkgever aangepast tarief blijft staan.
+  assert.equal(tarief.payload.setting_value, String(DEFAULT_KM_TARIEF));
+  assert.equal(DEFAULT_KM_TARIEF, 0.23);
+});
+
+test("buildKmRegistratieDoctype: velden, naming en de goedkeurvelden op permlevel 1", () => {
+  const def = buildKmRegistratieDoctype();
+  assert.equal(def.name, "Y Km Registratie");
+  assert.equal(def.custom, 1);
+  assert.equal(def.module, "Custom");
+  assert.equal(def.autoname, "format:YKM-{YYYY}-{#####}");
+
+  const byName = Object.fromEntries(def.fields.map((f) => [f.fieldname, f]));
+  assert.deepEqual(Object.keys(byName), [
+    "employee", "datum", "van", "naar", "kilometers", "retour", "project",
+    "omschrijving", "tarief_per_km", "bedrag", "status",
+    "goedgekeurd_door", "goedgekeurd_op",
+  ]);
+  assert.equal(byName.employee.options, "Employee");
+  assert.equal(byName.employee.reqd, 1);
+  assert.equal(byName.datum.reqd, 1);
+  assert.equal(byName.kilometers.reqd, 1);
+  assert.equal(byName.retour.fieldtype, "Check");
+  assert.equal(byName.project.options, "Project");
+  // `bedrag` wordt door de client uitgerekend; read_only houdt het uit de
+  // ERPNext-desk-invoer maar blokkeert de REST-API niet.
+  assert.equal(byName.bedrag.read_only, 1);
+  assert.equal(byName.status.default, "Concept");
+  assert.deepEqual(byName.status.options.split("\n"), ["Concept", "Ingediend", "Goedgekeurd", "Afgewezen"]);
+  // De kern van de tamper-evidence: alleen de werkgever kan deze twee vullen.
+  assert.equal(byName.goedgekeurd_door.permlevel, 1);
+  assert.equal(byName.goedgekeurd_op.permlevel, 1);
+});
+
+test("buildOnkostenDoctype: velden, naming en de link naar de eigen soortentabel", () => {
+  const def = buildOnkostenDoctype();
+  assert.equal(def.name, "Y Onkosten");
+  assert.equal(def.autoname, "format:YON-{YYYY}-{#####}");
+  const byName = Object.fromEntries(def.fields.map((f) => [f.fieldname, f]));
+  assert.deepEqual(Object.keys(byName), [
+    "employee", "datum", "soort", "bedrag", "btw_bedrag", "omschrijving",
+    "project", "leverancier", "status", "goedgekeurd_door", "goedgekeurd_op",
+  ]);
+  // Geen HRMS `Expense Claim Type`: die doctype bestaat op deze site niet.
+  assert.equal(byName.soort.options, "Y Onkostensoort");
+  assert.equal(byName.soort.reqd, 1);
+  assert.equal(byName.bedrag.reqd, 1);
+  // Het bonnetje is een gewone ERPNext-bijlage, dus géén eigen veld.
+  assert.equal("bon" in byName, false);
+  assert.equal("bijlage" in byName, false);
+  assert.equal(byName.goedgekeurd_door.permlevel, 1);
+});
+
+test("declaratie-doctypes: medewerkersrollen krijgen if_owner, de werkgever niet", () => {
+  for (const def of [buildKmRegistratieDoctype(), buildOnkostenDoctype()]) {
+    const perms = def.permissions;
+    for (const role of ["Employee", "Projects User"]) {
+      const lvl0 = perms.find((p) => p.role === role && p.permlevel === 0);
+      assert.ok(lvl0, `${def.name}: geen permlevel-0-rij voor ${role}`);
+      // Zonder if_owner zou elke medewerker de declaraties van collega's zien.
+      assert.equal(lvl0.if_owner, 1);
+      assert.equal(lvl0.read, 1);
+      assert.equal(lvl0.write, 1);
+      assert.equal(lvl0.create, 1);
+
+      // Permlevel 1 mag gelezen worden (wie heeft goedgekeurd) maar niet
+      // geschreven — anders is de goedkeurstempel waardeloos.
+      const lvl1 = perms.find((p) => p.role === role && p.permlevel === 1);
+      assert.ok(lvl1, `${def.name}: geen permlevel-1-rij voor ${role}`);
+      assert.equal(lvl1.read, 1);
+      assert.equal(lvl1.write, 0);
+      assert.equal(lvl1.if_owner, 0);
+    }
+
+    const beheer0 = perms.find((p) => p.role === "System Manager" && p.permlevel === 0);
+    assert.equal(beheer0.if_owner, 0, `${def.name}: de werkgever moet álles zien`);
+    assert.equal(beheer0.delete, 1);
+    const beheer1 = perms.find((p) => p.role === "System Manager" && p.permlevel === 1);
+    assert.equal(beheer1.write, 1, `${def.name}: alleen de werkgever zet de goedkeurstempel`);
+
+    // Niet-submittable: de statusstroom loopt via het Select-veld, niet via
+    // docstatus. Een submit-recht zou dus nergens op slaan.
+    for (const p of perms) {
+      assert.equal(p.submit, 0);
+      assert.equal(p.cancel, 0);
+      assert.equal(p.amend, 0);
+    }
+  }
+});
+
+test("buildOnkostensoortDoctype: stamtabel met leesrecht voor medewerkers, beheer voor de werkgever", () => {
+  const def = buildOnkostensoortDoctype();
+  assert.equal(def.name, "Y Onkostensoort");
+  assert.equal(def.autoname, "field:soort_naam");
+  const byName = Object.fromEntries(def.fields.map((f) => [f.fieldname, f]));
+  assert.deepEqual(Object.keys(byName), ["soort_naam", "actief"]);
+  assert.equal(byName.soort_naam.reqd, 1);
+  assert.equal(byName.soort_naam.unique, 1);
+  assert.equal(byName.actief.default, "1");
+
+  const byRole = Object.fromEntries(def.permissions.map((p) => [p.role, p]));
+  assert.equal(byRole["System Manager"].create, 1);
+  for (const role of ["Employee", "Projects User"]) {
+    assert.equal(byRole[role].read, 1);
+    // De soortenlijst is werkgeversbeheer.
+    assert.equal(byRole[role].write, 0);
+    assert.equal(byRole[role].create, 0);
+    assert.equal(byRole[role].delete, 0);
+  }
+});
+
+test("isExpressionSeriesAutoname: alleen een kale #-teller telt, geen format:/field:/hash", () => {
+  assert.equal(isExpressionSeriesAutoname("HR-TRQ-.YYYY.-.#####"), true);
+  // Y Meeting Note gebruikt `format:` — dat loopt niet via tabSeries.
+  assert.equal(isExpressionSeriesAutoname("format:YMN-{YYYY}-{#####}"), false);
+  assert.equal(isExpressionSeriesAutoname("field:setting_key"), false);
+  assert.equal(isExpressionSeriesAutoname("naming_series:"), false);
+  assert.equal(isExpressionSeriesAutoname("hash"), false);
+  assert.equal(isExpressionSeriesAutoname(""), false);
+  assert.equal(isExpressionSeriesAutoname(undefined), false);
+});
+
+test("expandNamingSeriesPrefix: de #-teller hoort niet bij de prefix", () => {
+  const now = new Date("2026-03-15T00:00:00Z");
+  assert.equal(expandNamingSeriesPrefix("HR-TRQ-.YYYY.-.#####", now), "HR-TRQ-2026-");
+  // Ook zonder punt voor de #-reeks.
+  assert.equal(expandNamingSeriesPrefix("TS-.YYYY.-#####", now), "TS-2026-");
+  // Een sjabloon zonder # verandert niet.
+  assert.equal(expandNamingSeriesPrefix("HR-EXP-.YYYY.-", now), "HR-EXP-2026-");
+});
+
+test("ensureNamingSeries: Travel Request heeft geen naming_series-veld maar wel een expressie-teller — die wordt gewoon hersteld", async () => {
+  const current = { "HR-TRQ-2026-": 3 };
+  const mock = installNamingSeriesMock({
+    meta: { "Travel Request": { fields: [], autoname: "HR-TRQ-.YYYY.-.#####" } },
+    docs: { "Travel Request": { "HR-TRQ-2026-": ["HR-TRQ-2026-00017"] } },
+    current,
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Travel Request"],
+      now: new Date("2026-03-15T00:00:00Z"),
+    });
+    assert.deepEqual(result.updated, [
+      { doctype: "Travel Request", prefix: "HR-TRQ-2026-", oldValue: 3, newValue: 17 },
+    ]);
+    assert.equal(current["HR-TRQ-2026-"], 17);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("DEFAULT_NAMING_SERIES_DOCTYPES: de vier HRMS-doctypes staan erbij", () => {
+  for (const dt of ["Travel Request", "Leave Application", "Leave Allocation", "Expense Claim"]) {
     assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes(dt), `mist ${dt}`);
   }
 });

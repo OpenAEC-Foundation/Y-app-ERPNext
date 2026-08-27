@@ -2,7 +2,7 @@
  * Detect, per employee, which workdays in a date range have no booking.
  *
  * `kind = "hours"` checks for Timesheet → time_logs entries (default).
- * `kind = "km"`    checks for Travel Request → itinerary entries.
+ * `kind = "km"`    checks for `Y Km Registratie` documents.
  *
  * Workdays come EXCLUSIVELY from the employee's active Shift Plan Assignment
  * → Shift Plan → repeat_on_days. Employees without a Shift Plan are skipped.
@@ -12,11 +12,12 @@
  *     Company.default_holiday_list as fallback) — see lib/employeeHolidays.ts
  *   - Dutch national holidays as a last-resort fallback (lib/holidays.ts)
  *   - Days before the employee's date_of_joining
- *   - Days where a Timesheet Detail / Travel Request itinerary row exists
+ *   - Days where a Timesheet Detail or a Y Km Registratie exists
  *   - Days covered by an approved (docstatus=1) Leave Application
  */
 
 import { fetchAll, fetchDocument } from "./erpnext";
+import { fetchKmRegistraties } from "./declaraties";
 import { isHoliday } from "./holidays";
 import { getEmployeeHolidaySet } from "./employeeHolidays";
 
@@ -100,7 +101,7 @@ export async function fetchEmployeeShiftWorkdays(
 
 /**
  * For each employee, return the list of workdays in [from, to] with no
- * Timesheet (kind="hours") or Travel Request itinerary (kind="km") entry.
+ * Timesheet (kind="hours") or Y Km Registratie (kind="km") entry.
  */
 export async function fetchMissingDaysForEmployees(
   employees: EmployeeLite[],
@@ -191,47 +192,20 @@ export async function fetchMissingDaysForEmployees(
       }
     }
   } else {
-    let trs: { name: string; employee: string }[] = [];
+    // Kilometers: één document per rit met een `datum`-veld, dus één
+    // lijstquery — geen zoektocht naar maandstaten met een child-tabel-scan
+    // erachteraan (zie lib/declaraties.ts voor waarom Travel Request weg is).
+    // Concepten tellen mee: de rit ís geboekt, ook al is hij nog niet
+    // ingediend; alleen een afgewezen rit telt niet.
     try {
-      trs = await fetchAll<{ name: string; employee: string }>(
-        "Travel Request",
-        ["name", "employee"],
-        [
-          ["employee", "in", employeeIds],
-          ["custom_from_date", "<=", toStr],
-          ["custom_to_date", ">=", fromStr],
-          ["docstatus", "!=", 2],
-        ],
-      );
-    } catch (e) { DBG("travel request fetch error", e); }
-    const trToEmp = new Map<string, string>();
-    for (const tr of trs) trToEmp.set(tr.name, tr.employee);
-    if (trs.length > 0) {
-      const CHUNK = 20;
-      for (let i = 0; i < trs.length; i += CHUNK) {
-        const chunk = trs.slice(i, i + CHUNK);
-        const docs = await Promise.all(
-          chunk.map((tr) =>
-            fetchDocument<{ employee: string; itinerary?: { departure_date?: string; custom_distance?: number }[] }>(
-              "Travel Request", tr.name,
-            ).catch(() => null),
-          ),
-        );
-        for (let j = 0; j < docs.length; j++) {
-          const doc = docs[j];
-          if (!doc) continue;
-          const emp = doc.employee || trToEmp.get(chunk[j].name);
-          if (!emp) continue;
-          for (const row of doc.itinerary || []) {
-            if (!row.departure_date) continue;
-            const day = row.departure_date.includes("T")
-              ? row.departure_date.split("T")[0]
-              : row.departure_date.split(" ")[0];
-            if (day) booked.add(`${emp}|${day}`);
-          }
-        }
+      const ritten = await fetchKmRegistraties({ vanaf: fromStr, tot: toStr, limit: 2000 });
+      for (const rit of ritten) {
+        if (!rit.employee || !rit.datum) continue;
+        if (rit.status === "Afgewezen") continue;
+        if (!employeeIds.includes(rit.employee)) continue;
+        booked.add(`${rit.employee}|${rit.datum.slice(0, 10)}`);
       }
-    }
+    } catch (e) { DBG("km fetch error", e); }
   }
 
   // Per-employee Holiday List

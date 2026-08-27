@@ -11,6 +11,7 @@ import { useEmployees, useProjects, useDataLoading, type Employee } from "../lib
 import { HOLIDAYS } from "../lib/holidays";
 import { getActiveInstanceId, getActiveCompany } from "../lib/instances";
 import { fetchMissingDaysForEmployees } from "../lib/missingDays";
+import { fetchKmRegistraties, fetchOnkosten, totaleKilometers } from "../lib/declaraties";
 import {
   SALES_INVOICE_ACTIVE_FILTER,
   SALES_INVOICE_FINAL_FILTER,
@@ -363,7 +364,7 @@ function ManagementDashboardContent() {
     return () => { cancelled = true; };
   }, [dataLoading, activeEmployees, missingDaysFullYear]);
 
-  /* Check 2b: Missing-km per workday (same as missing-days but for Travel Request) */
+  /* Check 2b: Missing-km per workday (same as missing-days but for Y Km Registratie) */
   const [missingKmCheck, setMissingKmCheck] = useState<CheckResult>({ status: "loading", subtextKey: "mgmt.loading" });
   const [missingKmFullYear, setMissingKmFullYear] = useState(false);
   const [missingKmLoading, setMissingKmLoading] = useState(false);
@@ -427,27 +428,31 @@ function ManagementDashboardContent() {
     return () => { cancelled = true; };
   }, [dataLoading, activeEmployees, missingKmFullYear]);
 
-  /* Check 3b: Travel Requests awaiting approval (kilometers goedkeuren) */
+  /* Check 3b: ingediende declaraties die op goedkeuring wachten (km + onkosten) */
   const [travelApprovalCheck, setTravelApprovalCheck] = useState<CheckResult>({ status: "loading", subtextKey: "mgmt.loading" });
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const employeeIds = activeEmployees.map(e => e.name);
-        const filters: unknown[][] = [["docstatus", "=", 0]];
-        if (employeeIds.length > 0) filters.push(["employee", "in", employeeIds]);
-        const drafts = await fetchAll<{ name: string; employee_name: string; custom_from_date: string; custom_total_distance: number }>(
-          "Travel Request",
-          ["name", "employee_name", "custom_from_date", "custom_total_distance"],
-          filters,
-          "custom_from_date desc",
-        );
+        // Alleen "Ingediend" telt: een concept ligt nog bij de medewerker en is
+        // dus geen openstaande actie voor de werkgever.
+        const [ritten, posten] = await Promise.all([
+          fetchKmRegistraties({ status: "Ingediend", limit: 500 }),
+          fetchOnkosten({ status: "Ingediend", limit: 500 }),
+        ]);
         if (cancelled) return;
-        const n = drafts.length;
-        const items: DetailItem[] = drafts.map(d => ({
-          label: d.employee_name || d.name,
-          sub: `${formatDate(d.custom_from_date)} — ${(d.custom_total_distance ?? 0).toFixed(0)} km`,
-        }));
+        const naamVan = (id: string) => activeEmployees.find(e => e.name === id)?.employee_name || id;
+        const items: DetailItem[] = [
+          ...ritten.map(r => ({
+            label: naamVan(r.employee),
+            sub: `${formatDate(r.datum)} — ${totaleKilometers(r).toFixed(0)} km`,
+          })),
+          ...posten.map(p => ({
+            label: naamVan(p.employee),
+            sub: `${formatDate(p.datum)} — ${p.soort}`,
+          })),
+        ];
+        const n = items.length;
         if (n === 0) setTravelApprovalCheck({ status: "ok", subtextKey: "mgmt.travel_approval.none" });
         else if (n <= 5) setTravelApprovalCheck({ status: "attention", subtextKey: "mgmt.travel_approval.pending", subtextVars: { count: n }, items });
         else setTravelApprovalCheck({ status: "overdue", subtextKey: "mgmt.travel_approval.pending", subtextVars: { count: n }, items });

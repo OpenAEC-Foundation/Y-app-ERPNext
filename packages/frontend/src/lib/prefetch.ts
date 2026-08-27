@@ -14,13 +14,13 @@
  */
 
 import { fetchList } from "./erpnext";
+import { fetchKmRegistraties } from "./declaraties";
 import { getActiveCompany, getActiveEmployee } from "./instances";
 
 const DOCTYPE_REQUIRED_ROLES: Record<string, string[]> = {
   "Sales Invoice": ["Sales User", "Sales Manager", "Accounts User", "Accounts Manager"],
   "Purchase Invoice": ["Purchase User", "Purchase Manager", "Accounts User", "Accounts Manager"],
   "Quotation": ["Sales User", "Sales Manager"],
-  "Travel Request": ["HR User", "HR Manager", "Employee"],
   "Leave Allocation": ["HR User", "HR Manager"],
   "Shift Plan Assignment": ["HR User", "HR Manager"],
 };
@@ -130,15 +130,13 @@ export function prefetchCommonData(currentPage: string, userRoles: string[] = []
       );
     }
 
-    // Travel Request (for km boeken + expenses)
-    if (currentPage !== "expenses" && employee && canFetch("Travel Request", userRoles)) {
+    // Kilometers (km-widget op het dashboard + de onkostenpagina). Draait op
+    // Y-next' eigen doctype; geen rolcheck nodig, want het provisioningscript
+    // geeft Employee en Projects User leesrecht en `if_owner` doet de
+    // afscherming — zie lib/declaraties.ts.
+    if (currentPage !== "expenses" && employee) {
       tasks.push(
-        fetchList("Travel Request", {
-          fields: ["name", "custom_total_distance"],
-          filters: [["employee", "=", employee]],
-          limit_page_length: 1,
-          order_by: "custom_from_date desc",
-        }).catch(() => {})
+        fetchKmRegistraties({ employee, limit: 10 }).catch(() => {})
       );
     }
 
