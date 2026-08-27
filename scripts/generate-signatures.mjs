@@ -22,17 +22,20 @@
  * afsluitende `;` uit `style`-attributen halen. De opgeslagen HTML is dus
  * nooit byte-identiek aan wat wij sturen; daarom is er bewust géén
  * "ongewijzigd"-pad op basis van stringvergelijking — een marker-hit
- * betekent simpelweg herschrijven.
+ * betekent simpelweg herschrijven. `hasMarker` herkent élk versienummer, zodat
+ * een v1-handtekening bij deze run gewoon naar v2 wordt bijgewerkt.
  *
- * **Geen afbeeldingen.** Een logo zou een externe URL of een base64-blob
- * vergen: het eerste breekt bij ontvangers die remote content blokkeren, het
- * tweede blaast elke uitgaande mail op. De huisstijl zit daarom volledig in
- * typografie en de merkkleuren (#043b42 / #006876, zie `index.css`).
+ * **Eén logo, en alleen een publieke URL.** `Company.company_logo` wijst op
+ * deze instance naar een Frappe-File. Staat die onder `/private/files/`, dan
+ * ziet de ontvanger een kapot icoon — die kan immers niet inloggen. Daarom
+ * accepteert `resolveLogoUrl` uitsluitend een `/files/`-pad (of een complete
+ * https-URL) en laat het logo anders wég. Een base64-blob is bewust géén optie:
+ * dat blaast elke uitgaande mail op.
  *
- * **Geen lege regels.** Ontbreekt een gegeven (functie, telefoon, website),
- * dan verdwijnt de hele regel — niet een lege `<div>`. Op de doelinstance is
- * `designation`/`cell_number` op de Employee-docs nog nergens gevuld, dus dit
- * is het normale geval, niet de uitzondering.
+ * **Geen lege regels.** Ontbreekt een gegeven (functie, telefoon, adres,
+ * website, KvK/BTW/IBAN), dan verdwijnt de hele regel — niet een lege `<div>`.
+ * De KvK/BTW/IBAN-voetregel verschijnt alleen als er minstens één van de drie
+ * bekend is.
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
@@ -49,7 +52,14 @@ import { resolve as resolvePath } from "node:path";
 const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 
 /** Marker die een door dit script gegenereerde handtekening herkenbaar maakt. */
-export const SIGNATURE_MARKER = "<!-- y-next-signature v1 -->";
+export const SIGNATURE_MARKER = "<!-- y-next-signature v2 -->";
+
+/**
+ * Herkent élke versie van onze marker. Cruciaal voor de upgrade: een
+ * handtekening die nog `v1` draagt is óók van ons en moet worden bijgewerkt,
+ * niet als handmatig maatwerk overgeslagen.
+ */
+const MARKER_PATTERN = /<!--\s*y-next-signature v\d+\s*-->/i;
 
 /**
  * Gebruikers die nooit een medewerkershandtekening horen te krijgen.
@@ -61,6 +71,14 @@ const SYSTEM_USERS = new Set(["Administrator", "Guest"]);
 /** Merkkleuren, gelijk aan `--color-y-purple` / `--color-y-teal` in index.css. */
 const BRAND_DARK = "#043b42";
 const BRAND_ACCENT = "#006876";
+
+/**
+ * Logo-afmetingen. Alleen de breedte staat vast; de hoogte laten we los zodat
+ * elke aspectratio onvervormd blijft. Outlook's Word-renderer schaalt dan
+ * proportioneel mee.
+ */
+const LOGO_WIDTH = 96;
+const LOGO_GUTTER = 14;
 
 /** Redigeert eventuele Authorization/token-fragmenten uit een string vóór logging. */
 function redact(text) {
@@ -124,13 +142,65 @@ function websiteParts(website) {
 }
 
 /**
+ * Zet een IBAN om naar de leesbare, gespatieerde notatie.
+ * `NL95RABO0169749509` → `NL95 RABO 0169 7495 09`. Bestaande spaties en
+ * kleine letters worden genormaliseerd; een lege waarde blijft leeg.
+ */
+export function formatIban(iban) {
+  const compact = str(iban).replace(/\s+/g, "").toUpperCase();
+  if (!compact) return "";
+  return compact.replace(/(.{4})/g, "$1 ").trim();
+}
+
+/**
+ * Zet een waarde voor met een label, tenzij ze dat label al zélf draagt.
+ * `Company.registration_details` bevat op deze instance letterlijk
+ * "KvK 99480697"; er "KvK " vóór plakken zou "KvK KvK 99480697" opleveren.
+ */
+function labelled(label, value) {
+  const raw = str(value);
+  if (!raw) return "";
+  return new RegExp(`^${label}\\b`, "i").test(raw) ? raw : `${label} ${raw}`;
+}
+
+/**
+ * De publieke, absolute URL van het bedrijfslogo — of "" als die er niet is.
+ *
+ * Alleen `/files/…` (publiek) en complete http(s)-URL's tellen mee. Een
+ * `/private/files/…`-pad wordt bewust genegeerd: de ontvanger van de mail is
+ * niet ingelogd op ERPNext en zou een kapot icoon zien.
+ */
+export function resolveLogoUrl(logoPath, baseUrl) {
+  const raw = str(logoPath);
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (!raw.startsWith("/files/")) return "";
+  const base = str(baseUrl).replace(/\/+$/, "");
+  return base ? `${base}${raw}` : "";
+}
+
+/** Een teal link met de merkkleur — overal in de handtekening identiek. */
+function link(href, label) {
+  return `<a href="${escapeHtml(href)}" style="color:${BRAND_ACCENT};text-decoration:none;">${escapeHtml(label)}</a>`;
+}
+
+/**
  * De volledige handtekening-HTML voor één persoon.
  *
- * Pure functie: geen IO, geen defaults uit de omgeving. Ontbrekende velden
- * leveren géén lege regel op — de betreffende `<div>` wordt weggelaten.
+ * Pure functie: geen IO, geen defaults uit de omgeving.
+ *
+ * Opbouw — bewust mailclient-veilig: één `<table>` met twee cellen (links het
+ * logo, rechts de tekst, gescheiden door een teal accentlijn), volledig inline
+ * styles, vaste px, geen flex/grid, geen webfonts. Dat is wat Outlook (Word-
+ * renderer), Gmail en Apple Mail alle drie voorspelbaar tonen.
+ *
+ * Ontbrekende velden leveren géén lege regel op — de betreffende `<div>` valt
+ * weg. De KvK/BTW/IBAN-voetregel verschijnt alleen als er iets in staat.
  *
  * @param {{ fullName: string, designation?: string, company?: string,
- *           email?: string, phone?: string, website?: string }} person
+ *           email?: string, phone?: string, website?: string,
+ *           addressLine?: string, postalCity?: string, logoUrl?: string,
+ *           registration?: string, taxId?: string, iban?: string }} person
  * @returns {string} HTML, afgesloten met SIGNATURE_MARKER
  */
 export function buildSignatureHtml(person) {
@@ -139,60 +209,96 @@ export function buildSignatureHtml(person) {
   const company = str(person?.company);
   const email = str(person?.email);
   const phone = str(person?.phone);
+  const addressLine = str(person?.addressLine);
+  const postalCity = str(person?.postalCity);
+  const logoUrl = str(person?.logoUrl);
   const site = websiteParts(person?.website);
 
   const rows = [];
   rows.push(
-    `<div style="font-size:15px;font-weight:bold;color:${BRAND_DARK};">${escapeHtml(fullName)}</div>`
+    `<div style="font-size:15px;font-weight:bold;line-height:1.25;color:${BRAND_DARK};">${escapeHtml(fullName)}</div>`
   );
   if (designation) {
-    rows.push(`<div style="color:#64748b;">${escapeHtml(designation)}</div>`);
+    rows.push(`<div style="color:#475569;">${escapeHtml(designation)}</div>`);
   }
   if (company) {
     rows.push(
-      `<div style="font-weight:bold;color:${BRAND_DARK};letter-spacing:0.2px;">${escapeHtml(company)}</div>`
+      `<div style="font-weight:bold;color:${BRAND_DARK};letter-spacing:0.2px;padding-top:2px;">${escapeHtml(company)}</div>`
     );
   }
+  if (addressLine) {
+    rows.push(`<div>${escapeHtml(addressLine)}</div>`);
+  }
+  if (postalCity) {
+    rows.push(`<div>${escapeHtml(postalCity)}</div>`);
+  }
 
-  // E-mail en telefoon delen één regel — dat scheelt een regel zonder dat er
+  // Telefoon en e-mail delen één regel — dat scheelt een regel zonder dat er
   // informatie sneuvelt. Ontbreken ze allebei, dan valt de regel weg.
   const contact = [];
-  if (email) {
-    contact.push(
-      `<a href="mailto:${escapeHtml(email)}" style="color:${BRAND_ACCENT};text-decoration:none;">${escapeHtml(email)}</a>`
-    );
-  }
   if (phone) {
-    const telHref = phone.replace(/[^\d+]/g, "");
-    contact.push(
-      `<a href="tel:${escapeHtml(telHref)}" style="color:${BRAND_ACCENT};text-decoration:none;">${escapeHtml(phone)}</a>`
-    );
+    contact.push(link(`tel:${phone.replace(/[^\d+]/g, "")}`, phone));
+  }
+  if (email) {
+    contact.push(link(`mailto:${email}`, email));
   }
   if (contact.length > 0) {
-    rows.push(`<div>${contact.join(' <span style="color:#cbd5e1;">·</span> ')}</div>`);
-  }
-
-  if (site) {
     rows.push(
-      `<div><a href="${escapeHtml(site.href)}" style="color:${BRAND_ACCENT};text-decoration:none;">${escapeHtml(site.label)}</a></div>`
+      `<div style="padding-top:2px;">${contact.join(' <span style="color:#cbd5e1;">·</span> ')}</div>`
     );
   }
+  if (site) {
+    rows.push(`<div>${link(site.href, site.label)}</div>`);
+  }
+
+  // Voetregel met de formele gegevens: klein, grijs, één regel.
+  const legal = [
+    labelled("KvK", person?.registration),
+    labelled("BTW", person?.taxId),
+    labelled("IBAN", formatIban(person?.iban)),
+  ].filter(Boolean);
+  if (legal.length > 0) {
+    rows.push(
+      '<div style="padding-top:7px;font-size:11px;line-height:1.4;color:#64748b;">' +
+        escapeHtml(legal.join(" · ")) +
+        "</div>"
+    );
+  }
+
+  const logoCell = logoUrl
+    ? `<td width="${LOGO_WIDTH}" valign="top" style="padding:0 ${LOGO_GUTTER}px 0 0;vertical-align:top;">` +
+      `<img src="${escapeHtml(logoUrl)}" width="${LOGO_WIDTH}" alt="${escapeHtml(company || fullName)}" ` +
+      `style="display:block;border:0;outline:none;text-decoration:none;width:${LOGO_WIDTH}px;max-width:${LOGO_WIDTH}px;height:auto;">` +
+      "</td>"
+    : "";
+
+  // Zonder logo blijft de accentlijn de linkerrand — met logo scheidt hij de
+  // twee kolommen. In beide gevallen exact dezelfde tekstcel.
+  const textCell =
+    `<td valign="top" style="vertical-align:top;border-left:3px solid ${BRAND_ACCENT};` +
+    `padding:1px 0 1px ${LOGO_GUTTER}px;font-family:Arial,Helvetica,sans-serif;` +
+    "font-size:13px;line-height:1.35;color:#334155;\">" +
+    rows.join("") +
+    "</td>";
 
   return (
     '<table role="presentation" cellpadding="0" cellspacing="0" border="0" ' +
     'style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;' +
-    'font-size:13px;line-height:1.55;color:#334155;">' +
+    'font-size:13px;line-height:1.35;color:#334155;">' +
     "<tr>" +
-    `<td style="border-left:3px solid ${BRAND_ACCENT};padding:1px 0 1px 12px;">` +
-    rows.join("") +
-    "</td></tr></table>" +
+    logoCell +
+    textCell +
+    "</tr></table>" +
     SIGNATURE_MARKER
   );
 }
 
-/** true zodra een opgeslagen handtekening door dit script is gemaakt. */
+/**
+ * true zodra een opgeslagen handtekening door dit script is gemaakt — welke
+ * versie dan ook, zodat een oude v1 bij deze run naar v2 wordt bijgewerkt.
+ */
 export function hasMarker(html) {
-  return String(html ?? "").includes(SIGNATURE_MARKER);
+  return MARKER_PATTERN.test(String(html ?? ""));
 }
 
 /**
@@ -251,24 +357,101 @@ async function resolveApiUser(baseUrl, token) {
 }
 
 /**
+ * Haalt per bedrijf het eigen vestigingsadres op.
+ *
+ * `Address.is_your_company_address = 1` markeert een eigen adres, maar zégt
+ * niet van wélk bedrijf — die koppeling zit in de `Dynamic Link`-childtabel.
+ * Daarom eerst de namen ophalen, dan per adres het hele doc (dat de `links`
+ * meelevert). Het aantal eigen adressen is per definitie klein.
+ *
+ * @returns {Promise<Map<string, { addressLine: string, postalCity: string }>>}
+ */
+async function collectCompanyAddresses(baseUrl, token) {
+  const byCompany = new Map();
+  const listBody = await apiGet(
+    baseUrl,
+    token,
+    listPath("Address", ["name"], [["is_your_company_address", "=", 1]]),
+    "Ophalen van de bedrijfsadressen"
+  ).catch(() => null);
+  const names = Array.isArray(listBody?.data) ? listBody.data : [];
+
+  for (const row of names) {
+    const name = str(row?.name);
+    if (!name) continue;
+    const body = await apiGet(
+      baseUrl,
+      token,
+      `/api/resource/Address/${encodeURIComponent(name)}`,
+      "Ophalen van een bedrijfsadres"
+    ).catch(() => null);
+    const doc = body?.data;
+    if (!doc) continue;
+
+    const addressLine = [str(doc.address_line1), str(doc.address_line2)].filter(Boolean).join(", ");
+    const postalCity = [str(doc.pincode), str(doc.city)].filter(Boolean).join(" ");
+    if (!addressLine && !postalCity) continue;
+
+    for (const l of Array.isArray(doc.links) ? doc.links : []) {
+      if (str(l?.link_doctype) !== "Company") continue;
+      const company = str(l?.link_name);
+      if (company && !byCompany.has(company)) byCompany.set(company, { addressLine, postalCity });
+    }
+  }
+  return byCompany;
+}
+
+/**
+ * Haalt per bedrijf het IBAN van de eerste actieve eigen bankrekening op.
+ * @returns {Promise<Map<string, string>>}
+ */
+async function collectCompanyIbans(baseUrl, token) {
+  const body = await apiGet(
+    baseUrl,
+    token,
+    listPath(
+      "Bank Account",
+      ["name", "iban", "company", "disabled"],
+      [["is_company_account", "=", 1]]
+    ),
+    "Ophalen van de bankrekeningen"
+  ).catch(() => null);
+  const rows = Array.isArray(body?.data) ? body.data : [];
+  const byCompany = new Map();
+  for (const row of rows) {
+    if (row?.disabled) continue;
+    const company = str(row?.company);
+    const iban = str(row?.iban);
+    if (!company || !iban || byCompany.has(company)) continue;
+    byCompany.set(company, iban);
+  }
+  return byCompany;
+}
+
+/**
  * Verzamelt alle medewerkers met de gegevens die in een handtekening horen.
  *
- * Drie bronnen, in deze volgorde van gezag:
+ * Vijf bronnen, in deze volgorde van gezag:
  *  1. `User`   — naam en e-mailadres (de login is het adres waarmee men mailt),
  *               plus `mobile_no`/`phone` als terugval voor het nummer.
  *  2. `Employee` — functie (`designation`), zakelijk mobiel (`cell_number`) en
  *               het bedrijf waar iemand onder valt.
- *  3. `Company` — bedrijfsnaam en website.
+ *  3. `Company` — bedrijfsnaam, website, logo, `tax_id` (BTW),
+ *               `registration_details` (KvK) en `phone_no` als laatste terugval
+ *               voor het telefoonnummer.
+ *  4. `Address` — het eigen vestigingsadres, via de `Dynamic Link`-koppeling.
+ *  5. `Bank Account` — het IBAN van de eigen rekening.
  *
- * Bewust géén terugval van het persoonlijke nummer op `Company.phone_no`: dat
- * veld bevat op de doelinstance het mobiele nummer van één persoon, en dat
- * onder ieders naam zetten is erger dan geen nummer tonen.
+ * Het persoonlijke nummer wint altijd van `Company.phone_no`; die laatste is
+ * een algemeen bedrijfsnummer en dus alleen een terugval.
  *
  * Alleen `System User`s tellen mee: portaal-/websitegebruikers (klanten,
  * leveranciers) zijn geen medewerkers en mailen niet namens het bedrijf.
  *
  * @returns {Promise<Array<{ user: string, fullName: string, designation: string,
  *   company: string, email: string, phone: string, website: string,
+ *   addressLine: string, postalCity: string, logoUrl: string,
+ *   registration: string, taxId: string, iban: string,
  *   currentSignature: string }>>}
  */
 export async function collectPeople({ baseUrl, token }) {
@@ -316,11 +499,22 @@ export async function collectPeople({ baseUrl, token }) {
   const companiesBody = await apiGet(
     baseUrl,
     token,
-    listPath("Company", ["name", "company_name", "website"]),
+    listPath("Company", [
+      "name",
+      "company_name",
+      "website",
+      "company_logo",
+      "phone_no",
+      "tax_id",
+      "registration_details",
+    ]),
     "Ophalen van de bedrijven"
   );
   const companies = Array.isArray(companiesBody?.data) ? companiesBody.data : [];
   const companyByName = new Map(companies.map((c) => [str(c?.name), c]));
+
+  const addressByCompany = await collectCompanyAddresses(baseUrl, token);
+  const ibanByCompany = await collectCompanyIbans(baseUrl, token);
 
   // Terugval voor gebruikers zonder Employee-koppeling: het standaardbedrijf.
   const defaultsBody = await apiGet(
@@ -339,6 +533,7 @@ export async function collectPeople({ baseUrl, token }) {
     const emp = employeeByUser.get(name.toLowerCase()) || null;
     const companyName = str(emp?.company) || defaultCompany;
     const company = companyByName.get(companyName) || null;
+    const address = addressByCompany.get(companyName) || null;
 
     const fullName =
       str(user?.full_name) ||
@@ -352,8 +547,18 @@ export async function collectPeople({ baseUrl, token }) {
       designation: str(emp?.designation),
       company: str(company?.company_name) || companyName,
       email: name,
-      phone: str(emp?.cell_number) || str(user?.mobile_no) || str(user?.phone),
+      phone:
+        str(emp?.cell_number) ||
+        str(user?.mobile_no) ||
+        str(user?.phone) ||
+        str(company?.phone_no),
       website: str(company?.website),
+      addressLine: str(address?.addressLine),
+      postalCity: str(address?.postalCity),
+      logoUrl: resolveLogoUrl(company?.company_logo, baseUrl),
+      registration: str(company?.registration_details),
+      taxId: str(company?.tax_id),
+      iban: str(ibanByCompany.get(companyName)),
       currentSignature: str(user?.email_signature),
     });
   }
