@@ -319,14 +319,270 @@ export async function ensurePermissions({ baseUrl, token, rules = buildPermissio
   return { added, updated, unchanged };
 }
 
+/* ────────────────────── Naamreeks-tellers (fase 3) ────────────────────── */
+
+/**
+ * Doctypes die Y-next raakt en waarvan de naming-series-teller kan
+ * desynchroniseren met de werkelijk bestaande documenten (na een
+ * bulk-import, of na een mislukte insert — Frappe hoogt de teller NIET op
+ * bij een gefaalde create, dus een eerdere botsing blijft permanent
+ * terugkomen totdat de teller handmatig wordt bijgewerkt). Zie
+ * `.superpowers/sdd/snug-soaring-whistle/task-jaarstaat-report.md`
+ * (addendum 2) voor de live-analyse die tot deze aanpak leidde: eerst
+ * `TS-2026-`, later `ACC-PINV-2026-`.
+ *
+ * Alleen doctypes die daadwerkelijk op de instance bestaan én een
+ * `naming_series`-veld hebben worden verwerkt — de rest wordt overgeslagen
+ * (zie `ensureNamingSeries`), dus deze lijst mag gerust doctypes bevatten
+ * die (nog) niet aanwezig zijn.
+ * @type {string[]}
+ */
+export const DEFAULT_NAMING_SERIES_DOCTYPES = [
+  "Timesheet",
+  "Purchase Invoice",
+  "Sales Invoice",
+  "Quotation",
+  "Sales Order",
+  "Delivery Note",
+  "Task",
+  "Project",
+];
+
+/**
+ * Vult een Frappe naming-series-sjabloon (bv. `"TS-.YYYY.-"`) in tot de
+ * concrete prefix die Frappe vandaag zou gebruiken (bv. `"TS-2026-"`) —
+ * hetzelfde patroon als `frappe.model.naming.parse_naming_series`: het
+ * sjabloon wordt op `.` gesplitst en alleen de datumtokens (`YYYY`/`YY`/
+ * `MM`/`DD`) worden vervangen; de rest blijft letterlijk staan.
+ * @param {string} template
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function expandNamingSeriesPrefix(template, now = new Date()) {
+  const year = now.getFullYear();
+  const tokens = { YYYY: String(year), YY: String(year).slice(-2), MM: String(now.getMonth() + 1).padStart(2, "0"), DD: String(now.getDate()).padStart(2, "0") };
+  return String(template)
+    .split(".")
+    .map((part) => tokens[part.toUpperCase()] ?? part)
+    .join("");
+}
+
+/**
+ * Parseert het numerieke staartstuk van een documentnaam die met `prefix`
+ * begint (bv. `parseSeriesNumber("ACC-PINV-2026-00042", "ACC-PINV-2026-")`
+ * → `42`; werkt ook zonder jaarsegment in de prefix). `null` als `name` niet
+ * met `prefix` begint, of als er direct na de prefix geen cijfers staan
+ * (bv. een handmatig hernoemd document dat toevallig met dezelfde prefix
+ * begint).
+ * @param {string} name
+ * @param {string} prefix
+ * @returns {number | null}
+ */
+export function parseSeriesNumber(name, prefix) {
+  if (typeof name !== "string" || typeof prefix !== "string" || !name.startsWith(prefix)) return null;
+  const match = name.slice(prefix.length).match(/^\d+/);
+  return match ? parseInt(match[0], 10) : null;
+}
+
+/**
+ * Haalt de naming-series-sjablonen (alle regels van het `naming_series`
+ * select-veld) van een doctype op. `null` als het doctype niet bestaat op de
+ * instance, `[]` als het doctype bestaat maar geen `naming_series`-veld
+ * heeft (bv. hash- of field-based autoname — niets om te herstellen).
+ * @returns {Promise<string[] | null>}
+ */
+async function getNamingSeriesTemplates(baseUrl, token, doctype) {
+  const res = await safeFetch(`${baseUrl}/api/resource/DocType/${encodeURIComponent(doctype)}`, {
+    headers: { Authorization: `token ${token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`DocType "${doctype}" opvragen mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  const doc = body && body.data ? body.data : null;
+  const fields = doc && Array.isArray(doc.fields) ? doc.fields : [];
+  const namingField = fields.find((f) => f && f.fieldname === "naming_series");
+  if (!namingField) return [];
+  return String(namingField.options || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Hoogste bestaande documentnaam voor één specifieke prefix van één
+ * doctype: `order_by=name desc, limit 1`, gefilterd op
+ * `["name","like","<prefix>%"]` zodat een niet-conform genaamd document
+ * (bv. een handmatige titel uit een bulk-import) de echte reeksleider niet
+ * kan verdringen. `null` als er geen enkel document met deze prefix bestaat.
+ * @returns {Promise<string | null>}
+ */
+async function getHighestNameForPrefix(baseUrl, token, doctype, prefix) {
+  const params = new URLSearchParams();
+  params.set("fields", JSON.stringify(["name"]));
+  params.set("filters", JSON.stringify([["name", "like", `${prefix}%`]]));
+  params.set("order_by", "name desc");
+  params.set("limit_page_length", "1");
+  const url = `${baseUrl}/api/resource/${encodeURIComponent(doctype)}?${params.toString()}`;
+  const res = await safeFetch(url, { headers: { Authorization: `token ${token}` } });
+  if (!res.ok) {
+    throw new Error(`Documenten opvragen voor "${doctype}" (prefix "${prefix}") mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  const rows = body && Array.isArray(body.data) ? body.data : [];
+  return rows.length > 0 ? rows[0].name : null;
+}
+
+/** Haalt de `Document Naming Settings`-Single op (nodig voor `modified`, zie `run_doc_method`'s `check_if_latest`). */
+async function getNamingSettingsSingle(baseUrl, token) {
+  const res = await safeFetch(
+    `${baseUrl}/api/resource/${encodeURIComponent("Document Naming Settings")}/${encodeURIComponent("Document Naming Settings")}`,
+    { headers: { Authorization: `token ${token}` } }
+  );
+  if (!res.ok) {
+    throw new Error(`Document Naming Settings opvragen mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  return body && body.data ? body.data : {};
+}
+
+/**
+ * Huidige tellerstand voor een prefix, via het whitelisted
+ * `run_doc_method`-pad op `Document Naming Settings.get_current` (zelfde
+ * patroon dat live bevestigd is voor de `TS-2026-`-fix, zie
+ * task-jaarstaat-report.md addendum 2).
+ * @returns {Promise<number>}
+ */
+async function getCurrentSeriesValue(baseUrl, token, prefix) {
+  const single = await getNamingSettingsSingle(baseUrl, token);
+  const res = await safeFetch(`${baseUrl}/api/method/run_doc_method`, {
+    method: "POST",
+    headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      docs: JSON.stringify({ ...single, doctype: "Document Naming Settings", prefix }),
+      method: "get_current",
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Tellerstand opvragen voor prefix "${prefix}" mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  // Live geverifieerd: `run_doc_method` retourneert `get_current`'s
+  // resultaat rechtstreeks als `message` (een getal), NIET als
+  // `{ current_value }`. Beide vormen worden hier verdraagd zodat een
+  // toekomstige Frappe-versie die wél een object teruggeeft niet stil naar 0
+  // terugvalt.
+  const raw = body ? body.message : undefined;
+  const value = raw && typeof raw === "object" ? raw.current_value : raw;
+  return Number(value) || 0;
+}
+
+/** Zet de tellerstand voor een prefix via `Document Naming Settings.update_series_start` (System Manager only). */
+async function setSeriesValue(baseUrl, token, prefix, value) {
+  const single = await getNamingSettingsSingle(baseUrl, token);
+  const res = await safeFetch(`${baseUrl}/api/method/run_doc_method`, {
+    method: "POST",
+    headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      docs: JSON.stringify({ ...single, doctype: "Document Naming Settings", prefix, current_value: value }),
+      method: "update_series_start",
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Tellerstand zetten voor prefix "${prefix}" (waarde ${value}) mislukt: HTTP ${res.status}.`);
+  }
+}
+
+/**
+ * Herstelt naming-series-tellers die achterlopen op de werkelijk bestaande
+ * documenten, voor elke prefix die in gebruik is bij elk doctype uit
+ * `doctypes`. Idempotent: staat de teller al op of boven het hoogste
+ * bestaande nummer, dan gebeurt er niets.
+ *
+ * Faalt de verwerking van één doctype of één prefix (doctype bestaat niet,
+ * geen naming_series-veld, een HTTP-fout), dan wordt dat gewaarschuwd en
+ * gaat de rest van de lijst door — één kapotte reeks mag de andere reeksen
+ * niet blokkeren.
+ *
+ * @param {{ baseUrl: string, token: string, doctypes?: string[], now?: Date }} params
+ * @returns {Promise<{ updated: object[], unchanged: object[], skipped: object[] }>}
+ */
+export async function ensureNamingSeries({ baseUrl, token, doctypes = DEFAULT_NAMING_SERIES_DOCTYPES, now = new Date() }) {
+  const updated = [];
+  const unchanged = [];
+  const skipped = [];
+
+  for (const doctype of doctypes) {
+    let templates;
+    try {
+      templates = await getNamingSeriesTemplates(baseUrl, token, doctype);
+    } catch (err) {
+      const message = redact(err && err.message ? err.message : String(err));
+      console.warn(`Naamreeksen: "${doctype}" overgeslagen wegens fout bij opvragen DocType-meta: ${message}`);
+      skipped.push({ doctype, reason: "error", detail: message });
+      continue;
+    }
+    if (templates === null) {
+      console.log(`Naamreeksen: DocType "${doctype}" bestaat niet op deze instance — overgeslagen.`);
+      skipped.push({ doctype, reason: "doctype-not-found" });
+      continue;
+    }
+    if (templates.length === 0) {
+      console.log(`Naamreeksen: "${doctype}" gebruikt geen naming_series — overgeslagen.`);
+      skipped.push({ doctype, reason: "no-naming-series" });
+      continue;
+    }
+
+    const prefixes = [...new Set(templates.map((t) => expandNamingSeriesPrefix(t, now)))];
+    for (const prefix of prefixes) {
+      try {
+        const highestName = await getHighestNameForPrefix(baseUrl, token, doctype, prefix);
+        if (highestName === null) {
+          console.log(`Naamreeksen: ${doctype} (${prefix}) — geen bestaande documenten met deze prefix, overgeslagen.`);
+          skipped.push({ doctype, prefix, reason: "no-documents" });
+          continue;
+        }
+        const highest = parseSeriesNumber(highestName, prefix);
+        if (highest === null) {
+          console.warn(`Naamreeksen: ${doctype} (${prefix}) — kon geen nummer parsen uit "${highestName}", overgeslagen.`);
+          skipped.push({ doctype, prefix, reason: "parse-failed", name: highestName });
+          continue;
+        }
+        const oldValue = await getCurrentSeriesValue(baseUrl, token, prefix);
+        if (oldValue >= highest) {
+          console.log(
+            `Naamreeksen: ${doctype} (${prefix}) — teller staat op ${oldValue}, hoogste bestaande is ${highest} — ongewijzigd.`
+          );
+          unchanged.push({ doctype, prefix, highest, value: oldValue });
+          continue;
+        }
+        await setSeriesValue(baseUrl, token, prefix, highest);
+        console.log(
+          `Naamreeksen: ${doctype} (${prefix}) — teller ${oldValue} -> ${highest} ` +
+            `(hoogste bestaande naam "${highestName}").`
+        );
+        updated.push({ doctype, prefix, oldValue, newValue: highest });
+      } catch (err) {
+        const message = redact(err && err.message ? err.message : String(err));
+        console.warn(`Naamreeksen: ${doctype} (${prefix}) overgeslagen wegens fout: ${message}`);
+        skipped.push({ doctype, prefix, reason: "error", detail: message });
+      }
+    }
+  }
+
+  return { updated, unchanged, skipped };
+}
+
 /**
  * Provisioneert Y-next (idempotent): eerst de custom DocTypes — bestaat een
  * DocType al, dan wordt hij overgeslagen; anders wordt hij aangemaakt —
- * daarna de DocPerm-vlaggen uit `buildPermissionRules`. De rechtenfase komt
- * bewust ná de doctype-fase: een regel kan over een net aangemaakt DocType
- * gaan.
+ * daarna de DocPerm-vlaggen uit `buildPermissionRules`, en als derde fase de
+ * naming-series-tellers uit `ensureNamingSeries`. De volgorde is bewust: een
+ * rechten- of teller-regel kan over een net aangemaakte/gecontroleerde
+ * doctype gaan.
  * @param {{ baseUrl: string, token: string }} params
- * @returns {Promise<{ created: string[], existing: string[], permissions: { added: string[], updated: string[], unchanged: string[] } }>}
+ * @returns {Promise<{ created: string[], existing: string[], permissions: { added: string[], updated: string[], unchanged: string[] }, namingSeries: { updated: object[], unchanged: object[], skipped: object[] } }>}
  */
 export async function provision({ baseUrl, token }) {
   const definitions = [buildMeetingNoteDoctype(), buildSettingDoctype()];
@@ -338,17 +594,20 @@ export async function provision({ baseUrl, token }) {
     else existing.push(definition.name);
   }
   const permissions = await ensurePermissions({ baseUrl, token });
-  return { created, existing, permissions };
+  const namingSeries = await ensureNamingSeries({ baseUrl, token });
+  return { created, existing, permissions, namingSeries };
 }
 
 async function main() {
   const { baseUrl, token } = requiredEnv(process.env);
   console.log(`Provisioning Y-next tegen ${baseUrl} ...`);
-  const { created, existing, permissions } = await provision({ baseUrl, token });
+  const { created, existing, permissions, namingSeries } = await provision({ baseUrl, token });
   console.log(
     `Klaar. Aangemaakt: ${created.join(", ") || "geen"}. Al aanwezig: ${existing.join(", ") || "geen"}. ` +
       `Rechten — rol-rijen toegevoegd: ${permissions.added.length}, gezet: ${permissions.updated.length}, ` +
-      `ongewijzigd: ${permissions.unchanged.length}.`
+      `ongewijzigd: ${permissions.unchanged.length}. ` +
+      `Naamreeksen — bijgewerkt: ${namingSeries.updated.length}, ongewijzigd: ${namingSeries.unchanged.length}, ` +
+      `overgeslagen: ${namingSeries.skipped.length}.`
   );
 }
 

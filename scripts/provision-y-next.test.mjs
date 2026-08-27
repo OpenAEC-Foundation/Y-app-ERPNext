@@ -8,6 +8,10 @@ import {
   buildPermissionRules,
   ensurePermissions,
   provision,
+  DEFAULT_NAMING_SERIES_DOCTYPES,
+  expandNamingSeriesPrefix,
+  parseSeriesNumber,
+  ensureNamingSeries,
 } from "./provision-y-next.mjs";
 
 function installFetchMock(handler) {
@@ -76,9 +80,20 @@ function satisfiedPermsHandler(url) {
   return { status: 200, body: { message: [...byRow.values()] } };
 }
 
-/** Alleen de calls naar /api/resource/DocType (dus zonder de rechtenfase). */
+/**
+ * Alleen de calls naar /api/resource/DocType voor de twee custom
+ * provisioning-doctypes (dus zonder de rechtenfase en zonder de
+ * naamreeksen-fase — die laatste bevraagt /api/resource/DocType/<kern-doctype>
+ * óók, voor de naming_series-meta-check).
+ */
 function doctypeCalls(calls) {
-  return calls.filter((c) => c.url.includes("/api/resource/DocType"));
+  return calls.filter(
+    (c) =>
+      c.url.includes("DocType/Y%20Meeting%20Note") ||
+      c.url.includes("DocType/Y%20Next%20Setting") ||
+      // De aanmaak-POST gaat naar /api/resource/DocType zonder naam-suffix.
+      /\/api\/resource\/DocType$/.test(c.url)
+  );
 }
 
 test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
@@ -237,14 +252,22 @@ test("provision: maakt een DocType aan wanneer GET 404 geeft", async () => {
   }
 });
 
-test("provision: draait de rechtenfase ná de doctype-fase", async () => {
+test("provision: draait de rechtenfase ná de doctype-fase, en de naamreeksen-fase ná de rechtenfase", async () => {
   const order = [];
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) {
       order.push("perm");
       return satisfiedPermsHandler(url);
     }
-    order.push("doctype");
+    if (url.includes("DocType/Y%20Meeting%20Note") || url.includes("DocType/Y%20Next%20Setting")) {
+      order.push("doctype");
+      return { status: 200, body: { data: { name: "existing" } } };
+    }
+    // Alle overige calls horen bij de naamreeksen-fase (DocType-meta-checks
+    // voor de acht kern-doctypes). Deze mock geeft ze geen `fields`, dus
+    // `ensureNamingSeries` stopt meteen na de meta-check — geen naming_series
+    // gevonden, geen vervolgcalls.
+    order.push("naming");
     return { status: 200, body: { data: { name: "existing" } } };
   });
   try {
@@ -252,8 +275,11 @@ test("provision: draait de rechtenfase ná de doctype-fase", async () => {
     assert.equal(result.permissions.unchanged.length, buildPermissionRules().length);
     assert.deepEqual(result.permissions.added, []);
     assert.deepEqual(result.permissions.updated, []);
-    // Geen enkele perm-call vóór de laatste doctype-call.
+    assert.equal(result.namingSeries.skipped.length, DEFAULT_NAMING_SERIES_DOCTYPES.length);
+    assert.equal(result.namingSeries.updated.length, 0);
+    // Doctype-fase vóór rechtenfase, rechtenfase vóór naamreeksen-fase.
     assert.equal(order.lastIndexOf("doctype") < order.indexOf("perm"), true);
+    assert.equal(order.lastIndexOf("perm") < order.indexOf("naming"), true);
   } finally {
     mock.restore();
   }
@@ -520,5 +546,329 @@ test("ensurePermissions: gooit met status als get_permissions faalt", async () =
     );
   } finally {
     mock.restore();
+  }
+});
+
+/* ────────────────────── Naamreeks-tellers (ensureNamingSeries) ────────────────────── */
+
+test("expandNamingSeriesPrefix: vult .YYYY. in met het huidige jaar, laat de rest letterlijk", () => {
+  const now = new Date("2026-03-15T00:00:00Z");
+  assert.equal(expandNamingSeriesPrefix("TS-.YYYY.-", now), "TS-2026-");
+  assert.equal(expandNamingSeriesPrefix("ACC-PINV-.YYYY.-", now), "ACC-PINV-2026-");
+  // Geen dots -> ongewijzigd doorgegeven (bv. PROJ-0029-stijl prefixen zonder jaar).
+  assert.equal(expandNamingSeriesPrefix("PROJ-", now), "PROJ-");
+});
+
+test("parseSeriesNumber: met jaarsegment in de prefix", () => {
+  assert.equal(parseSeriesNumber("ACC-PINV-2026-00042", "ACC-PINV-2026-"), 42);
+});
+
+test("parseSeriesNumber: zonder jaarsegment in de prefix", () => {
+  assert.equal(parseSeriesNumber("PROJ-0029", "PROJ-"), 29);
+});
+
+test("parseSeriesNumber: null als de naam niet met de prefix begint", () => {
+  assert.equal(parseSeriesNumber("TS_JanHeikens_WK03_2026", "TS-2026-"), null);
+});
+
+test("parseSeriesNumber: null als er direct na de prefix geen cijfers staan", () => {
+  assert.equal(parseSeriesNumber("TS-2026-onbekend", "TS-2026-"), null);
+});
+
+/**
+ * Bouwt een fetch-mock voor de volledige naamreeks-keten: DocType-meta
+ * (naming_series-opties), de gefilterde documentenlijst per prefix, en
+ * `Document Naming Settings` (get_current/update_series_start via
+ * run_doc_method). `current` is een muteerbare Map/object zodat een test na
+ * afloop kan verifiëren dat de teller ook echt is bijgewerkt.
+ */
+function installNamingSeriesMock({ meta = {}, docs = {}, current = {} }) {
+  return installFetchMock((url, init) => {
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname);
+
+    if (path.startsWith("/api/resource/DocType/")) {
+      const doctype = path.slice("/api/resource/DocType/".length);
+      if (!(doctype in meta)) return { status: 404, body: {} };
+      return { status: 200, body: { data: meta[doctype] } };
+    }
+
+    if (path.includes("Document Naming Settings")) {
+      return { status: 200, body: { data: { name: "Document Naming Settings", modified: "2026-01-01 00:00:00" } } };
+    }
+
+    if (path === "/api/method/run_doc_method") {
+      const payload = JSON.parse(init.body);
+      const docsPayload = JSON.parse(payload.docs);
+      const prefix = docsPayload.prefix;
+      if (payload.method === "get_current") {
+        // Live geverifieerd (2026-08-27, tegen de productie-instance):
+        // run_doc_method geeft get_current's resultaat terug als een kaal
+        // getal in `message`, NIET als `{ current_value }`. De mock spiegelt
+        // dat exact — anders test de mock een vorm die de echte API niet
+        // teruggeeft.
+        return { status: 200, body: { message: current[prefix] ?? 0 } };
+      }
+      if (payload.method === "update_series_start") {
+        current[prefix] = docsPayload.current_value;
+        return { status: 200, body: { message: "ok" } };
+      }
+      throw new Error(`Onverwachte run_doc_method: ${payload.method}`);
+    }
+
+    // Documentenlijst-query voor één prefix: /api/resource/<doctype>?filters=...
+    const doctype = path.slice("/api/resource/".length);
+    const filters = JSON.parse(u.searchParams.get("filters") || "[]");
+    const likeExpr = (filters[0] && filters[0][2]) || "";
+    const prefix = likeExpr.endsWith("%") ? likeExpr.slice(0, -1) : likeExpr;
+    const names = (docs[doctype] && docs[doctype][prefix]) || [];
+    return { status: 200, body: { data: names.length ? [{ name: names[0] }] : [] } };
+  });
+}
+
+const NAMING_FIELD = (options) => ({ fields: [{ fieldname: "naming_series", options }] });
+
+test("ensureNamingSeries: zet de teller wanneer hij lager staat dan de hoogste bestaande naam (met jaarsegment)", async () => {
+  const current = { "TS-2026-": 9 };
+  const mock = installNamingSeriesMock({
+    meta: { Timesheet: NAMING_FIELD("TS-.YYYY.-\n") },
+    docs: { Timesheet: { "TS-2026-": ["TS-2026-00042"] } },
+    current,
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Timesheet"],
+      now: new Date("2026-03-01T00:00:00Z"),
+    });
+    assert.deepEqual(result.updated, [{ doctype: "Timesheet", prefix: "TS-2026-", oldValue: 9, newValue: 42 }]);
+    assert.deepEqual(result.unchanged, []);
+    assert.deepEqual(result.skipped, []);
+    assert.equal(current["TS-2026-"], 42);
+
+    const updateCalls = mock.calls.filter((c) => {
+      if (!c.init || c.init.method !== "POST" || !c.url.endsWith("run_doc_method")) return false;
+      const payload = JSON.parse(c.init.body);
+      return payload.method === "update_series_start";
+    });
+    assert.equal(updateCalls.length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: laat de teller met rust als hij al gelijk aan of hoger is dan de hoogste bestaande naam", async () => {
+  const current = { "ACC-PINV-2026-": 50 };
+  const mock = installNamingSeriesMock({
+    meta: { "Purchase Invoice": NAMING_FIELD("ACC-PINV-.YYYY.-\n") },
+    docs: { "Purchase Invoice": { "ACC-PINV-2026-": ["ACC-PINV-2026-00042"] } },
+    current,
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Purchase Invoice"],
+      now: new Date("2026-03-01T00:00:00Z"),
+    });
+    assert.deepEqual(result.unchanged, [
+      { doctype: "Purchase Invoice", prefix: "ACC-PINV-2026-", highest: 42, value: 50 },
+    ]);
+    assert.deepEqual(result.updated, []);
+    assert.equal(current["ACC-PINV-2026-"], 50, "teller mag niet aangeraakt zijn");
+
+    const updateCalls = mock.calls.filter((c) => {
+      if (!c.init || c.init.method !== "POST" || !c.url.endsWith("run_doc_method")) return false;
+      const payload = JSON.parse(c.init.body);
+      return payload.method === "update_series_start";
+    });
+    assert.equal(updateCalls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: onbekende doctype (bestaat niet op de instance) wordt overgeslagen, niet gegooid", async () => {
+  const mock = installNamingSeriesMock({ meta: {} });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Onbestaand Doctype"],
+    });
+    assert.deepEqual(result.skipped, [{ doctype: "Onbestaand Doctype", reason: "doctype-not-found" }]);
+    assert.deepEqual(result.updated, []);
+    assert.deepEqual(result.unchanged, []);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: doctype zonder naming_series-veld (hash/field autoname) wordt overgeslagen", async () => {
+  const mock = installNamingSeriesMock({ meta: { Task: { fields: [] } } });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Task"],
+    });
+    assert.deepEqual(result.skipped, [{ doctype: "Task", reason: "no-naming-series" }]);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: geen documenten met de prefix -> overgeslagen, geen tellercall", async () => {
+  const mock = installNamingSeriesMock({
+    meta: { Quotation: NAMING_FIELD("SAL-QTN-.YYYY.-\n") },
+    docs: { Quotation: {} },
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Quotation"],
+      now: new Date("2026-01-01T00:00:00Z"),
+    });
+    assert.deepEqual(result.skipped, [{ doctype: "Quotation", prefix: "SAL-QTN-2026-", reason: "no-documents" }]);
+    const runDocCalls = mock.calls.filter((c) => c.url.endsWith("run_doc_method"));
+    assert.equal(runDocCalls.length, 0, "zonder documenten hoeft de tellerstand niet opgevraagd te worden");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: meerdere naming_series-opties op één doctype worden allebei gecontroleerd", async () => {
+  const current = { "ACC-PINV-2026-": 5, "ACC-PINV-RET-2026-": 100 };
+  const mock = installNamingSeriesMock({
+    meta: { "Purchase Invoice": NAMING_FIELD("ACC-PINV-.YYYY.-\nACC-PINV-RET-.YYYY.-\n") },
+    docs: {
+      "Purchase Invoice": {
+        "ACC-PINV-2026-": ["ACC-PINV-2026-00042"],
+        "ACC-PINV-RET-2026-": ["ACC-PINV-RET-2026-00003"],
+      },
+    },
+    current,
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Purchase Invoice"],
+      now: new Date("2026-01-01T00:00:00Z"),
+    });
+    // ACC-PINV-2026-: teller 5 < hoogste 42 -> bijgewerkt.
+    assert.ok(
+      result.updated.some((r) => r.prefix === "ACC-PINV-2026-" && r.oldValue === 5 && r.newValue === 42)
+    );
+    // ACC-PINV-RET-2026-: teller 100 >= hoogste 3 -> ongewijzigd.
+    assert.ok(result.unchanged.some((r) => r.prefix === "ACC-PINV-RET-2026-" && r.highest === 3 && r.value === 100));
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: een fout bij één doctype blokkeert de andere doctypes niet", async () => {
+  const current = { "TS-2026-": 9 };
+  const mock = installFetchMock((url, init) => {
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname);
+    if (path === "/api/resource/DocType/Broken") {
+      return { status: 500, body: { exc: "boom" } };
+    }
+    if (path === "/api/resource/DocType/Timesheet") {
+      return { status: 200, body: { data: NAMING_FIELD("TS-.YYYY.-\n") } };
+    }
+    if (path.includes("Document Naming Settings")) {
+      return { status: 200, body: { data: { name: "Document Naming Settings" } } };
+    }
+    if (path === "/api/method/run_doc_method") {
+      const payload = JSON.parse(init.body);
+      const docsPayload = JSON.parse(payload.docs);
+      if (payload.method === "get_current") {
+        return { status: 200, body: { message: current[docsPayload.prefix] ?? 0 } };
+      }
+      current[docsPayload.prefix] = docsPayload.current_value;
+      return { status: 200, body: { message: "ok" } };
+    }
+    // documentenlijst voor Timesheet
+    return { status: 200, body: { data: [{ name: "TS-2026-00042" }] } };
+  });
+  const logs = installConsoleLogSpy();
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Broken", "Timesheet"],
+      now: new Date("2026-01-01T00:00:00Z"),
+    });
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0].doctype, "Broken");
+    assert.equal(result.skipped[0].reason, "error");
+    assert.deepEqual(result.updated, [{ doctype: "Timesheet", prefix: "TS-2026-", oldValue: 9, newValue: 42 }]);
+  } finally {
+    logs.restore();
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: get_current komt terug als kaal getal in `message` (live geverifieerde vorm), niet als { current_value }", async () => {
+  // Regressietest: de eerste live run tegen de productie-instance liet zien
+  // dat run_doc_method("get_current") een kaal getal teruggeeft in
+  // `message`, bv. {"message": 303}, niet {"message": {"current_value": 303}}.
+  // Een implementatie die alleen `message.current_value` leest, leest dan
+  // altijd `undefined` -> valt terug op 0 -> denkt dat de teller altijd
+  // laag staat -> schrijft onnodig/foutief bij elke run.
+  const current = { "TS-2026-": 303 };
+  const mock = installFetchMock((url, init) => {
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname);
+    if (path === "/api/resource/DocType/Timesheet") {
+      return { status: 200, body: { data: NAMING_FIELD("TS-.YYYY.-\n") } };
+    }
+    if (path.includes("Document Naming Settings")) {
+      return { status: 200, body: { data: { name: "Document Naming Settings" } } };
+    }
+    if (path === "/api/method/run_doc_method") {
+      const payload = JSON.parse(init.body);
+      const docsPayload = JSON.parse(payload.docs);
+      assert.equal(payload.method, "get_current");
+      return { status: 200, body: { message: current[docsPayload.prefix] } };
+    }
+    return { status: 200, body: { data: [{ name: "TS-2026-00303" }] } };
+  });
+  try {
+    const result = await ensureNamingSeries({
+      baseUrl: "https://example.frappe.cloud",
+      token: "key:secret",
+      doctypes: ["Timesheet"],
+      now: new Date("2026-08-27T00:00:00Z"),
+    });
+    // Teller (303) == hoogste bestaande (303) -> geen update-call, ongewijzigd.
+    assert.deepEqual(result.unchanged, [{ doctype: "Timesheet", prefix: "TS-2026-", highest: 303, value: 303 }]);
+    assert.deepEqual(result.updated, []);
+    const updateCalls = mock.calls.filter((c) => {
+      if (!c.url.endsWith("run_doc_method")) return false;
+      return JSON.parse(c.init.body).method === "update_series_start";
+    });
+    assert.equal(updateCalls.length, 0, "een correct gelezen, al-gelijke teller mag niet herschreven worden");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureNamingSeries: DEFAULT_NAMING_SERIES_DOCTYPES bevat minstens de gevraagde kern-doctypes", () => {
+  for (const dt of [
+    "Timesheet",
+    "Purchase Invoice",
+    "Sales Invoice",
+    "Quotation",
+    "Sales Order",
+    "Delivery Note",
+    "Task",
+    "Project",
+  ]) {
+    assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes(dt), `mist ${dt}`);
   }
 });
