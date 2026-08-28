@@ -438,14 +438,30 @@ function cacheKey(url: string): string {
   return `${getActiveInstance().id}::${url}`;
 }
 
-/** Invalidate cache entries matching a doctype (call after mutations) */
+/**
+ * Invalidate cache entries matching a doctype (call after mutations).
+ *
+ * Raakt twee vormen, want tellingen lopen niet via `/api/resource`:
+ * de REST-lijsten (`/api/resource/<doctype>…`) én de RPC's die het doctype in
+ * hun querystring dragen (`frappe.client.get_count?doctype=<doctype>&…`,
+ * idem `get_list`). Zonder die tweede vorm bleef een badge na een
+ * schrijfactie tot 30 s de oude telling tonen — een map die leeg is maar "2"
+ * blijft zeggen leest als een kapotte teller.
+ */
 export function invalidateCache(doctype?: string) {
   if (!doctype) { responseCache.clear(); return; }
   // Mutations are scoped to the current instance — only drop that
   // instance's entries, not every tenant's cached copy of the doctype.
   const prefix = `${getActiveInstance().id}::`;
+  // Exacte doctype-match in de querystring: `doctype=Communication` mag geen
+  // `doctype=Communication%20Link` meetrekken (en andersom).
+  const rpcDoctype = `doctype=${encodeURIComponent(doctype)}`;
   for (const key of responseCache.keys()) {
-    if (key.startsWith(prefix) && key.includes(`/api/resource/${doctype}`)) {
+    if (!key.startsWith(prefix)) continue;
+    const rpcAt = key.indexOf(rpcDoctype);
+    const rpcMatch = rpcAt >= 0
+      && (key.length === rpcAt + rpcDoctype.length || key[rpcAt + rpcDoctype.length] === "&");
+    if (key.includes(`/api/resource/${doctype}`) || rpcMatch) {
       responseCache.delete(key);
     }
   }

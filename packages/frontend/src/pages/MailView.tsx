@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Reply, ReplyAll, Forward, Paperclip, Loader2,
   Trash2, FolderKanban, ChevronDown, ExternalLink, Zap,
+  CheckCheck, Undo2,
   X, Send, RefreshCw, Bold, Italic, Underline,
   CheckSquare, FileBarChart, Receipt, User, Plus, Check, UserPlus,
 } from "lucide-react";
@@ -25,7 +26,9 @@ import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
 import { readMailBody, persistMailBody } from "../lib/mail-cache-db";
 import { fetchList, fetchDocument, getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
-import { getMessageBody, markRead } from "../lib/mail-erpnext";
+import {
+  getMessageBody, markRead, markHandled, markUnhandled, isHandledStatus,
+} from "../lib/mail-erpnext";
 import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } from "../lib/email-project-links";
 import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -37,6 +40,7 @@ import {
   type ConnectionIndex, type MailConnection,
 } from "../lib/mail-connections";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
+import { isPermissionError } from "../lib/permission-error";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
@@ -1203,6 +1207,8 @@ interface ErpViewDoc {
   cc?: string;
   communication_date?: string;
   seen?: number | boolean;
+  /** `Open` / `Replied` / `Closed` / `Linked` — zie `mail-erpnext.ts`. */
+  status?: string;
   has_attachment?: number | boolean;
   sent_or_received?: string;
   reference_doctype?: string;
@@ -1242,6 +1248,37 @@ function ErpNextMailView({ name }: { name: string }) {
    * hele Communication opnieuw op te halen.
    */
   const [localRef, setLocalRef] = useState<{ doctype: string; name: string } | null>(null);
+
+  /* ─── Afgehandeld ─── */
+  /**
+   * Lokale spiegel van `Communication.status === "Closed"`, zodat de knop
+   * meteen omslaat. `null` = nog niet geladen; daarna wint de lokale waarde
+   * over het opgehaalde document (dat wordt in deze popout niet herladen).
+   */
+  const [handledOverride, setHandledOverride] = useState<boolean | null>(null);
+  const [handledBusy, setHandledBusy] = useState(false);
+  const [handledError, setHandledError] = useState("");
+  const handled = handledOverride ?? isHandledStatus(doc?.status);
+
+  async function toggleHandled() {
+    if (!name || handledBusy) return;
+    const next = !handled;
+    setHandledBusy(true);
+    setHandledError("");
+    setHandledOverride(next);
+    try {
+      await (next ? markHandled(name) : markUnhandled(name));
+    } catch (err) {
+      // Terug naar de serverwaarheid én zeggen wat er misging: een knop die
+      // omslaat zonder dat er iets veranderde is erger dan een foutmelding.
+      setHandledOverride(!next);
+      setHandledError(isPermissionError(err)
+        ? t("y_next.mail_no_write_permission")
+        : t("y_next.mail_handled_failed"));
+    } finally {
+      setHandledBusy(false);
+    }
+  }
 
   /* ─── Afzender → relatie (zelfde gedrag als de webmail) ─── */
   const [relationOpen, setRelationOpen] = useState(false);
@@ -1502,7 +1539,22 @@ function ErpNextMailView({ name }: { name: string }) {
                 factuur- of leadbalk, dan zit hij dáár — nooit op twee plekken
                 tegelijk. */}
             {!intent && relationSlot("slate", t("y_next.rel_add_button"))}
+            {/* Afvinken kan ook hier: wie een mail in een eigen tabblad
+                openzet, werkt hem daar af — niet terug in de lijst. */}
+            <button onClick={() => void toggleHandled()} disabled={handledBusy}
+              title={handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-default ${
+                handled
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-slate-200 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+              }`}>
+              {handled ? <Undo2 size={11} /> : <CheckCheck size={11} />}
+              {handled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+            </button>
           </div>
+          {handledError && (
+            <p className="mt-1 text-[11px] text-red-600">{handledError}</p>
+          )}
         </div>
 
         {intent?.kind === "purchase-invoice" && (

@@ -32,6 +32,13 @@ import {
   unseenCount,
   hasEnabledEmailAccount,
   MAIL_FOLDER_TRASH,
+  MAIL_FOLDER_HANDLED,
+  markHandled,
+  markUnhandled,
+  bulkMarkHandled,
+  bulkMarkUnhandled,
+  isHandledStatus,
+  filterUnhandled,
 } from "./mail-erpnext.ts";
 
 interface RecordedCall {
@@ -107,6 +114,8 @@ function countFor(url: string): number {
   const filters = filtersOf(url);
   const isTrash = filters.some((f) => Array.isArray(f) && f[0] === "email_status" && f[1] === "=");
   if (isTrash) return 3;
+  const isHandled = filters.some((f) => Array.isArray(f) && f[0] === "status" && f[1] === "=");
+  if (isHandled) return 5;
   const isProject = filters.some((f) => Array.isArray(f) && f[0] === "reference_name");
   return isProject ? 2 : 7;
 }
@@ -138,6 +147,14 @@ test("listVirtualFolders: alleen de vaste mappen (projecten zijn connecties, gee
     assert.equal(sent.unseen, 0);
     // De Prullenbak telt zijn eigen ongelezen berichten, niet die van INBOX.
     assert.equal(trash.unseen, 3);
+
+    // "Afgehandeld" telt een TOTAAL, geen ongelezen: de map bestaat per
+    // definitie uit mail die je al gezien en afgevinkt hebt.
+    const handled = folders.find((f) => f.kind === "handled");
+    assert.ok(handled);
+    assert.equal(handled.id, MAIL_FOLDER_HANDLED);
+    assert.equal(handled.unseen, 0);
+    assert.equal(handled.total, 5);
 
     // Projecten horen sinds de connectiekolom niet meer in de mappenlijst: ze
     // zijn een gekoppeld document, net als een klant of een inkoopfactuur.
@@ -189,6 +206,7 @@ test("listMailboxMessages: INBOX filtert op Received en mapt Communication-velde
       cc: "piet@example.com",
       date: "2026-07-30 09:12:00",
       seen: false,
+      handled: false,
       folder: "INBOX",
       hasAttachments: true,
       inReplyTo: "COMM-0000",
@@ -1121,9 +1139,9 @@ test("listVirtualFolders: eigen (tag-)mappen komen ná de vaste mappen", async (
     const folders = await listVirtualFolders();
     assert.deepEqual(
       folders.map((f) => f.kind),
-      ["inbox", "sent", "unread", "trash", "custom"]
+      ["inbox", "sent", "unread", "handled", "trash", "custom"]
     );
-    assert.equal(folders[4].id, "tag:Archief");
+    assert.equal(folders[5].id, "tag:Archief");
   } finally {
     mock.restore();
     invalidateCache("Tag");
@@ -1233,6 +1251,163 @@ test("untagMessage: fallback verwijdert alleen de eigen tag uit _user_tags", asy
     const put = mock.calls.find((c) => c.init?.method === "PUT");
     assert.ok(put);
     assert.deepEqual(JSON.parse(String(put.init?.body)), { _user_tags: ",mail/Oud" });
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+/* ─── Afgehandeld: `Communication.status` ─── */
+
+test("isHandledStatus: alleen 'Closed' telt als afgehandeld", () => {
+  assert.equal(isHandledStatus("Closed"), true);
+  // ERPNext gebruikt `status` zélf ook — die waarden mogen niet als
+  // "afgehandeld" gelezen worden, anders vecht het afvinken met ERPNext.
+  assert.equal(isHandledStatus("Open"), false);
+  assert.equal(isHandledStatus("Linked"), false);
+  assert.equal(isHandledStatus("Replied"), false);
+  assert.equal(isHandledStatus(null), false);
+  assert.equal(isHandledStatus(undefined), false);
+  assert.equal(isHandledStatus(""), false);
+});
+
+test("filterUnhandled: houdt alles behalve afgehandeld over", () => {
+  const rows = [
+    { name: "A", handled: false },
+    { name: "B", handled: true },
+    { name: "C", handled: false },
+  ];
+  assert.deepEqual(filterUnhandled(rows).map((r) => r.name), ["A", "C"]);
+  // Geen mutatie van de invoer: de lijst-state hangt hieraan.
+  assert.equal(rows.length, 3);
+  assert.deepEqual(filterUnhandled([]), []);
+});
+
+test("listMailboxMessages: de map 'Afgehandeld' filtert op status=Closed, niet op richting", async () => {
+  const mock = installFetchMock(() => rowsBody([
+    {
+      name: "COMM-H1", subject: "Klaar", sender: "jan@example.com",
+      communication_date: "2026-08-01 09:00:00", seen: 1,
+      status: "Closed", sent_or_received: "Sent",
+    },
+  ]));
+  try {
+    const msgs = await listMailboxMessages(MAIL_FOLDER_HANDLED, { limit: 25 });
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "status", "=", "Closed"));
+    // Getrashte mail hoort ook hier niet thuis.
+    assert.ok(hasFilter(url, "email_status", "!=", "Trash"));
+    // Bewust géén richtingfilter: je vinkt ook verzonden mail af.
+    assert.equal(filterValue(url, "sent_or_received"), undefined);
+
+    assert.equal(msgs[0].handled, true);
+    // De rij houdt zijn eigen richting, zodat de lijst afzender/geadresseerde
+    // net zo toont als in Verzonden.
+    assert.equal(msgs[0].folder, "Sent");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("listMailboxMessages: Postvak IN vraagt `status` mee zodat de lijst afgehandelde mail kan herkennen", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await listMailboxMessages("INBOX");
+    const fields = queryJson(mock.calls[0].url, "fields") as string[];
+    assert.ok(fields.includes("status"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("markHandled / markUnhandled: PUT op `status`, nooit op `email_status`", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "COMM-H1" } } }));
+  try {
+    await markHandled("COMM-H1");
+    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-H1");
+    assert.equal(mock.calls[0].init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), { status: "Closed" });
+
+    await markUnhandled("COMM-H1");
+    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), { status: "Open" });
+
+    // Afvinken mag nooit stilletjes weggooien worden.
+    for (const c of mock.calls) {
+      assert.ok(!String(c.init?.body).includes("email_status"));
+      assert.notEqual(c.init?.method, "DELETE");
+    }
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulkMarkHandled / bulkMarkUnhandled: één PUT per bericht, ontdubbeld", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "ok" } } }));
+  try {
+    const out = await bulkMarkHandled(["COMM-H1", "COMM-H2", "COMM-H1"]);
+    assert.deepEqual(out, { failed: [] });
+    const puts = mock.calls.filter((c) => c.init?.method === "PUT");
+    assert.equal(puts.length, 2);
+    for (const p of puts) assert.deepEqual(JSON.parse(String(p.init?.body)), { status: "Closed" });
+
+    const before = mock.calls.length;
+    await bulkMarkUnhandled(["COMM-H3"]);
+    assert.deepEqual(JSON.parse(String(mock.calls[before].init?.body)), { status: "Open" });
+
+    const after = mock.calls.length;
+    assert.deepEqual(await bulkMarkHandled([]), { failed: [] });
+    assert.equal(mock.calls.length, after);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulk: een deels mislukte actie meldt PRECIES welke berichten bleven staan", async () => {
+  // Dit is de kern van de "de knop doet niets"-klasse: vroeger slikte de
+  // bulk-adapter deelfouten in en meldde de UI onverkort succes.
+  const mock = installFetchMock((url) =>
+    url.includes("COMM-BAD")
+      ? { status: 403, body: { exception: "frappe.exceptions.PermissionError: No permission" } }
+      : { status: 200, body: { data: { name: "ok" } } }
+  );
+  try {
+    const out = await bulkMoveToTrash(["COMM-OK1", "COMM-BAD", "COMM-OK2"]);
+    assert.deepEqual(out.failed, ["COMM-BAD"]);
+    assert.ok(out.error, "de eerste fout hoort mee terug te komen voor de melding");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("invalidateCache: laat ook de get_count-tellingen van dat doctype vallen", async () => {
+  invalidateCache("Communication");
+  await settleFetchDedup();
+  let counts = 0;
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.client.get_count")) {
+      counts++;
+      return { status: 200, body: { message: counts } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    assert.equal(await unseenCount(), 1);
+    await settleFetchDedup();
+    // Controle: zonder invalidatie serveert de responscache dezelfde telling.
+    assert.equal(await unseenCount(), 1);
+    await settleFetchDedup();
+    assert.equal(counts, 1);
+
+    // Na een schrijfactie op Communication moet de telling opnieuw van de
+    // server komen — anders blijft een badge tot 30 s de oude stand tonen.
+    invalidateCache("Communication");
+    assert.equal(await unseenCount(), 2);
+    assert.equal(counts, 2);
   } finally {
     mock.restore();
     invalidateCache("Communication");

@@ -69,6 +69,11 @@ export interface ErpMailMessage {
   /** `communication_date` (ERPNext-datetimestring). */
   date: string;
   seen: boolean;
+  /**
+   * `status === "Closed"` — door de gebruiker afgevinkt als afgehandeld.
+   * Zie de toelichting bij `COMM_STATUS_CLOSED`.
+   */
+  handled: boolean;
   /** Virtuele map-id waarin dit bericht is opgehaald. */
   folder: string;
   hasAttachments: boolean;
@@ -87,7 +92,13 @@ export interface ErpMailFolder {
    */
   label: string;
   unseen: number;
-  kind: "inbox" | "sent" | "unread" | "trash" | "project" | "custom";
+  /**
+   * Totaalaantal berichten in deze map. Alleen gevuld waar "ongelezen" niets
+   * zegt — de map "Afgehandeld" bestaat juist uit gelezen mail, dus daar is
+   * het totaal de enige zinvolle telling.
+   */
+  total?: number;
+  kind: "inbox" | "sent" | "unread" | "handled" | "trash" | "project" | "custom";
   /** Alleen bij `kind === "project"`: de Project-docname. */
   project?: string;
   /** Alleen bij `kind === "custom"`: het tag-label zonder `mail/`-prefix. */
@@ -112,6 +123,8 @@ export interface ErpMailPage {
 export const MAIL_FOLDER_INBOX = "INBOX";
 export const MAIL_FOLDER_SENT = "Sent";
 export const MAIL_FOLDER_UNREAD = "unread";
+/** Virtuele map "Afgehandeld": alles met `status = "Closed"`. */
+export const MAIL_FOLDER_HANDLED = "handled";
 /** Virtuele Prullenbak-map: alles met `email_status = "Trash"`. */
 export const MAIL_FOLDER_TRASH = "trash";
 export const MAIL_PROJECT_FOLDER_PREFIX = "project:";
@@ -159,9 +172,49 @@ const EMAIL_STATUS_OPEN = "Open";
  */
 const NOT_TRASHED: unknown[] = ["email_status", "!=", EMAIL_STATUS_TRASH];
 
+/* ─── Afgehandeld: Frappe's eigen `Communication.status` ─── */
+
+/**
+ * `status` is een **ander** veld dan `email_status`: een Select met
+ * `Open` / `Replied` / `Closed` / `Linked`. ERPNext vult en verandert dat veld
+ * zelf — binnenkomende mail komt binnen als `Open`, een mail die aan een
+ * document gekoppeld wordt schuift naar `Linked`, en een beantwoorde thread
+ * kan `Replied` worden (live nagemeten op de doelinstance: alle 38
+ * Communications droegen een gevulde `status`, verdeeld over `Open` en
+ * `Linked`).
+ *
+ * Daarom is "afgehandeld" hier **precies één waarde** (`Closed`) en is
+ * "niet afgehandeld" *alles behalve* `Closed` — niet "gelijk aan Open". Anders
+ * zou het afvinken vechten met ERPNext' eigen gebruik van het veld en zou een
+ * gekoppelde (`Linked`) mail uit de niet-afgehandeld-lijst vallen zonder dat
+ * iemand hem afvinkte.
+ *
+ * Heropenen zet bewust `Open` terug en niet de vorige waarde: die is na de
+ * schrijfactie niet meer bekend, en ERPNext herstelt `Linked` zelf zodra er
+ * weer een koppeling wordt gelegd.
+ */
+const COMM_STATUS_CLOSED = "Closed";
+const COMM_STATUS_OPEN = "Open";
+
+/** Is deze `Communication.status`-waarde "afgehandeld"? */
+export function isHandledStatus(value: unknown): boolean {
+  return toStr(value) === COMM_STATUS_CLOSED;
+}
+
+/**
+ * Client-side tegenhanger van `NOT_HANDLED`, voor het lijstfilter in de UI.
+ * Bewust dezelfde regel ("alles behalve afgehandeld") zodat het filter in de
+ * lijstkop en de serverquery van de map "Afgehandeld" niet uiteen kunnen
+ * lopen.
+ */
+export function filterUnhandled<T extends { handled: boolean }>(rows: T[]): T[] {
+  return rows.filter((row) => !row.handled);
+}
+
 const LIST_FIELDS = [
   "name",
   "subject",
+  "status",
   "sender",
   "sender_full_name",
   "recipients",
@@ -249,6 +302,11 @@ function filtersForFolder(folderId: string): unknown[][] {
     ];
   }
   const base: unknown[][] = [["communication_type", "=", "Communication"], NOT_TRASHED];
+  if (folderId === MAIL_FOLDER_HANDLED) {
+    // Net als de Prullenbak bewust géén `sent_or_received`-beperking: je vinkt
+    // ook je eigen verzonden mail af als een zaak klaar is.
+    return [...base, ["status", "=", COMM_STATUS_CLOSED]];
+  }
   if (folderId === MAIL_FOLDER_SENT) {
     return [...base, ["sent_or_received", "=", "Sent"]];
   }
@@ -293,6 +351,7 @@ function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMess
     recipients: toStr(row.recipients),
     date: toStr(row.communication_date),
     seen: toBool(row.seen),
+    handled: isHandledStatus(row.status),
     folder: folderId,
     hasAttachments: toBool(row.has_attachment),
   };
@@ -323,6 +382,11 @@ export async function listMailboxMessages(
     return page.messages;
   }
   const search = opts?.search?.trim();
+  // "Afgehandeld" is een dwarsdoorsnede, geen richting: de map bevat zowel
+  // ontvangen als verzonden mail. Elke rij krijgt daarom de map die bij zijn
+  // eigen richting hoort, zodat de lijst afzender/geadresseerde net zo toont
+  // als in Postvak IN en Verzonden.
+  const crossCut = folderId === MAIL_FOLDER_HANDLED;
   const params: {
     fields: string[];
     filters: unknown[][];
@@ -331,7 +395,7 @@ export async function listMailboxMessages(
     limit_page_length: number;
     limit_start: number;
   } = {
-    fields: LIST_FIELDS,
+    fields: crossCut ? SEARCH_FIELDS : LIST_FIELDS,
     filters: filtersForFolder(folderId),
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_PAGE_SIZE,
@@ -344,7 +408,7 @@ export async function listMailboxMessages(
     ];
   }
   const rows = await fetchList<Record<string, unknown>>("Communication", params);
-  return rows.map((row) => mapMessage(row, folderId));
+  return rows.map((row) => mapMessage(row, crossCut ? folderForRow(row) : folderId));
 }
 
 /**
@@ -648,8 +712,12 @@ export async function untagMessage(name: string, label: string): Promise<void> {
  * Prullenbak telt zijn eigen ongelezen berichten.
  */
 export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
-  const [unseen, trashUnseen, customFolders] = await Promise.all([
+  const [unseen, handledTotal, trashUnseen, customFolders] = await Promise.all([
     unseenCount().catch(() => 0),
+    // "Afgehandeld" bestaat per definitie uit gelezen mail: een ongelezen-
+    // teller zou daar altijd 0 zijn en dus niets zeggen. Het totaal is wat de
+    // gebruiker wil zien ("wat heb ik afgevinkt").
+    handledCount().catch(() => 0),
     fetchCount("Communication", [
       ...filtersForFolder(MAIL_FOLDER_TRASH),
       ["seen", "=", 0],
@@ -660,6 +728,10 @@ export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
     { id: MAIL_FOLDER_SENT, label: "Verzonden", unseen: 0, kind: "sent" },
     { id: MAIL_FOLDER_UNREAD, label: "Ongelezen", unseen, kind: "unread" },
+    {
+      id: MAIL_FOLDER_HANDLED, label: "Afgehandeld", unseen: 0,
+      total: handledTotal, kind: "handled",
+    },
     { id: MAIL_FOLDER_TRASH, label: "Prullenbak", unseen: trashUnseen, kind: "trash" },
     ...customFolders,
   ];
@@ -726,6 +798,21 @@ export async function deleteForever(name: string): Promise<void> {
 }
 
 /**
+ * Vink een bericht af als afgehandeld (`status = "Closed"`).
+ *
+ * Bewust hetzelfde soort documentupdate als `moveToTrash`: geen eigen veld,
+ * geen tag, geen extra doctype — het veld dat ERPNext hiervoor al heeft.
+ */
+export async function markHandled(name: string): Promise<void> {
+  await updateDocument("Communication", name, { status: COMM_STATUS_CLOSED });
+}
+
+/** Heropen een afgehandeld bericht (`status` terug naar `Open`). */
+export async function markUnhandled(name: string): Promise<void> {
+  await updateDocument("Communication", name, { status: COMM_STATUS_OPEN });
+}
+
+/**
  * Voer een bulkactie parallel uit over een lijst berichten.
  *
  * Twee dingen die de bulkvorm anders maken dan N losse calls:
@@ -740,40 +827,71 @@ export async function deleteForever(name: string): Promise<void> {
  *    schrijfrecht mag de andere 49 niet ongedaan maken, dus per-item fouten
  *    worden verzameld in plaats van gegooid. Faalt *alles*, dan is er niets
  *    gebeurd en gaat de eerste fout alsnog naar de aanroeper.
+ * 3. **Deelfouten worden gerapporteerd, niet ingeslikt.** De namen die het
+ *    niet haalden komen terug, met de eerste fout erbij. Zonder dat zag de
+ *    gebruiker "5 verwijderd" terwijl er vier bleven staan — een actie die
+ *    beweert te zijn gelukt maar niets deed, zonder enige foutmelding. Dat is
+ *    precies de klasse "de knop doet niets".
  */
-async function bulkApply(names: string[], op: (name: string) => Promise<unknown>): Promise<void> {
+export interface BulkOutcome {
+  /** Namen waarvoor de actie mislukte. Leeg = alles gelukt. */
+  failed: string[];
+  /** Eerste fout van de mislukte items — de tekst voor de melding. */
+  error?: unknown;
+}
+
+async function bulkApply(
+  names: string[],
+  op: (name: string) => Promise<unknown>,
+): Promise<BulkOutcome> {
   const unique = [...new Set(names.filter(Boolean))];
-  if (unique.length === 0) return;
+  if (unique.length === 0) return { failed: [] };
   const results = await Promise.allSettled(unique.map((name) => op(name)));
   invalidateCache("Communication");
   const rejected = results.filter((r) => r.status === "rejected");
   if (rejected.length === results.length) {
     throw (rejected[0] as PromiseRejectedResult).reason;
   }
+  const failed = unique.filter((_, i) => results[i].status === "rejected");
+  return failed.length === 0
+    ? { failed }
+    : { failed, error: (rejected[0] as PromiseRejectedResult).reason };
 }
 
-export async function bulkMarkRead(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
+export async function bulkMarkRead(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
 }
 
-export async function bulkMarkUnread(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
+export async function bulkMarkUnread(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
 }
 
-export async function bulkMoveToTrash(names: string[]): Promise<void> {
-  await bulkApply(names, (name) =>
+export async function bulkMoveToTrash(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
     updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH })
   );
 }
 
-export async function bulkRestoreFromTrash(names: string[]): Promise<void> {
-  await bulkApply(names, (name) =>
+export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
     updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN })
   );
 }
 
-export async function bulkDeleteForever(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => deleteDocument("Communication", name));
+export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => deleteDocument("Communication", name));
+}
+
+export async function bulkMarkHandled(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
+    updateDocument("Communication", name, { status: COMM_STATUS_CLOSED })
+  );
+}
+
+export async function bulkMarkUnhandled(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
+    updateDocument("Communication", name, { status: COMM_STATUS_OPEN })
+  );
 }
 
 /**
@@ -1046,6 +1164,11 @@ export async function sendMail(input: {
 /** Badge-teller: ongelezen ontvangen e-mail. */
 export async function unseenCount(): Promise<number> {
   return fetchCount("Communication", filtersForFolder(MAIL_FOLDER_UNREAD));
+}
+
+/** Teller van de map "Afgehandeld" — het totaal, niet het ongelezen deel. */
+export async function handledCount(): Promise<number> {
+  return fetchCount("Communication", filtersForFolder(MAIL_FOLDER_HANDLED));
 }
 
 /**

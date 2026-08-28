@@ -16,6 +16,7 @@ import {
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
   RotateCcw, ReceiptText, UserPlus, Link2,
+  CheckCheck, Undo2,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -99,13 +100,14 @@ import {
   listVirtualFolders, listMailboxMessagesPaged, getMessageBody,
   markRead, markUnread, sendMail, linkToDocument, hasEnabledEmailAccount,
   projectOfFolder, searchMessages,
-  moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
-  deleteForever, bulkDeleteForever,
+  bulkMoveToTrash, bulkRestoreFromTrash, bulkDeleteForever,
+  bulkMarkHandled, bulkMarkUnhandled, filterUnhandled,
   bulkMarkRead, bulkMarkUnread, getConversation, getSignature,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
   unseenCount,
   MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
-  type ErpMailMessage, type ErpMailFolder,
+  MAIL_FOLDER_HANDLED,
+  type ErpMailMessage, type ErpMailFolder, type BulkOutcome,
 } from "../lib/mail-erpnext";
 import {
   categoryOfDoctype, connectionFolderId, describeConnectionFolder, invalidateConnectionIndex,
@@ -3805,6 +3807,32 @@ interface ErpDraft {
   files: MailAttachmentFile[];
 }
 
+/**
+ * Onthoudt "alleen niet-afgehandeld" per instance. Bewust de `pref_`-prefix:
+ * dit is een gewone gebruikersvoorkeur die mág meereizen naar een ander
+ * apparaat (anders dan het mail-cachevenster, dat juist per apparaat hoort).
+ */
+function unhandledOnlyPrefKey(instanceId: string): string {
+  return `pref_${instanceId}_mail_unhandled_only`;
+}
+
+function readUnhandledOnlyPref(instanceId: string): boolean {
+  try {
+    return localStorage.getItem(unhandledOnlyPrefKey(instanceId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveUnhandledOnlyPref(instanceId: string, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(unhandledOnlyPrefKey(instanceId), "1");
+    else localStorage.removeItem(unhandledOnlyPrefKey(instanceId));
+  } catch {
+    /* privémodus / vol quotum: het filter werkt gewoon, alleen niet onthouden */
+  }
+}
+
 /** Eén map plus het geheugen van hoe diep hij al geladen was. */
 interface ErpFolderSnapshot {
   messages: ErpMailMessage[];
@@ -3871,6 +3899,17 @@ function ErpNextWebmail() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  /**
+   * "Alleen niet-afgehandeld". Standaard **uit**: een filter dat mail verbergt
+   * mag niemand overkomen zonder dat hij het zelf aanzette. De keuze staat per
+   * apparaat/gebruiker in localStorage zodat hij een herlaadbeurt overleeft.
+   */
+  const [unhandledOnly, setUnhandledOnly] = useState(
+    () => readUnhandledOnlyPref(getActiveInstanceId()),
+  );
+  useEffect(() => {
+    saveUnhandledOnlyPref(getActiveInstanceId(), unhandledOnly);
+  }, [unhandledOnly]);
 
   const [selected, setSelected] = useState<ErpMailMessage | null>(null);
   const [body, setBody] = useState<{ html: string; attachments: { file_url: string; file_name: string }[] } | null>(null);
@@ -4177,12 +4216,18 @@ function ErpNextWebmail() {
    * "terugzetten" naast te staan.
    */
   const isTrashFolder = activeFolder === MAIL_FOLDER_TRASH;
+  /** In de map "Afgehandeld" zou het niet-afgehandeld-filter alles wegfilteren. */
+  const isHandledFolder = activeFolder === MAIL_FOLDER_HANDLED;
   const searching = search.length > 0;
 
-  const filteredMessages = useMemo(
-    () => (unreadOnly && !isUnreadFolder ? messages.filter((m) => !m.seen) : messages),
-    [messages, unreadOnly, isUnreadFolder],
-  );
+  const filteredMessages = useMemo(() => {
+    let rows = messages;
+    if (unreadOnly && !isUnreadFolder) rows = rows.filter((m) => !m.seen);
+    // Combineert vanzelf met zoeken en met de connectie-selectie: die bepalen
+    // wélke berichten er in `messages` zitten, dit filter wat er van overblijft.
+    if (unhandledOnly && !isHandledFolder) rows = filterUnhandled(rows);
+    return rows;
+  }, [messages, unreadOnly, isUnreadFolder, unhandledOnly, isHandledFolder]);
 
   /**
    * Welke rijen in de lijst een "Inkoopfactuur"-labeltje krijgen.
@@ -4611,7 +4656,7 @@ function ErpNextWebmail() {
    */
   const applyRemoval = useCallback(async (
     names: string[],
-    run: (names: string[]) => Promise<void>,
+    run: (names: string[]) => Promise<BulkOutcome>,
     okMessage: (count: number) => string,
     failMessage: string,
     permissionMessage: string,
@@ -4626,8 +4671,23 @@ function ErpNextWebmail() {
     if (selectedName && doomed.has(selectedName)) { setSelected(null); setBody(null); setThread([]); }
 
     try {
-      await run(names);
-      setToast(okMessage(names.length));
+      const { failed, error } = await run(names);
+      if (failed.length === 0) {
+        setToast(okMessage(names.length));
+      } else {
+        // Deelfout: precies de berichten die het niet haalden komen terug in de
+        // lijst, en de gebruiker krijgt het te zien. Zonder dit meldde de UI
+        // "5 verwijderd" terwijl er vier bleven staan — een geslaagd ogende
+        // actie die niets deed, zonder enige foutmelding.
+        const stuck = new Set(failed);
+        const restored = before.filter((m) => !doomed.has(m.name) || stuck.has(m.name));
+        messagesRef.current = restored;
+        setMessages(restored);
+        setToast(isPermissionError(error)
+          ? permissionMessage
+          : `${failMessage} (${failed.length}/${names.length})`
+            + (error instanceof Error ? `: ${error.message}` : ""));
+      }
     } catch (err) {
       // Alles faalde (de bulk-adapter gooit alleen dán) — de lijst terugzetten
       // is eerlijker dan berichten laten verdwijnen die er nog zijn.
@@ -4654,7 +4714,7 @@ function ErpNextWebmail() {
    */
   const handleTrash = useCallback((names: string[]) => applyRemoval(
     names,
-    (list) => (list.length === 1 ? moveToTrash(list[0]) : bulkMoveToTrash(list)),
+    bulkMoveToTrash,
     (count) => (count === 1
       ? t("y_next.mail_moved_to_trash")
       : t("y_next.mail_moved_to_trash_many", { count })),
@@ -4665,7 +4725,7 @@ function ErpNextWebmail() {
   /** Terug uit de Prullenbak; het bericht keert terug in zijn eigen map. */
   const handleRestore = useCallback((names: string[]) => applyRemoval(
     names,
-    (list) => (list.length === 1 ? restoreFromTrash(list[0]) : bulkRestoreFromTrash(list)),
+    bulkRestoreFromTrash,
     (count) => (count === 1
       ? t("y_next.mail_restored")
       : t("y_next.mail_restored_many", { count })),
@@ -4686,7 +4746,7 @@ function ErpNextWebmail() {
     if (!ok) return;
     void applyRemoval(
       names,
-      (list) => (list.length === 1 ? deleteForever(list[0]) : bulkDeleteForever(list)),
+      bulkDeleteForever,
       (count) => (count === 1
         ? t("y_next.mail_deleted")
         : t("y_next.mail_deleted_many", { count })),
@@ -4703,6 +4763,86 @@ function ErpNextWebmail() {
     if (isTrashFolder) handleDeleteForever(names);
     else void handleTrash(names);
   }, [handleDeleteForever, handleTrash, isTrashFolder]);
+
+  /**
+   * Waar een knop in de lintbalk op werkt.
+   *
+   * De aangevinkte berichten gaan vóór op het geopende bericht: wie
+   * vakjes aanzet heeft daarmee al gezegd waar de volgende actie over gaat.
+   * Zonder deze regel bleef de knop "Verwijderen" in de lintbalk grijs zolang
+   * er geen mail geopend was — je kon vinkjes zetten en er gebeurde niets. Dat
+   * was de "de verwijderknop doet niets"-klacht.
+   */
+  const actionTargets = useMemo(
+    () => (checked.size > 0 ? [...checked] : selected ? [selected.name] : []),
+    [checked, selected],
+  );
+
+  /**
+   * Zijn álle doelen al afgehandeld? Dan betekent de knop "heropenen". Een
+   * gemengde selectie vinkt af — dat is de richting die de gebruiker bedoelt
+   * als hij een stapel selecteert.
+   */
+  const allTargetsHandled = useMemo(() => {
+    if (actionTargets.length === 0) return false;
+    const byName = new Map(messages.map((m) => [m.name, m]));
+    return actionTargets.every((name) => (byName.get(name) ?? selected)?.handled === true);
+  }, [actionTargets, messages, selected]);
+
+  /* ─── Afgehandeld: `Communication.status` ─── */
+
+  /**
+   * Vink af of heropen. Anders dan verwijderen verdwijnt het bericht hier
+   * niet uit de lijst — behalve wanneer het filter of de map dat afdwingt, en
+   * dat regelt `filteredMessages` vanzelf op de bijgewerkte rij.
+   */
+  const applyHandled = useCallback(async (names: string[], handled: boolean) => {
+    if (names.length === 0) return;
+    const target = new Set(names);
+    const before = messagesRef.current;
+    const next = before.map((m) => (target.has(m.name) ? { ...m, handled } : m));
+    messagesRef.current = next;
+    setMessages(next);
+    setSelected((prev) => (prev && target.has(prev.name) ? { ...prev, handled } : prev));
+    setChecked(new Set());
+
+    const revert = () => {
+      messagesRef.current = before;
+      setMessages(before);
+      setSelected((prev) => {
+        if (!prev || !target.has(prev.name)) return prev;
+        const original = before.find((m) => m.name === prev.name);
+        return original ? { ...prev, handled: original.handled } : prev;
+      });
+    };
+
+    try {
+      const { failed, error } = await (handled
+        ? bulkMarkHandled(names)
+        : bulkMarkUnhandled(names));
+      if (failed.length === 0) {
+        setToast(handled
+          ? (names.length === 1
+            ? t("y_next.mail_marked_handled")
+            : t("y_next.mail_marked_handled_many", { count: names.length }))
+          : t("y_next.mail_marked_unhandled"));
+      } else {
+        // Deelfout: alles terug naar de serverwaarheid en zeggen wat er misging.
+        revert();
+        setToast(isPermissionError(error)
+          ? t("y_next.mail_no_write_permission")
+          : `${t("y_next.mail_handled_failed")} (${failed.length}/${names.length})`);
+      }
+    } catch (err) {
+      revert();
+      setToast(isPermissionError(err)
+        ? t("y_next.mail_no_write_permission")
+        : t("y_next.mail_handled_failed") + (err instanceof Error ? `: ${err.message}` : ""));
+    } finally {
+      refreshFolders();
+      silentReload();
+    }
+  }, [refreshFolders, silentReload, t]);
 
   /* ─── Bulk: gelezen / ongelezen ─── */
 
@@ -4722,10 +4862,21 @@ function ErpNextWebmail() {
     shiftUnseenBaseline(seen ? -flipped : flipped);
 
     try {
-      await (seen ? bulkMarkRead(names) : bulkMarkUnread(names));
+      const { failed, error } = await (seen ? bulkMarkRead(names) : bulkMarkUnread(names));
+      if (failed.length > 0) {
+        // Zelfde regel als bij verwijderen: een deels mislukte actie mag niet
+        // als geslaagd ogen. Terug naar de serverwaarheid en het zeggen.
+        messagesRef.current = before;
+        setMessages(before);
+        shiftUnseenBaseline(seen ? flipped : -flipped);
+        setToast(isPermissionError(error)
+          ? t("y_next.mail_no_write_permission")
+          : t("y_next.mail_action_failed", { count: failed.length }));
+      }
     } catch (err) {
       messagesRef.current = before;
       setMessages(before);
+      shiftUnseenBaseline(seen ? flipped : -flipped);
       setToast(isPermissionError(err) ? t("y_next.mail_no_write_permission") : t("webmail.load_failed"));
     } finally {
       refreshFolders();
@@ -5080,6 +5231,7 @@ function ErpNextWebmail() {
   const folderIcon = (kind: ErpMailFolder["kind"]) =>
     kind === "sent" ? Send
       : kind === "unread" ? EyeOff
+      : kind === "handled" ? CheckCheck
       : kind === "trash" ? Trash2
       : kind === "project" ? FolderKanban
       : kind === "custom" ? Tag
@@ -5117,6 +5269,11 @@ function ErpNextWebmail() {
           <Icon size={13} className={active ? "text-blue-600" : "text-slate-400"} />
           <span className="truncate flex-1 text-left">{f.label}</span>
           {f.unseen > 0 && <span className="text-[10px] font-semibold text-blue-600">{f.unseen}</span>}
+          {/* "Afgehandeld" telt een totaal, geen ongelezen — grijs, want het
+              is een stand van zaken en geen "hier moet je nog wat mee". */}
+          {f.unseen === 0 && (f.total ?? 0) > 0 && (
+            <span className="text-[10px] font-medium text-slate-400">{f.total}</span>
+          )}
         </button>
         {f.kind === "custom" && (
           <button
@@ -5215,12 +5372,28 @@ function ErpNextWebmail() {
           {/* In de Prullenbak komt "terugzetten" ernaast; de prullenbakknop
               zelf betekent daar "definitief verwijderen". */}
           {isTrashFolder && (
-            <button onClick={() => selected && void handleRestore([selected.name])} disabled={!selected}
+            <button onClick={() => actionTargets.length > 0 && void handleRestore(actionTargets)}
+              disabled={actionTargets.length === 0}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
               <RotateCcw size={14} /> <span className="hidden md:inline">{t("y_next.mail_restore")}</span>
             </button>
           )}
-          <button onClick={() => selected && handleDeleteAction([selected.name])} disabled={!selected}
+          {/* Afvinken hoort naast beantwoorden: het is de andere manier om een
+              mail "weg te werken" zonder hem kwijt te raken. */}
+          {!isTrashFolder && (
+            <button
+              onClick={() => actionTargets.length > 0 && void applyHandled(actionTargets, !allTargetsHandled)}
+              disabled={actionTargets.length === 0}
+              title={allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+              {allTargetsHandled ? <Undo2 size={14} /> : <CheckCheck size={14} />}
+              <span className="hidden md:inline">
+                {allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+              </span>
+            </button>
+          )}
+          <button onClick={() => actionTargets.length > 0 && handleDeleteAction(actionTargets)}
+            disabled={actionTargets.length === 0}
             title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:cursor-default cursor-pointer">
             <Trash2 size={14} />
@@ -5283,16 +5456,33 @@ function ErpNextWebmail() {
                     </button>
                   )}
                 </div>
-                {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
-                {!isUnreadFolder && (
-                  <button onClick={() => setUnreadOnly((v) => !v)}
-                    title={unreadOnly ? t("webmail.show_all_messages") : t("webmail.show_unread_only")}
-                    className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-                      unreadOnly ? "bg-blue-100 text-blue-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    }`}>
-                    {unreadOnly ? <Eye size={14} /> : <EyeOff size={14} />}
-                  </button>
-                )}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* In de map "Afgehandeld" zou dit filter de hele lijst
+                      wegfilteren — daar heeft het geen betekenis. */}
+                  {!isHandledFolder && (
+                    <button onClick={() => setUnhandledOnly((v) => !v)}
+                      title={unhandledOnly
+                        ? t("y_next.mail_show_all_handled")
+                        : t("y_next.mail_only_unhandled")}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer transition-colors ${
+                        unhandledOnly
+                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      }`}>
+                      <CheckCheck size={10} /> {t("y_next.mail_only_unhandled_short")}
+                    </button>
+                  )}
+                  {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
+                  {!isUnreadFolder && (
+                    <button onClick={() => setUnreadOnly((v) => !v)}
+                      title={unreadOnly ? t("webmail.show_all_messages") : t("webmail.show_unread_only")}
+                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                        unreadOnly ? "bg-blue-100 text-blue-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      }`}>
+                      {unreadOnly ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="relative mt-2">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -5348,6 +5538,14 @@ function ErpNextWebmail() {
                     </div>
                   )}
                 </div>
+                {!isTrashFolder && (
+                  <button
+                    onClick={() => void applyHandled([...checked], !allTargetsHandled)}
+                    title={allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                    className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
+                    {allTargetsHandled ? <Undo2 size={13} /> : <CheckCheck size={13} />}
+                  </button>
+                )}
                 {isTrashFolder && (
                   <button onClick={() => void handleRestore([...checked])} title={t("y_next.mail_restore")}
                     className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
@@ -5433,7 +5631,11 @@ function ErpNextWebmail() {
                             : !msg.seen ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
                             : "border-l-2 border-l-transparent hover:bg-slate-50"
                         }`}>
-                        <div className="flex items-start gap-2">
+                        <div className={`flex items-start gap-2 ${
+                          // Afgehandeld = gedaan: subtiel gedimd, zodat de rij
+                          // herkenbaar is zonder te verdwijnen.
+                          msg.handled && !isActive ? "opacity-60" : ""
+                        }`}>
                           <input
                             type="checkbox"
                             checked={isChecked}
@@ -5443,8 +5645,12 @@ function ErpNextWebmail() {
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className={`text-sm truncate ${!msg.seen ? "font-semibold text-slate-900" : "text-slate-700"}`}>
-                                {who || t("webmail.no_subject")}
+                              <span className={`flex items-center gap-1 text-sm truncate ${!msg.seen ? "font-semibold text-slate-900" : "text-slate-700"}`}>
+                                {msg.handled && (
+                                  <CheckCheck size={11} className="text-emerald-600 flex-shrink-0"
+                                    aria-label={t("y_next.mail_handled")} />
+                                )}
+                                <span className="truncate">{who || t("webmail.no_subject")}</span>
                               </span>
                               <div className="flex items-center gap-1 shrink-0">
                                 {msg.hasAttachments && <Paperclip size={11} className="text-slate-400" />}
@@ -5514,13 +5720,30 @@ function ErpNextWebmail() {
                             </div>
                           </div>
                         </div>
-                        <div className="absolute right-2 bottom-2 hidden group-hover:flex items-center gap-1">
+                        {/* Rij-acties. Op een aanraakscherm bestaat "hover"
+                            niet, dus daar staan ze permanent — anders is de
+                            prullenbak op mobiel simpelweg onbereikbaar. Op
+                            desktop verschijnen ze bij hover én bij
+                            toetsenbordfocus. */}
+                        <div className={`absolute right-2 bottom-2 items-center gap-1 ${
+                          isMobile ? "flex" : "hidden group-hover:flex group-focus-within:flex"
+                        }`}>
                           {isTrashFolder && (
                             <button
                               onClick={(e) => { e.stopPropagation(); void handleRestore([msg.name]); }}
                               title={t("y_next.mail_restore")}
                               className="p-1 rounded bg-white/90 text-slate-400 hover:text-emerald-700 cursor-pointer">
                               <RotateCcw size={12} />
+                            </button>
+                          )}
+                          {!isTrashFolder && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void applyHandled([msg.name], !msg.handled); }}
+                              title={msg.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                              className={`p-1 rounded bg-white/90 cursor-pointer ${
+                                msg.handled ? "text-emerald-600 hover:text-slate-500" : "text-slate-400 hover:text-emerald-700"
+                              }`}>
+                              {msg.handled ? <Undo2 size={12} /> : <CheckCheck size={12} />}
                             </button>
                           )}
                           <button
@@ -5607,6 +5830,20 @@ function ErpNextWebmail() {
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         <ExternalLink size={14} />
                       </button>
+                      {!isTrashFolder && (
+                        <button onClick={() => void applyHandled([selected.name], !selected.handled)}
+                          title={selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                          className={`flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium cursor-pointer ${
+                            selected.handled
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+                          }`}>
+                          {selected.handled ? <Undo2 size={14} /> : <CheckCheck size={14} />}
+                          <span className="hidden lg:inline">
+                            {selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+                          </span>
+                        </button>
+                      )}
                       {isTrashFolder && (
                         <button onClick={() => void handleRestore([selected.name])} title={t("y_next.mail_restore")}
                           className="p-1.5 rounded text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer">
