@@ -130,6 +130,11 @@ import ReadingPane from "../components/mail/ReadingPane";
 import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import RecipientField from "../components/mail/RecipientField";
+import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
+import {
+  MAIL_SHORTCUT_KEYS, isEditableTarget, resolveMailShortcut,
+} from "../lib/mail-shortcuts";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
 import AddRelationDialog from "../components/AddRelationDialog";
@@ -4789,6 +4794,16 @@ function ErpNextWebmail() {
     return actionTargets.every((name) => (byName.get(name) ?? selected)?.handled === true);
   }, [actionTargets, messages, selected]);
 
+  /**
+   * Zelfde regel voor gelezen/ongelezen: is álles al gelezen, dan betekent de
+   * U-toets "terug naar ongelezen"; anders "markeer als gelezen".
+   */
+  const allTargetsSeen = useMemo(() => {
+    if (actionTargets.length === 0) return false;
+    const byName = new Map(messages.map((m) => [m.name, m]));
+    return actionTargets.every((name) => (byName.get(name) ?? selected)?.seen === true);
+  }, [actionTargets, messages, selected]);
+
   /* ─── Afgehandeld: `Communication.status` ─── */
 
   /**
@@ -4846,8 +4861,12 @@ function ErpNextWebmail() {
 
   /* ─── Bulk: gelezen / ongelezen ─── */
 
-  const handleBulkSeen = useCallback(async (seen: boolean) => {
-    const names = [...checked];
+  /**
+   * `names` is optioneel zodat de sneltoets dezelfde weg loopt als de
+   * bulkbalk: die geeft de aangevinkte rijen door, de sneltoets
+   * `actionTargets` (aangevinkt, anders de geopende mail).
+   */
+  const handleBulkSeen = useCallback(async (seen: boolean, names: string[] = [...checked]) => {
     if (names.length === 0) return;
     const target = new Set(names);
     const before = messagesRef.current;
@@ -4883,6 +4902,76 @@ function ErpNextWebmail() {
       silentReload();
     }
   }, [checked, refreshFolders, shiftUnseenBaseline, silentReload, t]);
+
+  /* ─── Sneltoetsen ─── */
+
+  /**
+   * Delete/Backspace, U, E, Enter en Escape doen hetzelfde als de knoppen in
+   * de lintbalk — inclusief de regel welke berichten ze raken (`actionTargets`:
+   * aangevinkte rijen, anders de geopende mail). De beslissing "mag deze toets
+   * nú vuren?" staat in `lib/mail-shortcuts.ts` en is daar getest; hier staat
+   * alleen de bedrading.
+   *
+   * De luisteraar hangt aan `window`, niet aan een rij: het lijstpaneel heeft
+   * geen focus zolang je alleen vinkjes zet, en dan zou de toets nooit
+   * aankomen — precies de klacht ("de Delete-toets doet niets").
+   */
+  const dialogOpen = Boolean(
+    bookingFor || leadFor || relationFor || folderMenu
+    || assignOpen || showLinkPicker || projectPickerOpen || newFolderOpen,
+  );
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const action = resolveMailShortcut(e, {
+        editing: isEditableTarget(e.target as HTMLElement | null),
+        dialogOpen,
+        composing: draft !== null,
+        hasTargets: actionTargets.length > 0,
+        inTrash: isTrashFolder,
+      });
+      if (!action) return;
+      e.preventDefault();
+      switch (action) {
+        case "trash":
+          handleDeleteAction(actionTargets);
+          break;
+        case "delete-forever":
+          handleDeleteForever(actionTargets);
+          break;
+        case "toggle-read":
+          void handleBulkSeen(!allTargetsSeen, actionTargets);
+          break;
+        case "toggle-handled":
+          // In de Prullenbak bestaat "afhandelen" niet — daar staat de knop
+          // ook niet, dus de toets hoort daar evenmin iets te doen.
+          if (!isTrashFolder) void applyHandled(actionTargets, !allTargetsHandled);
+          break;
+        case "open": {
+          const target = messagesRef.current.find((m) => m.name === actionTargets[0]);
+          if (target && target.name !== selectedName) void openMessage(target);
+          break;
+        }
+        case "dismiss":
+          // Eerst de selectie, dan het leespaneel: één Escape hoort niet
+          // allebei weg te halen.
+          if (checked.size > 0) setChecked(new Set());
+          else if (selectedName) { setSelected(null); setBody(null); setThread([]); }
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    actionTargets, allTargetsHandled, allTargetsSeen, applyHandled, checked.size,
+    dialogOpen, draft, handleBulkSeen, handleDeleteAction, handleDeleteForever,
+    isTrashFolder, openMessage, selectedName,
+  ]);
+
+  /** "Verwijderen (Delete)" — het label met zijn toets erachter. */
+  const withKeys = useCallback(
+    (label: string, keys: string) => t("y_next.mail_shortcut_hint", { label, keys }),
+    [t],
+  );
 
   /* ─── Toewijzen aan een eigen map (tag) of projectmap (referentie) ─── */
 
@@ -5147,6 +5236,14 @@ function ErpNextWebmail() {
         inReplyTo: draft.inReplyTo,
         reference: draft.reference,
       });
+      // De ranking van de adressuggesties leert van wat je écht verstuurt,
+      // niet alleen van wat je uit de lijst koos — een adres dat je intikte of
+      // plakte hoort de volgende keer bovenaan te staan. Leeg label: dat laat
+      // een eerder onthouden naam staan (zie `bumpFrequency`).
+      const instanceId = getActiveInstanceId();
+      for (const address of parseRecipientEmails([draft.to, draft.cc, draft.bcc].filter(Boolean).join(", "))) {
+        bumpFrequency(instanceId, address, "");
+      }
       setDraft(null);
       setToast(t("webmail.message_sent"));
       refreshAll();
@@ -5384,7 +5481,7 @@ function ErpNextWebmail() {
             <button
               onClick={() => actionTargets.length > 0 && void applyHandled(actionTargets, !allTargetsHandled)}
               disabled={actionTargets.length === 0}
-              title={allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+              title={withKeys(allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
               {allTargetsHandled ? <Undo2 size={14} /> : <CheckCheck size={14} />}
               <span className="hidden md:inline">
@@ -5394,7 +5491,9 @@ function ErpNextWebmail() {
           )}
           <button onClick={() => actionTargets.length > 0 && handleDeleteAction(actionTargets)}
             disabled={actionTargets.length === 0}
-            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+            title={isTrashFolder
+              ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+              : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:cursor-default cursor-pointer">
             <Trash2 size={14} />
             <span className="hidden md:inline">
@@ -5511,11 +5610,11 @@ function ErpNextWebmail() {
                   {t("webmail.n_selected", { count: checked.size })}
                 </span>
                 <div className="flex-1" />
-                <button onClick={() => void handleBulkSeen(true)} title={t("webmail.mark_read")}
+                <button onClick={() => void handleBulkSeen(true)} title={withKeys(t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer">
                   <MailOpen size={13} />
                 </button>
-                <button onClick={() => void handleBulkSeen(false)} title={t("webmail.mark_unread")}
+                <button onClick={() => void handleBulkSeen(false)} title={withKeys(t("webmail.mark_unread"), MAIL_SHORTCUT_KEYS.toggleRead)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer">
                   <Mail size={13} />
                 </button>
@@ -5541,7 +5640,7 @@ function ErpNextWebmail() {
                 {!isTrashFolder && (
                   <button
                     onClick={() => void applyHandled([...checked], !allTargetsHandled)}
-                    title={allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                    title={withKeys(allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
                     className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
                     {allTargetsHandled ? <Undo2 size={13} /> : <CheckCheck size={13} />}
                   </button>
@@ -5553,11 +5652,13 @@ function ErpNextWebmail() {
                   </button>
                 )}
                 <button onClick={() => handleDeleteAction([...checked])}
-                  title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                  title={isTrashFolder
+                    ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+                    : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-red-600 cursor-pointer">
                   <Trash2 size={13} />
                 </button>
-                <button onClick={() => setChecked(new Set())} title={t("webmail.clear_selection")}
+                <button onClick={() => setChecked(new Set())} title={withKeys(t("webmail.clear_selection"), MAIL_SHORTCUT_KEYS.dismiss)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-slate-700 cursor-pointer">
                   <X size={13} />
                 </button>
@@ -5822,7 +5923,7 @@ function ErpNextWebmail() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => applySeen(selected.name, !selected.seen)}
-                        title={selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read")}
+                        title={withKeys(selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         {selected.seen ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -5832,7 +5933,7 @@ function ErpNextWebmail() {
                       </button>
                       {!isTrashFolder && (
                         <button onClick={() => void applyHandled([selected.name], !selected.handled)}
-                          title={selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                          title={withKeys(selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
                           className={`flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium cursor-pointer ${
                             selected.handled
                               ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -5851,7 +5952,9 @@ function ErpNextWebmail() {
                         </button>
                       )}
                       <button onClick={() => handleDeleteAction([selected.name])}
-                        title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                        title={isTrashFolder
+                          ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+                          : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
                         className="p-1.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer">
                         <Trash2 size={14} />
                       </button>
@@ -6228,6 +6331,10 @@ function ErpNextWebmail() {
  * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
  * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
  */
+/** Eén opmaak voor Aan/Cc/Bcc — ze horen er identiek uit te zien. */
+const RECIPIENT_INPUT_CLASS =
+  "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
+
 function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }: {
   draft: ErpDraft;
   sending: boolean;
@@ -6241,6 +6348,9 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
+  // De frequentie-ranking van de adressuggesties hangt aan de instance; één
+  // keer uitlezen volstaat, hij wisselt niet terwijl je een mail opstelt.
+  const instanceId = useMemo(() => getActiveInstanceId(), []);
   const set = <K extends keyof ErpDraft>(key: K, value: ErpDraft[K]) => onChange({ ...draft, [key]: value });
   // Dezelfde afleiding als het verzendpad: staat hier iets, dan gaat exact dat
   // mee de deur uit. Leeg → geen preview én geen handtekening in de mail.
@@ -6264,10 +6374,16 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }
 
       <div className="px-4 py-2 space-y-1.5 border-b border-slate-200 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="w-16 text-[11px] text-slate-400">{t("webmail.to_label")}</span>
-          <input value={draft.to} onChange={(e) => set("to", e.target.value)}
-            placeholder={t("webmail.recipient_placeholder")}
-            className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
+          <div className="flex-1 min-w-0">
+            <RecipientField
+              label={t("webmail.to_label")}
+              value={draft.to}
+              onChange={(next) => set("to", next)}
+              instanceId={instanceId}
+              placeholder={t("webmail.recipient_placeholder")}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+            />
+          </div>
           <button onClick={() => setShowCcBcc((v) => !v)}
             className={`px-1.5 py-0.5 rounded text-[11px] cursor-pointer ${showCcBcc ? "bg-slate-200 text-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>
             {t("y_next.mail_show_cc")}
@@ -6275,16 +6391,20 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }
         </div>
         {showCcBcc && (
           <>
-            <label className="flex items-center gap-2">
-              <span className="w-16 text-[11px] text-slate-400">Cc</span>
-              <input value={draft.cc} onChange={(e) => set("cc", e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
-            </label>
-            <label className="flex items-center gap-2">
-              <span className="w-16 text-[11px] text-slate-400">{t("y_next.mail_bcc_label")}</span>
-              <input value={draft.bcc} onChange={(e) => set("bcc", e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
-            </label>
+            <RecipientField
+              label="Cc"
+              value={draft.cc}
+              onChange={(next) => set("cc", next)}
+              instanceId={instanceId}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+            />
+            <RecipientField
+              label={t("y_next.mail_bcc_label")}
+              value={draft.bcc}
+              onChange={(next) => set("bcc", next)}
+              instanceId={instanceId}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+            />
           </>
         )}
         <label className="flex items-center gap-2">

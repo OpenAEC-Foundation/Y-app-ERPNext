@@ -29,6 +29,9 @@ import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
 import {
   getMessageBody, markRead, markHandled, markUnhandled, isHandledStatus,
 } from "../lib/mail-erpnext";
+import {
+  MAIL_SHORTCUT_KEYS, isEditableTarget, resolveMailShortcut,
+} from "../lib/mail-shortcuts";
 import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } from "../lib/email-project-links";
 import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -1282,6 +1285,33 @@ function ErpNextMailView({ name }: { name: string }) {
 
   /* ─── Afzender → relatie (zelfde gedrag als de webmail) ─── */
   const [relationOpen, setRelationOpen] = useState(false);
+
+  /**
+   * Sneltoets in de popout. Alleen `E` is hier van toepassing: de losse tab
+   * heeft geen lijst en geen prullenbakknop, dus Delete zou een handeling zijn
+   * zonder zichtbare tegenhanger. Dezelfde beslisregel als de webmail, zodat
+   * typen in het opstelveld of een open dialoog de toets net zo blokkeert.
+   */
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const action = resolveMailShortcut(e, {
+        editing: isEditableTarget(e.target as HTMLElement | null),
+        dialogOpen: bookingOpen || leadOpen || relationOpen,
+        composing: false,
+        hasTargets: Boolean(name),
+        inTrash: false,
+      });
+      if (action !== "toggle-handled") return;
+      e.preventDefault();
+      void toggleHandled();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // Bewust zonder afhankelijkheden-lijst: `toggleHandled` en de
+    // dialoogstanden wisselen elke render, en een luisteraar die één render
+    // achterloopt zou de vorige mail afvinken.
+  });
+
   const [senderRelation, setSenderRelation] = useState<
     { email: string; found: ExistingRelation } | null
   >(null);
@@ -1542,7 +1572,10 @@ function ErpNextMailView({ name }: { name: string }) {
             {/* Afvinken kan ook hier: wie een mail in een eigen tabblad
                 openzet, werkt hem daar af — niet terug in de lijst. */}
             <button onClick={() => void toggleHandled()} disabled={handledBusy}
-              title={handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+              title={t("y_next.mail_shortcut_hint", {
+                label: handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"),
+                keys: MAIL_SHORTCUT_KEYS.toggleHandled,
+              })}
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-default ${
                 handled
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
