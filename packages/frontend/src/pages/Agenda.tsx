@@ -192,9 +192,24 @@ function getPrefKey(suffix: string): string {
   return `pref_${id}_agenda_${suffix}`;
 }
 
+/**
+ * Bronnen die standaard AAN staan. Een agenda die bij eerste gebruik leeg is
+ * ("Geen bronnen actief") ziet eruit als een kapotte agenda — de gebruiker
+ * moet eerst instellingen openen om iets te zien. Afspraken, taken en verlof
+ * komen rechtstreeks uit ERPNext en horen er dus meteen te staan; geboekte
+ * uren blijven uit omdat die de weergave vol zetten met terugkijk-informatie
+ * in plaats van planning. Een expliciete keuze van de gebruiker wint altijd.
+ */
+const ERP_SOURCE_DEFAULTS: Record<ErpSourceKey, boolean> = {
+  events: true,
+  tasks: true,
+  leaves: true,
+  timesheets: false,
+};
+
 function getErpSourceEnabled(key: ErpSourceKey): boolean {
   const stored = localStorage.getItem(getPrefKey(`show_${key}`));
-  if (stored === null) return false; // Default: all hidden
+  if (stored === null) return ERP_SOURCE_DEFAULTS[key];
   return stored === "true";
 }
 
