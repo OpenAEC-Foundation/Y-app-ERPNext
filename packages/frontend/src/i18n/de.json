@@ -2561,6 +2561,8 @@
   "y_next.mail_restore_failed": "Wiederherstellen fehlgeschlagen — bitte erneut versuchen",
   "y_next.mail_delete_forever": "Endgültig löschen",
   "y_next.mail_no_delete_permission": "Keine Berechtigung zum endgültigen Löschen von E-Mails — wende dich an deinen Administrator oder führe das Provisioning aus",
+  "y_next.mail_mailboxes_section": "Postfächer",
+  "y_next.mail_mailbox_all": "Alle Postfächer",
   "y_next.mail_imap_folders_section": "IMAP-Ordner",
   "y_next.mail_imap_folder_hint": "Synchronisiert aus dem E-Mail-Konto \"{{account}}\"",
   "y_next.mail_imap_folders_note": "Zur Information: Dies sind die Ordner, die ERPNext vom Mailserver abruft. Abgerufene Nachrichten speichern ihren Quellordner nicht, daher ist kein Filtern pro IMAP-Ordner möglich."

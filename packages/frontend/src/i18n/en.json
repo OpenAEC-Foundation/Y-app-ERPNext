@@ -2575,6 +2575,8 @@
   "y_next.mail_restore_failed": "Restore failed — please try again",
   "y_next.mail_delete_forever": "Delete permanently",
   "y_next.mail_no_delete_permission": "No permission to permanently delete email — ask your administrator or run the provisioning",
+  "y_next.mail_mailboxes_section": "Mailboxes",
+  "y_next.mail_mailbox_all": "All mailboxes",
   "y_next.mail_imap_folders_section": "IMAP folders",
   "y_next.mail_imap_folder_hint": "Synced from the email account \"{{account}}\"",
   "y_next.mail_imap_folders_note": "For reference: these are the folders ERPNext fetches from the mail server. Fetched messages do not record their source folder, so filtering per IMAP folder is not possible."

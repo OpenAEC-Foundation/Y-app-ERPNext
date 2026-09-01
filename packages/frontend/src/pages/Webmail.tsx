@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Send, Inbox, Info,
   Tag, FolderPlus, Clock, CircleAlert, MailOpen,
-  RotateCcw, Server,
+  RotateCcw, Server, AtSign,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -101,11 +101,11 @@ import {
   projectOfFolder, searchMessages,
   moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
   deleteForever, bulkDeleteForever, listImapFolders,
-  bulkMarkRead, bulkMarkUnread, getConversation, getSignature,
+  bulkMarkRead, bulkMarkUnread, getConversation, getSignature, listMailboxes,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
   unseenCount,
   MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
-  type ErpMailMessage, type ErpMailFolder, type ErpImapFolder,
+  type ErpMailMessage, type ErpMailFolder, type ErpImapFolder, type ErpMailbox,
 } from "../lib/mail-erpnext";
 import {
   appendSignature, buildReplyRecipients, formatAttachmentNames,
@@ -3792,14 +3792,24 @@ async function fetchErpSlice(
   term: string,
   start: number,
   limit: number,
+  mailbox: string,
 ): Promise<{ rows: ErpMailMessage[]; hasMore: boolean }> {
   if (term) {
     const window = start + limit;
     const rows = await searchMessages(term, { limit: window });
     return { rows: rows.slice(start), hasMore: rows.length === window };
   }
-  const page = await listMailboxMessagesPaged(folder, { start, limit });
+  const page = await listMailboxMessagesPaged(folder, { start, limit, mailbox });
   return { rows: page.messages, hasMore: page.hasMore };
+}
+
+/**
+ * Sleutel voor het maponthoud. Dezelfde map in een andere postbus is een
+ * andere lijst; zonder de postbus in de sleutel toont een wissel eerst nog
+ * even de berichten van de vorige postbus.
+ */
+function snapKey(mailbox: string, folder: string): string {
+  return JSON.stringify([mailbox, folder]);
 }
 
 function ErpNextWebmail() {
@@ -3860,6 +3870,17 @@ function ErpNextWebmail() {
   /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
   const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
 
+  /**
+   * Postbussen waar deze gebruiker in mag kijken: zijn eigen adres plus de
+   * gedeelde bussen. De lijst komt uit `listMailboxes` en is dus per gebruiker
+   * anders — wie geen eigen Email Account heeft, ziet alleen de gedeelde.
+   */
+  const [mailboxes, setMailboxes] = useState<ErpMailbox[]>([]);
+  /** Actieve postbus (docname van het Email Account); "" = alles door elkaar. */
+  const [mailbox, setMailbox] = useState("");
+  // Synchroon leesbaar voor de race-guard in loadList, net als activeFolderRef.
+  const mailboxRef = useRef("");
+
   const [toast, setToast] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "message">("list");
 
@@ -3881,11 +3902,8 @@ function ErpNextWebmail() {
     loadSession()
       .then((s) => { if (!cancelled) setSelfEmail(s.user); })
       .catch(() => { /* zonder eigen adres werkt alles; alleen reply-all is ruimer */ });
-    // Eén keer per paginabezoek: de handtekening verandert niet tijdens een
-    // sessie, en zonder leesrecht op `Email Account` levert dit gewoon "".
-    getSignature()
-      .then((sig) => { if (!cancelled) setSignature(sig); })
-      .catch(() => { /* mail zonder handtekening is geen fout */ });
+    // (De handtekening laadt in een eigen effect verderop: die hangt aan de
+    // gekozen postbus en verandert dus wél tijdens een sessie.)
     // De IMAP-mappenlijst verandert alleen wanneer een beheerder het Email
     // Account aanpast — één keer per paginabezoek volstaat. De adapter geeft
     // bij een 403 (geen leesrecht op Email Account) gewoon [] terug, waarmee
@@ -3893,6 +3911,12 @@ function ErpNextWebmail() {
     listImapFolders()
       .then((rows) => { if (!cancelled) setImapFolders(rows); })
       .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
+    // Postbussen: één keer per paginabezoek. Zonder leesrecht op Email Account
+    // komt hier [] uit en verdwijnt de kiezer — de lijst toont dan gewoon
+    // alles wat de gebruiker mag zien.
+    listMailboxes()
+      .then((rows) => { if (!cancelled) setMailboxes(rows); })
+      .catch(() => { /* de kiezer is optioneel */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -3954,18 +3978,21 @@ function ErpNextWebmail() {
       setMessages([]);
       setHasMore(false);
     }
+    const mb = mailboxRef.current;
     try {
-      const { rows, hasMore: more } = await fetchErpSlice(folder, term, start, limit);
-      if (activeFolderRef.current !== folder || searchRef.current !== term) return;
+      const { rows, hasMore: more } = await fetchErpSlice(folder, term, start, limit, mb);
+      if (activeFolderRef.current !== folder || searchRef.current !== term
+        || mailboxRef.current !== mb) return;
       const next = append ? [...messagesRef.current, ...rows] : rows;
       messagesRef.current = next;
       setMessages(next);
       setHasMore(more);
       setError("");
       // Zoekresultaten zijn geen map: die horen niet in het maponthoud.
-      if (!term) snapshotsRef.current.set(folder, { messages: next, hasMore: more });
+      if (!term) snapshotsRef.current.set(snapKey(mb, folder), { messages: next, hasMore: more });
     } catch (err) {
-      if (activeFolderRef.current !== folder || searchRef.current !== term) return;
+      if (activeFolderRef.current !== folder || searchRef.current !== term
+        || mailboxRef.current !== mb) return;
       if (!silent) {
         setError(err instanceof Error ? err.message : String(err));
         if (!append) setMessages([]);
@@ -3981,12 +4008,13 @@ function ErpNextWebmail() {
   useEffect(() => {
     activeFolderRef.current = activeFolder;
     searchRef.current = search;
+    mailboxRef.current = mailbox;
 
     if (search) {
       void loadList(activeFolder, search);
       return;
     }
-    const snap = snapshotsRef.current.get(activeFolder);
+    const snap = snapshotsRef.current.get(snapKey(mailbox, activeFolder));
     if (snap && snap.messages.length > 0) {
       // Toon meteen wat we hadden (inclusief de eerder bijgeladen pagina's) en
       // ververs daarna stil op dezelfde diepte.
@@ -4001,7 +4029,21 @@ function ErpNextWebmail() {
       return;
     }
     void loadList(activeFolder, "");
-  }, [activeFolder, search, loadList]);
+  }, [activeFolder, search, mailbox, loadList]);
+
+  /**
+   * Handtekening. Volgt de gekozen postbus: wie vanuit info@ antwoordt, hoort
+   * de ondertekening van info@ te krijgen en niet die van zijn eigen adres.
+   * Zonder keuze pakt de adapter de eigen postbus, en anders het standaard
+   * uitgaande account.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    getSignature(mailbox || undefined)
+      .then((sig) => { if (!cancelled) setSignature(sig); })
+      .catch(() => { /* mail zonder handtekening is geen fout */ });
+    return () => { cancelled = true; };
+  }, [mailbox]);
 
   /** Ververs de zichtbare lijst op de huidige diepte, zonder spinner. */
   const silentReload = useCallback(() => {
@@ -4697,8 +4739,44 @@ function ErpNextWebmail() {
     );
   };
 
+  /**
+   * Postbuskiezer. Verschijnt pas bij meer dan één postbus — met alleen een
+   * eigen adres valt er niets te kiezen en kost de kop alleen ruimte.
+   */
+  const mailboxPane = mailboxes.length > 1 ? (
+    <div className="px-2 pt-2 pb-1 border-b border-slate-200">
+      <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
+        {t("y_next.mail_mailboxes_section")}
+      </div>
+      {[{ name: "", emailId: t("y_next.mail_mailbox_all"), own: false }, ...mailboxes].map((m) => {
+        const active = mailbox === m.name;
+        return (
+          <button
+            key={m.name || "__all__"}
+            onClick={() => {
+              if (m.name === mailbox) return;
+              setMailbox(m.name);
+              setSelected(null);
+              setBody(null);
+              setThread([]);
+              setChecked(new Set());
+            }}
+            title={m.emailId}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg cursor-pointer transition-colors ${
+              active ? "bg-blue-100 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <AtSign size={12} className={active ? "text-blue-600" : "text-slate-400"} />
+            <span className="truncate flex-1 text-left">{m.emailId}</span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   const folderPane = (
     <>
+      {mailboxPane}
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {fixedFolders.map(renderFolderButton)}
 

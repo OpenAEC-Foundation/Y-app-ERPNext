@@ -46,6 +46,7 @@ import {
   ApiError,
   type FileInfo,
 } from "./erpnext.ts";
+import { resolveSessionUser } from "./session.ts";
 
 /** Een Communication zoals de Webmail-UI hem consumeert. */
 export interface ErpMailMessage {
@@ -303,9 +304,10 @@ function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMess
  */
 export async function listMailboxMessages(
   folderId: string,
-  opts?: { limit?: number; start?: number; search?: string }
+  opts?: { limit?: number; start?: number; search?: string; mailbox?: string }
 ): Promise<ErpMailMessage[]> {
   const search = opts?.search?.trim();
+  const mailbox = opts?.mailbox?.trim();
   const params: {
     fields: string[];
     filters: unknown[][];
@@ -315,7 +317,9 @@ export async function listMailboxMessages(
     limit_start: number;
   } = {
     fields: LIST_FIELDS,
-    filters: filtersForFolder(folderId),
+    filters: mailbox
+      ? [...filtersForFolder(folderId), ["email_account", "=", mailbox]]
+      : filtersForFolder(folderId),
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_PAGE_SIZE,
     limit_start: opts?.start ?? 0,
@@ -337,13 +341,14 @@ export async function listMailboxMessages(
  */
 export async function listMailboxMessagesPaged(
   folderId: string,
-  opts: { start: number; limit: number; search?: string }
+  opts: { start: number; limit: number; search?: string; mailbox?: string }
 ): Promise<ErpMailPage> {
   const limit = opts.limit;
   const messages = await listMailboxMessages(folderId, {
     limit,
     start: opts.start,
     search: opts.search,
+    mailbox: opts.mailbox,
   });
   return { messages, hasMore: messages.length === limit };
 }
@@ -607,6 +612,74 @@ export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
     ...customFolders,
     ...projectFolders,
   ];
+}
+
+/* ─── Postbussen (Email Accounts) ─── */
+
+/**
+ * Gedeelde postbussen die iedere medewerker in de kiezer mag zien, naast zijn
+ * eigen postbus. ERPNext kent geen rechten per mailbox — `Communication` is
+ * alles-of-niets — dus dit is een weergavekeuze, geen beveiliging.
+ */
+const SHARED_MAILBOXES = ["info@3bm.co.nl", "cooperatie@3bm.co.nl"];
+
+/** Eén kiesbare postbus in de mailmodule. */
+export interface ErpMailbox {
+  /** Docname van het Email Account; de waarde waarop gefilterd wordt. */
+  name: string;
+  /** Het e-mailadres, voor de labeltekst. */
+  emailId: string;
+  /** Eigen postbus van de ingelogde gebruiker (staat bovenaan). */
+  own: boolean;
+}
+
+/**
+ * De postbussen die de ingelogde gebruiker mag kiezen: zijn eigen account
+ * plus de gedeelde uit `SHARED_MAILBOXES`.
+ *
+ * Waarom dit kán: ERPNext vult `Communication.email_account` wél betrouwbaar
+ * (in tegenstelling tot `imap_folder`, dat altijd leeg blijft — zie
+ * `listImapFolders`). Daarmee is per postbus filteren wél mogelijk.
+ *
+ * `Email Account` vereist de rol Inbox User of System Manager; bij een 403
+ * komt er een lege lijst terug en valt de UI terug op één gecombineerde
+ * stroom, precies zoals vóór deze functie.
+ */
+export async function listMailboxes(): Promise<ErpMailbox[]> {
+  try {
+    const [user, accounts] = await Promise.all([
+      resolveSessionUser(),
+      // Geen serverfilter op enable_incoming: het eigen adres van iemand kan
+      // wél verzenden en (nog) niet ontvangen. Zo'n bus hoort zichtbaar te
+      // zijn — de map Verzonden staat er vol mee, en zodra de beheerder de
+      // inkomende sync aanzet vult Postvak IN zich vanzelf. Frappe combineert
+      // filters met AND, dus de of-vraag doen we hier.
+      fetchList<{
+        name: string;
+        email_id?: string;
+        enable_incoming?: number;
+        enable_outgoing?: number;
+      }>("Email Account", {
+        fields: ["name", "email_id", "enable_incoming", "enable_outgoing"],
+        order_by: "name asc",
+        limit_page_length: MAX_IMAP_ACCOUNTS,
+      }),
+    ]);
+    const me = toStr(user).toLowerCase();
+    const out: ErpMailbox[] = [];
+    for (const acc of accounts) {
+      const emailId = toStr(acc.email_id).toLowerCase();
+      if (!emailId) continue;
+      if (!acc.enable_incoming && !acc.enable_outgoing) continue;
+      const own = me !== "" && emailId === me;
+      if (!own && !SHARED_MAILBOXES.includes(emailId)) continue;
+      out.push({ name: acc.name, emailId: toStr(acc.email_id), own });
+    }
+    out.sort((a, b) => (a.own === b.own ? a.emailId.localeCompare(b.emailId) : a.own ? -1 : 1));
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /* ─── IMAP-mappen van het gekoppelde Email Account (alleen-lezen) ─── */
@@ -889,8 +962,22 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
  * handtekening is prima, een compose-scherm dat niet opent niet. Elke fout
  * (403, ontbrekend doctype, netwerk) levert daarom een lege string op.
  */
-export async function getSignature(): Promise<string> {
+export async function getSignature(mailbox?: string): Promise<string> {
   try {
+    // 1. De postbus waaruit de gebruiker verstuurt (expliciet gekozen of de
+    //    eigen), zodat iedereen zijn éigen ondertekening krijgt in plaats van
+    //    die van het gedeelde standaard-uitgaande account.
+    const own = toStr(mailbox).trim() || (await ownMailboxName());
+    if (own) {
+      const mine = await fetchList<{ signature?: string }>("Email Account", {
+        fields: ["name", "signature"],
+        filters: [["name", "=", own]],
+        limit_page_length: 1,
+      });
+      const sig = toStr(mine[0]?.signature);
+      if (sig) return sig;
+    }
+    // 2. Terugval: het standaard uitgaande account.
     const rows = await fetchList<{ signature?: string }>("Email Account", {
       fields: ["name", "signature"],
       filters: [["default_outgoing", "=", 1]],
@@ -900,6 +987,12 @@ export async function getSignature(): Promise<string> {
   } catch {
     return "";
   }
+}
+
+/** Docname van de eigen postbus, of "" als die er niet is. */
+async function ownMailboxName(): Promise<string> {
+  const boxes = await listMailboxes();
+  return boxes.find((b) => b.own)?.name ?? "";
 }
 
 /**
