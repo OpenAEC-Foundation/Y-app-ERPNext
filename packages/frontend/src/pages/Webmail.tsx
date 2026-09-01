@@ -137,6 +137,8 @@ import {
 } from "../lib/mail-shortcuts";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
+import CreateQuotationDialog from "../components/CreateQuotationDialog";
+import QuoteActionButton from "../components/QuoteActionButton";
 import AddRelationDialog from "../components/AddRelationDialog";
 import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
 import {
@@ -149,6 +151,7 @@ import {
   type MailIntent, type MailIntentContext,
 } from "../lib/mail-intent";
 import { fetchMailIntentContext } from "../lib/lead";
+import { decideQuoteAction, type QuoteParty } from "../lib/mail-quote-actions";
 import { fetchIntentBodies, pickIntentBodyCandidates } from "../lib/mail-intent-bodies";
 import {
   dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
@@ -3983,12 +3986,16 @@ function ErpNextWebmail() {
   const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissedMailSuggestions());
   const [bookingFor, setBookingFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
   const [leadFor, setLeadFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
+  /** Open staat de offertedialoog voor deze mail, met de partij die vaststaat. */
+  const [quoteFor, setQuoteFor] = useState<{ msg: ErpMailMessage; party: QuoteParty } | null>(null);
   /** Melding na een geslaagde boeking, met een klikbaar factuurnummer. */
   const [bookedNotice, setBookedNotice] = useState<BookingResult | null>(null);
   /** Melding na een aangemaakte lead/offerteaanvraag. */
   const [createdNotice, setCreatedNotice] = useState<
     { doctype: "Lead" | "Opportunity"; result: BookingResult } | null
   >(null);
+  /** Melding na een aangemaakte concept-offerte. */
+  const [quoteNotice, setQuoteNotice] = useState<BookingResult | null>(null);
 
   /* ─── Afzender → relatie ─── */
   /** Open staat de `AddRelationDialog` voor deze mail. */
@@ -4417,6 +4424,43 @@ function ErpNextWebmail() {
   );
 
   /**
+   * De offerte-actie. Zelfde bron als de andere knoppen in de balk — de
+   * beslisregel staat in `mail-quote-actions.ts` zodat de webmail en de
+   * popout-lezer niet uit elkaar kunnen lopen, en zodat "waarom zie ik die
+   * knop (niet)?" met `node --test` te beantwoorden is.
+   *
+   * De klant komt uit dezelfde `classifySender` als de rest van de
+   * herkenning; de lead komt uit de adres-check die de relatie-actie tóch al
+   * doet (`relationExisting`), dus dit kost geen extra query.
+   */
+  const quoteAction = useMemo(() => {
+    if (!selected) return decideQuoteAction({ intentKind: "none", direction: "received" });
+    const facts = classifySender(selected.sender, intentCtx);
+    return decideQuoteAction({
+      intentKind: selectedIntent?.kind ?? "none",
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      ...(facts.customer ? { customer: facts.customer } : {}),
+      ...(relationExisting?.lead ? { lead: relationExisting.lead } : {}),
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+    });
+  }, [selected, intentCtx, selectedIntent, relationExisting]);
+
+  /**
+   * Klik op "Offerte maken" terwijl er nog geen klant of lead is. Bij een
+   * herkende lead is de leaddialoog de juiste eerste stap (die maakt meteen
+   * een partij waaraan geofferteerd kan worden); anders het vastleggen van de
+   * relatie. In beide gevallen biedt de melding daarna de offerte aan.
+   */
+  const handleQuoteNeedsParty = useCallback(() => {
+    if (!selected) return;
+    if (selectedIntent && (selectedIntent.kind === "lead" || selectedIntent.kind === "quote-request")) {
+      setLeadFor({ msg: selected, intent: selectedIntent });
+      return;
+    }
+    setRelationFor(selected);
+  }, [selected, selectedIntent]);
+
+  /**
    * "Hoort dit bij project X?" — alleen wanneer er geen andere bedoeling is
    * herkend (hooguit één voorstel per mail) en de mail nog nergens aan hangt.
    */
@@ -4457,6 +4501,17 @@ function ErpNextWebmail() {
   }, [connectionsChanged]);
 
   /** Idem voor een aangemaakte lead of offerteaanvraag. */
+  /** Idem voor een aangemaakte concept-offerte. */
+  const handleQuoteCreated = useCallback((communication: string, result: BookingResult) => {
+    setQuoteFor(null);
+    setQuoteNotice(result);
+    if (result.linkFailed) return;
+    const reference = { doctype: "Quotation", name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+    connectionsChanged();
+  }, [connectionsChanged]);
+
   const handleLeadCreated = useCallback((
     communication: string,
     doctype: "Lead" | "Opportunity",
@@ -5981,6 +6036,17 @@ function ErpNextWebmail() {
                         wél een factuur- of leadbalk, dan zit hij dáár — nooit
                         op twee plekken tegelijk. */}
                     {!selectedIntent && relationSlot("slate", t("y_next.rel_add_button"))}
+                    {/* Offerte maken kan óók zonder herkende bedoeling: een
+                        klant die belt "stuur even een offerte" laat geen
+                        aanvraagwoorden in zijn mail achter. Staat er wél een
+                        bedoelingsbalk, dan zit de knop dáár — nooit dubbel. */}
+                    {!selectedIntent && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
                     {showLinkPicker && (
                       <div className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-lg border border-slate-200 z-50 flex flex-col max-h-72">
                         <div className="p-2 border-b border-slate-100">
@@ -6049,12 +6115,34 @@ function ErpNextWebmail() {
                       {t(`y_next.lead_confidence_${selectedIntent.confidence}`)}
                     </span>
                     <div className="flex-1" />
+                    {/* Bij een offerteaanvraag is "Offerte maken" de primaire
+                        actie — dat is letterlijk waar de mail om vraagt — en
+                        zakt de Opportunity naar een tekstknop. Bij een lead is
+                        het andersom: eerst de relatie vastleggen. Twee gevulde
+                        knoppen naast elkaar zou geen keuze aanbieden maar er
+                        één verbergen. */}
+                    {quoteAction.emphasis === "primary" && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
                     <button
                       onClick={() => setLeadFor({ msg: selected, intent: selectedIntent })}
-                      className="flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700">
+                      className={quoteAction.emphasis === "primary"
+                        ? "inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                        : "flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700"}>
                       <UserPlus size={11} />
                       {t(selectedIntent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
                     </button>
+                    {quoteAction.emphasis !== "primary" && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
                     {/* Bundeling bij een onbekende afzender.
                         "Maak er een lead van" en "leg hem vast als relatie"
                         zijn twee antwoorden op dezelfde situatie. Ze als twee
@@ -6159,8 +6247,48 @@ function ErpNextWebmail() {
                       {createdNotice.result.linkFailed && (
                         <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
                       )}
+                      {/* De vervolgstap waar de gebruiker om vroeg: een lead
+                          is een geldige `quotation_to`, dus vanaf hier kan de
+                          offerte meteen — zonder eerst een klant te maken. */}
+                      {createdNotice.doctype === "Lead" && selected && (
+                        <button
+                          onClick={() => {
+                            setQuoteFor({ msg: selected, party: { doctype: "Lead", name: createdNotice.result.name } });
+                            setCreatedNotice(null);
+                          }}
+                          className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
+                          <FileText size={11} /> {t("y_next.quote_create_from_lead")}
+                        </button>
+                      )}
                     </div>
                     <button onClick={() => setCreatedNotice(null)} title={t("common.close")}
+                      className="cursor-pointer rounded p-0.5 text-emerald-600 hover:bg-emerald-100">
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Uitkomst van een aangemaakte concept-offerte. */}
+                {quoteNotice && (
+                  <div className="flex flex-shrink-0 flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>{t("y_next.quote_created_ok")} </span>
+                      <a href={`${getErpNextLinkUrl()}/quotation/${encodeURIComponent(quoteNotice.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {quoteNotice.name}
+                      </a>
+                      {quoteNotice.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.lead_attachments_failed", { names: quoteNotice.failedAttachments.join(", ") })}
+                        </p>
+                      )}
+                      {quoteNotice.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+                      )}
+                    </div>
+                    <button onClick={() => setQuoteNotice(null)} title={t("common.close")}
                       className="cursor-pointer rounded p-0.5 text-emerald-600 hover:bg-emerald-100">
                       <X size={12} />
                     </button>
@@ -6279,6 +6407,24 @@ function ErpNextWebmail() {
           customers={intentCtx.customers}
           onClose={() => setLeadFor(null)}
           onCreated={(doctype, result) => handleLeadCreated(leadFor.msg.name, doctype, result)}
+        />
+      )}
+
+      {quoteFor && (
+        <CreateQuotationDialog
+          message={{
+            name: quoteFor.msg.name,
+            subject: quoteFor.msg.subject,
+            sender: quoteFor.msg.sender,
+            date: quoteFor.msg.date,
+            ...(body && selected?.name === quoteFor.msg.name && body.html
+              ? { bodyText: plainTextFromHtml(body.html) }
+              : {}),
+          }}
+          party={quoteFor.party}
+          customers={intentCtx.customers}
+          onClose={() => setQuoteFor(null)}
+          onCreated={(result) => handleQuoteCreated(quoteFor.msg.name, result)}
         />
       )}
 

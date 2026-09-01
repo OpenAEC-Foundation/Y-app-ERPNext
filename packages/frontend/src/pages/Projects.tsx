@@ -4,6 +4,7 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { fetchList, fetchDocument, fetchAll, fetchCount, fetchChildTable, callMethod, createDocument, updateDocument, getErpNextLinkUrl } from "../lib/erpnext";
 import { useProjects, useCompanies, useEmployees } from "../lib/DataContext";
 import { getActiveInstanceId, getActiveCompany, getActiveEmployee } from "../lib/instances";
+import { resolveDefaultCompany } from "../lib/default-company";
 import type { ProjectRecord } from "../lib/DataContext";
 import { geocodeAddress } from "../lib/geocode";
 import { SALES_INVOICE_ACTIVE_FILTER } from "../lib/invoice-docstatus";
@@ -1257,6 +1258,22 @@ function ProjectFormSidebar({
   // user can pick/refine. Only runs in "create" mode and only once.
   const customerAutofillTried = useRef(false);
   const [company, setCompany] = useState(project?.company || defaultCompany);
+  /**
+   * Het bedrijf is een verplicht veld op dit formulier (zie de `*` hieronder),
+   * dus een lege voorkeur mag niet blijven staan. `resolveDefaultCompany()`
+   * vult 'm aan met wat ERPNext zelf als standaardbedrijf heeft — niet met
+   * "de eerste rij uit de lijst". Alleen in aanmaakstand en alleen zolang het
+   * veld nog leeg is: een bestaand project houdt zijn eigen bedrijf, en een
+   * keuze van de gebruiker wordt nooit overschreven. Zie `default-company.ts`.
+   */
+  useEffect(() => {
+    if (!isCreate || company) return;
+    let cancelled = false;
+    void resolveDefaultCompany({ companies }).then((resolved) => {
+      if (!cancelled) setCompany((prev) => prev || resolved);
+    });
+    return () => { cancelled = true; };
+  }, [isCreate, company, companies]);
   const [projectManager, setProjectManager] = useState(project?.custom_project_manager || defaultPM);
   const [projectType, setProjectType] = useState("External");
   const [status, setStatus] = useState(project?.status || "Open");

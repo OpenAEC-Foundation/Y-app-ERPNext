@@ -24,8 +24,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, ExternalLink, Loader2, Search, Sparkles, X } from "lucide-react";
-import { fetchAttachments, fetchList, getErpNextLinkUrl, type FileInfo } from "../lib/erpnext";
-import { getActiveCompany } from "../lib/instances";
+import { fetchAttachments, getErpNextLinkUrl, type FileInfo } from "../lib/erpnext";
+import { useDefaultCompany } from "../lib/default-company";
 import type { InvoiceGuess, SupplierHint } from "../lib/invoice-detect";
 import {
   todayIso,
@@ -67,22 +67,19 @@ function reasonFor(guess: InvoiceGuess, prefix: string): string | undefined {
   return guess.reasons.find((r) => r.startsWith(`${prefix}:`));
 }
 
-interface CompanyRow {
-  name: string;
-  company_name?: string;
-}
-
 export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, onClose, onBooked }: Props) {
   const { t } = useTranslation();
   /**
-   * Bedrijven komen hier uit een eigen query en niet uit `useCompanies()`.
-   * De popout-lezer (`/mail/view`) rendert bewust buiten `DataProvider` — een
-   * DataContext-hook zou daar gooien en de hele dialoog onbruikbaar maken in
-   * precies de weergave waar je een factuurmail via dubbelklik opent.
+   * Bedrijf én bedrijvenlijst komen uit `useDefaultCompany()` en niet uit
+   * `useCompanies()`. Twee redenen: de popout-lezer (`/mail/view`) rendert
+   * bewust buiten `DataProvider` — een DataContext-hook zou daar gooien en de
+   * hele dialoog onbruikbaar maken in precies de weergave waar je een
+   * factuurmail via dubbelklik opent — én de keuze van het standaardbedrijf
+   * hoort op één plek te staan. Deze dialoog pakte hier eerder zelf
+   * `rows[0]?.name` als vangnet; dat is op deze instance alfabetisch het
+   * verkeerde bedrijf. Zie `default-company.ts`.
    */
-  const [companies, setCompanies] = useState<CompanyRow[]>([]);
-
-  const [company, setCompany] = useState(() => getActiveCompany());
+  const { company, setCompany, companies } = useDefaultCompany();
   const [supplier, setSupplier] = useState(guess.supplier ?? "");
   const [supplierQuery, setSupplierQuery] = useState("");
   const [supplierOpen, setSupplierOpen] = useState(false);
@@ -105,25 +102,6 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
   const [error, setError] = useState("");
   const [missing, setMissing] = useState<string[]>([]);
   const supplierBoxRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchList<CompanyRow>("Company", {
-      fields: ["name", "company_name"],
-      limit_page_length: 0,
-      order_by: "name asc",
-    })
-      .then((rows) => {
-        if (cancelled) return;
-        setCompanies(rows);
-        // Zonder actief bedrijf valt de dialoog terug op het eerste; anders
-        // zou hij met een leeg verplicht veld openen zonder dat duidelijk is
-        // waarom er niets geboekt kan worden.
-        setCompany((prev) => prev || rows[0]?.name || "");
-      })
-      .catch(() => { /* het bedrijfsveld blijft dan leeg en meldt zich via de validatie */ });
-    return () => { cancelled = true; };
-  }, []);
 
   /* Standaardwaarden + rekeningkeuzes horen bij het bedrijf, dus ze laden
      opnieuw zodra dat wisselt. */
@@ -331,6 +309,12 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
             <label className="block">
               {label("y_next.pinv_company")}
               <select value={company} onChange={(e) => setCompany(e.target.value)} className={fieldClass("company")}>
+                {/* Zolang de lijst nog binnenkomt heeft `company` al de
+                    opgeloste waarde; zonder deze regel zou de select leeg
+                    staan terwijl er wél een bedrijf gekozen is. */}
+                {!companies.some((c) => c.name === company) && (
+                  <option value={company}>{company || t("common.loading")}</option>
+                )}
                 {companies.map((c) => (
                   <option key={c.name} value={c.name}>{c.company_name || c.name}</option>
                 ))}

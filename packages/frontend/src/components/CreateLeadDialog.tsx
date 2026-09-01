@@ -35,7 +35,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ExternalLink, Loader2, Search, Sparkles, X } from "lucide-react";
 import { fetchAttachments, fetchList, getErpNextLinkUrl, type FileInfo } from "../lib/erpnext";
-import { getActiveCompany } from "../lib/instances";
+import { useDefaultCompany } from "../lib/default-company";
 import type { MailIntent, PartyHint } from "../lib/mail-intent";
 import {
   createLeadFromMail,
@@ -71,11 +71,6 @@ interface Props {
   onCreated: (doctype: "Lead" | "Opportunity", result: MailDocumentResult) => void;
 }
 
-interface CompanyRow {
-  name: string;
-  company_name?: string;
-}
-
 /** Chipje "herkend" — alleen als de waarde uit de mail komt en niet is aangepast. */
 function RecognisedChip({ shown, title }: { shown: boolean; title: string }) {
   const { t } = useTranslation();
@@ -96,16 +91,16 @@ export default function CreateLeadDialog({ message, intent, customers, onClose, 
   const detected = intent.contact ?? {};
 
   /**
-   * Bedrijven komen uit een eigen query en niet uit `useCompanies()`. De
-   * popout-lezer (`/mail/view`) rendert bewust buiten `DataProvider` — een
-   * DataContext-hook zou daar gooien en de dialoog onbruikbaar maken in
-   * precies de weergave waar je een mail via dubbelklik opent.
+   * Bedrijf én bedrijvenlijst komen uit `useDefaultCompany()` en niet uit
+   * `useCompanies()`: de popout-lezer (`/mail/view`) rendert bewust buiten
+   * `DataProvider` — een DataContext-hook zou daar gooien en de dialoog
+   * onbruikbaar maken in precies de weergave waar je een mail via dubbelklik
+   * opent. Het vangnet "pak `rows[0]`" is er bewust uit: dat is op deze
+   * instance alfabetisch het verkeerde bedrijf. Zie `default-company.ts`.
    */
-  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const { company, setCompany, companies } = useDefaultCompany();
   const [opportunityTypes, setOpportunityTypes] = useState<string[]>([]);
   const [sources, setSources] = useState<string[]>([]);
-
-  const [company, setCompany] = useState(() => getActiveCompany());
   const [customer, setCustomer] = useState(intent.customer ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerOpen, setCustomerOpen] = useState(false);
@@ -130,17 +125,6 @@ export default function CreateLeadDialog({ message, intent, customers, onClose, 
 
   useEffect(() => {
     let cancelled = false;
-    fetchList<CompanyRow>("Company", { fields: ["name", "company_name"], limit_page_length: 0, order_by: "name asc" })
-      .then((rows) => {
-        if (cancelled) return;
-        setCompanies(rows);
-        // Zonder actief bedrijf valt de dialoog terug op het eerste; anders
-        // zou hij met een leeg verplicht veld openen zonder dat duidelijk is
-        // waarom er niets aangemaakt kan worden.
-        setCompany((prev) => prev || rows[0]?.name || "");
-      })
-      .catch(() => { /* het bedrijfsveld blijft leeg en meldt zich via de validatie */ });
-
     fetchList<{ name: string }>("Opportunity Type", { fields: ["name"], limit_page_length: 0 })
       .then((rows) => { if (!cancelled) setOpportunityTypes(rows.map((r) => r.name)); })
       .catch(() => { /* zonder lijst blijft "Sales" staan; die bestaat standaard */ });
@@ -358,6 +342,12 @@ export default function CreateLeadDialog({ message, intent, customers, onClose, 
             <label className="block">
               {label("y_next.lead_owner_company")}
               <select value={company} onChange={(e) => setCompany(e.target.value)} className={fieldClass("company")}>
+                {/* Zolang de lijst nog binnenkomt heeft `company` al de
+                    opgeloste waarde; zonder deze regel zou de select leeg
+                    staan terwijl er wél een bedrijf gekozen is. */}
+                {!companies.some((c) => c.name === company) && (
+                  <option value={company}>{company || t("common.loading")}</option>
+                )}
                 {companies.map((c) => <option key={c.name} value={c.name}>{c.company_name || c.name}</option>)}
               </select>
             </label>

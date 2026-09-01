@@ -19,7 +19,7 @@ import {
   Trash2, FolderKanban, ChevronDown, ExternalLink, Zap,
   CheckCheck, Undo2,
   X, Send, RefreshCw, Bold, Italic, Underline,
-  CheckSquare, FileBarChart, Receipt, User, Plus, Check, UserPlus,
+  CheckSquare, FileBarChart, FileText, Receipt, User, Plus, Check, UserPlus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
@@ -48,6 +48,8 @@ import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
+import CreateQuotationDialog from "../components/CreateQuotationDialog";
+import QuoteActionButton from "../components/QuoteActionButton";
 import AddRelationDialog from "../components/AddRelationDialog";
 import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
 import {
@@ -60,6 +62,7 @@ import {
   type MailIntentContext,
 } from "../lib/mail-intent";
 import { fetchMailIntentContext } from "../lib/lead";
+import { decideQuoteAction, type QuoteParty } from "../lib/mail-quote-actions";
 import {
   dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
 } from "../lib/mail-suggestions";
@@ -1244,8 +1247,12 @@ function ErpNextMailView({ name }: { name: string }) {
   const [dismissed, setDismissed] = useState(() => readDismissedMailSuggestions());
   const [bookingOpen, setBookingOpen] = useState(false);
   const [leadOpen, setLeadOpen] = useState(false);
+  /** Open staat de offertedialoog, met de partij die vaststaat. */
+  const [quoteParty, setQuoteParty] = useState<QuoteParty | null>(null);
   const [booked, setBooked] = useState<BookingResult | null>(null);
   const [created, setCreated] = useState<{ doctype: "Lead" | "Opportunity"; result: BookingResult } | null>(null);
+  /** Melding na een aangemaakte concept-offerte. */
+  const [quoteCreated, setQuoteCreated] = useState<BookingResult | null>(null);
   /**
    * Lokale spiegel van de koppeling, zodat de chip meteen bijwerkt zonder de
    * hele Communication opnieuw op te halen.
@@ -1296,7 +1303,7 @@ function ErpNextMailView({ name }: { name: string }) {
     function onKeyDown(e: KeyboardEvent) {
       const action = resolveMailShortcut(e, {
         editing: isEditableTarget(e.target as HTMLElement | null),
-        dialogOpen: bookingOpen || leadOpen || relationOpen,
+        dialogOpen: bookingOpen || leadOpen || relationOpen || quoteParty !== null,
         composing: false,
         hasTargets: Boolean(name),
         inTrash: false,
@@ -1452,6 +1459,33 @@ function ErpNextMailView({ name }: { name: string }) {
     return guess;
   }, [doc, body, intentCtx, dismissed, reference, name, herkenningAan]);
 
+  /**
+   * De offerte-actie — exact dezelfde beslisregel als in `Webmail.tsx`, uit
+   * `mail-quote-actions.ts`. Dat is het hele punt van die module: de popout en
+   * de webmail tonen dezelfde balk en mogen niet uit elkaar lopen.
+   */
+  const quoteAction = useMemo(() => {
+    if (!doc) return decideQuoteAction({ intentKind: "none", direction: "received" });
+    const facts = classifySender(doc.sender || "", intentCtx);
+    return decideQuoteAction({
+      intentKind: intent?.kind ?? "none",
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+      ...(facts.customer ? { customer: facts.customer } : {}),
+      ...(relationExisting?.lead ? { lead: relationExisting.lead } : {}),
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+    });
+  }, [doc, intentCtx, intent, relationExisting, reference]);
+
+  /**
+   * Klik op "Offerte maken" terwijl er nog geen klant of lead is: eerst de
+   * partij vastleggen (leaddialoog bij een herkende lead, anders de
+   * relatiedialoog), daarna biedt de melding de offerte aan.
+   */
+  const handleQuoteNeedsParty = () => {
+    if (intent && (intent.kind === "lead" || intent.kind === "quote-request")) setLeadOpen(true);
+    else setRelationOpen(true);
+  };
+
   const projectSuggestion: ProjectSuggestion | null = useMemo(() => {
     if (!doc || projectHints.length === 0) return null;
     if (isMailSuggestionDismissed(dismissed, name, "project")) return null;
@@ -1569,6 +1603,16 @@ function ErpNextMailView({ name }: { name: string }) {
                 factuur- of leadbalk, dan zit hij dáár — nooit op twee plekken
                 tegelijk. */}
             {!intent && relationSlot("slate", t("y_next.rel_add_button"))}
+            {/* Offerte maken kan óók zonder herkende bedoeling — zie
+                `Webmail.tsx` voor de afweging. Staat er wél een
+                bedoelingsbalk, dan zit de knop dáár. */}
+            {!intent && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
             {/* Afvinken kan ook hier: wie een mail in een eigen tabblad
                 openzet, werkt hem daar af — niet terug in de lijst. */}
             <button onClick={() => void toggleHandled()} disabled={handledBusy}
@@ -1629,11 +1673,30 @@ function ErpNextMailView({ name }: { name: string }) {
               {t(`y_next.lead_confidence_${intent.confidence}`)}
             </span>
             <div className="flex-1" />
+            {/* Bij een offerteaanvraag is "Offerte maken" de primaire actie en
+                zakt de Opportunity naar een tekstknop — zelfde afweging als in
+                `Webmail.tsx`. */}
+            {quoteAction.emphasis === "primary" && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
             <button onClick={() => setLeadOpen(true)}
-              className="flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700">
+              className={quoteAction.emphasis === "primary"
+                ? "inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                : "flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700"}>
               <UserPlus size={11} />
               {t(intent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
             </button>
+            {quoteAction.emphasis !== "primary" && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
             {/* Bundeling bij een onbekende afzender — dezelfde afweging als in
                 `Webmail.tsx`: de Lead blijft de primaire knop, "Alleen als
                 relatie vastleggen" staat ernaast als smallere tekstknop. */}
@@ -1698,6 +1761,35 @@ function ErpNextMailView({ name }: { name: string }) {
                 </p>
               )}
               {created.result.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+              )}
+              {created.doctype === "Lead" && (
+                <button
+                  onClick={() => { setQuoteParty({ doctype: "Lead", name: created.result.name }); setCreated(null); }}
+                  className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
+                  <FileText size={11} /> {t("y_next.quote_create_from_lead")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {quoteCreated && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t("y_next.quote_created_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/quotation/${encodeURIComponent(quoteCreated.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {quoteCreated.name}
+              </a>
+              {quoteCreated.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.lead_attachments_failed", { names: quoteCreated.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {quoteCreated.linkFailed && (
                 <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
               )}
             </div>
@@ -1783,6 +1875,26 @@ function ErpNextMailView({ name }: { name: string }) {
             setLeadOpen(false);
             setCreated({ doctype, result });
             if (!result.linkFailed) setLocalRef({ doctype, name: result.name });
+          }}
+        />
+      )}
+
+      {quoteParty && doc && (
+        <CreateQuotationDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+            ...(body?.html ? { bodyText: plainTextFromHtml(body.html) } : {}),
+          }}
+          party={quoteParty}
+          customers={intentCtx.customers}
+          onClose={() => setQuoteParty(null)}
+          onCreated={(result) => {
+            setQuoteParty(null);
+            setQuoteCreated(result);
+            if (!result.linkFailed) setLocalRef({ doctype: "Quotation", name: result.name });
           }}
         />
       )}
