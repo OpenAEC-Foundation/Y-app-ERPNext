@@ -131,6 +131,13 @@ const MAX_CONVERSATION_MESSAGES = 25;
 const DEFAULT_SEARCH_LIMIT = 50;
 /** Hoeveel Email Accounts de IMAP-mappensectie maximaal uitleest. */
 const MAX_IMAP_ACCOUNTS = 5;
+/**
+ * Hoeveel Email Accounts de postbuslijst uitleest. Ruimer dan de IMAP-sectie:
+ * daar gaat het om de eerste paar synchroniserende accounts, hier moet de
+ * eigen bus van de gebruiker érbij zitten — en die kan alfabetisch achteraan
+ * staan. Met een krappe grens verdwijnt precies die bus uit de lijst.
+ */
+const MAX_MAILBOXES = 50;
 
 /* ─── Prullenbak: Frappe's eigen `Communication.email_status` ─── */
 
@@ -229,6 +236,15 @@ function assertValidTagLabel(label: string): string {
  * zou een weggegooide mail daar blijven staan en zou "verwijderen" per map
  * iets anders betekenen.
  */
+/**
+ * Beperkt een filterlijst tot één postbus. Zonder keuze blijft de lijst zoals
+ * hij was, zodat alles blijft werken voor wie geen Email Account mag lezen.
+ */
+function withMailbox(filters: unknown[][], mailbox?: string): unknown[][] {
+  const mb = toStr(mailbox).trim();
+  return mb ? [...filters, ["email_account", "=", mb]] : filters;
+}
+
 function filtersForFolder(folderId: string): unknown[][] {
   if (folderId === MAIL_FOLDER_TRASH) {
     // Bewust géén `sent_or_received`-beperking: de prullenbak toont zowel
@@ -395,14 +411,14 @@ export async function searchMessages(
  * query levert de kandidaten (aggregates zijn niet toegestaan), daarna één
  * `get_count` per uniek project voor de ongelezen-teller.
  */
-async function listProjectFolders(): Promise<ErpMailFolder[]> {
+async function listProjectFolders(mailbox?: string): Promise<ErpMailFolder[]> {
   const rows = await fetchList<{ reference_name?: string }>("Communication", {
     fields: ["reference_name", "communication_date"],
-    filters: [
+    filters: withMailbox([
       ["communication_type", "=", "Communication"],
       NOT_TRASHED,
       ["reference_doctype", "=", "Project"],
-    ],
+    ], mailbox),
     order_by: "communication_date desc",
     limit_page_length: PROJECT_DISCOVERY_WINDOW,
   });
@@ -435,13 +451,13 @@ async function listProjectFolders(): Promise<ErpMailFolder[]> {
 
   const counts = await Promise.all(
     unique.map((project) =>
-      fetchCount("Communication", [
+      fetchCount("Communication", withMailbox([
         ["communication_type", "=", "Communication"],
         NOT_TRASHED,
         ["reference_doctype", "=", "Project"],
         ["reference_name", "=", project],
         ["seen", "=", 0],
-      ]).catch(() => 0)
+      ], mailbox)).catch(() => 0)
     )
   );
 
@@ -459,7 +475,7 @@ async function listProjectFolders(): Promise<ErpMailFolder[]> {
  * `mail/`-namespace. Anders dan projectmappen zijn dit echte documenten, dus
  * een lege map blijft bestaan tot hij expliciet verwijderd wordt.
  */
-export async function listCustomFolders(): Promise<ErpMailFolder[]> {
+export async function listCustomFolders(mailbox?: string): Promise<ErpMailFolder[]> {
   const rows = await fetchList<{ name?: string }>("Tag", {
     fields: ["name"],
     filters: [["name", "like", `${MAIL_TAG_NAME_PREFIX}%`]],
@@ -481,12 +497,12 @@ export async function listCustomFolders(): Promise<ErpMailFolder[]> {
 
   const counts = await Promise.all(
     labels.map((label) =>
-      fetchCount("Communication", [
+      fetchCount("Communication", withMailbox([
         ["communication_type", "=", "Communication"],
         NOT_TRASHED,
         ["_user_tags", "like", `%${tagNameForLabel(label)}%`],
         ["seen", "=", 0],
-      ]).catch(() => 0)
+      ], mailbox)).catch(() => 0)
     )
   );
 
@@ -594,15 +610,15 @@ export async function untagMessage(name: string, label: string): Promise<void> {
  * projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom zijn
  * teller; de Prullenbak telt zijn eigen ongelezen berichten.
  */
-export async function listVirtualFolders(): Promise<ErpMailFolder[]> {
+export async function listVirtualFolders(mailbox?: string): Promise<ErpMailFolder[]> {
   const [unseen, trashUnseen, customFolders, projectFolders] = await Promise.all([
-    unseenCount().catch(() => 0),
-    fetchCount("Communication", [
+    unseenCount(mailbox).catch(() => 0),
+    fetchCount("Communication", withMailbox([
       ...filtersForFolder(MAIL_FOLDER_TRASH),
       ["seen", "=", 0],
-    ]).catch(() => 0),
-    listCustomFolders().catch(() => [] as ErpMailFolder[]),
-    listProjectFolders().catch(() => [] as ErpMailFolder[]),
+    ], mailbox)).catch(() => 0),
+    listCustomFolders(mailbox).catch(() => [] as ErpMailFolder[]),
+    listProjectFolders(mailbox).catch(() => [] as ErpMailFolder[]),
   ]);
   return [
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
@@ -662,7 +678,7 @@ export async function listMailboxes(): Promise<ErpMailbox[]> {
       }>("Email Account", {
         fields: ["name", "email_id", "enable_incoming", "enable_outgoing"],
         order_by: "name asc",
-        limit_page_length: MAX_IMAP_ACCOUNTS,
+        limit_page_length: MAX_MAILBOXES,
       }),
     ]);
     const me = toStr(user).toLowerCase();
@@ -1116,8 +1132,8 @@ export async function sendMail(input: {
 }
 
 /** Badge-teller: ongelezen ontvangen e-mail. */
-export async function unseenCount(): Promise<number> {
-  return fetchCount("Communication", filtersForFolder(MAIL_FOLDER_UNREAD));
+export async function unseenCount(mailbox?: string): Promise<number> {
+  return fetchCount("Communication", withMailbox(filtersForFolder(MAIL_FOLDER_UNREAD), mailbox));
 }
 
 /**

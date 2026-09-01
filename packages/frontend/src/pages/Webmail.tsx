@@ -3915,18 +3915,34 @@ function ErpNextWebmail() {
     // komt hier [] uit en verdwijnt de kiezer — de lijst toont dan gewoon
     // alles wat de gebruiker mag zien.
     listMailboxes()
-      .then((rows) => { if (!cancelled) setMailboxes(rows); })
-      .catch(() => { /* de kiezer is optioneel */ });
+      .then((rows) => {
+        if (cancelled) return;
+        setMailboxes(rows);
+        // Tabbladen tonen één bus tegelijk. `listMailboxes` zet de eigen bus
+        // vooraan, dus die staat open zodra de pagina klaar is.
+        if (rows.length > 0) setMailbox((prev) => prev || rows[0].name);
+      })
+      .catch(() => { /* de tabbladen zijn optioneel */ });
     return () => { cancelled = true; };
   }, []);
 
+  // De tellers horen bij het open tabblad: "Postvak IN 475" naast een lijst
+  // van 35 berichten leest als een fout. `mailboxRef` in plaats van `mailbox`
+  // houdt de callback stabiel, zodat de poll-timer niet elke wissel herstart;
+  // het effect eronder trapt hem af zodra de postbus verandert.
   const refreshFolders = useCallback(() => {
-    listVirtualFolders()
+    listVirtualFolders(mailboxRef.current)
       .then(setFolders)
       .catch(() => { /* mappen zijn afgeleid — de lijst zelf blijft werken */ });
   }, []);
 
-  useEffect(() => { refreshFolders(); }, [refreshFolders]);
+  useEffect(() => {
+    // Ref vóór de aanroep: dit effect staat boven het map-/zoekeffect dat de
+    // ref normaal bijwerkt, dus zonder deze regel ververst de eerste ronde na
+    // een wissel nog met de vorige postbus.
+    mailboxRef.current = mailbox;
+    refreshFolders();
+  }, [refreshFolders, mailbox]);
 
   /**
    * Van map wisselen. Eén helper in plaats van vier losse `setActiveFolder`-
@@ -3941,6 +3957,20 @@ function ErpNextWebmail() {
     setThread([]);
     setChecked(new Set());
     lastClickedRef.current = null;
+  }, []);
+
+  /** Van postbus wisselen. Dezelfde opruiming als bij een mapwissel: het
+   *  geopende bericht hoort niet bij de bus waar je nu naar kijkt. */
+  const switchMailbox = useCallback((name: string) => {
+    setMailbox((prev) => {
+      if (prev === name) return prev;
+      setSelected(null);
+      setBody(null);
+      setThread([]);
+      setChecked(new Set());
+      lastClickedRef.current = null;
+      return name;
+    });
   }, []);
 
   // Zoekterm ontdubbelen: zoeken is een servervraag over álle mappen heen.
@@ -4740,34 +4770,33 @@ function ErpNextWebmail() {
   };
 
   /**
-   * Postbuskiezer. Verschijnt pas bij meer dan één postbus — met alleen een
-   * eigen adres valt er niets te kiezen en kost de kop alleen ruimte.
+   * Tabbladen per postbus, bovenin. Bewust géén samengevoegde weergave: elke
+   * bus is zijn eigen lijst, zoals je in een mailprogramma per account kijkt.
+   * Bij één bus valt er niets te kiezen en blijft de strip weg.
    */
-  const mailboxPane = mailboxes.length > 1 ? (
-    <div className="px-2 pt-2 pb-1 border-b border-slate-200">
-      <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
-        {t("y_next.mail_mailboxes_section")}
-      </div>
-      {[{ name: "", emailId: t("y_next.mail_mailbox_all"), own: false }, ...mailboxes].map((m) => {
+  const mailboxTabs = mailboxes.length > 1 ? (
+    <div
+      role="tablist"
+      aria-label={t("y_next.mail_mailboxes_section")}
+      className="flex items-end gap-1 px-3 pt-1.5 bg-white border-b border-slate-200 flex-shrink-0 overflow-x-auto"
+    >
+      {mailboxes.map((m) => {
         const active = mailbox === m.name;
         return (
           <button
-            key={m.name || "__all__"}
-            onClick={() => {
-              if (m.name === mailbox) return;
-              setMailbox(m.name);
-              setSelected(null);
-              setBody(null);
-              setThread([]);
-              setChecked(new Set());
-            }}
+            key={m.name}
+            role="tab"
+            aria-selected={active}
+            onClick={() => switchMailbox(m.name)}
             title={m.emailId}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg cursor-pointer transition-colors ${
-              active ? "bg-blue-100 text-blue-700 font-semibold" : "text-slate-600 hover:bg-slate-100"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-t-lg border border-b-0 cursor-pointer transition-colors ${
+              active
+                ? "bg-slate-100 border-slate-200 text-blue-700 font-semibold"
+                : "border-transparent text-slate-500 hover:bg-slate-50"
             }`}
           >
             <AtSign size={12} className={active ? "text-blue-600" : "text-slate-400"} />
-            <span className="truncate flex-1 text-left">{m.emailId}</span>
+            {m.emailId}
           </button>
         );
       })}
@@ -4776,7 +4805,6 @@ function ErpNextWebmail() {
 
   const folderPane = (
     <>
-      {mailboxPane}
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {fixedFolders.map(renderFolderButton)}
 
@@ -4864,6 +4892,7 @@ function ErpNextWebmail() {
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
+      {(!isMobile || mobilePane === "list") && mailboxTabs}
       {/* Ribbon */}
       {(!isMobile || mobilePane === "list") && (
         <div className="flex items-center gap-1 px-3 py-1.5 bg-white border-b border-slate-200 flex-shrink-0">

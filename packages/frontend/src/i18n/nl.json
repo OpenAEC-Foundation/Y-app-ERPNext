@@ -2576,7 +2576,6 @@
   "y_next.mail_delete_forever": "Definitief verwijderen",
   "y_next.mail_no_delete_permission": "Geen rechten om e-mail definitief te verwijderen — vraag je beheerder of draai de provisioning",
   "y_next.mail_mailboxes_section": "Postbussen",
-  "y_next.mail_mailbox_all": "Alle postbussen",
   "y_next.mail_imap_folders_section": "IMAP-mappen",
   "y_next.mail_imap_folder_hint": "Gesynchroniseerd vanuit het Email Account \"{{account}}\"",
   "y_next.mail_imap_folders_note": "Ter informatie: dit zijn de mappen die ERPNext van de mailserver ophaalt. De opgehaalde berichten onthouden hun bronmap niet, dus er kan niet per IMAP-map gefilterd worden."
