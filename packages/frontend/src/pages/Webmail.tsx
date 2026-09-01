@@ -101,7 +101,7 @@ import {
   projectOfFolder, searchMessages,
   moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
   deleteForever, bulkDeleteForever, listImapFolders,
-  bulkMarkRead, bulkMarkUnread, getConversation, getSignature, listMailboxes,
+  bulkMarkRead, bulkMarkUnread, getConversation, listMailboxes,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
   unseenCount,
   MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
@@ -112,6 +112,7 @@ import {
   isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
 import { getFileUrl } from "../lib/erpnext";
+import { ondertekeningVoor } from "../lib/mail-signature-erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
 import CreateFolderModal from "../components/mail/CreateFolderModal";
@@ -3764,6 +3765,14 @@ interface ErpDraft {
   subject: string;
   /** Wat de gebruiker typt (platte tekst; wordt bij verzenden HTML). */
   body: string;
+  /** Email Account waarvandaan verstuurd wordt (docname). */
+  from: string;
+  /**
+   * De ondertekening zoals hij in dit concept staat. Onderdeel van het
+   * concept en niet van de app-status, want de gebruiker mag hem aanpassen of
+   * weggooien zonder dat dat de volgende mail beïnvloedt.
+   */
+  signature: string;
   /** Geciteerde originele mail (HTML) — komt onder de nieuwe tekst. */
   quoteHtml: string;
   /** Leesbare "Op <datum> schreef <naam>"-regel bij het citaat. */
@@ -3819,7 +3828,6 @@ function ErpNextWebmail() {
 
   const [setupOk, setSetupOk] = useState<boolean | null>(null);
   const [selfEmail, setSelfEmail] = useState("");
-  const [signature, setSignature] = useState("");
 
   const [folders, setFolders] = useState<ErpMailFolder[]>([]);
   const [activeFolder, setActiveFolder] = useState<string>(MAIL_FOLDER_INBOX);
@@ -3950,6 +3958,44 @@ function ErpNextWebmail() {
    * selectie horen mee te resetten. Vergeet je dat laatste, dan verwijdert de
    * bulkbalk berichten uit een map waar je niet meer naar kijkt.
    */
+  /** Het e-mailadres achter een Email Account-docname. */
+  const adresVan = useCallback(
+    (naam: string) => mailboxes.find((m) => m.name === naam)?.emailId ?? "",
+    [mailboxes]);
+
+  /**
+   * Vanuit welke postbus een nieuw concept vertrekt: die van het tabblad waar
+   * je in kijkt. Antwoord je op een mail bij info@, dan gaat het antwoord ook
+   * vanaf info@ — en met de keuzelijst in het concept kun je dat omzetten
+   * naar je eigen adres.
+   */
+  const standaardAfzender = useCallback(
+    () => mailbox || mailboxes.find((m) => m.own)?.name || mailboxes[0]?.name || "",
+    [mailbox, mailboxes]);
+
+  /**
+   * De ondertekening hoort bij de afzender, dus hij wordt opnieuw opgehaald
+   * zodra die verandert. Vers uit ERPNext: een gewijzigd telefoonnummer of
+   * een nieuwe profielfoto staat er meteen in.
+   */
+  const sigVoorRef = useRef("");
+  const draftFrom = draft?.from ?? "";
+  const laadOndertekening = useCallback((from: string) => {
+    void ondertekeningVoor(adresVan(from), from || undefined)
+      .then((html) => setDraft((prev) => (prev && prev.from === from ? { ...prev, signature: html } : prev)))
+      .catch(() => { /* zonder ondertekening kun je nog steeds mailen */ });
+  }, [adresVan]);
+
+  useEffect(() => {
+    if (!draft) { sigVoorRef.current = ""; return; }
+    if (sigVoorRef.current === draftFrom) return;
+    sigVoorRef.current = draftFrom;
+    laadOndertekening(draftFrom);
+    // `draft` staat er bewust niet bij: dit mag niet opnieuw draaien bij elke
+    // toetsaanslag in het concept.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftFrom, Boolean(draft), laadOndertekening]);
+
   const switchFolder = useCallback((id: string) => {
     setActiveFolder(id);
     setSelected(null);
@@ -4060,20 +4106,6 @@ function ErpNextWebmail() {
     }
     void loadList(activeFolder, "");
   }, [activeFolder, search, mailbox, loadList]);
-
-  /**
-   * Handtekening. Volgt de gekozen postbus: wie vanuit info@ antwoordt, hoort
-   * de ondertekening van info@ te krijgen en niet die van zijn eigen adres.
-   * Zonder keuze pakt de adapter de eigen postbus, en anders het standaard
-   * uitgaande account.
-   */
-  useEffect(() => {
-    let cancelled = false;
-    getSignature(mailbox || undefined)
-      .then((sig) => { if (!cancelled) setSignature(sig); })
-      .catch(() => { /* mail zonder handtekening is geen fout */ });
-    return () => { cancelled = true; };
-  }, [mailbox]);
 
   /** Ververs de zichtbare lijst op de huidige diepte, zonder spinner. */
   const silentReload = useCallback(() => {
@@ -4554,6 +4586,7 @@ function ErpNextWebmail() {
   function openCompose() {
     setDraft({
       mode: "new", to: "", cc: "", bcc: "", subject: "", body: "",
+      from: standaardAfzender(), signature: "",
       quoteHtml: "", quoteLabel: "",
       reference: folderReference(),
       files: [],
@@ -4578,6 +4611,8 @@ function ErpNextWebmail() {
       bcc: "",
       subject: prefixSubject(msg.subject, "Re"),
       body: "",
+      from: standaardAfzender(),
+      signature: "",
       quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
       quoteLabel: label,
       inReplyTo: msg.name,
@@ -4610,6 +4645,8 @@ function ErpNextWebmail() {
       body: "",
       quoteHtml: `<p>${textBodyToHtml(label)}</p>${attachLine}${body?.html || ""}`,
       quoteLabel: label,
+      from: standaardAfzender(),
+      signature: "",
       reference: msg.reference,
       files: [],
     });
@@ -4621,10 +4658,11 @@ function ErpNextWebmail() {
     if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
     setSending(true);
     setToast(t("webmail.message_sending"));
-    // De handtekening zit niet in het tekstvak (dat is platte tekst, de
-    // handtekening is HTML) maar wordt hier onder de getypte tekst gezet —
-    // vóór het citaat, zoals elke mailclient doet.
-    const typed = appendSignature(textBodyToHtml(draft.body), signature);
+    // De handtekening staat als los, bewerkbaar blok in het concept (het
+    // tekstvak zelf is platte tekst) en komt hier onder de getypte tekst —
+    // vóór het citaat, zoals elke mailclient doet. Leeggemaakt door de
+    // gebruiker betekent: geen handtekening.
+    const typed = appendSignature(textBodyToHtml(draft.body), draft.signature);
     const html = draft.quoteHtml
       ? `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${draft.quoteHtml}</blockquote>`
       : typed;
@@ -4638,6 +4676,7 @@ function ErpNextWebmail() {
         attachments: draft.files.length > 0 ? draft.files : undefined,
         inReplyTo: draft.inReplyTo,
         reference: draft.reference,
+        sender: adresVan(draft.from) || undefined,
       });
       setDraft(null);
       setToast(t("webmail.message_sent"));
@@ -5216,8 +5255,9 @@ function ErpNextWebmail() {
               <ErpComposePane
                 draft={draft}
                 sending={sending}
-                hasSignature={Boolean(signature)}
+                mailboxes={mailboxes}
                 onChange={setDraft}
+                onRestoreSignature={() => laadOndertekening(draft.from)}
                 onSend={() => void handleSend()}
                 onClose={() => setDraft(null)}
               />
@@ -5390,11 +5430,12 @@ function ErpNextWebmail() {
  * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
  * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
  */
-function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClose }: {
+function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignature, onSend, onClose }: {
   draft: ErpDraft;
   sending: boolean;
-  hasSignature: boolean;
+  mailboxes: ErpMailbox[];
   onChange: (next: ErpDraft) => void;
+  onRestoreSignature: () => void;
   onSend: () => void;
   onClose: () => void;
 }) {
@@ -5403,6 +5444,25 @@ function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClos
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
   const set = <K extends keyof ErpDraft>(key: K, value: ErpDraft[K]) => onChange({ ...draft, [key]: value });
+
+  /**
+   * De ondertekening is echte, bewerkbare inhoud in een contentEditable — geen
+   * blok dat er bij het verzenden ongezien aan geplakt wordt. Daarom zetten we
+   * de HTML via een ref en niet via React: React zou het veld bij elke
+   * toetsaanslag elders in het concept opnieuw opbouwen en de cursor (en de
+   * aanpassingen) kwijtraken. `laatstGezet` onthoudt wat er in het veld staat,
+   * zodat we alleen schrijven als de bron werkelijk veranderde — bij een nieuwe
+   * afzender bijvoorbeeld.
+   */
+  const sigRef = useRef<HTMLDivElement>(null);
+  const laatstGezet = useRef<string | null>(null);
+  useEffect(() => {
+    const el = sigRef.current;
+    if (!el) { laatstGezet.current = null; return; }
+    if (laatstGezet.current === draft.signature) return;
+    laatstGezet.current = draft.signature;
+    el.innerHTML = draft.signature;
+  }, [draft.signature]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -5420,6 +5480,17 @@ function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClos
       </div>
 
       <div className="px-4 py-2 space-y-1.5 border-b border-slate-200 flex-shrink-0">
+        {mailboxes.length > 1 && (
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-[11px] text-slate-400">{t("y_next.mail_from_label")}</span>
+            <select value={draft.from} onChange={(e) => set("from", e.target.value)}
+              className="flex-1 px-2 py-1 text-xs bg-transparent border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400 cursor-pointer">
+              {mailboxes.map((m) => (
+                <option key={m.name} value={m.name}>{m.emailId}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="flex items-center gap-2">
           <span className="w-16 text-[11px] text-slate-400">{t("webmail.to_label")}</span>
           <input value={draft.to} onChange={(e) => set("to", e.target.value)}
@@ -5455,11 +5526,38 @@ function ErpComposePane({ draft, sending, hasSignature, onChange, onSend, onClos
         placeholder={t("webmail.editor_placeholder")}
         className="flex-1 min-h-0 w-full px-4 py-3 text-sm text-slate-800 resize-none focus:outline-none" />
 
-      {hasSignature && (
-        <p className="px-4 pb-1 text-[11px] text-slate-400 flex-shrink-0">
-          {t("y_next.mail_signature_appended")}
-        </p>
-      )}
+      <div className="px-4 pb-2 flex-shrink-0">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] uppercase tracking-wide text-slate-400">
+            {t("y_next.mail_signature_label")}
+          </span>
+          {draft.signature ? (
+            <button type="button" onClick={() => set("signature", "")}
+              title={t("y_next.mail_signature_remove")}
+              className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 cursor-pointer">
+              <Trash2 size={11} />
+            </button>
+          ) : (
+            <button type="button" onClick={onRestoreSignature}
+              className="text-[11px] text-blue-600 hover:underline cursor-pointer">
+              {t("y_next.mail_signature_add")}
+            </button>
+          )}
+        </div>
+        {draft.signature && (
+          <div
+            ref={sigRef}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={(e) => {
+              const html = e.currentTarget.innerHTML;
+              laatstGezet.current = html;
+              set("signature", html);
+            }}
+            className="max-h-44 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs focus:outline-none focus:border-blue-400 focus:bg-white"
+          />
+        )}
+      </div>
 
       {draft.quoteLabel && (
         <div className="px-4 pb-2 text-[11px] text-slate-400 flex items-start gap-1 flex-shrink-0">

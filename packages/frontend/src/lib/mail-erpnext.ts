@@ -1087,6 +1087,13 @@ export async function sendMail(input: {
   attachments?: File[];
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
+  /**
+   * Adres waarvandaan verstuurd wordt. Frappe zoekt het bijbehorende Email
+   * Account op en verstuurt via dat account; zonder waarde pakt het het
+   * standaard uitgaande account. Zo kun je een mail die bij info@ binnenkwam
+   * beantwoorden vanaf je eigen adres, of andersom.
+   */
+  sender?: string;
 }): Promise<{ name: string }> {
   const refDoctype = input.reference?.doctype ?? "";
   const refName = input.reference?.name ?? "";
@@ -1109,6 +1116,7 @@ export async function sendMail(input: {
     communication_medium: "Email",
     sent_or_received: "Sent",
     attachments: fileNames,
+    ...(input.sender ? { sender: input.sender } : {}),
   })) as { name?: string } | null;
 
   const name = toStr(result?.name);
