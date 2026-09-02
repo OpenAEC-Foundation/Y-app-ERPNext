@@ -140,6 +140,71 @@ export function shortcutFor(chord: KeyChord): EditorCommandName | "link" | "plai
   }
 }
 
+/** Waar de cursor staat, voor zover Tab er iets aan heeft. */
+export interface IndentContext {
+  /** Staat de cursor in een lijstitem? Dan gaat het item een niveau diep(er). */
+  inList: boolean;
+  /** Is het blok waar de cursor in staat al ingesprongen? */
+  indented: boolean;
+}
+
+/**
+ * Wat doet Tab in het tekstvak?
+ *
+ * Tab hoort in een opsteller een *inspringing* te zijn, niet een sprong naar
+ * het volgende veld — dat is wat elke mailclient en elke tekstverwerker doet,
+ * en het is wat de gebruiker bedoelt als hij in een alinea Tab indrukt. De
+ * aanroeper hoort daarom `preventDefault()` te doen zodra hier iets uit komt.
+ *
+ * **Eén commando voor twee situaties.** Binnen een opsomming of genummerde
+ * lijst zet de browser het lijstitem met `indent` een niveau dieper (een
+ * geneste `<ul>`/`<ol>`), buiten een lijst wikkelt hij de alinea in een blok
+ * met een linkermarge. Dat is precies het onderscheid dat de gebruiker
+ * verwacht, en het is dezelfde weg als de in-/uitspringknoppen in de werkbalk
+ * — dus geen aparte tak, geen `\t` (die valt in HTML weg) en geen rij
+ * `&nbsp;`. Beide uitkomsten overleven `toEmailHtml` mét hun inspringing;
+ * daar staan tests op.
+ *
+ * **Shift+Tab kijkt wél naar de context, en daar zit een afweging.** Als
+ * Shift+Tab er altijd `outdent` van zou maken, dan vangt het tekstvak élke Tab
+ * af en is het een doodlopende straat: je komt er met het toetsenbord nooit
+ * meer uit richting Verzenden, en de enige uitweg zou Escape zijn — die het
+ * hele venster sluit. Daarom: staat de cursor in een lijst of in een al
+ * ingesprongen blok, dan springt Shift+Tab uit (dát bedoelde de gebruiker);
+ * staat hij in een gewone, niet-ingesprongen alinea, dan valt er niets uit te
+ * springen en mag de focus gewoon naar het vorige element in het venster —
+ * de werkbalk. Zo blijft het venster volledig met het toetsenbord te bedienen
+ * zonder dat Tab ooit ongevraagd wegspringt.
+ *
+ * Ctrl/Cmd/Alt erbij → niets: dat zijn de toetscombinaties waarmee de browser
+ * en het besturingssysteem van venster of tabblad wisselen.
+ */
+export function tabCommand(chord: KeyChord, ctx: IndentContext): "indent" | "outdent" | null {
+  if (chord.key !== "Tab") return null;
+  if (chord.ctrlKey || chord.metaKey || chord.altKey) return null;
+  if (!chord.shiftKey) return "indent";
+  return ctx.inList || ctx.indented ? "outdent" : null;
+}
+
+/**
+ * Nieuwe actieve knop in de werkbalk na een pijltoets. `null` = deze toets
+ * gaat niet over de werkbalk en mag doorlopen.
+ *
+ * De werkbalk is bewust **één** tab-stop (het "roving tabindex"-patroon uit
+ * de ARIA-praktijk): vijftien opmaakknoppen los in de tab-volgorde zouden
+ * betekenen dat je vijftien keer Tab moet drukken om van het onderwerp naar
+ * het tekstvak te komen. Binnen de balk stuur je met de pijltjes, rondlopend
+ * — hetzelfde als in de suggestielijst van het adresveld.
+ */
+export function toolbarRovingIndex(key: string, current: number, count: number): number | null {
+  if (count <= 0) return null;
+  if (key === "ArrowRight") return (current + 1) % count;
+  if (key === "ArrowLeft") return (current - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 /**
  * Het blokniveau van de huidige selectie, afgeleid uit wat
  * `queryCommandValue("formatBlock")` teruggeeft.

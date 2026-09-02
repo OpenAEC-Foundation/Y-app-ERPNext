@@ -472,7 +472,14 @@ const EMAIL_TAG_STYLES: Record<string, string> = {
   ul: "margin:0 0 10px 0;padding-left:24px",
   ol: "margin:0 0 10px 0;padding-left:24px",
   li: "margin:0 0 4px 0",
-  blockquote: "margin:0 0 10px 0;padding:0 0 0 12px;border-left:2px solid #cbd5e1;color:#475569",
+  // Géén `color` op een citaat, en dat is geen smaakkwestie: browsers maken
+  // van "inspringen" (Tab, of de inspringknop) óók een `<blockquote>` — met
+  // `border:none` en een linkermarge erop. De rand valt daardoor netjes weg,
+  // maar een kleur uit deze standaardstijl zou blijven staan en een gewone
+  // ingesprongen alinea grijs bij de ontvanger laten aankomen. De rand ís het
+  // citaat-signaal. Het geciteerde origineel onder een antwoord heeft zijn
+  // eigen, expliciete stijl in `buildOutgoingHtml` en blijft dus wél grijs.
+  blockquote: "margin:0 0 10px 0;padding:0 0 0 12px;border-left:2px solid #cbd5e1",
   hr: "border:0;border-top:1px solid #cbd5e1;margin:16px 0",
   a: "color:#2563eb",
   table: "border-collapse:collapse",

@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  resolveCommand, shortcutFor, normalizeBlockValue,
+  resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
   TOGGLE_STATE_COMMANDS, TEXT_COLORS,
   type EditorCommandName,
 } from "./rich-text-commands.ts";
@@ -108,4 +108,83 @@ test("TEXT_COLORS: een klein, leesbaar palet met geldige hexwaarden", () => {
   }
   const unique = new Set(TEXT_COLORS.map((c) => c.value));
   assert.equal(unique.size, TEXT_COLORS.length, "geen dubbele kleuren");
+});
+
+/* ─── Tab: inspringen in plaats van wegspringen ─── */
+
+/** Een gewone alinea: niets in een lijst, niets ingesprongen. */
+const PLAIN = { inList: false, indented: false };
+
+test("tabCommand: Tab springt in, waar de cursor ook staat", () => {
+  assert.equal(tabCommand({ key: "Tab" }, PLAIN), "indent");
+  assert.equal(tabCommand({ key: "Tab" }, { inList: true, indented: false }), "indent");
+  assert.equal(tabCommand({ key: "Tab" }, { inList: false, indented: true }), "indent");
+});
+
+test("tabCommand: Shift+Tab springt uit in een lijst en in een ingesprongen blok", () => {
+  assert.equal(tabCommand({ key: "Tab", shiftKey: true }, { inList: true, indented: false }), "outdent");
+  assert.equal(tabCommand({ key: "Tab", shiftKey: true }, { inList: false, indented: true }), "outdent");
+});
+
+test("tabCommand: Shift+Tab in een gewone alinea laat de focus gaan", () => {
+  // Er valt niets uit te springen. Zou hij hier toch `outdent` teruggeven, dan
+  // vangt het tekstvak élke Tab af en is het met het toetsenbord een
+  // doodlopende straat — de knoppen onderin zouden onbereikbaar worden.
+  assert.equal(tabCommand({ key: "Tab", shiftKey: true }, PLAIN), null);
+});
+
+test("tabCommand: dezelfde commando's als de werkbalkknoppen", () => {
+  // De belofte uit de kop: geen aparte tak voor lijst/geen lijst, en geen `	`
+  // of rij `&nbsp;` — Tab loopt door dezelfde `execCommand`-stap als de
+  // in-/uitspringknop. In een lijst zet de browser het item een niveau dieper,
+  // erbuiten wikkelt hij de alinea in een blok met een linkermarge.
+  assert.deepEqual(resolveCommand(tabCommand({ key: "Tab" }, PLAIN)!), [{ command: "indent" }]);
+  assert.deepEqual(
+    resolveCommand(tabCommand({ key: "Tab", shiftKey: true }, { inList: true, indented: false })!),
+    [{ command: "outdent" }],
+  );
+});
+
+test("tabCommand: Ctrl/Cmd/Alt+Tab blijven van de browser en het systeem", () => {
+  assert.equal(tabCommand({ key: "Tab", ctrlKey: true }, PLAIN), null);
+  assert.equal(tabCommand({ key: "Tab", metaKey: true }, PLAIN), null);
+  assert.equal(tabCommand({ key: "Tab", altKey: true }, PLAIN), null);
+  assert.equal(tabCommand({ key: "Tab", ctrlKey: true, shiftKey: true }, { inList: true, indented: true }), null);
+});
+
+test("tabCommand: andere toetsen doen hier niets", () => {
+  assert.equal(tabCommand({ key: "Escape" }, PLAIN), null);
+  assert.equal(tabCommand({ key: "Enter" }, PLAIN), null);
+  assert.equal(tabCommand({ key: "t" }, PLAIN), null);
+  // Kleine letter "tab" is geen Tab — `KeyboardEvent.key` is hoofdlettergevoelig.
+  assert.equal(tabCommand({ key: "tab" }, PLAIN), null);
+});
+
+test("shortcutFor: Tab is geen opmaak-sneltoets (die gaat via tabCommand)", () => {
+  assert.equal(shortcutFor({ key: "Tab" }), null);
+  assert.equal(shortcutFor({ key: "Tab", ctrlKey: true }), null);
+});
+
+/* ─── Werkbalk: één tab-stop, pijltjes ertussen ─── */
+
+test("toolbarRovingIndex: de pijltjes lopen rond", () => {
+  assert.equal(toolbarRovingIndex("ArrowRight", 0, 5), 1);
+  assert.equal(toolbarRovingIndex("ArrowRight", 4, 5), 0);
+  assert.equal(toolbarRovingIndex("ArrowLeft", 4, 5), 3);
+  assert.equal(toolbarRovingIndex("ArrowLeft", 0, 5), 4);
+});
+
+test("toolbarRovingIndex: Home en End springen naar de randen", () => {
+  assert.equal(toolbarRovingIndex("Home", 3, 5), 0);
+  assert.equal(toolbarRovingIndex("End", 1, 5), 4);
+});
+
+test("toolbarRovingIndex: Tab hoort hier niet — die verlaat de werkbalk", () => {
+  assert.equal(toolbarRovingIndex("Tab", 2, 5), null);
+  assert.equal(toolbarRovingIndex("ArrowDown", 2, 5), null);
+  assert.equal(toolbarRovingIndex("Enter", 2, 5), null);
+});
+
+test("toolbarRovingIndex: een lege werkbalk levert niets op", () => {
+  assert.equal(toolbarRovingIndex("ArrowRight", 0, 0), null);
 });

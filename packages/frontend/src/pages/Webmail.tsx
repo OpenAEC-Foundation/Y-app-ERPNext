@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useId, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
@@ -143,6 +143,7 @@ import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions"
 import {
   MAIL_SHORTCUT_KEYS, isEditableTarget, resolveMailShortcut,
 } from "../lib/mail-shortcuts";
+import { focusTrapAction, focusableWithin } from "../lib/focus-trap";
 import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
 import CreateLeadDialog from "../components/CreateLeadDialog";
 import CreateQuotationDialog from "../components/CreateQuotationDialog";
@@ -6892,6 +6893,32 @@ function ErpNextWebmail() {
  * Bewust een eigen, kleine component in plaats van `ComposeWindow`: die laatste
  * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
  * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
+ *
+ * ── Het toetsenbord blijft binnen het venster ────────────────────────────
+ *
+ * Het venster staat in het leespaneel, mét de berichtenlijst en de zijbalk
+ * ernaast. Tab liep daardoor het venster uit: vanuit het laatste veld stond je
+ * opeens op een mailrij erachter. Daarom een focus-val — Tab op het laatste
+ * element gaat terug naar het eerste, Shift+Tab op het eerste naar het laatste
+ * (beslisregel in `lib/focus-trap.ts`).
+ *
+ * **Escape is de ontsnappingsroute** en dat is geen detail: een focus-val
+ * zonder uitweg sluit iemand die alleen het toetsenbord gebruikt op. Escape
+ * sluit dit venster; het concept blijft daarbij bewaard (alleen "concept
+ * verwijderen" gooit weg). Haal die tak nooit weg zonder een andere uitweg
+ * terug te zetten.
+ *
+ * Twee handelingen gaan vóór de val, en allebei melden ze dat met
+ * `preventDefault()` — waarop `focusTrapAction` zich terugtrekt:
+ *
+ * - **Tab in het tekstvak** springt in; binnen een lijst zet dat het item een
+ *   niveau dieper. Shift+Tab springt weer uit — maar alléén als er iets uit te
+ *   springen valt, anders zou het tekstvak doodlopend zijn en zouden de
+ *   knoppen onderin met het toetsenbord onbereikbaar worden. Zie
+ *   `tabCommand` in `lib/rich-text-commands.ts` voor die afweging.
+ * - **Tab in Aan/Cc/Bcc met een open suggestielijst** kiest die suggestie.
+ *   Zie `RecipientField`. Pas als de lijst dicht is, doet Tab het gewone
+ *   veld-naar-veld-werk binnen de val.
  */
 /** Eén opmaak voor Aan/Cc/Bcc — ze horen er identiek uit te zien. */
 const RECIPIENT_INPUT_CLASS =
@@ -6910,6 +6937,8 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
   onDiscard: () => void;
 }) {
   const { t } = useTranslation();
+  const paneRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
@@ -6925,10 +6954,51 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
   const previewSignature = effectiveSignature(signature, draft.includeSignature);
   const hasSignature = Boolean((signature || "").trim());
 
+  /**
+   * Waar de cursor staat zodra het venster opengaat. Bij een nieuw bericht is
+   * dat het adresveld (dat moet je nog invullen); bij beantwoorden en
+   * doorsturen het tekstvak, want de adressen staan er al in. Eén keer, bij
+   * het monteren — `mode` wisselt niet terwijl je typt.
+   */
+  const startInBody = draft.mode !== "new";
+
+  /**
+   * De focus-val. Escape eerst (de uitweg), daarna de omloop.
+   *
+   * De val stuurt alleen de *randen* bij; alles daartussen doet de browser
+   * zelf, in DOM-volgorde. `focusTrapAction` laat een Tab die een kind al
+   * heeft afgehandeld (inspringen in de tekst, suggestie kiezen) met rust.
+   */
+  const handlePaneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && !e.defaultPrevented) {
+      // Sluiten bewaart het concept — daarom mag Escape dit gewoon doen.
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    // Alleen Tab kan de val in werking zetten; de rest van de beslissing ligt
+    // bij `focusTrapAction`. Deze ene vergelijking staat hier zodat er niet bij
+    // élke getikte letter door de DOM gelopen wordt.
+    if (e.key !== "Tab") return;
+    const root = paneRef.current;
+    if (!root) return;
+    const items = focusableWithin(root);
+    const action = focusTrapAction(e, {
+      index: items.indexOf(document.activeElement as HTMLElement),
+      count: items.length,
+    });
+    if (!action) return;
+    e.preventDefault();
+    (action === "first" ? items[0] : items[items.length - 1]).focus();
+  };
+
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div ref={paneRef} onKeyDown={handlePaneKeyDown}
+      role="dialog" aria-modal="true" aria-labelledby={titleId}
+      className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-        <span className="text-sm font-semibold text-slate-700">
+        <span id={titleId} className="text-sm font-semibold text-slate-700">
           {draft.mode === "forward" ? t("webmail.forward")
             : draft.mode === "replyAll" ? t("webmail.reply_all")
             : draft.mode === "new" ? t("webmail.new_message")
@@ -6961,6 +7031,7 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
               instanceId={instanceId}
               placeholder={t("webmail.recipient_placeholder")}
               inputClassName={RECIPIENT_INPUT_CLASS}
+              autoFocus={!startInBody}
             />
           </div>
           <button onClick={() => setShowCcBcc((v) => !v)}
@@ -7002,6 +7073,7 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
         placeholder={t("webmail.editor_placeholder")}
         ariaLabel={t("webmail.editor_placeholder")}
         className="flex-1 min-h-0"
+        autoFocus={startInBody}
       />
 
       {/* Handtekening zoals hij verstuurd wordt — niet een belofte dat er
@@ -7064,9 +7136,14 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
           {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
           {sending ? t("webmail.sending") : t("webmail.send")}
         </button>
-        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs hover:bg-slate-100 cursor-pointer">
+        {/* `sr-only` in plaats van `hidden`: een `display:none`-invoerveld is
+            geen tab-stop, en dan zou "Bijlage" het enige onbereikbare
+            bedieningselement in de toetsenbordcyclus zijn. Zo staat het veld
+            er wél in (en opent Enter/spatie de bestandskiezer), zonder dat het
+            zichtbaar wordt; `focus-within` tekent de rand om het label. */}
+        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs hover:bg-slate-100 cursor-pointer focus-within:ring-2 focus-within:ring-blue-400">
           <Paperclip size={13} /> {t("webmail.attachment_btn")}
-          <input type="file" multiple className="hidden"
+          <input type="file" multiple className="sr-only"
             onChange={(e) => {
               const picked = Array.from(e.target.files ?? []);
               if (picked.length > 0) onChange({ ...draft, files: [...draft.files, ...picked] });

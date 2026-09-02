@@ -166,6 +166,11 @@ export default function RecipientField({
             {suggestions.map((s, i) => (
               <li key={s.email} role="option" aria-selected={i === activeIdx}>
                 <button type="button"
+                  // Geen tab-stop: met het toetsenbord kies je een suggestie
+                  // met de pijltjes + Enter/Tab ín het invoerveld. Zonder dit
+                  // zou de focus-val van het opstelvenster (`focusableWithin`)
+                  // de open lijst als twintig extra stops meetellen.
+                  tabIndex={-1}
                   // `onMouseDown` in plaats van `onClick`: de blur van het
                   // invoerveld zou de lijst anders al weg hebben voor de klik.
                   onMouseDown={(e) => { e.preventDefault(); apply(s); }}

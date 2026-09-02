@@ -20,6 +20,10 @@
  * 3. **Plakken.** De browser plakt standaard de complete Word-/Outlook-HTML
  *    inclusief `mso-`-stijlen, `class`-namen en lege spans. Die route is hier
  *    afgesloten: we lezen het klembord zelf en plakken de opgeschoonde versie.
+ * 4. **Tab.** Standaard springt Tab uit het tekstvak naar het volgende
+ *    element; in een opsteller hoort hij *in* te springen. Zie `tabCommand`
+ *    in `lib/rich-text-commands.ts`. De werkbalk is daarbij één tab-stop
+ *    (roving tabindex) in plaats van vijftien.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -29,9 +33,9 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  resolveCommand, shortcutFor, normalizeBlockValue,
+  resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
   TOGGLE_STATE_COMMANDS, TEXT_COLORS,
-  type EditorCommandName,
+  type EditorCommandName, type IndentContext,
 } from "../../lib/rich-text-commands";
 import {
   sanitizeEditorHtml, plainTextToHtml, normalizeLinkUrl, isHtmlEmpty,
@@ -87,10 +91,22 @@ export default function RichTextEditor({
 }) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   /** Wat wij als laatste naar boven stuurden — zie punt 1 in de kop. */
   const lastEmitted = useRef<string>("");
   /** Staat er een Ctrl+Shift+V klaar? Gezet op keydown, gelezen bij het plakken. */
   const plainPaste = useRef(false);
+  /**
+   * De laatste cursorpositie ín het tekstvak.
+   *
+   * Nodig sinds de werkbalk met Tab bereikbaar is: wie met het toetsenbord op
+   * een knop staat en Enter drukt, heeft de focus niet meer in het tekstvak,
+   * en dan zou `execCommand` op niets werken. Met de muis speelt dit niet
+   * (`onMouseDown` doet `preventDefault`, de focus verhuist nooit).
+   */
+  const savedRange = useRef<Range | null>(null);
+  /** Welke werkbalkknop de tab-stop is; zie `toolbarRovingIndex`. */
+  const rovingRef = useRef(0);
   const [showColors, setShowColors] = useState(false);
   const [active, setActive] = useState<Record<string, boolean>>({});
   const [block, setBlock] = useState<"paragraph" | "heading1" | "heading2" | "quote">("paragraph");
@@ -134,8 +150,44 @@ export default function RichTextEditor({
     onChange(next);
   }, [onChange]);
 
+  /** Onthoudt waar de cursor staat, zolang die nog in het tekstvak zit. */
+  const rememberSelection = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (el.contains(range.commonAncestorContainer)) savedRange.current = range.cloneRange();
+  }, []);
+
+  /**
+   * Focus terug naar het tekstvak, mét de cursor waar hij stond.
+   *
+   * Staat de selectie al binnen het vak (de normale situatie: typen, klikken,
+   * sneltoets) dan blijft hij ongemoeid — herstellen zou de cursor dan juist
+   * terugzetten naar een oudere positie.
+   */
+  const focusEditor = useCallback((): HTMLDivElement | null => {
+    const el = editorRef.current;
+    if (!el) return null;
+    el.focus();
+    const selection = window.getSelection();
+    const inside = selection && selection.rangeCount > 0
+      && el.contains(selection.getRangeAt(0).commonAncestorContainer);
+    if (!inside && savedRange.current && selection) {
+      // Een bewaard bereik kan losgeraakt zijn van de DOM (inhoud van buiten
+      // opnieuw geladen); dan is de cursor kwijt, maar de focus niet.
+      try {
+        selection.removeAllRanges();
+        selection.addRange(savedRange.current);
+      } catch { savedRange.current = null; }
+    }
+    return el;
+  }, []);
+
   /** Welke knoppen horen op dit moment op te lichten? */
   const syncState = useCallback(() => {
+    rememberSelection();
     if (typeof document === "undefined" || !document.queryCommandState) return;
     const next: Record<string, boolean> = {};
     for (const [name, command] of Object.entries(TOGGLE_STATE_COMMANDS)) {
@@ -144,7 +196,7 @@ export default function RichTextEditor({
     setActive(next);
     try { setBlock(normalizeBlockValue(document.queryCommandValue("formatBlock") as string)); }
     catch { /* niet ondersteund */ }
-  }, []);
+  }, [rememberSelection]);
 
   /**
    * Voert een commando uit op de selectie.
@@ -155,26 +207,22 @@ export default function RichTextEditor({
    * `<span style="color:…">` uit — precies wat de mail nodig heeft.
    */
   const run = useCallback((name: EditorCommandName, arg?: string) => {
-    const el = editorRef.current;
-    if (!el) return;
-    el.focus();
+    if (!focusEditor()) return;
     try { document.execCommand("styleWithCSS", false, "true"); } catch { /* oudere browser */ }
     for (const step of resolveCommand(name, arg)) {
       try { document.execCommand(step.command, false, step.value); } catch { /* niet ondersteund */ }
     }
     emit();
     syncState();
-  }, [emit, syncState]);
+  }, [emit, focusEditor, syncState]);
 
   /** Voegt HTML in op de cursor, altijd via het filter. */
   const insertHtml = useCallback((html: string) => {
-    const el = editorRef.current;
-    if (!el) return;
-    el.focus();
+    if (!focusEditor()) return;
     try { document.execCommand("insertHTML", false, sanitizeEditorHtml(html)); }
     catch { /* niet ondersteund */ }
     emit();
-  }, [emit]);
+  }, [emit, focusEditor]);
 
   /**
    * Link maken of bijwerken.
@@ -184,9 +232,7 @@ export default function RichTextEditor({
    * Een lege invoer haalt de link weg in plaats van een lege `href` te zetten.
    */
   const editLink = useCallback(() => {
-    const el = editorRef.current;
-    if (!el) return;
-    el.focus();
+    if (!focusEditor()) return;
     const selection = window.getSelection();
     let current = "";
     let anchor: HTMLAnchorElement | null = null;
@@ -222,7 +268,31 @@ export default function RichTextEditor({
     }
     try { document.execCommand("createLink", false, url); } catch { /* niet ondersteund */ }
     emit();
-  }, [emit, insertHtml, run, t]);
+  }, [emit, focusEditor, insertHtml, run, t]);
+
+  /**
+   * Leest bij de cursor af of er iets uit te springen valt — het antwoord dat
+   * `tabCommand` nodig heeft voor Shift+Tab. Loopt van de cursor omhoog tot
+   * aan het tekstvak; een lijstitem of een blok met een linkermarge (het
+   * `<blockquote>` of `<div>` dat de browser van "inspringen" maakt) telt.
+   */
+  const indentContext = useCallback((): IndentContext => {
+    const el = editorRef.current;
+    const selection = window.getSelection();
+    const node = selection && selection.rangeCount > 0
+      ? selection.getRangeAt(0).startContainer
+      : null;
+    if (!el || !node || !el.contains(node)) return { inList: false, indented: false };
+    let inList = false;
+    let indented = false;
+    for (let cur: Node | null = node; cur && cur !== el; cur = cur.parentNode) {
+      if (!(cur instanceof HTMLElement)) continue;
+      const tag = cur.tagName.toLowerCase();
+      if (tag === "li") inList = true;
+      if (tag === "blockquote" || cur.style.marginLeft) indented = true;
+    }
+    return { inList, indented };
+  }, []);
 
   /* ─── Plakken ─── */
 
@@ -242,6 +312,17 @@ export default function RichTextEditor({
   }, [pasteFromClipboard]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Tab eerst: die is hier een inspringing, geen sprong naar het volgende
+    // veld. `preventDefault` houdt de focus in het tekstvak — de focus-val van
+    // het opstelvenster ziet aan `defaultPrevented` dat hij er vanaf moet
+    // blijven. Alleen een Shift+Tab die niets uit te springen heeft laten we
+    // door: zie de afweging in `tabCommand`.
+    const indent = tabCommand(e, indentContext());
+    if (indent) {
+      e.preventDefault();
+      run(indent);
+      return;
+    }
     const action = shortcutFor(e);
     if (!action) return;
     if (action === "plainPaste") {
@@ -255,7 +336,48 @@ export default function RichTextEditor({
     e.preventDefault();
     if (action === "link") { editLink(); return; }
     run(action);
-  }, [editLink, run]);
+  }, [editLink, indentContext, run]);
+
+  /* ─── Werkbalk: één tab-stop, pijltjes ertussen ─── */
+
+  /** De zichtbare knoppen in de balk, in DOM-volgorde. */
+  const toolbarButtons = useCallback((): HTMLButtonElement[] => {
+    const root = toolbarRef.current;
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLButtonElement>("button"))
+      // `hidden md:inline-flex` laat op een smal scherm knoppen wegvallen;
+      // die horen niet in de pijltjes-volgorde.
+      .filter((b) => !b.disabled && b.getClientRects().length > 0);
+  }, []);
+
+  /**
+   * Zet de tab-stop op de geroerde knop.
+   *
+   * `tabIndex` staat bewust **niet** in de JSX: React zou hem bij elke
+   * re-render (elke toetsaanslag verandert `active`) terugzetten en de plek in
+   * de balk kwijtraken. Doordat React het attribuut niet kent, is dit effect
+   * de enige eigenaar — en hoeft het alleen te draaien wanneer de knoppenset
+   * verandert (het kleurenpalet dat open- of dichtklapt), niet bij elke
+   * toetsaanslag: `getClientRects()` dwingt een layout af.
+   */
+  useEffect(() => {
+    const btns = toolbarButtons();
+    if (btns.length === 0) return;
+    const idx = Math.min(Math.max(rovingRef.current, 0), btns.length - 1);
+    rovingRef.current = idx;
+    btns.forEach((b, i) => { b.tabIndex = i === idx ? 0 : -1; });
+  }, [showColors, toolbarButtons]);
+
+  const handleToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const btns = toolbarButtons();
+    const current = btns.indexOf(document.activeElement as HTMLButtonElement);
+    const next = toolbarRovingIndex(e.key, current < 0 ? rovingRef.current : current, btns.length);
+    if (next === null) return;
+    e.preventDefault();
+    rovingRef.current = next;
+    btns.forEach((b, i) => { b.tabIndex = i === next ? 0 : -1; });
+    btns[next].focus();
+  };
 
   const toolButton = (btn: ToolButton) => {
     const Icon = btn.icon;
@@ -264,7 +386,7 @@ export default function RichTextEditor({
       || (btn.name === "heading2" && block === "heading2")
       || (btn.name === "quote" && block === "quote");
     return (
-      <button key={btn.name} type="button" tabIndex={-1}
+      <button key={btn.name} type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => run(btn.name)}
         title={t(btn.labelKey)}
@@ -282,7 +404,8 @@ export default function RichTextEditor({
 
   return (
     <div className={`flex flex-col min-h-0 ${className || ""}`}>
-      <div role="toolbar" aria-label={t("webmail.formatting_toolbar")}
+      <div ref={toolbarRef} role="toolbar" aria-label={t("webmail.formatting_toolbar")}
+        onKeyDown={handleToolbarKeyDown}
         className="flex items-center flex-wrap gap-0.5 px-2 py-1 border-b border-slate-200 bg-slate-50 flex-shrink-0">
         {INLINE_BUTTONS.map(toolButton)}
         {divider("d1")}
@@ -292,7 +415,7 @@ export default function RichTextEditor({
 
         {/* Tekstkleur — een klein palet in plaats van een volledige kiezer. */}
         <span className="relative inline-flex">
-          <button type="button" tabIndex={-1}
+          <button type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setShowColors((v) => !v)}
             title={t("webmail.tt_text_color")}
@@ -304,7 +427,7 @@ export default function RichTextEditor({
           {showColors && (
             <span className="absolute z-30 top-full left-0 mt-1 flex gap-1 p-1.5 rounded border border-slate-200 bg-white shadow-lg">
               {TEXT_COLORS.map((c) => (
-                <button key={c.value} type="button" tabIndex={-1}
+                <button key={c.value} type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { run("color", c.value); setShowColors(false); }}
                   title={t(c.labelKey)} aria-label={t(c.labelKey)}
@@ -316,13 +439,13 @@ export default function RichTextEditor({
         </span>
 
         {divider("d3")}
-        <button type="button" tabIndex={-1}
+        <button type="button"
           onMouseDown={(e) => e.preventDefault()} onClick={editLink}
           title={t("webmail.tt_insert_link")} aria-label={t("webmail.tt_insert_link")}
           className={`${BTN_BASE} inline-flex`}>
           <Link2 size={14} />
         </button>
-        <button type="button" tabIndex={-1}
+        <button type="button"
           onMouseDown={(e) => e.preventDefault()} onClick={() => run("unlink")}
           title={t("webmail.tt_remove_link")} aria-label={t("webmail.tt_remove_link")}
           className={`${BTN_BASE} hidden md:inline-flex`}>
@@ -330,7 +453,7 @@ export default function RichTextEditor({
         </button>
         {EXTRA_BUTTONS.map(toolButton)}
         {divider("d4")}
-        <button type="button" tabIndex={-1}
+        <button type="button"
           onMouseDown={(e) => e.preventDefault()} onClick={() => run("clearFormatting")}
           title={t("webmail.tt_clear_formatting")} aria-label={t("webmail.tt_clear_formatting")}
           className={`${BTN_BASE} inline-flex`}>
@@ -363,7 +486,7 @@ export default function RichTextEditor({
           className="h-full w-full overflow-auto px-4 py-3 text-sm text-slate-800 focus:outline-none
             [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6
             [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold
-            [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600
+            [&_blockquote]:border-l-2 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3
             [&_a]:text-blue-600 [&_a]:underline [&_hr]:my-3 [&_hr]:border-slate-300
             [&_img]:max-w-full [&_table]:border-collapse"
         />

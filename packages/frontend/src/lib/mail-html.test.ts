@@ -318,3 +318,74 @@ test("ensureHtmlBody: een concept dat al HTML is, gaat door het filter", () => {
 test("escapeHtml: de drie tekens die een tag kunnen openen", () => {
   assert.equal(escapeHtml('<a href="x">&'), "&lt;a href=\"x\"&gt;&amp;");
 });
+
+/* ─── Inspringen met Tab ─── */
+
+/*
+ * Tab in het tekstvak springt in via `execCommand("indent")` — zie
+ * `tabCommand` in `lib/rich-text-commands.ts`. Wat de browser daarvan maakt
+ * verschilt: Chrome levert (ook met `styleWithCSS` aan, live nagemeten) een
+ * `<blockquote style="margin:0 0 0 40px;border:none;padding:0">`, andere
+ * browsers een `<div>` met `margin-left`. Beide vormen worden hier getest,
+ * want als de sanitizer `margin-left` of de `<div>` zou wegfilteren, valt de
+ * inspringing bij de ontvanger stil weg — de fout die je pas in een verzonden
+ * mail ziet.
+ */
+
+test("toEmailHtml: een inspringing met margin-left overleeft", () => {
+  const out = toEmailHtml('<div style="margin-left: 40px;">ingesprongen</div>');
+  assert.match(out, /margin-left: ?40px/);
+  assert.match(out, /ingesprongen/);
+});
+
+test("toEmailHtml: de blockquote-variant van inspringen houdt zijn marge", () => {
+  const out = toEmailHtml('<blockquote style="margin: 0 0 0 40px; border: none; padding: 0px;">diep</blockquote>');
+  // Onze standaardstijl staat vóór de eigen stijl; de laatste declaratie wint,
+  // dus de inspringmarge (en het ontbreken van een citaatrand) blijft staan.
+  assert.match(out, /margin: ?0 0 0 40px/);
+  assert.match(out, /border: ?none/);
+  assert.ok(out.indexOf("margin:0 0 10px 0") < out.indexOf("margin:0 0 0 40px"));
+});
+
+test("toEmailHtml: twee niveaus inspringen stapelen", () => {
+  const out = toEmailHtml('<div style="margin-left:40px"><div style="margin-left:40px">dieper</div></div>');
+  assert.equal(out.match(/margin-left:40px/g)?.length, 2);
+});
+
+test("toEmailHtml: een lijstitem een niveau dieper blijft een geneste lijst", () => {
+  // Tab binnen een opsomming nest de lijst; zonder deze garantie zou het
+  // tweede niveau bij de ontvanger als gewone opsomming aankomen.
+  const out = toEmailHtml("<ul><li>een<ul><li>een-a</li></ul></li><li>twee</li></ul>");
+  assert.match(out, /<ul style="margin:0 0 10px 0;padding-left:24px">/);
+  assert.equal(out.match(/<ul /g)?.length, 2);
+  assert.equal(out.match(/<li /g)?.length, 3);
+  assert.match(out, /een-a/);
+});
+
+test("toEmailHtml: een geneste genummerde lijst houdt zijn inspringing", () => {
+  const out = toEmailHtml("<ol><li>een<ol><li>een-a</li></ol></li></ol>");
+  assert.equal(out.match(/<ol style="margin:0 0 10px 0;padding-left:24px">/g)?.length, 2);
+});
+
+test("sanitizeEditorHtml: de inspringing overleeft ook het herstellen van een concept", () => {
+  assert.equal(
+    sanitizeEditorHtml('<div style="margin-left: 40px;">ingesprongen</div>'),
+    '<div style="margin-left:40px">ingesprongen</div>',
+  );
+});
+
+test("toEmailHtml: een ingesprongen alinea komt niet als grijs citaat aan", () => {
+  // De standaardstijl voor `blockquote` mag geen kleur zetten: `border:none`
+  // haalt de citaatrand weg, maar een kleur zou blijven staan en van elke
+  // ingesprongen alinea grijze citaattekst maken.
+  const out = toEmailHtml('<blockquote style="margin: 0 0 0 40px; border: none; padding: 0px;">gewoon ingesprongen</blockquote>');
+  const quoteTag = out.match(/<blockquote style="([^"]*)"/)?.[1] ?? "";
+  assert.ok(!/(^|;)\s*color:/.test(quoteTag), quoteTag);
+  // De omhullende `div` zet de basiskleur; die hoort er wél te staan.
+  assert.match(out, /<div style="[^"]*color:#0f172a"/);
+});
+
+test("toEmailHtml: een echt citaat houdt zijn rand als signaal", () => {
+  const out = toEmailHtml("<blockquote>citaat</blockquote>");
+  assert.match(out, /border-left:2px solid #cbd5e1/);
+});
