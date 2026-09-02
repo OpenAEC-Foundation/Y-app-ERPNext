@@ -63,6 +63,27 @@ test("buildWebPageFields: nooit secrets in de output", () => {
   assert.doesNotMatch(JSON.stringify(fields), /token|secret|api[_-]?key/i);
 });
 
+test("buildWebPageFields: dynamic_template staat aan zodat Frappe de pagina niet cachet", () => {
+  // `dynamic_template: 1` laat WebPage.render_dynamic() `context.no_cache = 1`
+  // zetten; daardoor slaat Frappe's `cache_html` de Cache-Control-header
+  // `private,max-age=300,stale-while-revalidate=10800` over en blijft de
+  // default `no-store,...` staan. Zonder dit serveert een browser tot 3 uur
+  // na een deploy nog de vorige bundel (en het gast-CSRF-token "None").
+  const fields = buildWebPageFields({ entryJs: "index-abc123.js", cssFiles: [] });
+  assert.equal(fields.dynamic_template, 1);
+});
+
+test("buildWebPageFields: main_section is Jinja-veilig en bevat geen <!-- static -->", () => {
+  // Met dynamic_template aan gaat main_section door render_template heen. Een
+  // `{{`/`{%` zou dan een TemplateSyntaxError of een lege div kunnen geven, en
+  // `<!-- static -->` zou de no_cache-vlag juist wéér uitzetten.
+  const fields = buildWebPageFields({ entryJs: "index-abc123.js", cssFiles: ["index-def456.css"] });
+  for (const section of [fields.main_section, fields.main_section_html]) {
+    assert.doesNotMatch(section, /\{\{|\{%|\{#/);
+    assert.doesNotMatch(section, /<!--\s*static\s*-->/);
+  }
+});
+
 test("planUpsert: PUT naar het bestaande document wanneer lookup een rij bevat", () => {
   const plan = planUpsert([{ name: "y-next" }]);
   assert.equal(plan.method, "PUT");

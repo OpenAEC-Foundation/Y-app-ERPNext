@@ -1,5 +1,11 @@
 import { Fragment, useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { fetchList, fetchDocument, createDocument, getErpNextLinkUrl, isDoctypeMissing } from "../lib/erpnext";
+import { fetchList, fetchChildTable, fetchDocument, createDocument, getErpNextLinkUrl, isDoctypeMissing } from "../lib/erpnext";
+import {
+  bucketHoursByEmployeeDay,
+  bucketHoursByEmployeeWeek,
+  fetchTimesheetHourRows,
+  type TimesheetHourRow,
+} from "../lib/timesheet-hours";
 import CompanySelect from "../components/CompanySelect";
 import { useEmployees } from "../lib/DataContext";
 import { fetchShiftHoursMap, fetchShiftDayHoursMap, fetchEmployeeDayHours } from "../lib/shiftHours";
@@ -64,17 +70,6 @@ interface LeaveAllocation {
   to_date: string;
   new_leaves_allocated: number;
   total_leaves_allocated: number;
-  company: string;
-}
-
-interface TimesheetSummary {
-  name: string;
-  employee: string;
-  employee_name: string;
-  start_date: string;
-  end_date: string;
-  total_hours: number;
-  status: string;
   company: string;
 }
 
@@ -159,7 +154,9 @@ export default function Leave() {
   const [statusFilter, setStatusFilter] = useState("");
   const [company, setCompany] = useState(getActiveCompany());
   const [activeTab, setActiveTab] = useState<"kalender" | "aanvragen" | "overuren">("overuren");
-  const [timesheets, setTimesheets] = useState<TimesheetSummary[]>([]);
+  // Geboekte uren op regelniveau (zie lib/timesheet-hours.ts) — de bron voor
+  // álle "gewerkt"-getallen op deze pagina.
+  const [hourRows, setHourRows] = useState<TimesheetHourRow[]>([]);
   const [allocations, setAllocations] = useState<LeaveAllocation[]>([]);
   const [contractHoursMap, setContractHoursMap] = useState<Record<string, number>>({});
   const [missingShiftEmployees, setMissingShiftEmployees] = useState<Set<string>>(new Set());
@@ -193,15 +190,13 @@ export default function Leave() {
       ];
       if (company) allocFilters.push(["company", "=", company]);
 
-      // Note: Timesheet.company is often empty in ERPNext — don't filter on it.
-      // Employee-based filtering happens client-side via empData/filteredEmployees.
-      const tsFilters: unknown[][] = [
-        ["docstatus", "=", 1],
-        ["start_date", ">=", `${year}-01-01`],
-        ["start_date", "<=", `${year}-12-31`],
-      ];
-
-      const [list, allocData, tsData, shiftResult] = await Promise.all([
+      // Gewerkte uren komen op REGELNIVEAU binnen (`Timesheet Detail`), niet
+      // meer als `total_hours` per sheet: sinds de urenstaat per jaar loopt
+      // zou een sheettotaal volledig in de week van `start_date` (begin
+      // januari) landen. Zie lib/timesheet-hours.ts. Eén gedeelde fetch voor
+      // het hele jaar; Timesheet.company is in ERPNext vaak leeg, dus de
+      // medewerkerfiltering blijft client-side via filteredEmployees.
+      const [list, allocData, tsHourRows, shiftResult] = await Promise.all([
         fetchList<LeaveApplication>("Leave Application", {
           fields: [
             "name", "employee_name", "leave_type", "from_date", "to_date",
@@ -219,20 +214,15 @@ export default function Leave() {
           filters: allocFilters,
           limit_page_length: 500,
         }),
-        fetchList<TimesheetSummary>("Timesheet", {
-          fields: [
-            "name", "employee", "employee_name", "start_date", "end_date",
-            "total_hours", "status", "company",
-          ],
-          filters: tsFilters,
-          limit_page_length: 500,
-          order_by: "start_date asc",
-        }),
+        fetchTimesheetHourRows(
+          { from: `${year}-01-01`, to: `${year}-12-31` },
+          { fetchList, fetchChildTable }
+        ),
         fetchShiftHoursMap(),
       ]);
       setLeaves(list);
       setAllocations(allocData);
-      setTimesheets(tsData);
+      setHourRows(tsHourRows);
       // fetchList already degraded these to [] instead of throwing if the
       // doctype itself doesn't exist on this instance (no HRMS app) — check
       // that after the fact so the UI can explain *why* everything is zero.
@@ -347,6 +337,10 @@ export default function Leave() {
     const empList = allEmployees.filter((e: any) => e.status === "Active" && (!company || e.company === company));
     const approvedLeaves = leaves.filter(l => l.status === "Approved");
     const openLeaves = leaves.filter(l => l.status === "Open");
+    // Eén keer bucketen voor alle medewerkers, op de datum van elke geboekte
+    // regel — niet op de sheet-`start_date`, die bij een jaarstaat altijd
+    // begin januari is.
+    const gewerktPerWeek = bucketHoursByEmployeeWeek(hourRows);
 
     for (const emp of empList) {
       // Vakantie allocation
@@ -376,11 +370,9 @@ export default function Leave() {
 
         const weekMap = new Map<number, { gewerkt: number; verlof: number; ziekte: number }>();
 
-        for (const ts of timesheets) {
-          if (ts.employee !== emp.name) continue;
-          const week = getISOWeek(new Date(ts.start_date));
+        for (const [week, gewerkt] of gewerktPerWeek.get(emp.name) ?? []) {
           if (!weekMap.has(week)) weekMap.set(week, { gewerkt: 0, verlof: 0, ziekte: 0 });
-          weekMap.get(week)!.gewerkt += ts.total_hours;
+          weekMap.get(week)!.gewerkt += gewerkt;
         }
 
         for (const la of approvedLeaves) {
@@ -434,7 +426,7 @@ export default function Leave() {
     }
 
     return result.sort((a, b) => a.empName.localeCompare(b.empName));
-  }, [allEmployees, company, leaves, allocations, timesheets, year, lastCompletedWeek, contractHoursMap, missingShiftEmployees, workdaysMap, holidaySets]);
+  }, [allEmployees, company, leaves, allocations, hourRows, year, lastCompletedWeek, contractHoursMap, missingShiftEmployees, workdaysMap, holidaySets]);
 
   return (
     <div className="p-3 sm:p-6">
@@ -673,7 +665,7 @@ export default function Leave() {
         ) : (
           <OverurenView
             employees={filteredEmployees}
-            timesheets={timesheets}
+            hourRows={hourRows}
             leaves={leaves}
             year={year}
             company={company}
@@ -1810,9 +1802,9 @@ function CalendarView({
 /* ──────────── Overuren View ──────────── */
 /* Transposed layout: weeks = rows, employees = columns (original transposed design) */
 
-function OverurenView({ employees, timesheets, leaves, year, company: _company, contractHoursMap, missingShiftEmployees, workdaysMap, holidaySets, dayHoursMap }: {
+function OverurenView({ employees, hourRows, leaves, year, company: _company, contractHoursMap, missingShiftEmployees, workdaysMap, holidaySets, dayHoursMap }: {
   employees: { name: string; employee_name: string; company: string; date_of_joining?: string }[];
-  timesheets: TimesheetSummary[];
+  hourRows: TimesheetHourRow[];
   leaves: LeaveApplication[];
   year: number;
   company: string;
@@ -1872,10 +1864,13 @@ function OverurenView({ employees, timesheets, leaves, year, company: _company, 
       result.set(emp.name, m);
     }
 
-    for (const ts of timesheets) {
-      const week = getISOWeek(new Date(ts.start_date));
-      const b = ensure(ts.employee, week);
-      if (b) b.gewerkt += ts.total_hours;
+    // Per geboekte REGEL in de week van zijn eigen `from_time` — een jaarstaat
+    // zou anders integraal in week 1/2 landen (lib/timesheet-hours.ts).
+    for (const [employee, weeks] of bucketHoursByEmployeeWeek(hourRows)) {
+      for (const [week, gewerkt] of weeks) {
+        const b = ensure(employee, week);
+        if (b) b.gewerkt += gewerkt;
+      }
     }
 
     for (const la of leaves) {
@@ -1905,7 +1900,7 @@ function OverurenView({ employees, timesheets, leaves, year, company: _company, 
     }
 
     return result;
-  }, [employees, timesheets, leaves, year, contractHoursMap, workdaysMap, holidaySets, dayHoursMap]);
+  }, [employees, hourRows, leaves, year, contractHoursMap, workdaysMap, holidaySets, dayHoursMap]);
 
   // Get all weeks 1..lastCompletedWeek+2 (show a few ahead)
   const allWeeks = useMemo(() => {
@@ -2019,26 +2014,16 @@ function OverurenView({ employees, timesheets, leaves, year, company: _company, 
           dayName: DAY_NAMES_EN[d.getDay()],
         });
       }
-      // Gewerkte uren per medewerker per dag uit de timesheet-time_logs van deze week.
-      const tsForWeek = timesheets.filter((ts) => getISOWeek(new Date(ts.start_date)) === w);
-      const docs = await Promise.all(
-        tsForWeek.map((ts) =>
-          fetchDocument<{ employee?: string; time_logs?: { from_time?: string; hours?: number }[] }>("Timesheet", ts.name).catch(() => null),
-        ),
+      // Gewerkte uren per medewerker per dag, rechtstreeks uit de al geladen
+      // regels van dit jaar. Voorheen werd hier per weekstaat een volledig
+      // Timesheet-document opgehaald — dat selecteerde bovendien op
+      // `getISOWeek(start_date)`, waardoor een jaarstaat alleen in week 1/2
+      // meegenomen zou worden en de rest van het jaar leeg bleef. Nu nul
+      // extra requests bij het uitklappen van een week.
+      const weekDays = new Set(days.map((d) => d.iso));
+      const workedByEmpDay = bucketHoursByEmployeeDay(
+        hourRows.filter((row) => weekDays.has(row.date))
       );
-      const workedByEmpDay = new Map<string, Map<string, number>>();
-      docs.forEach((doc, i) => {
-        if (!doc) return;
-        const emp = doc.employee || tsForWeek[i].employee;
-        if (!emp) return;
-        let m = workedByEmpDay.get(emp);
-        if (!m) { m = new Map(); workedByEmpDay.set(emp, m); }
-        for (const log of doc.time_logs || []) {
-          if (!log.from_time || !log.hours) continue;
-          const day = log.from_time.includes("T") ? log.from_time.split("T")[0] : log.from_time.split(" ")[0];
-          if (day) m.set(day, (m.get(day) ?? 0) + log.hours);
-        }
-      });
       // Per medewerker per dag: gewerkt (uit time_logs) + afgeleide verlof/ziekte/feestdag/verwacht.
       const data = new Map<string, DayCell[]>();
       for (const emp of employees) {

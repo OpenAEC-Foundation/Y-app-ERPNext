@@ -135,7 +135,11 @@ const MODULE_DOCTYPE: Record<string, string> = {
   leads: "Lead",
   employees: "Employee",
   leave: "Leave Application",
-  expenses: "Travel Request",
+  // Kilometers en onkosten draaien op Y-next' eigen doctypes (zie
+  // lib/declaraties.ts). `Y Km Registratie` is het doctype waar het scherm
+  // zonder niets kan tonen; ontbreekt het, dan is het provisioningscript nog
+  // niet gedraaid en is `doctype-missing` precies de juiste uitkomst.
+  expenses: "Y Km Registratie",
   "financieel-dashboard": "GL Entry",
   ledgers: "GL Entry",
   // Het scherm draait op `Bank Transaction`, niet op GL Entry. Ontbreekt dat

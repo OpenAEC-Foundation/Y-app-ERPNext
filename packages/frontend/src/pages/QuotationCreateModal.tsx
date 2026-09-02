@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   X, Check, Send, Loader2, FileText, ExternalLink, Trash2, Plus, Mail,
@@ -7,6 +7,7 @@ import CompanySelect from "../components/CompanySelect";
 import CustomerSearchSelect, { type Customer } from "../components/CustomerSearchSelect";
 import ItemSearchSelect, { type QuotationItem } from "../components/ItemSearchSelect";
 import { createDocument, callMethod, fetchList, getErpNextLinkUrl } from "../lib/erpnext";
+import { resolveDefaultCompany } from "../lib/default-company";
 import { getActiveCompany } from "../lib/instances";
 import { useToast } from "../components/Toast";
 
@@ -36,8 +37,21 @@ export default function QuotationCreateModal({ onClose, onCreated }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
 
-  // Form state
+  // Form state. Het bedrijf is hier een *verplicht* veld (de CompanySelect
+  // staat op `includeAll={false}`), dus een lege voorkeur mag niet blijven
+  // staan: `resolveDefaultCompany()` vult 'm aan met wat ERPNext zelf als
+  // standaardbedrijf heeft. Zie `default-company.ts`.
   const [company, setCompany] = useState(() => getActiveCompany());
+  const companyTouched = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void resolveDefaultCompany().then((resolved) => {
+      if (cancelled || companyTouched.current) return;
+      setCompany((prev) => prev || resolved);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const chooseCompany = (value: string) => { companyTouched.current = true; setCompany(value); };
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [items, setItems] = useState<QuotationItem[]>([]);
   const [description, setDescription] = useState("");
@@ -185,7 +199,7 @@ export default function QuotationCreateModal({ onClose, onCreated }: Props) {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{t("quotation_create.company")}</label>
-                  <CompanySelect value={company} onChange={setCompany} includeAll={false} />
+                  <CompanySelect value={company} onChange={chooseCompany} includeAll={false} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{t("quotation_create.customer")}</label>

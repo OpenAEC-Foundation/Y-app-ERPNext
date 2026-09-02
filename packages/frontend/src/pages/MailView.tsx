@@ -17,23 +17,57 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Reply, ReplyAll, Forward, Paperclip, Loader2,
   Trash2, FolderKanban, ChevronDown, ExternalLink, Zap,
+  CheckCheck, Undo2,
   X, Send, RefreshCw, Bold, Italic, Underline,
-  CheckSquare, FileBarChart, Receipt, User, Plus, Check,
+  CheckSquare, FileBarChart, FileText, Receipt, User, Plus, Check, UserPlus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getActiveInstance, getActiveInstanceId } from "../lib/instances";
 import { readMailBody, persistMailBody } from "../lib/mail-cache-db";
-import { fetchList, fetchDocument, getFileUrl } from "../lib/erpnext";
+import { fetchList, fetchDocument, getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
-import { getMessageBody, markRead } from "../lib/mail-erpnext";
+import {
+  getMessageBody, markRead, markHandled, markUnhandled, isHandledStatus,
+} from "../lib/mail-erpnext";
+import {
+  MAIL_SHORTCUT_KEYS, isEditableTarget, resolveMailShortcut,
+} from "../lib/mail-shortcuts";
 import { getEmailProjectLinks, setEmailProjectLink, hydrateEmailProjectLinks } from "../lib/email-project-links";
 import { matchProjectFromFolder } from "../lib/project-folder-match";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
 import { MessageAttachments } from "../components/MessageAttachments";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import MailConnectionChips from "../components/mail/MailConnectionChips";
+import {
+  categoryOfDoctype, loadConnectionIndex, peekConnectionIndex,
+  type ConnectionIndex, type MailConnection,
+} from "../lib/mail-connections";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
+import { isPermissionError } from "../lib/permission-error";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
+import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import CreateLeadDialog from "../components/CreateLeadDialog";
+import CreateQuotationDialog from "../components/CreateQuotationDialog";
+import QuoteActionButton from "../components/QuoteActionButton";
+import AddRelationDialog from "../components/AddRelationDialog";
+import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
+import {
+  lookupExistingCached, primeRelationLookup, type ExistingRelation, type RelationResult,
+} from "../lib/erp-relation";
+import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
+import type { BookingResult } from "../lib/purchase-invoice";
+import {
+  classifyMailIntent, classifySender,
+  type MailIntentContext,
+} from "../lib/mail-intent";
+import { fetchMailIntentContext } from "../lib/lead";
+import { decideQuoteAction, type QuoteParty } from "../lib/mail-quote-actions";
+import {
+  dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
+} from "../lib/mail-suggestions";
+import { suggestProject, type ProjectHint, type ProjectSuggestion } from "../lib/project-suggest";
+import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
 
 interface MailAddress {
   name: string;
@@ -1179,6 +1213,10 @@ interface ErpViewDoc {
   cc?: string;
   communication_date?: string;
   seen?: number | boolean;
+  /** `Open` / `Replied` / `Closed` / `Linked` — zie `mail-erpnext.ts`. */
+  status?: string;
+  has_attachment?: number | boolean;
+  sent_or_received?: string;
   reference_doctype?: string;
   reference_name?: string;
 }
@@ -1201,6 +1239,280 @@ function ErpNextMailView({ name }: { name: string }) {
   const [popupError, setPopupError] = useState("");
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState(500);
+
+  /* ─── Mailherkenning (zelfde flow en dezelfde modules als de webmail) ─── */
+  const [intentCtx, setIntentCtx] = useState<MailIntentContext>(
+    () => ({ suppliers: [], customers: [] }),
+  );
+  const [dismissed, setDismissed] = useState(() => readDismissedMailSuggestions());
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [leadOpen, setLeadOpen] = useState(false);
+  /** Open staat de offertedialoog, met de partij die vaststaat. */
+  const [quoteParty, setQuoteParty] = useState<QuoteParty | null>(null);
+  const [booked, setBooked] = useState<BookingResult | null>(null);
+  const [created, setCreated] = useState<{ doctype: "Lead" | "Opportunity"; result: BookingResult } | null>(null);
+  /** Melding na een aangemaakte concept-offerte. */
+  const [quoteCreated, setQuoteCreated] = useState<BookingResult | null>(null);
+  /**
+   * Lokale spiegel van de koppeling, zodat de chip meteen bijwerkt zonder de
+   * hele Communication opnieuw op te halen.
+   */
+  const [localRef, setLocalRef] = useState<{ doctype: string; name: string } | null>(null);
+
+  /* ─── Afgehandeld ─── */
+  /**
+   * Lokale spiegel van `Communication.status === "Closed"`, zodat de knop
+   * meteen omslaat. `null` = nog niet geladen; daarna wint de lokale waarde
+   * over het opgehaalde document (dat wordt in deze popout niet herladen).
+   */
+  const [handledOverride, setHandledOverride] = useState<boolean | null>(null);
+  const [handledBusy, setHandledBusy] = useState(false);
+  const [handledError, setHandledError] = useState("");
+  const handled = handledOverride ?? isHandledStatus(doc?.status);
+
+  async function toggleHandled() {
+    if (!name || handledBusy) return;
+    const next = !handled;
+    setHandledBusy(true);
+    setHandledError("");
+    setHandledOverride(next);
+    try {
+      await (next ? markHandled(name) : markUnhandled(name));
+    } catch (err) {
+      // Terug naar de serverwaarheid én zeggen wat er misging: een knop die
+      // omslaat zonder dat er iets veranderde is erger dan een foutmelding.
+      setHandledOverride(!next);
+      setHandledError(isPermissionError(err)
+        ? t("y_next.mail_no_write_permission")
+        : t("y_next.mail_handled_failed"));
+    } finally {
+      setHandledBusy(false);
+    }
+  }
+
+  /* ─── Afzender → relatie (zelfde gedrag als de webmail) ─── */
+  const [relationOpen, setRelationOpen] = useState(false);
+
+  /**
+   * Sneltoets in de popout. Alleen `E` is hier van toepassing: de losse tab
+   * heeft geen lijst en geen prullenbakknop, dus Delete zou een handeling zijn
+   * zonder zichtbare tegenhanger. Dezelfde beslisregel als de webmail, zodat
+   * typen in het opstelveld of een open dialoog de toets net zo blokkeert.
+   */
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const action = resolveMailShortcut(e, {
+        editing: isEditableTarget(e.target as HTMLElement | null),
+        dialogOpen: bookingOpen || leadOpen || relationOpen || quoteParty !== null,
+        composing: false,
+        hasTargets: Boolean(name),
+        inTrash: false,
+      });
+      if (action !== "toggle-handled") return;
+      e.preventDefault();
+      void toggleHandled();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // Bewust zonder afhankelijkheden-lijst: `toggleHandled` en de
+    // dialoogstanden wisselen elke render, en een luisteraar die één render
+    // achterloopt zou de vorige mail afvinken.
+  });
+
+  const [senderRelation, setSenderRelation] = useState<
+    { email: string; found: ExistingRelation } | null
+  >(null);
+
+  /* ─── Projectsuggestie ─── */
+  const [projectHints, setProjectHints] = useState<ProjectHint[]>([]);
+  /** Het adres gaat mee in de state — zie de toelichting in `Webmail.tsx`. */
+  const [senderHistory, setSenderHistory] = useState<{ sender: string; projects: string[] }>(
+    () => ({ sender: "", projects: [] }),
+  );
+  const [projectError, setProjectError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMailIntentContext()
+      .then((ctx) => { if (!cancelled) setIntentCtx(ctx); })
+      .catch(() => { /* herkenning uit; de lezer werkt gewoon verder */ });
+    fetchProjectHints()
+      .then((rows) => { if (!cancelled) setProjectHints(rows); })
+      .catch(() => { /* geen projectsuggestie in de popout */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const sender = doc?.sender || "";
+  useEffect(() => {
+    if (!sender) return;
+    let cancelled = false;
+    fetchSenderProjectHistory(sender)
+      .then((rows) => { if (!cancelled) setSenderHistory({ sender, projects: rows }); })
+      .catch(() => { /* signaal valt weg; de andere blijven */ });
+    return () => { cancelled = true; };
+  }, [sender]);
+
+  // Gememoiseerd — zie de toelichting bij dezelfde regel in `Webmail.tsx`.
+  const senderProjects = useMemo(
+    () => (senderHistory.sender === sender ? senderHistory.projects : []),
+    [senderHistory, sender],
+  );
+
+  /* ─── Afzender → relatie: is dit adres al bekend in ERPNext? ─── */
+  /**
+   * Alleen bij ontvangen mail — bij verzonden mail ben jíj de afzender. De
+   * check loopt via `lookupExistingCached`, dus hooguit één keer per adres per
+   * sessie; de popout deelt die cache met de webmail in hetzelfde tabblad.
+   */
+  const relationSender = doc && doc.sent_or_received !== "Sent" ? sender : "";
+  useEffect(() => {
+    // Zie de toelichting bij dezelfde regel in `Webmail.tsx`.
+    if (!relationSender) return;
+    let cancelled = false;
+    lookupExistingCached(relationSender)
+      .then((found) => { if (!cancelled) setSenderRelation({ email: relationSender, found }); })
+      // Mislukt de check (rechten, netwerk), dan telt het adres als onbekend:
+      // de knop verschijnt en ERPNext blijft bij het aanmaken zelf het vangnet.
+      .catch(() => { if (!cancelled) setSenderRelation({ email: relationSender, found: {} }); });
+    return () => { cancelled = true; };
+  }, [relationSender]);
+
+  /** `null` zolang de check loopt; de actie rendert dan nog niets. */
+  const relationExisting = senderRelation?.email === relationSender ? senderRelation.found : null;
+
+  /** Zie de toelichting bij dezelfde functie in `Webmail.tsx`. */
+  const handleRelationCreated = (email: string, created: RelationResult) => {
+    const found: ExistingRelation = { contact: created.contact };
+    if (created.customer) found.customer = created.customer;
+    primeRelationLookup(email, found);
+    setSenderRelation({ email, found });
+  };
+
+  /**
+   * De relatie-actie staat altijd op precies één plek: in de actiebalk van de
+   * herkende bedoeling als die er is, anders in de chipregel onder de kop.
+   * Kleur en opschrift verschillen per plek, de rest niet.
+   */
+  const relationSlot = (tone: RelationSlotTone, label: string) => (
+    relationSender ? (
+      <SenderRelationAction
+        existing={relationExisting}
+        tone={tone}
+        label={label}
+        onAdd={() => setRelationOpen(true)}
+      />
+    ) : null
+  );
+
+  const reference = useMemo(
+    () => localRef
+      ?? (doc?.reference_doctype && doc.reference_name
+        ? { doctype: doc.reference_doctype, name: doc.reference_name }
+        : null),
+    [localRef, doc],
+  );
+  /**
+   * Alle connecties van deze mail, niet alleen `reference_*`. Dat veld is
+   * enkelvoudig, dus het toonde altijd alleen de laatst gemaakte koppeling —
+   * zie `mail-connections.ts`. De momentopname wordt hier lui geladen; hij is
+   * gedeeld met de webmail en dus in dezelfde tab meestal al warm.
+   */
+  const [connIndex, setConnIndex] = useState<ConnectionIndex | null>(() => peekConnectionIndex());
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    loadConnectionIndex()
+      .then((idx) => { if (!cancelled) setConnIndex(idx); })
+      .catch(() => { /* chips zijn context, geen blokkade */ });
+    return () => { cancelled = true; };
+  }, [name]);
+
+  const connections = useMemo<MailConnection[]>(() => {
+    if (!name) return [];
+    const out = [...(connIndex?.byMessage.get(name) ?? [])];
+    if (reference) {
+      const category = categoryOfDoctype(reference.doctype);
+      if (category && !out.some((c) => c.doctype === reference.doctype && c.name === reference.name)) {
+        out.push({ doctype: reference.doctype, name: reference.name, label: reference.name, category });
+      }
+    }
+    return out;
+  }, [name, connIndex, reference]);
+
+  const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
+
+  const intent = useMemo(() => {
+    if (!doc || !herkenningAan) return null;
+    const guess = classifyMailIntent({
+      subject: doc.subject || "",
+      sender: doc.sender || "",
+      senderName: doc.sender_full_name || "",
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      hasAttachment: Boolean(doc.has_attachment),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      mailDate: doc.communication_date,
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+    }, intentCtx);
+    if (guess.kind === "none") return null;
+    if (isMailSuggestionDismissed(dismissed, name, guess.kind)) return null;
+    return guess;
+  }, [doc, body, intentCtx, dismissed, reference, name, herkenningAan]);
+
+  /**
+   * De offerte-actie — exact dezelfde beslisregel als in `Webmail.tsx`, uit
+   * `mail-quote-actions.ts`. Dat is het hele punt van die module: de popout en
+   * de webmail tonen dezelfde balk en mogen niet uit elkaar lopen.
+   */
+  const quoteAction = useMemo(() => {
+    if (!doc) return decideQuoteAction({ intentKind: "none", direction: "received" });
+    const facts = classifySender(doc.sender || "", intentCtx);
+    return decideQuoteAction({
+      intentKind: intent?.kind ?? "none",
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+      ...(facts.customer ? { customer: facts.customer } : {}),
+      ...(relationExisting?.lead ? { lead: relationExisting.lead } : {}),
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+    });
+  }, [doc, intentCtx, intent, relationExisting, reference]);
+
+  /**
+   * Klik op "Offerte maken" terwijl er nog geen klant of lead is: eerst de
+   * partij vastleggen (leaddialoog bij een herkende lead, anders de
+   * relatiedialoog), daarna biedt de melding de offerte aan.
+   */
+  const handleQuoteNeedsParty = () => {
+    if (intent && (intent.kind === "lead" || intent.kind === "quote-request")) setLeadOpen(true);
+    else setRelationOpen(true);
+  };
+
+  const projectSuggestion: ProjectSuggestion | null = useMemo(() => {
+    if (!doc || projectHints.length === 0) return null;
+    if (isMailSuggestionDismissed(dismissed, name, "project")) return null;
+    const facts = classifySender(doc.sender || "", intentCtx);
+    return suggestProject({
+      subject: doc.subject || "",
+      sender: doc.sender || "",
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      senderProjects,
+      ...(facts.customer ? { senderCustomer: facts.customer } : {}),
+      direction: doc.sent_or_received === "Sent" ? "sent" : "received",
+      ...(reference?.doctype ? { linkedDoctype: reference.doctype } : {}),
+      intentKind: intent?.kind ?? "none",
+    }, projectHints);
+  }, [doc, body, projectHints, senderProjects, intentCtx, dismissed, reference, intent, name]);
+
+  async function handleLinkProject(project: string) {
+    setProjectError("");
+    setLocalRef({ doctype: "Project", name: project });
+    try {
+      await linkMailToProject(name, project, doc?.sender);
+    } catch {
+      setLocalRef(null);
+      setProjectError(t("y_next.proj_suggest_failed"));
+    }
+  }
 
   useEffect(() => {
     if (!name) return;
@@ -1284,12 +1596,227 @@ function ErpNextMailView({ name }: { name: string }) {
               Aan: {doc.recipients}{doc.cc ? ` · Cc: ${doc.cc}` : ""}
             </p>
           )}
-          {doc?.reference_doctype === "Project" && doc.reference_name && (
-            <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-              <FolderKanban size={11} /> {doc.reference_name}
-            </span>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <MailConnectionChips connections={connections} />
+            {/* Is er geen bedoeling herkend, dan is deze regel de actiebalk
+                van de mail en hoort de relatie-actie hier. Staat er wél een
+                factuur- of leadbalk, dan zit hij dáár — nooit op twee plekken
+                tegelijk. */}
+            {!intent && relationSlot("slate", t("y_next.rel_add_button"))}
+            {/* Offerte maken kan óók zonder herkende bedoeling — zie
+                `Webmail.tsx` voor de afweging. Staat er wél een
+                bedoelingsbalk, dan zit de knop dáár. */}
+            {!intent && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
+            {/* Afvinken kan ook hier: wie een mail in een eigen tabblad
+                openzet, werkt hem daar af — niet terug in de lijst. */}
+            <button onClick={() => void toggleHandled()} disabled={handledBusy}
+              title={t("y_next.mail_shortcut_hint", {
+                label: handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"),
+                keys: MAIL_SHORTCUT_KEYS.toggleHandled,
+              })}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-default ${
+                handled
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-slate-200 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+              }`}>
+              {handled ? <Undo2 size={11} /> : <CheckCheck size={11} />}
+              {handled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+            </button>
+          </div>
+          {handledError && (
+            <p className="mt-1 text-[11px] text-red-600">{handledError}</p>
           )}
         </div>
+
+        {intent?.kind === "purchase-invoice" && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-6 py-2">
+            <Receipt size={14} className="flex-shrink-0 text-amber-600" />
+            <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
+            <span
+              title={intent.reasons
+                .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+              {t(`y_next.pinv_confidence_${intent.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => setBookingOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700">
+              <Receipt size={11} /> {t("y_next.pinv_book")}
+            </button>
+            {relationSlot("amber", t("y_next.rel_add_button"))}
+            <button
+              onClick={() => { dismissMailSuggestion(name, "purchase-invoice"); setDismissed(readDismissedMailSuggestions()); }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
+              {t("y_next.pinv_dismiss")}
+            </button>
+          </div>
+        )}
+
+        {(intent?.kind === "lead" || intent?.kind === "quote-request") && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-6 py-2">
+            <UserPlus size={14} className="flex-shrink-0 text-violet-600" />
+            <span className="text-xs font-medium text-violet-900">
+              {t(intent.kind === "quote-request" ? "y_next.quote_banner" : "y_next.lead_banner")}
+            </span>
+            <span
+              title={intent.reasons
+                .map((r) => t(`y_next.intent_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+              {t(`y_next.lead_confidence_${intent.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            {/* Bij een offerteaanvraag is "Offerte maken" de primaire actie en
+                zakt de Opportunity naar een tekstknop — zelfde afweging als in
+                `Webmail.tsx`. */}
+            {quoteAction.emphasis === "primary" && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
+            <button onClick={() => setLeadOpen(true)}
+              className={quoteAction.emphasis === "primary"
+                ? "inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                : "flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700"}>
+              <UserPlus size={11} />
+              {t(intent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
+            </button>
+            {quoteAction.emphasis !== "primary" && (
+              <QuoteActionButton
+                decision={quoteAction}
+                onQuote={(party) => setQuoteParty(party)}
+                onNeedParty={handleQuoteNeedsParty}
+              />
+            )}
+            {/* Bundeling bij een onbekende afzender — dezelfde afweging als in
+                `Webmail.tsx`: de Lead blijft de primaire knop, "Alleen als
+                relatie vastleggen" staat ernaast als smallere tekstknop. */}
+            {relationSlot("violet", t("y_next.rel_only_relation"))}
+            <button
+              onClick={() => {
+                dismissMailSuggestion(name, intent.kind === "quote-request" ? "quote-request" : "lead");
+                setDismissed(readDismissedMailSuggestions());
+              }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-violet-800 hover:bg-violet-100">
+              {t("y_next.lead_dismiss")}
+            </button>
+          </div>
+        )}
+
+        {/* Projectsuggestie. De popout kent geen conversatie, dus hij leunt op
+            het projectnummer/de projectnaam in de mail, de historie van de
+            afzender en (als versterking) de klant. */}
+        {projectSuggestion && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-6 py-2">
+            <FolderKanban size={14} className="flex-shrink-0 text-emerald-600" />
+            <span className="text-xs text-emerald-900">
+              {t("y_next.proj_suggest_banner", {
+                project: projectHints.find((p) => p.name === projectSuggestion.project)?.projectName
+                  ?? projectSuggestion.project,
+              })}
+            </span>
+            <span
+              title={projectSuggestion.reasons
+                .map((r) => t(`y_next.proj_suggest_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                .join(" · ")}
+              className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+              {t(`y_next.proj_suggest_confidence_${projectSuggestion.confidence}`)}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => void handleLinkProject(projectSuggestion.project)}
+              className="flex cursor-pointer items-center gap-1.5 rounded bg-emerald-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-emerald-700">
+              <FolderKanban size={11} /> {t("y_next.proj_suggest_link")}
+            </button>
+            <button
+              onClick={() => { dismissMailSuggestion(name, "project"); setDismissed(readDismissedMailSuggestions()); }}
+              className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+              {t("y_next.proj_suggest_dismiss")}
+            </button>
+          </div>
+        )}
+        {projectError && <p className="border-b border-red-100 bg-red-50 px-6 py-2 text-[11px] text-red-700">{projectError}</p>}
+
+        {created && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t(created.doctype === "Opportunity" ? "y_next.lead_quote_created_ok" : "y_next.lead_created_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/${created.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(created.result.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {created.result.name}
+              </a>
+              {created.result.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.lead_attachments_failed", { names: created.result.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {created.result.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+              )}
+              {created.doctype === "Lead" && (
+                <button
+                  onClick={() => { setQuoteParty({ doctype: "Lead", name: created.result.name }); setCreated(null); }}
+                  className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
+                  <FileText size={11} /> {t("y_next.quote_create_from_lead")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {quoteCreated && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t("y_next.quote_created_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/quotation/${encodeURIComponent(quoteCreated.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {quoteCreated.name}
+              </a>
+              {quoteCreated.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.lead_attachments_failed", { names: quoteCreated.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {quoteCreated.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {booked && (
+          <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-6 py-2 text-xs text-emerald-800">
+            <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1">
+              <span>{t("y_next.pinv_booked_ok")} </span>
+              <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(booked.name)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-semibold underline hover:text-emerald-900">
+                {booked.name}
+              </a>
+              {booked.failedAttachments.length > 0 && (
+                <p className="mt-0.5 text-[11px] text-amber-700">
+                  {t("y_next.pinv_attachments_failed", { names: booked.failedAttachments.join(", ") })}
+                </p>
+              )}
+              {booked.linkFailed && (
+                <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.pinv_link_failed")}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <iframe
           ref={frameRef}
@@ -1312,6 +1839,79 @@ function ErpNextMailView({ name }: { name: string }) {
           <p className="px-6 pb-4 text-xs text-red-600">{popupError}</p>
         )}
       </div>
+
+      {bookingOpen && doc && intent?.kind === "purchase-invoice" && intent.invoice && (
+        <BookPurchaseInvoiceDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+            ...(reference?.doctype === "Project" ? { project: reference.name } : {}),
+          }}
+          guess={intent.invoice}
+          suppliers={intentCtx.suppliers as SupplierHint[]}
+          onClose={() => setBookingOpen(false)}
+          onBooked={(result) => {
+            setBookingOpen(false);
+            setBooked(result);
+            if (!result.linkFailed) setLocalRef({ doctype: "Purchase Invoice", name: result.name });
+          }}
+        />
+      )}
+
+      {leadOpen && doc && (intent?.kind === "lead" || intent?.kind === "quote-request") && (
+        <CreateLeadDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+          }}
+          intent={intent}
+          customers={intentCtx.customers}
+          onClose={() => setLeadOpen(false)}
+          onCreated={(doctype, result) => {
+            setLeadOpen(false);
+            setCreated({ doctype, result });
+            if (!result.linkFailed) setLocalRef({ doctype, name: result.name });
+          }}
+        />
+      )}
+
+      {quoteParty && doc && (
+        <CreateQuotationDialog
+          message={{
+            name,
+            subject: doc.subject || "",
+            sender: doc.sender || "",
+            date: doc.communication_date || "",
+            ...(body?.html ? { bodyText: plainTextFromHtml(body.html) } : {}),
+          }}
+          party={quoteParty}
+          customers={intentCtx.customers}
+          onClose={() => setQuoteParty(null)}
+          onCreated={(result) => {
+            setQuoteParty(null);
+            setQuoteCreated(result);
+            if (!result.linkFailed) setLocalRef({ doctype: "Quotation", name: result.name });
+          }}
+        />
+      )}
+
+      {/* De dialoog sluit zichzelf niet na succes — hij toont eerst waar het
+          terechtkwam. De chip in de balk staat op dat moment al goed. */}
+      {relationOpen && doc && relationSender && (
+        <AddRelationDialog
+          sender={{
+            email: relationSender,
+            ...(doc.sender_full_name ? { displayName: doc.sender_full_name } : {}),
+            ...(body?.html ? { bodyText: body.html } : {}),
+          }}
+          onClose={() => setRelationOpen(false)}
+          onCreated={(created) => handleRelationCreated(relationSender, created)}
+        />
+      )}
     </div>
   );
 }

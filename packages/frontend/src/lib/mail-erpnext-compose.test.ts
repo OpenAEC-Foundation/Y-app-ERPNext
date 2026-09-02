@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 
 import {
   appendSignature,
+  buildOutgoingHtml,
   buildReplyRecipients,
+  effectiveSignature,
   extractEmail,
   formatAttachmentNames,
   isPdfName,
@@ -107,4 +109,71 @@ test("isValidFolderLabel: leeg en komma zijn de twee verboden vormen", () => {
   assert.equal(isValidFolderLabel("Klanten"), true);
   assert.equal(isValidFolderLabel("   "), false);
   assert.equal(isValidFolderLabel("Klanten, prospects"), false);
+});
+
+test("effectiveSignature: de schakelaar bepaalt wat preview én verzending zien", () => {
+  assert.equal(effectiveSignature("<p>Groet, Piet</p>", true), "<p>Groet, Piet</p>");
+  assert.equal(effectiveSignature("<p>Groet, Piet</p>", false), "");
+  // Whitespace-only telt als geen handtekening — anders toont de preview een
+  // leeg kadertje en gaat er een losse <br><br> mee de deur uit.
+  assert.equal(effectiveSignature("   \n ", true), "");
+  assert.equal(effectiveSignature("", true), "");
+});
+
+test("buildOutgoingHtml: nieuw bericht = getypte tekst plus handtekening", () => {
+  assert.equal(
+    buildOutgoingHtml({
+      bodyHtml: "<p>Hoi</p>",
+      signature: "<p>Groet, Piet</p>",
+      includeSignature: true,
+    }),
+    "<p>Hoi</p><br><br><p>Groet, Piet</p>"
+  );
+});
+
+test("buildOutgoingHtml: schakelaar uit laat de handtekening écht weg", () => {
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>Hoi</p>",
+    signature: "<p>Groet, Piet</p>",
+    includeSignature: false,
+    quoteHtml: "<p>origineel</p>",
+  });
+  assert.ok(!html.includes("Groet, Piet"));
+  assert.ok(html.startsWith("<p>Hoi</p><br><br><blockquote"));
+});
+
+test("buildOutgoingHtml: handtekening staat boven het citaat, niet eronder", () => {
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>Hoi</p>",
+    signature: "<p>Groet, Piet</p>",
+    includeSignature: true,
+    quoteHtml: "<p>origineel</p>",
+  });
+  assert.ok(html.indexOf("Groet, Piet") < html.indexOf("<blockquote"));
+  assert.ok(html.includes("<blockquote"));
+  assert.ok(html.includes("<p>origineel</p>"));
+});
+
+test("buildOutgoingHtml: nooit twee handtekeningen, ook niet bij hersamenstellen", () => {
+  const once = buildOutgoingHtml({
+    bodyHtml: "<p>Hoi</p>",
+    signature: "<p>Groet, Piet</p>",
+    includeSignature: true,
+  });
+  const twice = buildOutgoingHtml({
+    bodyHtml: once,
+    signature: "<p>Groet, Piet</p>",
+    includeSignature: true,
+  });
+  assert.equal(twice, once);
+});
+
+test("buildOutgoingHtml: leeg citaat levert geen leeg blockquote op", () => {
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>Hoi</p>",
+    signature: "",
+    includeSignature: true,
+    quoteHtml: "   ",
+  });
+  assert.equal(html, "<p>Hoi</p>");
 });

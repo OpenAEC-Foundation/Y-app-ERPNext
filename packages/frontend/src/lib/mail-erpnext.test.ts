@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invalidateCache } from "./erpnext.ts";
+import { resetSessionUserCache } from "./session.ts";
 import {
   listVirtualFolders,
   listMailboxMessages,
@@ -15,11 +16,11 @@ import {
   bulkMoveToTrash,
   bulkRestoreFromTrash,
   bulkDeleteForever,
-  listImapFolders,
   bulkMarkRead,
   bulkMarkUnread,
   getConversation,
   getSignature,
+  resetSignatureCache,
   getQueueStatusFor,
   listCustomFolders,
   createCustomFolder,
@@ -31,6 +32,13 @@ import {
   unseenCount,
   hasEnabledEmailAccount,
   MAIL_FOLDER_TRASH,
+  MAIL_FOLDER_HANDLED,
+  markHandled,
+  markUnhandled,
+  bulkMarkHandled,
+  bulkMarkUnhandled,
+  isHandledStatus,
+  filterUnhandled,
 } from "./mail-erpnext.ts";
 
 interface RecordedCall {
@@ -106,38 +114,20 @@ function countFor(url: string): number {
   const filters = filtersOf(url);
   const isTrash = filters.some((f) => Array.isArray(f) && f[0] === "email_status" && f[1] === "=");
   if (isTrash) return 3;
+  const isHandled = filters.some((f) => Array.isArray(f) && f[0] === "status" && f[1] === "=");
+  if (isHandled) return 5;
   const isProject = filters.some((f) => Array.isArray(f) && f[0] === "reference_name");
   return isProject ? 2 : 7;
 }
 
-test("listVirtualFolders: Inbox/Verzonden/Ongelezen/Prullenbak plus projectmappen, tellingen via get_count (nooit een SQL-aggregate)", async () => {
+test("listVirtualFolders: alleen de vaste mappen (projecten zijn connecties, geen mappen), tellingen via get_count (nooit een SQL-aggregate)", async () => {
+  invalidateCache("Tag");
+  await settleFetchDedup();
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/method/frappe.client.get_count")) {
       return { status: 200, body: { message: countFor(url) } };
     }
-    if (url.startsWith("/api/resource/Communication")) {
-      return {
-        status: 200,
-        body: {
-          data: [
-            { reference_name: "PROJ-0001" },
-            { reference_name: "PROJ-0002" },
-            { reference_name: "PROJ-0001" },
-          ],
-        },
-      };
-    }
-    if (url.startsWith("/api/resource/Project")) {
-      return {
-        status: 200,
-        body: {
-          data: [
-            { name: "PROJ-0001", project_name: "Kade Noord" },
-            { name: "PROJ-0002", project_name: "" },
-          ],
-        },
-      };
-    }
+    if (url.startsWith("/api/resource/Tag")) return rowsBody([]);
     throw new Error(`unexpected url: ${url}`);
   });
   try {
@@ -158,25 +148,27 @@ test("listVirtualFolders: Inbox/Verzonden/Ongelezen/Prullenbak plus projectmappe
     // De Prullenbak telt zijn eigen ongelezen berichten, niet die van INBOX.
     assert.equal(trash.unseen, 3);
 
-    const projects = folders.filter((f) => f.kind === "project");
-    assert.equal(projects.length, 2, "duplicate reference_name rows collapse to one folder each");
-    assert.equal(projects[0].id, "project:PROJ-0001");
-    assert.equal(projects[0].project, "PROJ-0001");
-    assert.equal(projects[0].label, "Kade Noord");
-    assert.equal(projects[0].unseen, 2);
-    // Project zonder project_name valt terug op de docname als label.
-    assert.equal(projects[1].label, "PROJ-0002");
+    // "Afgehandeld" telt een TOTAAL, geen ongelezen: de map bestaat per
+    // definitie uit mail die je al gezien en afgevinkt hebt.
+    const handled = folders.find((f) => f.kind === "handled");
+    assert.ok(handled);
+    assert.equal(handled.id, MAIL_FOLDER_HANDLED);
+    assert.equal(handled.unseen, 0);
+    assert.equal(handled.total, 5);
+
+    // Projecten horen sinds de connectiekolom niet meer in de mappenlijst: ze
+    // zijn een gekoppeld document, net als een klant of een inkoopfactuur.
+    assert.equal(folders.filter((f) => f.kind === "project").length, 0);
+    // ... en er wordt dus ook geen projectdiscovery meer gedaan.
+    assert.ok(!mock.calls.some((c) => c.url.startsWith("/api/resource/Project")));
 
     // Geen enkele call mag een SQL-aggregate in `fields` smokkelen (417 op v16).
     for (const call of mock.calls) {
       assert.doesNotMatch(call.url, /count%28|count\(/i);
     }
-    // De projectdiscovery vraagt om Communications met een Project-referentie.
-    const discovery = mock.calls.find((c) => c.url.startsWith("/api/resource/Communication"));
-    assert.ok(discovery);
-    assert.ok(hasFilter(discovery.url, "reference_doctype", "=", "Project"));
   } finally {
     mock.restore();
+    invalidateCache("Tag");
   }
 });
 
@@ -214,6 +206,7 @@ test("listMailboxMessages: INBOX filtert op Received en mapt Communication-velde
       cc: "piet@example.com",
       date: "2026-07-30 09:12:00",
       seen: false,
+      handled: false,
       folder: "INBOX",
       hasAttachments: true,
       inReplyTo: "COMM-0000",
@@ -565,15 +558,57 @@ test("hasEnabledEmailAccount: true bij 403 (geen leesrecht) — 'kan niet vastst
 });
 
 /*
- * De twee getSignature-tests staan bewust vóór de 404-test hieronder:
- * die markeert `Email Account` als ontbrekend DocType, en erpnext.ts houdt
- * dat voor de rest van het proces vast (geen netwerkcall meer, altijd een
- * lege lijst). Verplaatst naar achteren zouden ze stil op die cache lopen.
+ * De getSignature-tests staan bewust vóór de 404-test hieronder: die
+ * markeert `Email Account` als ontbrekend DocType, en erpnext.ts houdt dat
+ * voor de rest van het proces vast (geen netwerkcall meer, altijd een lege
+ * lijst). Verplaatst naar achteren zouden ze stil op die cache lopen.
  */
-test("getSignature: signature van het standaard uitgaande Email Account", async () => {
+/**
+ * `getSignature` onthoudt zijn antwoord voor de duur van de sessie en
+ * `session.ts` onthoudt de ingelogde user. Elke test hieronder moet dus met
+ * een schone lei beginnen, anders leest de tweede het antwoord van de eerste.
+ */
+async function resetSignatureState(): Promise<void> {
+  resetSignatureCache();
+  resetSessionUserCache();
   invalidateCache("Email Account");
+  invalidateCache("User");
   await settleFetchDedup();
+}
+
+test("getSignature: de eigen User.email_signature gaat vóór het Email Account", async () => {
+  await resetSignatureState();
   const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: { email_signature: "<p>Bjorn Fidder</p>" } } };
+    }
+    throw new Error(`Email Account had niet bevraagd mogen worden: ${url}`);
+  });
+  try {
+    assert.equal(await getSignature(), "<p>Bjorn Fidder</p>");
+    // Tweede aanroep komt uit de sessiecache — geen extra request.
+    const before = mock.calls.length;
+    assert.equal(await getSignature(), "<p>Bjorn Fidder</p>");
+    assert.equal(mock.calls.length, before);
+  } finally {
+    mock.restore();
+    await resetSignatureState();
+  }
+});
+
+test("getSignature: valt terug op het standaard uitgaande Email Account zonder eigen handtekening", async () => {
+  await resetSignatureState();
+  const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    // Lege `email_signature` op de eigen User → doorlopen naar Email Account.
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: { email_signature: "" } } };
+    }
     assert.ok(hasFilter(url, "default_outgoing", "=", 1));
     return rowsBody([{ name: "OpenAEC Mail", signature: "<p>Met vriendelijke groet</p>" }]);
   });
@@ -581,105 +616,63 @@ test("getSignature: signature van het standaard uitgaande Email Account", async 
     assert.equal(await getSignature(), "<p>Met vriendelijke groet</p>");
   } finally {
     mock.restore();
-    invalidateCache("Email Account");
+    await resetSignatureState();
+  }
+});
+
+test("getSignature: 403 op de eigen User is geen fout — de terugval blijft werken", async () => {
+  await resetSignatureState();
+  const mock = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 403, body: { exception: "No permission" } };
+    }
+    return rowsBody([{ name: "OpenAEC Mail", signature: "<p>Groet</p>" }]);
+  });
+  try {
+    assert.equal(await getSignature(), "<p>Groet</p>");
+  } finally {
+    mock.restore();
+    await resetSignatureState();
   }
 });
 
 test("getSignature: lege string bij 403 en bij een account zonder handtekening", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
+  await resetSignatureState();
   const denied = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
   try {
     assert.equal(await getSignature(), "");
   } finally {
     denied.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
+    await resetSignatureState();
   }
 
-  const empty = installFetchMock(() => rowsBody([{ name: "OpenAEC Mail" }]));
+  const empty = installFetchMock((url) => {
+    if (url.includes("frappe.auth.get_logged_user")) {
+      return { status: 200, body: { message: "bjorn@example.com" } };
+    }
+    if (url.startsWith("/api/resource/User/")) {
+      return { status: 200, body: { data: {} } };
+    }
+    return rowsBody([{ name: "OpenAEC Mail" }]);
+  });
   try {
     assert.equal(await getSignature(), "");
   } finally {
     empty.restore();
-    invalidateCache("Email Account");
+    await resetSignatureState();
   }
 });
 
 /*
- * LET OP — deze `Email Account`-tests staan bewust vóór
+ * LET OP — élke test die `Email Account` leest hoort bewust vóór
  * "hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt". Die test
  * markeert `Email Account` via de 404-DoesNotExistError als ontbrekend
  * DocType, en `erpnext.ts` houdt dat voor de rest van het proces vast (geen
  * netwerkcall meer, altijd een lege lijst).
  */
-
-test("listImapFolders: leest de imap_folder-child-table van elk incoming IMAP-account", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
-  const mock = installFetchMock((url) => {
-    if (url.startsWith("/api/resource/Email Account?")) {
-      return rowsBody([{ name: "OpenAEC Mail" }]);
-    }
-    if (url.startsWith("/api/resource/Email%20Account/") || url.startsWith("/api/resource/Email Account/")) {
-      return {
-        status: 200,
-        body: {
-          data: {
-            name: "OpenAEC Mail",
-            imap_folder: [
-              { folder_name: "INBOX", append_to: "" },
-              { folder_name: "Projecten", append_to: "Issue" },
-              // Rijen zonder mapnaam (of dubbel) horen niet in de lijst.
-              { folder_name: "  ", append_to: "" },
-              { folder_name: "INBOX", append_to: "" },
-            ],
-          },
-        },
-      };
-    }
-    throw new Error(`unexpected url: ${url}`);
-  });
-  try {
-    const rows = await listImapFolders();
-    assert.deepEqual(rows, [
-      { account: "OpenAEC Mail", folderName: "INBOX" },
-      { account: "OpenAEC Mail", folderName: "Projecten", appendTo: "Issue" },
-    ]);
-    const listCall = mock.calls.find((c) => c.url.startsWith("/api/resource/Email Account?"));
-    assert.ok(listCall);
-    assert.ok(hasFilter(listCall.url, "enable_incoming", "=", 1));
-    assert.ok(hasFilter(listCall.url, "use_imap", "=", 1));
-  } finally {
-    mock.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-});
-
-test("listImapFolders: lege lijst bij 403 (Email Account is geen breed leesbaar DocType)", async () => {
-  invalidateCache("Email Account");
-  await settleFetchDedup();
-  const forbidden = installFetchMock(() => ({ status: 403, body: { exception: "No permission" } }));
-  try {
-    assert.deepEqual(await listImapFolders(), []);
-  } finally {
-    forbidden.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-
-  // Geen accounts -> geen doc-fetch, dus ook geen lege sectie met ruis.
-  const none = installFetchMock(() => rowsBody([]));
-  try {
-    assert.deepEqual(await listImapFolders(), []);
-    assert.equal(none.calls.length, 1);
-  } finally {
-    none.restore();
-    invalidateCache("Email Account");
-    await settleFetchDedup();
-  }
-});
 
 test("hasEnabledEmailAccount: false wanneer het DocType zelf ontbreekt (404 DoesNotExistError)", async () => {
   invalidateCache("Email Account");
@@ -1131,15 +1124,12 @@ test("listCustomFolders: Tag-documenten met mail/-prefix worden mappen, teller v
   }
 });
 
-test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de projectmappen", async () => {
+test("listVirtualFolders: eigen (tag-)mappen komen ná de vaste mappen", async () => {
   invalidateCache("Tag");
   invalidateCache("Communication");
-  invalidateCache("Project");
   await settleFetchDedup();
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/resource/Tag?")) return rowsBody([{ name: "mail/Archief" }]);
-    if (url.startsWith("/api/resource/Communication?")) return rowsBody([{ reference_name: "PROJ-0001" }]);
-    if (url.startsWith("/api/resource/Project?")) return rowsBody([{ name: "PROJ-0001", project_name: "Kade Noord" }]);
     if (url.startsWith("/api/method/frappe.client.get_count")) {
       return { status: 200, body: { message: countFor(url) } };
     }
@@ -1149,14 +1139,13 @@ test("listVirtualFolders: custom mappen staan tussen de vaste mappen en de proje
     const folders = await listVirtualFolders();
     assert.deepEqual(
       folders.map((f) => f.kind),
-      ["inbox", "sent", "unread", "trash", "custom", "project"]
+      ["inbox", "sent", "unread", "handled", "trash", "custom"]
     );
-    assert.equal(folders[4].id, "tag:Archief");
+    assert.equal(folders[5].id, "tag:Archief");
   } finally {
     mock.restore();
     invalidateCache("Tag");
     invalidateCache("Communication");
-    invalidateCache("Project");
   }
 });
 
@@ -1262,6 +1251,163 @@ test("untagMessage: fallback verwijdert alleen de eigen tag uit _user_tags", asy
     const put = mock.calls.find((c) => c.init?.method === "PUT");
     assert.ok(put);
     assert.deepEqual(JSON.parse(String(put.init?.body)), { _user_tags: ",mail/Oud" });
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+/* ─── Afgehandeld: `Communication.status` ─── */
+
+test("isHandledStatus: alleen 'Closed' telt als afgehandeld", () => {
+  assert.equal(isHandledStatus("Closed"), true);
+  // ERPNext gebruikt `status` zélf ook — die waarden mogen niet als
+  // "afgehandeld" gelezen worden, anders vecht het afvinken met ERPNext.
+  assert.equal(isHandledStatus("Open"), false);
+  assert.equal(isHandledStatus("Linked"), false);
+  assert.equal(isHandledStatus("Replied"), false);
+  assert.equal(isHandledStatus(null), false);
+  assert.equal(isHandledStatus(undefined), false);
+  assert.equal(isHandledStatus(""), false);
+});
+
+test("filterUnhandled: houdt alles behalve afgehandeld over", () => {
+  const rows = [
+    { name: "A", handled: false },
+    { name: "B", handled: true },
+    { name: "C", handled: false },
+  ];
+  assert.deepEqual(filterUnhandled(rows).map((r) => r.name), ["A", "C"]);
+  // Geen mutatie van de invoer: de lijst-state hangt hieraan.
+  assert.equal(rows.length, 3);
+  assert.deepEqual(filterUnhandled([]), []);
+});
+
+test("listMailboxMessages: de map 'Afgehandeld' filtert op status=Closed, niet op richting", async () => {
+  const mock = installFetchMock(() => rowsBody([
+    {
+      name: "COMM-H1", subject: "Klaar", sender: "jan@example.com",
+      communication_date: "2026-08-01 09:00:00", seen: 1,
+      status: "Closed", sent_or_received: "Sent",
+    },
+  ]));
+  try {
+    const msgs = await listMailboxMessages(MAIL_FOLDER_HANDLED, { limit: 25 });
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "status", "=", "Closed"));
+    // Getrashte mail hoort ook hier niet thuis.
+    assert.ok(hasFilter(url, "email_status", "!=", "Trash"));
+    // Bewust géén richtingfilter: je vinkt ook verzonden mail af.
+    assert.equal(filterValue(url, "sent_or_received"), undefined);
+
+    assert.equal(msgs[0].handled, true);
+    // De rij houdt zijn eigen richting, zodat de lijst afzender/geadresseerde
+    // net zo toont als in Verzonden.
+    assert.equal(msgs[0].folder, "Sent");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("listMailboxMessages: Postvak IN vraagt `status` mee zodat de lijst afgehandelde mail kan herkennen", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await listMailboxMessages("INBOX");
+    const fields = queryJson(mock.calls[0].url, "fields") as string[];
+    assert.ok(fields.includes("status"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("markHandled / markUnhandled: PUT op `status`, nooit op `email_status`", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "COMM-H1" } } }));
+  try {
+    await markHandled("COMM-H1");
+    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-H1");
+    assert.equal(mock.calls[0].init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), { status: "Closed" });
+
+    await markUnhandled("COMM-H1");
+    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), { status: "Open" });
+
+    // Afvinken mag nooit stilletjes weggooien worden.
+    for (const c of mock.calls) {
+      assert.ok(!String(c.init?.body).includes("email_status"));
+      assert.notEqual(c.init?.method, "DELETE");
+    }
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulkMarkHandled / bulkMarkUnhandled: één PUT per bericht, ontdubbeld", async () => {
+  const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "ok" } } }));
+  try {
+    const out = await bulkMarkHandled(["COMM-H1", "COMM-H2", "COMM-H1"]);
+    assert.deepEqual(out, { failed: [] });
+    const puts = mock.calls.filter((c) => c.init?.method === "PUT");
+    assert.equal(puts.length, 2);
+    for (const p of puts) assert.deepEqual(JSON.parse(String(p.init?.body)), { status: "Closed" });
+
+    const before = mock.calls.length;
+    await bulkMarkUnhandled(["COMM-H3"]);
+    assert.deepEqual(JSON.parse(String(mock.calls[before].init?.body)), { status: "Open" });
+
+    const after = mock.calls.length;
+    assert.deepEqual(await bulkMarkHandled([]), { failed: [] });
+    assert.equal(mock.calls.length, after);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("bulk: een deels mislukte actie meldt PRECIES welke berichten bleven staan", async () => {
+  // Dit is de kern van de "de knop doet niets"-klasse: vroeger slikte de
+  // bulk-adapter deelfouten in en meldde de UI onverkort succes.
+  const mock = installFetchMock((url) =>
+    url.includes("COMM-BAD")
+      ? { status: 403, body: { exception: "frappe.exceptions.PermissionError: No permission" } }
+      : { status: 200, body: { data: { name: "ok" } } }
+  );
+  try {
+    const out = await bulkMoveToTrash(["COMM-OK1", "COMM-BAD", "COMM-OK2"]);
+    assert.deepEqual(out.failed, ["COMM-BAD"]);
+    assert.ok(out.error, "de eerste fout hoort mee terug te komen voor de melding");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("invalidateCache: laat ook de get_count-tellingen van dat doctype vallen", async () => {
+  invalidateCache("Communication");
+  await settleFetchDedup();
+  let counts = 0;
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.client.get_count")) {
+      counts++;
+      return { status: 200, body: { message: counts } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    assert.equal(await unseenCount(), 1);
+    await settleFetchDedup();
+    // Controle: zonder invalidatie serveert de responscache dezelfde telling.
+    assert.equal(await unseenCount(), 1);
+    await settleFetchDedup();
+    assert.equal(counts, 1);
+
+    // Na een schrijfactie op Communication moet de telling opnieuw van de
+    // server komen — anders blijft een badge tot 30 s de oude stand tonen.
+    invalidateCache("Communication");
+    assert.equal(await unseenCount(), 2);
+    assert.equal(counts, 2);
   } finally {
     mock.restore();
     invalidateCache("Communication");

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { fetchList, fetchAll, fetchDocument, createDocument, updateDocument, callMethod, getErpNextLinkUrl, ApiError } from "../lib/erpnext";
+import { fetchList, fetchAll, fetchDocument, createDocument, updateDocument, callMethod, invalidateCache, getErpNextLinkUrl, ApiError } from "../lib/erpnext";
 import {
   CheckSquare, RefreshCw, Search, LayoutGrid, List, User, Filter,
   GripVertical, ChevronDown, Plus, X, ExternalLink, Calendar, Flag,
@@ -9,6 +9,15 @@ import {
   ListOrdered, Link, Table, Undo, Redo, RemoveFormatting, ListChecks,
 } from "lucide-react";
 import CompanySelect from "../components/CompanySelect";
+import TaskBulkBar from "../components/TaskBulkBar";
+import {
+  emptySelection, applyRowClick, toggleAllVisible, selectAll, pruneSelection,
+  allVisibleSelected, someVisibleSelected, type SelectionState,
+} from "../lib/table-selection";
+import {
+  fetchTaskSelectOptions, FALLBACK_STATUS_OPTIONS, FALLBACK_PRIORITY_OPTIONS,
+} from "../lib/task-bulk";
+import type { BulkResult } from "../lib/bulk-run";
 import { useProjects, type ProjectRecord } from "../lib/DataContext";
 import { IS_MINI } from "../lib/variant";
 import { getActiveCompany, getActiveEmployee } from "../lib/instances";
@@ -146,6 +155,17 @@ const workflowActions: Record<string, { action: string; next: string }[]> = {
 };
 
 
+/**
+ * Hoeveel rijen de tabelweergave in één keer toont.
+ *
+ * De pagina heeft álle taken al in het geheugen (`fetchAll`), dus dit is puur
+ * een rendervenster: ~440 rijen tegelijk in de DOM maakt scrollen en
+ * selecteren merkbaar traag. Het venster maakt bovendien het verschil tussen
+ * "zichtbaar" en "voldoet aan het filter" expliciet — precies het onderscheid
+ * dat de bulkbalk nodig heeft voor "selecteer alle N".
+ */
+const TABLE_PAGE_SIZE = 100;
+
 const priorityColors: Record<string, string> = {
   Urgent: "bg-red-100 text-red-700",
   High: "bg-orange-100 text-orange-700",
@@ -216,6 +236,16 @@ export default function Tasks() {
   const didInitStatusFilter = useRef(false);
   const [company, setCompany] = useState(() => getActiveCompany() || "");
   const [view, setView] = useState<"kanban" | "table">("kanban");
+  /* ─── Bulkselectie (alleen tabelweergave) ─── */
+  const [selection, setSelection] = useState<SelectionState>(emptySelection);
+  const [visibleCount, setVisibleCount] = useState(TABLE_PAGE_SIZE);
+  // Status- en prioriteitswaarden komen uit de doctype-meta van déze instance,
+  // niet uit een lijst in deze broncode — zie lib/task-bulk.ts.
+  const [bulkOptions, setBulkOptions] = useState({
+    status: FALLBACK_STATUS_OPTIONS,
+    priority: FALLBACK_PRIORITY_OPTIONS,
+  });
+  useEffect(() => { fetchTaskSelectOptions().then(setBulkOptions); }, []);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createMode, setCreateMode] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -314,6 +344,9 @@ export default function Tasks() {
       setTasks(list);
       setEmployees(empList);
       setHasWorkflowState(hasWorkflow);
+      // Taken die intussen verdwenen zijn (verwijderd, of door iemand anders
+      // gewijzigd) mogen niet als onzichtbare passagier in de selectie blijven.
+      setSelection((prev) => pruneSelection(prev, list.map((r) => r.name)));
       if (!didInitStatusFilter.current) {
         didInitStatusFilter.current = true;
         setStatusFilter(hasWorkflow ? WORKFLOW_DEFAULT_FILTER : PLAIN_DEFAULT_FILTER);
@@ -415,6 +448,44 @@ export default function Tasks() {
     });
     return result;
   }, [tasks, search, statusFilter, projectNameMap, myTasksOnly, myEmail]);
+
+  /* ─── Afgeleide selectie-toestand ─── */
+
+  // Het rendervenster wordt bewust NIET teruggezet bij een filterwijziging: wie
+  // het venster heeft opengeklapt houdt dat, en `slice` knijpt vanzelf mee als
+  // het filter minder oplevert. Terugzetten zou een net uitgeklapte lijst laten
+  // dichtklappen zodra je in het zoekveld typt.
+  const visibleTasks = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const visibleIds = useMemo(() => visibleTasks.map((task) => task.name), [visibleTasks]);
+
+  // Bewust afgeleid uit `filtered` en niet uit de Set zelf: een taak die door
+  // een statuswijziging buiten het actieve filter valt, mag niet stiekem in de
+  // volgende bulkactie meeliften.
+  const selectedIds = useMemo(
+    () => filtered.filter((task) => selection.selected.has(task.name)).map((task) => task.name),
+    [filtered, selection],
+  );
+
+  const assigneesByTask = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const task of tasks) map.set(task.name, parseAssignees(task.assigned_to));
+    return map;
+  }, [tasks]);
+
+  const handleBulkFinished = useCallback(async (result: BulkResult) => {
+    // callMethod (assign_to.*) raakt de lijstcache niet aan — updateDocument en
+    // deleteDocument doen dat wel. Eén keer expliciet wissen dekt beide paden.
+    invalidateCache("Task");
+    await loadData();
+    // Geslaagde taken vallen uit de selectie; mislukte blijven staan zodat je
+    // ze meteen opnieuw kunt proberen zonder ze terug te zoeken.
+    setSelection((prev) => {
+      const next = new Set(prev.selected);
+      for (const id of result.succeeded) next.delete(id);
+      return { selected: next, anchor: null };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company]);
 
   const kanbanData = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -704,7 +775,41 @@ export default function Tasks() {
       {view === "kanban" ? (
         <KanbanView data={kanbanData} loading={loading} onReassign={reassignTask} getDisplayName={getDisplayName} onSelectTask={setSelectedTask} projectNameMap={projectNameMap} />
       ) : (
-        <TableView tasks={filtered} loading={loading} search={search} getDisplayName={getDisplayName} onSelectTask={setSelectedTask} />
+        <>
+          {/* Altijd gemount: de balk verbergt zichzelf als er niets te tonen
+              is, en houdt zo het rapport zichtbaar nadat een geslaagde bulk de
+              selectie heeft leeggemaakt. */}
+          <TaskBulkBar
+            selectedIds={selectedIds}
+            filteredCount={filtered.length}
+            canSelectAllFiltered={
+              allVisibleSelected(selection, visibleIds) && selectedIds.length < filtered.length
+            }
+            onSelectAllFiltered={() => setSelection(selectAll(filtered.map((task) => task.name)))}
+            onClearSelection={() => setSelection(emptySelection())}
+            assigneesByTask={assigneesByTask}
+            statusOptions={bulkOptions.status}
+            priorityOptions={bulkOptions.priority}
+            projects={storeProjects}
+            employees={employees}
+            onFinished={handleBulkFinished}
+          />
+          <TableView
+            tasks={visibleTasks}
+            totalCount={filtered.length}
+            onShowMore={() => setVisibleCount((c) => c + TABLE_PAGE_SIZE)}
+            loading={loading}
+            getDisplayName={getDisplayName}
+            onSelectTask={setSelectedTask}
+            selection={selection}
+            allSelected={allVisibleSelected(selection, visibleIds)}
+            someSelected={someVisibleSelected(selection, visibleIds)}
+            onToggleAll={() => setSelection((prev) => toggleAllVisible(prev, visibleIds))}
+            onRowSelect={(name, mods) =>
+              setSelection((prev) => applyRowClick(prev, name, visibleIds, mods))
+            }
+          />
+        </>
       )}
 
       {/* Task Detail Panel */}
@@ -1666,13 +1771,57 @@ export function KanbanView({
 
 // ---- TABLE VIEW ----
 
-function TableView({ tasks, loading, search: _search, getDisplayName, onSelectTask }: { tasks: Task[]; loading: boolean; search: string; getDisplayName: (email: string) => string; onSelectTask: (task: Task) => void }) {
+
+/**
+ * Tabelweergave met selectievakjes voor bulkbewerking.
+ *
+ * Het vinkje en de rij doen bewust iets anders: op de rij klikken opent de
+ * taak (zoals altijd), op het vinkje klikken selecteert. Daarom stopt de
+ * vinkje-cel het event — anders zou elke selectie ook het detailpaneel
+ * openklappen.
+ */
+function TableView({
+  tasks, totalCount, onShowMore, loading, getDisplayName, onSelectTask,
+  selection, allSelected, someSelected, onToggleAll, onRowSelect,
+}: {
+  tasks: Task[];
+  totalCount: number;
+  onShowMore: () => void;
+  loading: boolean;
+  getDisplayName: (email: string) => string;
+  onSelectTask: (task: Task) => void;
+  selection: SelectionState;
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggleAll: () => void;
+  onRowSelect: (name: string, mods: { shift?: boolean; ctrl?: boolean; meta?: boolean }) => void;
+}) {
   const { t } = useTranslation();
+  const headerRef = useRef<HTMLInputElement>(null);
+  // `indeterminate` bestaat alleen als DOM-property, niet als attribuut — React
+  // kan hem dus niet declaratief zetten.
+  useEffect(() => {
+    if (headerRef.current) headerRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  const hidden = totalCount - tasks.length;
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200">
+            <th className="w-10 px-3 py-3">
+              <input
+                ref={headerRef}
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleAll}
+                aria-label={t("tasks.bulk.select_visible")}
+                title={t("tasks.bulk.select_visible")}
+                className="rounded border-slate-300 text-y-teal focus:ring-y-teal cursor-pointer"
+              />
+            </th>
             <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">{t("hours_widget.task")}</th>
             <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">{t("tasks.table.subject")}</th>
             <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">{t("tasks.detail.assigned_to")}</th>
@@ -1684,15 +1833,37 @@ function TableView({ tasks, loading, search: _search, getDisplayName, onSelectTa
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">{t("common.loading")}</td></tr>
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">{t("common.loading")}</td></tr>
           ) : tasks.length === 0 ? (
-            <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">{t("dashboard.no_open_tasks")}</td></tr>
-          ) : tasks.map((t) => {
-            const assignees = parseAssignees(t.assigned_to);
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">{t("dashboard.no_open_tasks")}</td></tr>
+          ) : tasks.map((task) => {
+            const assignees = parseAssignees(task.assigned_to);
+            const isSelected = selection.selected.has(task.name);
             return (
-              <tr key={t.name} onClick={() => onSelectTask(t)} className="border-b border-slate-100 hover:bg-y-teal/5 cursor-pointer transition-colors">
-                <td className="px-4 py-3 text-sm font-medium text-y-teal">{t.name}</td>
-                <td className="px-4 py-3 text-sm text-slate-700">{t.subject}</td>
+              <tr
+                key={task.name}
+                onClick={() => onSelectTask(task)}
+                className={`border-b border-slate-100 cursor-pointer transition-colors ${
+                  isSelected ? "bg-y-teal/10 hover:bg-y-teal/15" : "hover:bg-y-teal/5"
+                }`}
+              >
+                <td
+                  className="w-10 px-3 py-3"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRowSelect(task.name, { shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey });
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    tabIndex={-1}
+                    className="rounded border-slate-300 text-y-teal focus:ring-y-teal cursor-pointer pointer-events-none"
+                  />
+                </td>
+                <td className="px-4 py-3 text-sm font-medium text-y-teal">{task.name}</td>
+                <td className="px-4 py-3 text-sm text-slate-700">{task.subject}</td>
                 <td className="px-4 py-3">
                   <div className="flex -space-x-1">
                     {assignees.length === 0 ? (
@@ -1706,25 +1877,34 @@ function TableView({ tasks, loading, search: _search, getDisplayName, onSelectTa
                     ))}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-500">{t.project || "-"}</td>
+                <td className="px-4 py-3 text-sm text-slate-500">{task.project || "-"}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${priorityColors[t.priority] ?? "bg-slate-100 text-slate-600"}`}>
-                    {t.priority || "-"}
+                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${priorityColors[task.priority] ?? "bg-slate-100 text-slate-600"}`}>
+                    {task.priority || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${workflowColors[t.workflow_state] ?? "bg-slate-100 text-slate-600"}`}>
-                    {t.workflow_state || "-"}
+                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${workflowColors[task.workflow_state] ?? "bg-slate-100 text-slate-600"}`}>
+                    {task.workflow_state || "-"}
                   </span>
                 </td>
-                <td className={`px-4 py-3 text-sm ${isOverdue(t.exp_end_date) ? "text-red-500 font-semibold" : "text-slate-500"}`}>
-                  {t.exp_end_date || "-"}
+                <td className={`px-4 py-3 text-sm ${isOverdue(task.exp_end_date) ? "text-red-500 font-semibold" : "text-slate-500"}`}>
+                  {task.exp_end_date || "-"}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      {!loading && hidden > 0 && (
+        <button
+          onClick={onShowMore}
+          className="w-full px-4 py-3 text-sm text-y-teal hover:bg-slate-50 border-t border-slate-100 cursor-pointer"
+        >
+          {t("tasks.bulk.show_more", { shown: tasks.length, total: totalCount })}
+        </button>
+      )}
     </div>
   );
 }

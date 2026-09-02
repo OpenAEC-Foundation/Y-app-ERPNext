@@ -1,12 +1,20 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n/index";
-import { Send, Save, ChevronDown, Car } from "lucide-react";
-import { fetchList, fetchDocument, createDocument, updateDocument, getErpNextLinkUrl, ApiError } from "../../lib/erpnext";
-import type { TravelTypeConfig } from "../../lib/travelType";
-import { fetchTravelTypeConfig } from "../../lib/travelType";
-import { useEmployees } from "../../lib/DataContext";
-import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../../lib/instances";
+import { Send, Save, ChevronDown, Car, AlertTriangle } from "lucide-react";
+import { fetchDocument, updateDocument, deleteDocument, isDoctypeMissing, ApiError } from "../../lib/erpnext";
+import {
+  KM_DOCTYPE,
+  computeKmBedrag,
+  createKmRegistratie,
+  fetchKmRegistraties,
+  formatErpDate,
+  totaleKilometers,
+  type KmRegistratie,
+} from "../../lib/declaraties";
+import { fetchKmTarief } from "../../lib/kmTarief";
+import { useEmployees, useProjects } from "../../lib/DataContext";
+import { getActiveInstance, getActiveEmployee } from "../../lib/instances";
 import { useSessionEmployeeId } from "../../lib/useSessionEmployee";
 import { BookingWarning, useMissingBookings } from "./useMissingBookings";
 
@@ -17,6 +25,10 @@ function localeFromI18n(): string {
   if (lang === "en") return "en-GB";
   if (lang === "de") return "de-DE";
   return "nl-NL";
+}
+
+export function formatEuro(value: number): string {
+  return value.toLocaleString(localeFromI18n(), { style: "currency", currency: "EUR" });
 }
 
 const SAVED_ADDRESSES_KEY = "y_app_saved_addresses";
@@ -78,9 +90,35 @@ function AddressInput({ value, onChange, placeholder, savedAddresses, onSave }: 
   );
 }
 
+/**
+ * Statuslabel van een declaratie. Gedeeld met de onkostenpagina, zodat km en
+ * onkosten er identiek uitzien.
+ */
+export function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
+  const cls =
+    status === "Goedgekeurd" ? "bg-green-100 text-green-700"
+      : status === "Ingediend" ? "bg-blue-100 text-blue-700"
+        : status === "Afgewezen" ? "bg-red-100 text-red-700"
+          : "bg-slate-100 text-slate-600";
+  return (
+    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-medium rounded-full ${cls}`}>
+      {t(`declaraties.status_${status.toLowerCase()}`, { defaultValue: status })}
+    </span>
+  );
+}
+
+/**
+ * Kilometers boeken.
+ *
+ * Elke rit is één `Y Km Registratie`-document (zie lib/declaraties.ts). Het
+ * kilometertarief komt uit de gedeelde instelling en wordt op het document
+ * vastgelegd, zodat een latere tariefwijziging bestaande ritten niet herrekent.
+ */
 export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hideRecentTrips?: boolean; onHeaderClick?: () => void } = {}) {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
+  const projects = useProjects();
   const instanceId = getActiveInstance().id;
   const [employee, setEmployee] = useState(() => getActiveEmployee());
   // Val terug op de ERPNext-sessiegebruiker als er geen "standaard
@@ -91,33 +129,43 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
   useEffect(() => {
     if (!employee && resolvedSessionEmployee) setEmployee(resolvedSessionEmployee);
   }, [employee, resolvedSessionEmployee]);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => formatErpDate(new Date()));
   const [departure, setDeparture] = useState("");
   // No hardcoded default destination — it varied per employer/customer and a
-  // fixed company address ("Wattstraat 17...") doesn't apply to every Y-app
-  // tenant. Prefilled per-employee from their last booking instead (see the
-  // destinationAutoFilled effect below); the user can still type/pick any
-  // saved address.
+  // fixed company address doesn't apply to every tenant. Prefilled per-employee
+  // from their last booking instead (see the destinationAutoFilled effect
+  // below); the user can still type/pick any saved address.
   const [destination, setDestination] = useState("");
   const [km, setKm] = useState(() => localStorage.getItem(`pref_${instanceId}_default_km`) || "");
-  const [travelType, setTravelType] = useState(() => localStorage.getItem(`pref_${instanceId}_km_travel_type`) || "");
-  const [travelTypeConfig, setTravelTypeConfig] = useState<TravelTypeConfig>({ kind: "none", options: [] });
-  const [journeyType, setJourneyType] = useState<"One way" | "Return">("Return");
+  const [project, setProject] = useState(() => localStorage.getItem(`pref_${instanceId}_km_project`) || "");
+  const [retour, setRetour] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
   const [formError, setFormError] = useState("");
-  const [currentTR, setCurrentTR] = useState<{ name: string; custom_total_distance: number } | null>(null);
-  const [recentItinerary, setRecentItinerary] = useState<{ travel_from: string; travel_to: string; custom_distance: number; departure_date: string; custom_journey_type: string; parent: string }[]>([]);
+  const [tarief, setTarief] = useState<number | null>(null);
+  const [recentTrips, setRecentTrips] = useState<KmRegistratie[]>([]);
   const [, setLoadingRecent] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => loadSavedAddresses());
   const [showRecent, setShowRecent] = useState(false);
-  const [editingTripIdx, setEditingTripIdx] = useState<number | null>(null);
-  const [editTrip, setEditTrip] = useState<{ travel_from: string; travel_to: string; custom_distance: number; departure_date: string; custom_journey_type: string }>({ travel_from: "", travel_to: "", custom_distance: 0, departure_date: "", custom_journey_type: "Return" });
+  const [editingTripName, setEditingTripName] = useState<string | null>(null);
+  const [editTrip, setEditTrip] = useState<{ van: string; naar: string; kilometers: number; datum: string; retour: boolean }>(
+    { van: "", naar: "", kilometers: 0, datum: "", retour: true },
+  );
   const [savingTrip, setSavingTrip] = useState(false);
+  // Waar zodra een lijstquery heeft bevestigd dat `Y Km Registratie` niet op
+  // deze site bestaat — dan is het provisioningscript nog niet gedraaid.
+  // Zonder deze check toont het formulier zich als werkend en faalt pas de
+  // knop, met een kale 404.
+  const [doctypeMissing, setDoctypeMissing] = useState(false);
 
   const activeEmployees = useMemo(
     () => allEmployees.filter((e) => e.status === "Active"),
     [allEmployees]
+  );
+
+  const openProjects = useMemo(
+    () => projects.filter((p) => p.status !== "Cancelled"),
+    [projects],
   );
 
   function handleSaveAddress(address: string) {
@@ -128,52 +176,67 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
     saveSavedAddresses(updated);
   }
 
-  function startTripEdit(idx: number) {
-    const it = recentItinerary[idx];
-    setEditingTripIdx(idx);
-    setEditTrip({ travel_from: it.travel_from, travel_to: it.travel_to, custom_distance: it.custom_distance, departure_date: it.departure_date?.split(" ")[0] || "", custom_journey_type: it.custom_journey_type });
+  /**
+   * Een 403 betekent hier dat deze ERPNext-gebruiker het document niet mag
+   * wijzigen — bijna altijd omdat het niet van hemzelf is (`if_owner` op de
+   * medewerkersrollen). Structureel en uitlegbaar, dus een eigen tekst.
+   */
+  function describeError(err: unknown, fallback: string): string {
+    if (err instanceof ApiError && err.status === 403) return t("declaraties.not_your_record");
+    return err instanceof Error && err.message ? err.message : fallback;
   }
 
+  function startTripEdit(trip: KmRegistratie) {
+    setEditingTripName(trip.name);
+    setEditTrip({
+      van: trip.van || "",
+      naar: trip.naar || "",
+      kilometers: trip.kilometers || 0,
+      datum: (trip.datum || "").slice(0, 10),
+      retour: !!trip.retour,
+    });
+  }
+
+  /**
+   * Een rit bewerken is een gewone documentupdate. Het tarief van dát document
+   * blijft leidend — een tariefwijziging ná het boeken mag een correctie niet
+   * stilzwijgend herrekenen.
+   */
   async function saveTripEdit() {
-    if (editingTripIdx === null || !currentTR) return;
+    const original = recentTrips.find((r) => r.name === editingTripName);
+    if (!original) return;
     setSavingTrip(true);
+    setFormError("");
     try {
-      const doc = await fetchDocument<{ itinerary: any[] }>("Travel Request", currentTR.name);
-      const allItems = doc.itinerary || [];
-      // recentItinerary is sorted desc, find the matching item by original index
-      const targetItem = recentItinerary[editingTripIdx];
-      const updatedItems = allItems.map((item: any) => {
-        if (item.departure_date === targetItem.departure_date && item.travel_from === targetItem.travel_from) {
-          return { ...item, ...editTrip, departure_date: editTrip.departure_date };
-        }
-        return item;
+      const tariefVoorRit = original.tarief_per_km || tarief || 0;
+      const bedrag = computeKmBedrag(editTrip.kilometers, editTrip.retour, tariefVoorRit);
+      await updateDocument(KM_DOCTYPE, original.name, {
+        datum: editTrip.datum,
+        van: editTrip.van,
+        naar: editTrip.naar,
+        kilometers: editTrip.kilometers,
+        retour: editTrip.retour ? 1 : 0,
+        bedrag,
       });
-      const newTotal = updatedItems.reduce((s: number, it: any) => s + (it.custom_distance || 0), 0);
-      await updateDocument("Travel Request", currentTR.name, { itinerary: updatedItems, custom_total_distance: newTotal });
-      // Refresh
-      setRecentItinerary(prev => prev.map((it, i) => i === editingTripIdx ? { ...it, ...editTrip } : it));
-      setCurrentTR(prev => prev ? { ...prev, custom_total_distance: newTotal } : prev);
+      setRecentTrips((prev) => prev.map((r) => (
+        r.name === original.name
+          ? { ...r, ...editTrip, retour: (editTrip.retour ? 1 : 0) as 0 | 1, bedrag }
+          : r
+      )));
+      setEditingTripName(null);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t("common.save_failed"));
+      setFormError(describeError(err, t("common.save_failed")));
     }
     setSavingTrip(false);
-    setEditingTripIdx(null);
   }
 
-  async function deleteTripRow(idx: number) {
-    if (!currentTR) return;
+  async function deleteTrip(trip: KmRegistratie) {
+    setFormError("");
     try {
-      const doc = await fetchDocument<{ itinerary: any[] }>("Travel Request", currentTR.name);
-      const targetItem = recentItinerary[idx];
-      const updatedItems = (doc.itinerary || []).filter((item: any) =>
-        !(item.departure_date === targetItem.departure_date && item.travel_from === targetItem.travel_from)
-      );
-      const newTotal = updatedItems.reduce((s: number, it: any) => s + (it.custom_distance || 0), 0);
-      await updateDocument("Travel Request", currentTR.name, { itinerary: updatedItems, custom_total_distance: newTotal });
-      setRecentItinerary(prev => prev.filter((_, i) => i !== idx));
-      setCurrentTR(prev => prev ? { ...prev, custom_total_distance: newTotal } : prev);
+      await deleteDocument(KM_DOCTYPE, trip.name);
+      setRecentTrips((prev) => prev.filter((r) => r.name !== trip.name));
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t("common.delete_failed"));
+      setFormError(describeError(err, t("common.delete_failed")));
     }
   }
 
@@ -201,52 +264,43 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
     destinationAutoFilled.current = true;
   }, [employee, instanceId]);
 
-  // Resolve valid "Reistype" (custom_travel_type) options for this ERPNext
-  // instance — see lib/travelType.ts for why this can't be hardcoded.
+  // Het gedeelde kilometertarief.
   useEffect(() => {
     let cancelled = false;
-    fetchTravelTypeConfig().then((cfg) => {
-      if (cancelled) return;
-      setTravelTypeConfig(cfg);
-      // Default to the first valid option so the field isn't blank for
-      // users who never had to think about it before, but never invent a
-      // value the field doesn't actually offer.
-      setTravelType((prev) => (prev && cfg.options.includes(prev)) ? prev : (cfg.options[0] || ""));
-    });
+    fetchKmTarief().then((value) => { if (!cancelled) setTarief(value); });
     return () => { cancelled = true; };
   }, [instanceId]);
 
-  // Load recent travel itinerary entries for this employee
+  // De laatste ritten van deze medewerker. `if_owner` beperkt dit server-side
+  // al tot eigen documenten voor een gewone medewerker; het employee-filter is
+  // er voor de werkgever, die ze allemaal mag zien.
   useEffect(() => {
-    if (!employee) { setRecentItinerary([]); setCurrentTR(null); return; }
+    if (!employee) { setRecentTrips([]); return; }
     setLoadingRecent(true);
-    fetchList<{ name: string; custom_total_distance: number }>(
-      "Travel Request",
-      {
-        fields: ["name", "custom_total_distance"],
-        filters: [["employee", "=", employee]],
-        limit_page_length: 1,
-        order_by: "custom_from_date desc",
-      }
-    )
-      .then(async (reqs) => {
-        if (reqs.length === 0) { setRecentItinerary([]); setCurrentTR(null); return; }
-        setCurrentTR(reqs[0]);
-        try {
-          const doc = await fetchDocument<{ itinerary: { travel_from: string; travel_to: string; custom_distance: number; departure_date: string; custom_journey_type: string; parent: string }[] }>(
-            "Travel Request", reqs[0].name
-          );
-          const items = (doc.itinerary || []).sort((a, b) =>
-            (b.departure_date || "").localeCompare(a.departure_date || "")
-          ).slice(0, 5);
-          setRecentItinerary(items);
-        } catch {
-          setRecentItinerary([]);
-        }
-      })
-      .catch(() => { setRecentItinerary([]); setCurrentTR(null); })
-      .finally(() => setLoadingRecent(false));
+    fetchKmRegistraties({ employee, limit: 10 })
+      .then((rows) => setRecentTrips(rows))
+      .catch(() => setRecentTrips([]))
+      .finally(() => {
+        setLoadingRecent(false);
+        setDoctypeMissing(isDoctypeMissing(KM_DOCTYPE));
+      });
   }, [employee, success]);
+
+  /** Totaal van de ritten in de kalendermaand van vandaag. */
+  const maandTotaal = useMemo(() => {
+    const nu = new Date();
+    const prefix = `${nu.getFullYear()}-${String(nu.getMonth() + 1).padStart(2, "0")}`;
+    const dezeMaand = recentTrips.filter((r) => (r.datum || "").startsWith(prefix));
+    return {
+      km: dezeMaand.reduce((s, r) => s + totaleKilometers(r), 0),
+      bedrag: dezeMaand.reduce((s, r) => s + (r.bedrag || 0), 0),
+    };
+  }, [recentTrips]);
+
+  const voorbeeldBedrag = useMemo(
+    () => computeKmBedrag(parseFloat(km) || 0, retour, tarief ?? 0),
+    [km, retour, tarief],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -255,84 +309,34 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
     setFormError("");
     setSuccess("");
     try {
-      const company = getActiveCompany() || undefined;
-      const dateObj = new Date(date + "T12:00:00");
-      const monthStart = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-01`;
-      const monthEnd = new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0);
-      const monthEndStr = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
-
-      // Find existing Draft Travel Request for this employee + month
-      const existing = await fetchList<{ name: string }>(
-        "Travel Request",
-        {
-          fields: ["name"],
-          filters: [
-            ["employee", "=", employee],
-            ["docstatus", "=", 0],
-            ["custom_from_date", "=", monthStart],
-          ],
-          limit_page_length: 1,
-        }
-      );
-
-      const distance = parseFloat(km);
-      const itineraryRow = {
-        travel_from: departure,
-        travel_to: destination,
-        custom_distance: distance,
-        custom_journey_type: journeyType,
-        departure_date: date,
-        // "Business" was previously hardcoded here and ERPNext instances
-        // whose custom_travel_type field doesn't offer that exact option
-        // (or renamed/removed it) rejected every booking with a "not a
-        // valid option" error the user couldn't work around. Only send a
-        // value the instance actually offers (resolved via
-        // fetchTravelTypeConfig); omit the field entirely otherwise so
-        // ERPNext applies its own default/validation instead of us guessing.
-        ...(travelType ? { custom_travel_type: travelType } : {}),
-      };
-
-      if (existing.length > 0) {
-        // Add itinerary row to existing Travel Request
-        const doc = await fetchDocument<{ itinerary: unknown[]; custom_total_distance: number }>(
-          "Travel Request", existing[0].name
-        );
-        const updatedItinerary = [...(doc.itinerary || []), itineraryRow];
-        const totalDist = (doc.custom_total_distance || 0) + distance;
-        await updateDocument("Travel Request", existing[0].name, {
-          itinerary: updatedItinerary,
-          custom_total_distance: totalDist,
-        });
-        setSuccess(`Rit toegevoegd aan ${existing[0].name} (${totalDist.toFixed(1)} km totaal)`);
-      } else {
-        // Create new Travel Request for this month
-        const doc = await createDocument<{ name: string }>("Travel Request", {
-          employee,
-          company,
-          travel_type: "Domestic",
-          custom_from_date: monthStart,
-          custom_to_date: monthEndStr,
-          custom_total_distance: distance,
-          itinerary: [itineraryRow],
-        });
-        setSuccess(`Nieuwe km-declaratie: ${doc.name}`);
-      }
+      const doc = await createKmRegistratie({
+        employee,
+        datum: date,
+        van: departure,
+        naar: destination,
+        kilometers: parseFloat(km),
+        retour,
+        project: project || undefined,
+        tariefPerKm: tarief ?? undefined,
+      });
+      setSuccess(t("declaraties.km_booked", {
+        name: doc.name,
+        amount: formatEuro(computeKmBedrag(parseFloat(km), retour, tarief ?? 0)),
+      }));
       // Remember defaults for next time
       if (km) localStorage.setItem(`pref_${instanceId}_default_km`, km);
       if (destination) localStorage.setItem(`pref_${instanceId}_last_destination_${employee}`, destination);
-      if (travelType) localStorage.setItem(`pref_${instanceId}_km_travel_type`, travelType);
+      if (project) localStorage.setItem(`pref_${instanceId}_km_project`, project);
       setKm("");
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
-      // A 403 here means there is no monthly Travel Request yet AND this
-      // ERPNext account isn't allowed to create one (create on Travel Request
-      // requires HR User / System Manager; a regular employee can only add
-      // rows to an existing month doc). Show a clear message instead of the
-      // raw "ERPNext API error: 403" — nothing was created.
+      // Een 403 betekent hier dat deze ERPNext-gebruiker geen `create` heeft op
+      // Y Km Registratie — het provisioningscript kent dat recht toe aan de
+      // rollen Employee en Projects User.
       if (err instanceof ApiError && err.status === 403) {
-        setFormError(t("dashboard.km_create_forbidden"));
+        setFormError(t("declaraties.create_forbidden"));
       } else {
-        setFormError(err instanceof Error ? err.message : "Onbekende fout");
+        setFormError(err instanceof Error ? err.message : t("common.unknown_error"));
       }
     } finally {
       setSubmitting(false);
@@ -351,18 +355,22 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
         ) : (
           <h3 className="font-semibold text-slate-800">{t("dashboard.km_booking")}</h3>
         )}
-        {currentTR && (
-          <a
-            href={`${getErpNextLinkUrl()}/travel-request/${currentTR.name}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-xs text-y-teal hover:underline"
-          >
-            {currentTR.name} ({(currentTR.custom_total_distance || 0).toFixed(0)} km)
-          </a>
+        {maandTotaal.km > 0 && (
+          <span className="ml-auto text-xs text-slate-500">
+            {t("declaraties.month_total", {
+              km: maandTotaal.km.toLocaleString(localeFromI18n(), { maximumFractionDigits: 1 }),
+              amount: formatEuro(maandTotaal.bedrag),
+            })}
+          </span>
         )}
       </div>
 
+      {doctypeMissing && (
+        <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm flex items-start gap-2">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <span>{t("declaraties.doctypes_missing")}</span>
+        </div>
+      )}
       {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
       {formError && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{formError}</div>}
 
@@ -404,7 +412,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
           </div>
         </div>
 
-        <div className={`grid grid-cols-2 gap-3 ${travelTypeConfig.kind !== "none" ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("dashboard.km_distance_required")}</label>
             <input type="number" step="0.1" min="0" value={km} onChange={(e) => setKm(e.target.value)} required
@@ -413,103 +421,112 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("common.type", { defaultValue: "Type" })}</label>
-            <select value={journeyType} onChange={(e) => setJourneyType(e.target.value as "One way" | "Return")}
+            <select value={retour ? "retour" : "enkel"} onChange={(e) => setRetour(e.target.value === "retour")}
               className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
-              <option value="Return">{t("dashboard.km_return")}</option>
-              <option value="One way">{t("dashboard.km_single")}</option>
+              <option value="retour">{t("dashboard.km_return")}</option>
+              <option value="enkel">{t("dashboard.km_single")}</option>
             </select>
-            {journeyType === "Return" && (
+            {retour && (
               <p className="text-[10px] text-slate-400 mt-1">{t("dashboard.km_return_hint")}</p>
             )}
           </div>
-          {/* Only shown when the "custom_travel_type" field could actually be
-              resolved on this ERPNext instance (see lib/travelType.ts) — a
-              hardcoded value here used to get silently rejected by ERPNext
-              instances with different/no valid options. */}
-          {travelTypeConfig.kind !== "none" && (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">{t("dashboard.km_travel_type")}</label>
-              <select value={travelType} onChange={(e) => setTravelType(e.target.value)}
-                className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
-                <option value="">{t("dashboard.km_travel_type_select")}</option>
-                {travelTypeConfig.options.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Het "Reistype"-veld van de oude Travel-Request-opzet is vervangen
+              door een projectkoppeling: dat is een echt veld op
+              `Y Km Registratie` en bruikbaar voor projectkosten. */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.project_optional")}</label>
+            <select value={project} onChange={(e) => setProject(e.target.value)}
+              className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
+              <option value="">{t("common.select")}</option>
+              {openProjects.map((p) => (
+                <option key={p.name} value={p.name}>{p.project_name || p.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="col-span-2 sm:col-span-1 flex items-end">
-            <button type="submit" disabled={submitting || !employee || !km || !departure || !destination}
+            <button type="submit" disabled={submitting || doctypeMissing || !employee || !km || !departure || !destination}
               className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer">
               <Send size={14} />
               {submitting ? "..." : t("dashboard.km_submit")}
             </button>
           </div>
         </div>
+        {voorbeeldBedrag > 0 && (
+          <p className="text-[11px] text-slate-500">
+            {t("declaraties.amount_preview", {
+              amount: formatEuro(voorbeeldBedrag),
+              rate: formatEuro(tarief ?? 0),
+            })}
+          </p>
+        )}
       </form>
 
-      {/* Recent itinerary — default last 3, expandable to all */}
-      {!hideRecentTrips && employee && recentItinerary.length > 0 && (
+      {/* Recent trips — default last 3, expandable to all */}
+      {!hideRecentTrips && employee && recentTrips.length > 0 && (
         <div className="mt-3 pt-2 border-t border-slate-100">
           <button onClick={() => setShowRecent(!showRecent)} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700 cursor-pointer w-full mb-2">
             <ChevronDown size={12} className={`transition-transform ${showRecent ? "" : "-rotate-90"}`} />
-            {showRecent ? `Alle ${recentItinerary.length} ritten` : `Laatste ${Math.min(recentItinerary.length, 3)} ritten`}
-            {currentTR && <span className="ml-auto text-[10px] text-slate-400">{(currentTR.custom_total_distance || 0).toFixed(0)} km deze maand</span>}
+            {showRecent
+              ? t("declaraties.all_trips", { count: recentTrips.length })
+              : t("declaraties.last_trips", { count: Math.min(recentTrips.length, 3) })}
           </button>
           <div className="space-y-1">
-            {(showRecent ? recentItinerary : recentItinerary.slice(0, 3)).map((it, i) => (
-              editingTripIdx === i ? (
-                <div key={i} className="bg-y-teal/5 rounded-lg px-3 py-2 border border-y-teal/20 space-y-1">
+            {(showRecent ? recentTrips : recentTrips.slice(0, 3)).map((trip) => (
+              editingTripName === trip.name ? (
+                <div key={trip.name} className="bg-y-teal/5 rounded-lg px-3 py-2 border border-y-teal/20 space-y-1">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
-                    <input type="date" value={editTrip.departure_date} onChange={e => setEditTrip({ ...editTrip, departure_date: e.target.value })}
+                    <input type="date" value={editTrip.datum} onChange={e => setEditTrip({ ...editTrip, datum: e.target.value })}
                       className="px-1 py-0.5 border border-slate-200 rounded text-xs" />
-                    <input type="text" value={editTrip.travel_from} onChange={e => setEditTrip({ ...editTrip, travel_from: e.target.value })}
+                    <input type="text" value={editTrip.van} onChange={e => setEditTrip({ ...editTrip, van: e.target.value })}
                       className="px-1 py-0.5 border border-slate-200 rounded text-xs" placeholder={t("dashboard.km_from_short", { defaultValue: "From" })} />
-                    <input type="text" value={editTrip.travel_to} onChange={e => setEditTrip({ ...editTrip, travel_to: e.target.value })}
+                    <input type="text" value={editTrip.naar} onChange={e => setEditTrip({ ...editTrip, naar: e.target.value })}
                       className="px-1 py-0.5 border border-slate-200 rounded text-xs" placeholder={t("dashboard.km_to_short", { defaultValue: "To" })} />
                     <div className="flex gap-1">
-                      <input type="number" step="0.1" value={editTrip.custom_distance} onChange={e => setEditTrip({ ...editTrip, custom_distance: parseFloat(e.target.value) || 0 })}
+                      <input type="number" step="0.1" value={editTrip.kilometers} onChange={e => setEditTrip({ ...editTrip, kilometers: parseFloat(e.target.value) || 0 })}
                         className="w-14 px-1 py-0.5 border border-slate-200 rounded text-xs text-right" />
-                      <select value={editTrip.custom_journey_type} onChange={e => setEditTrip({ ...editTrip, custom_journey_type: e.target.value })}
+                      <select value={editTrip.retour ? "retour" : "enkel"} onChange={e => setEditTrip({ ...editTrip, retour: e.target.value === "retour" })}
                         className="px-1 py-0.5 border border-slate-200 rounded text-xs">
-                        <option value="Return">{t("dashboard.km_return_short", { defaultValue: "return" })}</option>
-                        <option value="One way">{t("dashboard.km_single_short", { defaultValue: "single" })}</option>
+                        <option value="retour">{t("dashboard.km_return_short", { defaultValue: "return" })}</option>
+                        <option value="enkel">{t("dashboard.km_single_short", { defaultValue: "single" })}</option>
                       </select>
                     </div>
                   </div>
                   <div className="flex gap-1 justify-end">
                     <button onClick={saveTripEdit} disabled={savingTrip} className="px-2 py-0.5 bg-y-teal text-white rounded text-xs cursor-pointer disabled:opacity-50">&#10003;</button>
-                    <button onClick={() => setEditingTripIdx(null)} className="px-2 py-0.5 text-slate-400 text-xs cursor-pointer">&#10005;</button>
-                    <button onClick={() => { deleteTripRow(i); setEditingTripIdx(null); }} className="px-2 py-0.5 text-red-400 hover:text-red-600 text-xs cursor-pointer">&#128465;</button>
+                    <button onClick={() => setEditingTripName(null)} className="px-2 py-0.5 text-slate-400 text-xs cursor-pointer">&#10005;</button>
+                    <button onClick={() => { deleteTrip(trip); setEditingTripName(null); }} className="px-2 py-0.5 text-red-400 hover:text-red-600 text-xs cursor-pointer">&#128465;</button>
                   </div>
                 </div>
               ) : (
-                <div key={i} className="flex items-center bg-slate-50 rounded-lg px-3 py-2 hover:bg-slate-100 group">
+                <div key={trip.name} className="flex items-center bg-slate-50 rounded-lg px-3 py-2 hover:bg-slate-100 group">
                   <button type="button"
-                    onClick={() => { setDeparture(it.travel_from); setDestination(it.travel_to); setKm(String(it.custom_distance || "")); setJourneyType(it.custom_journey_type === "Return" ? "Return" : "One way"); }}
+                    onClick={() => { setDeparture(trip.van || ""); setDestination(trip.naar || ""); setKm(String(trip.kilometers || "")); setRetour(!!trip.retour); }}
                     className="flex-1 text-left cursor-pointer min-w-0"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-xs text-slate-400 shrink-0">
-                          {it.departure_date ? new Date(it.departure_date).toLocaleDateString(localeFromI18n(), { day: "numeric", month: "short" }) : ""}
+                          {trip.datum ? new Date(trip.datum + "T12:00:00").toLocaleDateString(localeFromI18n(), { day: "numeric", month: "short" }) : ""}
                         </span>
                         <span className="text-xs text-slate-700 truncate">
-                          {it.travel_from?.split(",")[0] || "?"} &rarr; {it.travel_to?.split(",")[0] || "?"}
+                          {trip.van?.split(",")[0] || "?"} &rarr; {trip.naar?.split(",")[0] || "?"}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
-                        <span className="text-[10px] text-slate-400">{it.custom_journey_type === "Return" ? t("dashboard.km_return_short", { defaultValue: "return" }) : t("dashboard.km_single_short", { defaultValue: "single" })}</span>
+                        <span className="text-[10px] text-slate-400">{trip.retour ? t("dashboard.km_return_short", { defaultValue: "return" }) : t("dashboard.km_single_short", { defaultValue: "single" })}</span>
                         <span className="text-xs font-bold text-slate-700">
-                          {(it.custom_distance || 0).toLocaleString(localeFromI18n(), { maximumFractionDigits: 1 })} km
+                          {totaleKilometers(trip).toLocaleString(localeFromI18n(), { maximumFractionDigits: 1 })} km
                         </span>
+                        <StatusBadge status={trip.status} />
                       </div>
                     </div>
                   </button>
-                  <button type="button" onClick={() => startTripEdit(i)}
-                    className="opacity-0 group-hover:opacity-100 ml-2 p-1 text-slate-400 hover:text-y-teal cursor-pointer shrink-0" title={t("common.edit")}>
-                    &#9998;
-                  </button>
+                  {trip.status === "Concept" && (
+                    <button type="button" onClick={() => startTripEdit(trip)}
+                      className="opacity-0 group-hover:opacity-100 ml-2 p-1 text-slate-400 hover:text-y-teal cursor-pointer shrink-0" title={t("common.edit")}>
+                      &#9998;
+                    </button>
+                  )}
                 </div>
               )
             ))}

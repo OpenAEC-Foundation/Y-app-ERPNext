@@ -111,7 +111,37 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
     route: WEB_PAGE_ROUTE,
     published: 1,
     content_type: "HTML",
-    dynamic_template: 0,
+    // ─── Cache-uitschakeling (load-bearing, zie docs/deployment.md) ───
+    //
+    // Frappe zet op een Web Page standaard
+    //   Cache-Control: private,max-age=300,stale-while-revalidate=10800
+    // (frappe/website/utils.py, decorator `cache_html`). Gevolg: een browser
+    // die /y-next ooit als GAST heeft geladen serveert diezelfde HTML — met
+    // `frappe.csrf_token = "None"` erin — na de login tot 5 minuten vers en
+    // tot 3 uur "stale", en draait daarmee óók nog uren na een deploy de
+    // vorige bundel. Precies die keten brak alle schrijfacties ("Invalid
+    // Request" bij uren boeken).
+    //
+    // Het Web Page-DocType heeft géén eigen `no_cache`-veld — geverifieerd
+    // tegen frappe/website/doctype/web_page/web_page.json (v16). De wél
+    // beschikbare hefboom is `dynamic_template`: die zet in
+    // `WebPage.render_dynamic()` `context["no_cache"] = 1` zolang de
+    // main_section geen `<!-- static -->` bevat, en `cache_html` slaat dan
+    // zowel de server-side pagina-cache als de Cache-Control-header over —
+    // waarna Frappe's default `no-store,no-cache,must-revalidate,max-age=0`
+    // blijft staan (frappe/app.py `process_response`).
+    //
+    // De prijs is dat `main_section` door Jinja gaat. Dat is veilig: de
+    // main_section hieronder is een statische div zonder `{{`/`{%`, dus
+    // `render_template` geeft hem letterlijk terug.
+    //
+    // Live geverifieerd dat dit dé bron is: `/y-next?cachebust=1` (waarbij
+    // `can_cache()` op de query-string al False geeft) antwoordt met
+    // `no-store,no-cache,must-revalidate,max-age=0` en `X-From-Cache: False`,
+    // terwijl `/y-next` `private,max-age=300,...` + `X-From-Cache: True` gaf.
+    //
+    // NIET terugzetten op 0 zonder een vervangende cache-buster.
+    dynamic_template: 1,
     full_width: 1,
     show_title: 0,
     insert_style: 0,

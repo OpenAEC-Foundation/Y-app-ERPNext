@@ -8,6 +8,7 @@ import {
 import CompanySelect from "../components/CompanySelect";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import { SALES_INVOICE_ACTIVE_FILTER, draftShare } from "../lib/invoice-docstatus";
 
 /* ─── Types ─── */
 
@@ -34,6 +35,7 @@ interface SalesInvRow {
   net_total: number;
   company: string;
   posting_date: string;
+  docstatus?: number;
 }
 
 interface EmployeeStats {
@@ -100,8 +102,12 @@ export default function Profitability() {
       ];
       if (company) glFilters.push(["company", "=", company]);
 
+      // Omzetkant telt concepten mee (`docstatus != 2`) — zelfde keuze als
+      // Omzet/Revenue en als de Timesheet-filter hierboven. De kostenkant komt
+      // uit GL Entry en kan dat per definitie niet; het conceptdeel wordt
+      // daarom apart getoond zodat de marge te duiden blijft.
       const siFilters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_ACTIVE_FILTER,
         ["posting_date", ">=", yearStart],
         ["posting_date", "<=", yearEnd],
       ];
@@ -115,7 +121,7 @@ export default function Profitability() {
           ["account", "debit", "credit", "voucher_type", "company", "posting_date", "against", "is_cancelled"],
           glFilters, "posting_date asc"),
         fetchAll<SalesInvRow>("Sales Invoice",
-          ["net_total", "company", "posting_date"],
+          ["net_total", "company", "posting_date", "docstatus"],
           siFilters, "posting_date asc"),
       ]);
 
@@ -135,6 +141,11 @@ export default function Profitability() {
 
   const totalRevenue = useMemo(
     () => salesInvoices.reduce((s, i) => s + (i.net_total || 0), 0),
+    [salesInvoices]
+  );
+
+  const draft = useMemo(
+    () => draftShare(salesInvoices, (i) => i.net_total),
     [salesInvoices]
   );
 
@@ -289,7 +300,10 @@ export default function Profitability() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <KPI icon={DollarSign} iconColor="text-green-600" iconBg="bg-green-100"
-          label={t("rendabiliteit.kpi_total_revenue")} value={loading ? "..." : euro(totalRevenue)} />
+          label={t("rendabiliteit.kpi_total_revenue")} value={loading ? "..." : euro(totalRevenue)}
+          sub={!loading && draft.hasDrafts
+            ? t("invoice_draft.of_which", { amount: euro(draft.draftAmount) })
+            : undefined} />
         <KPI icon={TrendingDown} iconColor="text-red-600" iconBg="bg-red-100"
           label={t("rendabiliteit.kpi_payroll")} value={loading ? "..." : euro(totalSalary)} />
         <KPI icon={TrendingDown} iconColor="text-orange-600" iconBg="bg-orange-100"
@@ -302,6 +316,18 @@ export default function Profitability() {
           label={t("rendabiliteit.kpi_result")} value={loading ? "..." : euro(totals.result)}
           sub={t("rendabiliteit.kpi_margin", { value: pct(avgMargin) })} />
       </div>
+
+      {/* Concept-facturen zitten in de omzetkant; de kostenkant komt uit
+          GL Entry en kent geen concepten. Expliciet benoemen zodat een
+          opgeblazen marge te verklaren is. */}
+      {!loading && draft.hasDrafts && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.included", { count: draft.draftCount, amount: euro(draft.draftAmount) })}
+        </div>
+      )}
 
       {/* Explanation */}
       <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500">

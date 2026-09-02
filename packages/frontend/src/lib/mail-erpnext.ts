@@ -47,6 +47,13 @@ import {
   type FileInfo,
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
+import {
+  buildConnectionQueries,
+  isConnectionFolder,
+  loadConnectionIndex,
+  messageMatchesSelection,
+  parseConnectionFolder,
+} from "./mail-connections.ts";
 
 /** Een Communication zoals de Webmail-UI hem consumeert. */
 export interface ErpMailMessage {
@@ -62,6 +69,11 @@ export interface ErpMailMessage {
   /** `communication_date` (ERPNext-datetimestring). */
   date: string;
   seen: boolean;
+  /**
+   * `status === "Closed"` — door de gebruiker afgevinkt als afgehandeld.
+   * Zie de toelichting bij `COMM_STATUS_CLOSED`.
+   */
+  handled: boolean;
   /** Virtuele map-id waarin dit bericht is opgehaald. */
   folder: string;
   hasAttachments: boolean;
@@ -80,7 +92,13 @@ export interface ErpMailFolder {
    */
   label: string;
   unseen: number;
-  kind: "inbox" | "sent" | "unread" | "trash" | "project" | "custom";
+  /**
+   * Totaalaantal berichten in deze map. Alleen gevuld waar "ongelezen" niets
+   * zegt — de map "Afgehandeld" bestaat juist uit gelezen mail, dus daar is
+   * het totaal de enige zinvolle telling.
+   */
+  total?: number;
+  kind: "inbox" | "sent" | "unread" | "handled" | "trash" | "project" | "custom";
   /** Alleen bij `kind === "project"`: de Project-docname. */
   project?: string;
   /** Alleen bij `kind === "custom"`: het tag-label zonder `mail/`-prefix. */
@@ -105,6 +123,8 @@ export interface ErpMailPage {
 export const MAIL_FOLDER_INBOX = "INBOX";
 export const MAIL_FOLDER_SENT = "Sent";
 export const MAIL_FOLDER_UNREAD = "unread";
+/** Virtuele map "Afgehandeld": alles met `status = "Closed"`. */
+export const MAIL_FOLDER_HANDLED = "handled";
 /** Virtuele Prullenbak-map: alles met `email_status = "Trash"`. */
 export const MAIL_FOLDER_TRASH = "trash";
 export const MAIL_PROJECT_FOLDER_PREFIX = "project:";
@@ -117,10 +137,6 @@ export const MAIL_TAG_FOLDER_PREFIX = "tag:";
  */
 export const MAIL_TAG_NAME_PREFIX = "mail/";
 
-/** Hoeveel projectmappen maximaal in de mappenlijst verschijnen. */
-const MAX_PROJECT_FOLDERS = 50;
-/** Hoeveel recente Communications de projectdiscovery scant. */
-const PROJECT_DISCOVERY_WINDOW = 200;
 /** Hoeveel custom (tag-)mappen maximaal in de mappenlijst verschijnen. */
 const MAX_CUSTOM_FOLDERS = 50;
 /** Standaard paginagrootte van de berichtenlijst. */
@@ -165,9 +181,49 @@ const EMAIL_STATUS_OPEN = "Open";
  */
 const NOT_TRASHED: unknown[] = ["email_status", "!=", EMAIL_STATUS_TRASH];
 
+/* ─── Afgehandeld: Frappe's eigen `Communication.status` ─── */
+
+/**
+ * `status` is een **ander** veld dan `email_status`: een Select met
+ * `Open` / `Replied` / `Closed` / `Linked`. ERPNext vult en verandert dat veld
+ * zelf — binnenkomende mail komt binnen als `Open`, een mail die aan een
+ * document gekoppeld wordt schuift naar `Linked`, en een beantwoorde thread
+ * kan `Replied` worden (live nagemeten op de doelinstance: alle 38
+ * Communications droegen een gevulde `status`, verdeeld over `Open` en
+ * `Linked`).
+ *
+ * Daarom is "afgehandeld" hier **precies één waarde** (`Closed`) en is
+ * "niet afgehandeld" *alles behalve* `Closed` — niet "gelijk aan Open". Anders
+ * zou het afvinken vechten met ERPNext' eigen gebruik van het veld en zou een
+ * gekoppelde (`Linked`) mail uit de niet-afgehandeld-lijst vallen zonder dat
+ * iemand hem afvinkte.
+ *
+ * Heropenen zet bewust `Open` terug en niet de vorige waarde: die is na de
+ * schrijfactie niet meer bekend, en ERPNext herstelt `Linked` zelf zodra er
+ * weer een koppeling wordt gelegd.
+ */
+const COMM_STATUS_CLOSED = "Closed";
+const COMM_STATUS_OPEN = "Open";
+
+/** Is deze `Communication.status`-waarde "afgehandeld"? */
+export function isHandledStatus(value: unknown): boolean {
+  return toStr(value) === COMM_STATUS_CLOSED;
+}
+
+/**
+ * Client-side tegenhanger van `NOT_HANDLED`, voor het lijstfilter in de UI.
+ * Bewust dezelfde regel ("alles behalve afgehandeld") zodat het filter in de
+ * lijstkop en de serverquery van de map "Afgehandeld" niet uiteen kunnen
+ * lopen.
+ */
+export function filterUnhandled<T extends { handled: boolean }>(rows: T[]): T[] {
+  return rows.filter((row) => !row.handled);
+}
+
 const LIST_FIELDS = [
   "name",
   "subject",
+  "status",
   "sender",
   "sender_full_name",
   "recipients",
@@ -195,11 +251,20 @@ function toStr(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-/** Docname van de projectmap-id (`project:PROJ-0001` → `PROJ-0001`). */
+/**
+ * Project van een map-id, of `null`. Kent twee vormen: de connectie-selectie
+ * (`conn:project:Project:PROJ-0001`) die de connectiekolom gebruikt, en de
+ * oudere `project:`-map-id — die staat nog in localStorage van iedereen die
+ * de vorige versie open had en mag daar niet stilletjes op Postvak IN
+ * uitkomen.
+ */
 export function projectOfFolder(folderId: string): string | null {
-  return folderId.startsWith(MAIL_PROJECT_FOLDER_PREFIX)
-    ? folderId.slice(MAIL_PROJECT_FOLDER_PREFIX.length)
-    : null;
+  if (folderId.startsWith(MAIL_PROJECT_FOLDER_PREFIX)) {
+    return folderId.slice(MAIL_PROJECT_FOLDER_PREFIX.length) || null;
+  }
+  const sel = parseConnectionFolder(folderId);
+  if (sel && sel.category === "project" && sel.docname) return sel.docname;
+  return null;
 }
 
 /** Tag-label van de custom map-id (`tag:Klanten` → `Klanten`). */
@@ -255,6 +320,11 @@ function filtersForFolder(folderId: string): unknown[][] {
     ];
   }
   const base: unknown[][] = [["communication_type", "=", "Communication"], NOT_TRASHED];
+  if (folderId === MAIL_FOLDER_HANDLED) {
+    // Net als de Prullenbak bewust géén `sent_or_received`-beperking: je vinkt
+    // ook je eigen verzonden mail af als een zaak klaar is.
+    return [...base, ["status", "=", COMM_STATUS_CLOSED]];
+  }
   if (folderId === MAIL_FOLDER_SENT) {
     return [...base, ["sent_or_received", "=", "Sent"]];
   }
@@ -299,6 +369,7 @@ function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMess
     recipients: toStr(row.recipients),
     date: toStr(row.communication_date),
     seen: toBool(row.seen),
+    handled: isHandledStatus(row.status),
     folder: folderId,
     hasAttachments: toBool(row.has_attachment),
   };
@@ -322,8 +393,19 @@ export async function listMailboxMessages(
   folderId: string,
   opts?: { limit?: number; start?: number; search?: string; mailbox?: string }
 ): Promise<ErpMailMessage[]> {
+  if (isConnectionFolder(folderId)) {
+    const page = await connectionSlice(
+      folderId, opts?.search?.trim() ?? "", opts?.start ?? 0, opts?.limit ?? DEFAULT_PAGE_SIZE,
+    );
+    return page.messages;
+  }
   const search = opts?.search?.trim();
   const mailbox = opts?.mailbox?.trim();
+  // "Afgehandeld" is een dwarsdoorsnede, geen richting: de map bevat zowel
+  // ontvangen als verzonden mail. Elke rij krijgt daarom de map die bij zijn
+  // eigen richting hoort, zodat de lijst afzender/geadresseerde net zo toont
+  // als in Postvak IN en Verzonden.
+  const crossCut = folderId === MAIL_FOLDER_HANDLED;
   const params: {
     fields: string[];
     filters: unknown[][];
@@ -332,7 +414,7 @@ export async function listMailboxMessages(
     limit_page_length: number;
     limit_start: number;
   } = {
-    fields: LIST_FIELDS,
+    fields: crossCut ? SEARCH_FIELDS : LIST_FIELDS,
     filters: mailbox
       ? [...filtersForFolder(folderId), ["email_account", "=", mailbox]]
       : filtersForFolder(folderId),
@@ -347,7 +429,7 @@ export async function listMailboxMessages(
     ];
   }
   const rows = await fetchList<Record<string, unknown>>("Communication", params);
-  return rows.map((row) => mapMessage(row, folderId));
+  return rows.map((row) => mapMessage(row, crossCut ? folderForRow(row) : folderId));
 }
 
 /**
@@ -359,6 +441,9 @@ export async function listMailboxMessagesPaged(
   folderId: string,
   opts: { start: number; limit: number; search?: string; mailbox?: string }
 ): Promise<ErpMailPage> {
+  if (isConnectionFolder(folderId)) {
+    return connectionSlice(folderId, opts.search?.trim() ?? "", opts.start, opts.limit);
+  }
   const limit = opts.limit;
   const messages = await listMailboxMessages(folderId, {
     limit,
@@ -367,6 +452,100 @@ export async function listMailboxMessagesPaged(
     mailbox: opts.mailbox,
   });
   return { messages, hasMore: messages.length === limit };
+}
+
+/* ─── Connecties: filteren op waar de mail aan hangt ─── */
+
+/**
+ * Hoeveel rijen per tak worden opgehaald ten opzichte van het gevraagde
+ * venster. De serverqueries leveren bewust een superset (zie
+ * `mail-connections.ts`); het nafilter snijdt daar weer uit, dus zonder marge
+ * zou een volle pagina half gevuld terugkomen.
+ */
+const CONNECTION_OVERFETCH = 2;
+/** Harde bovengrens op die marge — één klik mag nooit de halve mailbox halen. */
+const CONNECTION_MAX_FETCH = 200;
+
+/**
+ * Berichten van een connectie-selectie: de vereniging van de takken uit
+ * `buildConnectionQueries`, ontdubbeld, nagefilterd op de momentopname en
+ * chronologisch gesneden.
+ *
+ * **Waarom de vereniging client-side wordt gemaakt en niet met `or_filters`.**
+ * `or_filters` is al bezet door de zoekterm — zoeken binnen een connectie zou
+ * de connectiefilter anders overschrijven. Twee AND-only queries parallel is
+ * bovendien voorspelbaarder dan één query waarin de OR-tak over een
+ * child-join loopt.
+ */
+async function connectionSlice(
+  folderId: string,
+  term: string,
+  start: number,
+  limit: number,
+): Promise<ErpMailPage> {
+  const sel = parseConnectionFolder(folderId);
+  // Bewust géén terugval op Postvak IN: een onbekende connectie-map is een
+  // lege selectie, en "hier staat niets" is eerlijker dan stilletjes iets
+  // anders tonen.
+  if (!sel) return { messages: [], hasMore: false };
+
+  const index = await loadConnectionIndex().catch(() => null);
+  const specs = buildConnectionQueries(sel, index);
+  if (specs.length === 0) return { messages: [], hasMore: false };
+
+  const window = start + limit;
+  const fetchLimit = Math.min(window * CONNECTION_OVERFETCH, CONNECTION_MAX_FETCH);
+  const orFilters = term
+    ? [["subject", "like", `%${term}%`], ["sender", "like", `%${term}%`]]
+    : undefined;
+
+  const pages = await Promise.all(specs.map(async (spec) => {
+    const params: {
+      fields: string[];
+      filters: unknown[][];
+      or_filters?: unknown[][];
+      order_by: string;
+      limit_page_length: number;
+      group_by?: string;
+    } = {
+      fields: SEARCH_FIELDS,
+      filters: [
+        ["communication_type", "=", "Communication"],
+        NOT_TRASHED,
+        ...spec.filters,
+      ],
+      order_by: "communication_date desc",
+      limit_page_length: fetchLimit,
+    };
+    if (orFilters) params.or_filters = orFilters;
+    if (spec.groupBy) params.group_by = spec.groupBy;
+    // Eén tak mag de andere niet meeslepen: een doctype dat op deze instance
+    // niet bestaat (geen CRM-app, dus geen Lead) hoort een lege tak te geven.
+    return fetchList<Record<string, unknown>>("Communication", params).catch(() => []);
+  }));
+
+  const seenNames = new Set<string>();
+  const merged: ErpMailMessage[] = [];
+  let anyFull = false;
+  for (const rows of pages) {
+    if (rows.length >= fetchLimit) anyFull = true;
+    for (const row of rows) {
+      const name = toStr(row.name);
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+      if (!messageMatchesSelection(index, name, sel)) continue;
+      // De richting van de rij, niet de connectie-map: een connectie bevat
+      // zowel ontvangen als verzonden mail, en de UI leidt uit `folder` af of
+      // een rij een afzender- of een geadresseerde-regel krijgt.
+      merged.push(mapMessage(row, folderForRow(row)));
+    }
+  }
+  merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  return {
+    messages: merged.slice(start, window),
+    hasMore: merged.length > window || anyFull,
+  };
 }
 
 /**
@@ -404,70 +583,6 @@ export async function searchMessages(
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
   });
   return rows.map((row) => mapMessage(row, folderForRow(row)));
-}
-
-/**
- * Projectmappen: de projecten waaraan recent gemaild is. Eén platte lijst-
- * query levert de kandidaten (aggregates zijn niet toegestaan), daarna één
- * `get_count` per uniek project voor de ongelezen-teller.
- */
-async function listProjectFolders(mailbox?: string): Promise<ErpMailFolder[]> {
-  const rows = await fetchList<{ reference_name?: string }>("Communication", {
-    fields: ["reference_name", "communication_date"],
-    filters: withMailbox([
-      ["communication_type", "=", "Communication"],
-      NOT_TRASHED,
-      ["reference_doctype", "=", "Project"],
-    ], mailbox),
-    order_by: "communication_date desc",
-    limit_page_length: PROJECT_DISCOVERY_WINDOW,
-  });
-
-  const unique: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const name = row?.reference_name;
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    unique.push(name);
-    if (unique.length >= MAX_PROJECT_FOLDERS) break;
-  }
-  if (unique.length === 0) return [];
-
-  const labels = new Map<string, string>();
-  try {
-    const projects = await fetchList<{ name: string; project_name?: string }>("Project", {
-      fields: ["name", "project_name"],
-      filters: [["name", "in", unique]],
-      limit_page_length: unique.length,
-    });
-    for (const p of projects) {
-      if (p?.name) labels.set(p.name, p.project_name || p.name);
-    }
-  } catch {
-    // Geen leesrecht op Project (of de call faalde) — de docname is een
-    // prima label, dat is geen reden om de hele mappenlijst te laten vallen.
-  }
-
-  const counts = await Promise.all(
-    unique.map((project) =>
-      fetchCount("Communication", withMailbox([
-        ["communication_type", "=", "Communication"],
-        NOT_TRASHED,
-        ["reference_doctype", "=", "Project"],
-        ["reference_name", "=", project],
-        ["seen", "=", 0],
-      ], mailbox)).catch(() => 0)
-    )
-  );
-
-  return unique.map((project, i) => ({
-    id: `${MAIL_PROJECT_FOLDER_PREFIX}${project}`,
-    label: labels.get(project) || project,
-    unseen: counts[i],
-    kind: "project" as const,
-    project,
-  }));
 }
 
 /**
@@ -606,27 +721,41 @@ export async function untagMessage(name: string, label: string): Promise<void> {
 }
 
 /**
- * De virtuele mappenlijst: de vaste mappen, de custom (tag-)mappen en de
- * projectmappen. "Ongelezen" is een view op Postvak IN en deelt daarom zijn
- * teller; de Prullenbak telt zijn eigen ongelezen berichten.
+ * De vaste mappen plus de eigen (tag-)mappen.
+ *
+ * Projectmappen staan hier bewust **niet** meer bij: een project is geen map
+ * maar een *connectie*, en de connectiekolom leidt die — samen met klanten,
+ * inkoopfacturen, offertes en leads — af uit ERPNext' eigen koppelingen (zie
+ * `mail-connections.ts`). Eén project als map en een klant niet, terwijl beide
+ * gewoon een gekoppeld document zijn, was de inconsistentie die dat model
+ * verving.
+ *
+ * "Ongelezen" is een view op Postvak IN en deelt daarom zijn teller; de
+ * Prullenbak telt zijn eigen ongelezen berichten.
  */
 export async function listVirtualFolders(mailbox?: string): Promise<ErpMailFolder[]> {
-  const [unseen, trashUnseen, customFolders, projectFolders] = await Promise.all([
+  const [unseen, handledTotal, trashUnseen, customFolders] = await Promise.all([
     unseenCount(mailbox).catch(() => 0),
+    // "Afgehandeld" bestaat per definitie uit gelezen mail: een ongelezen-
+    // teller zou daar altijd 0 zijn en dus niets zeggen. Het totaal is wat de
+    // gebruiker wil zien ("wat heb ik afgevinkt").
+    handledCount(mailbox).catch(() => 0),
     fetchCount("Communication", withMailbox([
       ...filtersForFolder(MAIL_FOLDER_TRASH),
       ["seen", "=", 0],
     ], mailbox)).catch(() => 0),
     listCustomFolders(mailbox).catch(() => [] as ErpMailFolder[]),
-    listProjectFolders(mailbox).catch(() => [] as ErpMailFolder[]),
   ]);
   return [
     { id: MAIL_FOLDER_INBOX, label: "Postvak IN", unseen, kind: "inbox" },
     { id: MAIL_FOLDER_SENT, label: "Verzonden", unseen: 0, kind: "sent" },
     { id: MAIL_FOLDER_UNREAD, label: "Ongelezen", unseen, kind: "unread" },
+    {
+      id: MAIL_FOLDER_HANDLED, label: "Afgehandeld", unseen: 0,
+      total: handledTotal, kind: "handled",
+    },
     { id: MAIL_FOLDER_TRASH, label: "Prullenbak", unseen: trashUnseen, kind: "trash" },
     ...customFolders,
-    ...projectFolders,
   ];
 }
 
@@ -835,6 +964,21 @@ export async function deleteForever(name: string): Promise<void> {
 }
 
 /**
+ * Vink een bericht af als afgehandeld (`status = "Closed"`).
+ *
+ * Bewust hetzelfde soort documentupdate als `moveToTrash`: geen eigen veld,
+ * geen tag, geen extra doctype — het veld dat ERPNext hiervoor al heeft.
+ */
+export async function markHandled(name: string): Promise<void> {
+  await updateDocument("Communication", name, { status: COMM_STATUS_CLOSED });
+}
+
+/** Heropen een afgehandeld bericht (`status` terug naar `Open`). */
+export async function markUnhandled(name: string): Promise<void> {
+  await updateDocument("Communication", name, { status: COMM_STATUS_OPEN });
+}
+
+/**
  * Voer een bulkactie parallel uit over een lijst berichten.
  *
  * Twee dingen die de bulkvorm anders maken dan N losse calls:
@@ -849,40 +993,71 @@ export async function deleteForever(name: string): Promise<void> {
  *    schrijfrecht mag de andere 49 niet ongedaan maken, dus per-item fouten
  *    worden verzameld in plaats van gegooid. Faalt *alles*, dan is er niets
  *    gebeurd en gaat de eerste fout alsnog naar de aanroeper.
+ * 3. **Deelfouten worden gerapporteerd, niet ingeslikt.** De namen die het
+ *    niet haalden komen terug, met de eerste fout erbij. Zonder dat zag de
+ *    gebruiker "5 verwijderd" terwijl er vier bleven staan — een actie die
+ *    beweert te zijn gelukt maar niets deed, zonder enige foutmelding. Dat is
+ *    precies de klasse "de knop doet niets".
  */
-async function bulkApply(names: string[], op: (name: string) => Promise<unknown>): Promise<void> {
+export interface BulkOutcome {
+  /** Namen waarvoor de actie mislukte. Leeg = alles gelukt. */
+  failed: string[];
+  /** Eerste fout van de mislukte items — de tekst voor de melding. */
+  error?: unknown;
+}
+
+async function bulkApply(
+  names: string[],
+  op: (name: string) => Promise<unknown>,
+): Promise<BulkOutcome> {
   const unique = [...new Set(names.filter(Boolean))];
-  if (unique.length === 0) return;
+  if (unique.length === 0) return { failed: [] };
   const results = await Promise.allSettled(unique.map((name) => op(name)));
   invalidateCache("Communication");
   const rejected = results.filter((r) => r.status === "rejected");
   if (rejected.length === results.length) {
     throw (rejected[0] as PromiseRejectedResult).reason;
   }
+  const failed = unique.filter((_, i) => results[i].status === "rejected");
+  return failed.length === 0
+    ? { failed }
+    : { failed, error: (rejected[0] as PromiseRejectedResult).reason };
 }
 
-export async function bulkMarkRead(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
+export async function bulkMarkRead(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
 }
 
-export async function bulkMarkUnread(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
+export async function bulkMarkUnread(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
 }
 
-export async function bulkMoveToTrash(names: string[]): Promise<void> {
-  await bulkApply(names, (name) =>
+export async function bulkMoveToTrash(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
     updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH })
   );
 }
 
-export async function bulkRestoreFromTrash(names: string[]): Promise<void> {
-  await bulkApply(names, (name) =>
+export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
     updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN })
   );
 }
 
-export async function bulkDeleteForever(names: string[]): Promise<void> {
-  await bulkApply(names, (name) => deleteDocument("Communication", name));
+export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) => deleteDocument("Communication", name));
+}
+
+export async function bulkMarkHandled(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
+    updateDocument("Communication", name, { status: COMM_STATUS_CLOSED })
+  );
+}
+
+export async function bulkMarkUnhandled(names: string[]): Promise<BulkOutcome> {
+  return bulkApply(names, (name) =>
+    updateDocument("Communication", name, { status: COMM_STATUS_OPEN })
+  );
 }
 
 /**
@@ -970,45 +1145,155 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
   });
 }
 
+/* ─── Gesprekken in de lijst: de ontbrekende leden erbij halen ─── */
+
 /**
- * De handtekening van het standaard uitgaande Email Account, als HTML.
+ * Hoeveel zichtbare berichten er hooguit meegaan in de aanvullende query. De
+ * lijst toont er standaard 50 per pagina; wie tien keer "Meer laden" klikt
+ * krijgt niet ook een `IN`-clausule met vijfhonderd namen.
+ */
+const MAX_COMPANION_SEEDS = 120;
+
+/**
+ * De berichten die de zichtbare gesprekken compleet maken, maar zelf niet in
+ * de huidige map staan — in de praktijk je eigen verzonden antwoorden, die
+ * alleen in "Verzonden" staan en dus in Postvak IN ontbreken.
+ *
+ * **Twee begrensde queries, geen scan van de Verzonden-map.** Beide lopen over
+ * een `IN`-lijst van namen die de lijst al kent:
+ *
+ * 1. `in_reply_to in [zichtbare namen]` — alles wat een antwoord is op iets in
+ *    beeld (jouw verzonden reactie, maar ook een antwoord dat in een andere
+ *    map beland is).
+ * 2. `name in [ontbrekende ouders]` — de berichten waarnaar een zichtbare mail
+ *    verwijst maar die zelf niet in de lijst staan (`missingParentNames`).
+ *
+ * Dat is dus **hooguit twee extra requests per lijst**, ongeacht hoeveel rijen
+ * er staan — geen query per regel. Mislukt een tak (rechten, netwerk), dan
+ * levert hij een lege lijst: een gesprek dat één lid mist is een kleiner
+ * probleem dan een lijst die niet laadt.
+ *
+ * Getrashte berichten blijven eruit (`NOT_TRASHED`): een weggegooid antwoord
+ * hoort niet als thread-lid terug te komen onder een mail in Postvak IN.
+ */
+export async function fetchThreadCompanions(
+  messages: { name: string; inReplyTo?: string }[],
+): Promise<ErpMailMessage[]> {
+  const seeds = messages.slice(0, MAX_COMPANION_SEEDS);
+  const names = seeds.map((m) => m.name).filter(Boolean);
+  if (names.length === 0) return [];
+
+  const known = new Set(names);
+  const parents: string[] = [];
+  for (const msg of seeds) {
+    const parent = msg.inReplyTo;
+    if (!parent || known.has(parent) || parents.includes(parent)) continue;
+    parents.push(parent);
+  }
+
+  const query = (filters: unknown[][]) =>
+    fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [["communication_type", "=", "Communication"], NOT_TRASHED, ...filters],
+      order_by: "communication_date desc",
+      limit_page_length: MAX_COMPANION_SEEDS,
+    }).catch(() => [] as Record<string, unknown>[]);
+
+  const [replies, ancestors] = await Promise.all([
+    query([["in_reply_to", "in", names]]),
+    parents.length > 0 ? query([["name", "in", parents]]) : Promise.resolve([]),
+  ]);
+
+  const out: ErpMailMessage[] = [];
+  const seen = new Set(known);
+  for (const row of [...replies, ...ancestors]) {
+    const name = toStr(row.name);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(mapMessage(row, folderForRow(row)));
+  }
+  return out;
+}
+
+/**
+ * De handtekening van de ingelogde medewerker, als HTML.
+ *
+ * Twee bronnen, in deze volgorde:
+ *
+ * 1. **`User.email_signature`** van de eigen gebruiker. Dat is de persoonlijke
+ *    handtekening — naam, functie, eigen nummer — en dus wat er onder een mail
+ *    hoort te staan. `scripts/generate-signatures.mjs` vult dit veld voor
+ *    iedere medewerker uniform. Frappe staat elke gebruiker zijn eigen
+ *    User-doc toe te lezen, dus dit pad werkt zonder extra rechten.
+ * 2. **`Email Account.signature`** van het standaard uitgaande account, als
+ *    terugval voor gebruikers die (nog) geen eigen handtekening hebben.
  *
  * `Email Account` is geen breed leesbaar DocType: een gewone medewerker
- * krijgt hier een 403. Dat mag de compose-view niet breken — een mail zonder
+ * krijgt daar een 403. Dat mag de compose-view niet breken — een mail zonder
  * handtekening is prima, een compose-scherm dat niet opent niet. Elke fout
- * (403, ontbrekend doctype, netwerk) levert daarom een lege string op.
+ * (403, ontbrekend doctype, netwerk) levert daarom een lege string op, op
+ * beide niveaus.
+ *
+ * Het resultaat wordt voor de duur van de sessie onthouden: de handtekening
+ * verandert niet tussen twee compose-vensters door, en zonder cache zou elke
+ * Webmail-mount opnieuw twee requests doen. `resetSignatureCache()` wist hem
+ * (uitloggen, en het opruimpad in tests).
  */
+let cachedSignature: string | null = null;
+
+/** Vergeet de onthouden handtekening (uitloggen, en het opruimpad in tests). */
+export function resetSignatureCache(): void {
+  cachedSignature = null;
+}
+
 export async function getSignature(mailbox?: string): Promise<string> {
-  try {
-    // 1. De postbus waaruit de gebruiker verstuurt (expliciet gekozen of de
-    //    eigen), zodat iedereen zijn éigen ondertekening krijgt in plaats van
-    //    die van het gedeelde standaard-uitgaande account.
-    const own = toStr(mailbox).trim() || (await ownMailboxName());
-    if (own) {
+  // Een gedeelde postbus heeft een eigen handtekening; die hoort vóór de
+  // persoonlijke te gaan, anders ondertekent info@ met iemands eigen naam.
+  // Deze tak wordt niet gecachet: hij verschilt per gekozen postbus.
+  const box = toStr(mailbox).trim();
+  if (box) {
+    try {
       const mine = await fetchList<{ signature?: string }>("Email Account", {
         fields: ["name", "signature"],
-        filters: [["name", "=", own]],
+        filters: [["name", "=", box]],
         limit_page_length: 1,
       });
       const sig = toStr(mine[0]?.signature);
-      if (sig) return sig;
+      if (sig.trim()) return sig;
+    } catch {
+      // Geen leesrecht op Email Account — val terug op het persoonlijke veld.
     }
-    // 2. Terugval: het standaard uitgaande account.
+  }
+
+  if (cachedSignature !== null) return cachedSignature;
+
+  const user = await resolveSessionUser();
+  if (user) {
+    try {
+      const doc = await fetchDocument<{ email_signature?: string }>("User", user);
+      const own = toStr(doc?.email_signature);
+      if (own.trim()) {
+        cachedSignature = own;
+        return own;
+      }
+    } catch {
+      // Geen leesrecht of netwerkfout — val terug op het Email Account.
+    }
+  }
+
+  try {
+    // Terugval: het standaard uitgaande account.
     const rows = await fetchList<{ signature?: string }>("Email Account", {
       fields: ["name", "signature"],
       filters: [["default_outgoing", "=", 1]],
       limit_page_length: 1,
     });
-    return toStr(rows[0]?.signature);
+    cachedSignature = toStr(rows[0]?.signature);
+    return cachedSignature;
   } catch {
+    cachedSignature = "";
     return "";
   }
-}
-
-/** Docname van de eigen postbus, of "" als die er niet is. */
-async function ownMailboxName(): Promise<string> {
-  const boxes = await listMailboxes();
-  return boxes.find((b) => b.own)?.name ?? "";
 }
 
 /**
@@ -1142,6 +1427,11 @@ export async function sendMail(input: {
 /** Badge-teller: ongelezen ontvangen e-mail. */
 export async function unseenCount(mailbox?: string): Promise<number> {
   return fetchCount("Communication", withMailbox(filtersForFolder(MAIL_FOLDER_UNREAD), mailbox));
+}
+
+/** Teller van de map "Afgehandeld" — het totaal, niet het ongelezen deel. */
+export async function handledCount(mailbox?: string): Promise<number> {
+  return fetchCount("Communication", withMailbox(filtersForFolder(MAIL_FOLDER_HANDLED), mailbox));
 }
 
 /**

@@ -8,6 +8,7 @@ import { TaskDetail, type Task as TaskRow } from "./Tasks";
 import { ProjectDetail } from "./Projects";
 import InfoOverlay from "../components/InfoOverlay";
 import SendInvoiceModal from "../components/SendInvoiceModal";
+import { SALES_INVOICE_ACTIVE_FILTER } from "../lib/invoice-docstatus";
 import {
   AlertTriangle, Clock, FileText, TrendingUp, Users,
   ChevronDown, ChevronRight, Info, CheckSquare, Square, Loader2,
@@ -438,10 +439,13 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
 
       // Billing consistency: SIs in period without matching timesheet hours
       try {
+        // Concept-facturen tellen mee: ToInvoice maakt zelf drafts aan, dus een
+        // submitted-only controle zou juist de nieuwste facturen missen en
+        // stelselmatig "ongekoppelde uren" melden.
         const periodSIs = await fetchAll<{ name: string; customer_name: string; grand_total: number; is_return: number }>(
           "Sales Invoice",
           ["name", "customer_name", "grand_total", "is_return"],
-          [["posting_date", ">=", from], ["posting_date", "<=", to], ["docstatus", "=", 1], ["is_return", "=", 0]],
+          [["posting_date", ">=", from], ["posting_date", "<=", to], SALES_INVOICE_ACTIVE_FILTER, ["is_return", "=", 0]],
         );
         const billedSINames = new Set(rows.filter(r => r.salesInvoice).map(r => r.salesInvoice));
         const unmatchedSIs = periodSIs.filter(si => !billedSINames.has(si.name));

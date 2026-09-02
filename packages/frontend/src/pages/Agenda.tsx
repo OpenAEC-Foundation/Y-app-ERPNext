@@ -1,6 +1,11 @@
 import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useIsMobile } from "../lib/useIsMobile";
-import { fetchList, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
+import { fetchList, fetchChildTable, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
+import {
+  aggregateHoursByEmployeeDay,
+  fetchTimesheetHourRows,
+  type EmployeeDayTotal,
+} from "../lib/timesheet-hours";
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
@@ -187,9 +192,24 @@ function getPrefKey(suffix: string): string {
   return `pref_${id}_agenda_${suffix}`;
 }
 
+/**
+ * Bronnen die standaard AAN staan. Een agenda die bij eerste gebruik leeg is
+ * ("Geen bronnen actief") ziet eruit als een kapotte agenda — de gebruiker
+ * moet eerst instellingen openen om iets te zien. Afspraken, taken en verlof
+ * komen rechtstreeks uit ERPNext en horen er dus meteen te staan; geboekte
+ * uren blijven uit omdat die de weergave vol zetten met terugkijk-informatie
+ * in plaats van planning. Een expliciete keuze van de gebruiker wint altijd.
+ */
+const ERP_SOURCE_DEFAULTS: Record<ErpSourceKey, boolean> = {
+  events: true,
+  tasks: true,
+  leaves: true,
+  timesheets: false,
+};
+
 function getErpSourceEnabled(key: ErpSourceKey): boolean {
   const stored = localStorage.getItem(getPrefKey(`show_${key}`));
-  if (stored === null) return false; // Default: all hidden
+  if (stored === null) return ERP_SOURCE_DEFAULTS[key];
   return stored === "true";
 }
 
@@ -1268,18 +1288,18 @@ export default function Agenda() {
       }
 
       if (erpSources.timesheets) {
-        fetches.push(fetchList<{
-          name: string; title: string; start_date: string; end_date: string;
-          total_hours: number; employee_name: string;
-        }>("Timesheet", {
-          fields: ["name", "title", "start_date", "end_date", "total_hours", "employee_name"],
-          filters: [
-            ["start_date", ">=", dateRange.start],
-            ["start_date", "<=", dateRange.end],
-            ["docstatus", "=", 1],
-          ],
-          limit_page_length: 200,
-        }));
+        // Eén agenda-item per medewerker per DAG, uit de geboekte regels —
+        // niet één item per Timesheet. Sinds de urenstaat per jaar loopt
+        // (lib/year-timesheet.ts) zou een sheet-item één blok van twaalf
+        // maanden zijn, en het oude filter op `start_date` binnen het bereik
+        // liet hem buiten januari zelfs helemaal weg. Eén gedeelde fetch voor
+        // het hele zichtbare bereik, geen call per dag.
+        fetches.push(
+          fetchTimesheetHourRows(
+            { from: dateRange.start, to: dateRange.end },
+            { fetchList, fetchChildTable }
+          ).then(aggregateHoursByEmployeeDay)
+        );
         fetchLabels.push("timesheets");
       }
 
@@ -1310,12 +1330,13 @@ export default function Agenda() {
             }
           }
         } else if (label === "timesheets") {
-          for (const ts of result.value) {
+          for (const day of result.value as EmployeeDayTotal[]) {
             items.push({
-              id: `ts-${ts.name}`, title: ts.title || `${ts.employee_name} - ${ts.total_hours}u`,
-              start: ts.start_date, end: ts.end_date || undefined,
+              id: `ts-${day.employee}-${day.date}`,
+              title: `${day.employee_name || day.employee} - ${day.hours}u`,
+              start: day.date, end: undefined,
               allDay: true, type: "timesheet", color: TYPE_COLORS.timesheet,
-              owner: ts.employee_name,
+              owner: day.employee_name,
             });
           }
         }

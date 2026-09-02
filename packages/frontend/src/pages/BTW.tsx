@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import {
+  SALES_INVOICE_FINAL_FILTER,
+  SALES_INVOICE_DRAFT_FILTER,
+} from "../lib/invoice-docstatus";
 
 /* ─── Types ─── */
 
@@ -89,6 +93,8 @@ export default function BTW() {
 
   // Raw data from ERPNext
   const [salesInvoices, setSalesInvoices] = useState<InvoiceSummary[]>([]);
+  /** Concepten in dezelfde periode — NIET meegerekend, alleen ter informatie. */
+  const [draftSalesInvoices, setDraftSalesInvoices] = useState<InvoiceSummary[]>([]);
   const [salesTaxes, setSalesTaxes] = useState<SalesInvoiceTax[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<InvoiceSummary[]>([]);
   // GL Entries on tax accounts – the source of truth for voorbelasting
@@ -101,9 +107,14 @@ export default function BTW() {
     try {
       const { startDate, endDate } = getQuarterDates(quarter, year);
 
-      // Build filters for the period
+      // Build filters for the period.
+      // FISCAAL: alleen DEFINITIEVE (ingeboekte) verkoopfacturen. Een
+      // conceptfactuur heeft geen boekingsregels en hoort niet in een
+      // BTW-aangifte — daarom hier bewust géén `docstatus != 2`. Het
+      // conceptbedrag wordt apart opgehaald en als informatieregel getoond,
+      // zodat zichtbaar is dat er nog iets open staat.
       const siFilters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_FINAL_FILTER,
         ["posting_date", ">=", startDate],
         ["posting_date", "<=", endDate],
       ];
@@ -117,8 +128,15 @@ export default function BTW() {
         piFilters.push(["company", "=", company]);
       }
 
+      const draftSiFilters: unknown[][] = [
+        SALES_INVOICE_DRAFT_FILTER,
+        ["posting_date", ">=", startDate],
+        ["posting_date", "<=", endDate],
+        ...(company ? [["company", "=", company]] : []),
+      ];
+
       // 1) Always fetch invoices (basic doctypes, should always work)
-      const [siList, piList] = await Promise.all([
+      const [siList, piList, draftSiList] = await Promise.all([
         fetchAll<InvoiceSummary>(
           "Sales Invoice",
           ["name", "net_total", "base_net_total", "total_taxes_and_charges", "posting_date", "company"],
@@ -131,10 +149,17 @@ export default function BTW() {
           piFilters,
           "posting_date asc"
         ),
+        fetchAll<InvoiceSummary>(
+          "Sales Invoice",
+          ["name", "net_total", "base_net_total", "total_taxes_and_charges", "posting_date", "company"],
+          draftSiFilters,
+          "posting_date asc"
+        ).catch(() => [] as InvoiceSummary[]),
       ]);
 
       setSalesInvoices(siList);
       setPurchaseInvoices(piList);
+      setDraftSalesInvoices(draftSiList);
 
       // 2) Try to fetch Sales Taxes and Charges for per-rate breakdown
       //    Falls back gracefully if API user has no permission (403)
@@ -362,6 +387,21 @@ export default function BTW() {
           {t("btw.period_label", { start: getQuarterDates(quarter, year).startDate, end: getQuarterDates(quarter, year).endDate })}
         </span>
       </div>
+
+      {/* Concept-facturen tellen fiscaal NIET mee (geen boekingsregels), maar
+          moeten wél zichtbaar zijn — anders lijkt de aangifte compleet terwijl
+          er nog omzet klaarstaat om ingeboekt te worden. */}
+      {!loading && draftSalesInvoices.length > 0 && (
+        <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+            {t("invoice_draft.badge")}
+          </span>
+          {t("invoice_draft.not_counted", {
+            count: draftSalesInvoices.length,
+            amount: euro(draftSalesInvoices.reduce((s, i) => s + (i.base_net_total || i.net_total || 0), 0)),
+          })}
+        </div>
+      )}
 
       {/* Source info */}
       {!loading && (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import { fetchList, fetchDocument, fetchChildTable } from "../../lib/erpnext";
+import { fetchKmRegistraties } from "../../lib/declaraties";
 import { useDataLoading } from "../../lib/DataContext";
 import { isHoliday } from "../../lib/holidays";
 import { getActiveEmployee } from "../../lib/instances";
@@ -81,19 +82,12 @@ export function useMissingBookings(): { missingHours: string | null; missingKm: 
           setMissingHours(t("dashboard.missing_hours", { date: label }));
         }
 
-        const travelReqs = await fetchList<{ name: string }>("Travel Request", {
-          fields: ["name"],
-          filters: [["employee", "=", myEmployeeId], ["custom_from_date", "<=", prevDateStr], ["custom_to_date", ">=", prevDateStr], ["docstatus", "!=", 2]],
-          limit_page_length: 1,
-        });
-        let hasKm = false;
-        if (travelReqs.length > 0) {
-          try {
-            const tr = await fetchDocument<{ itinerary: { departure_date: string }[] }>("Travel Request", travelReqs[0].name);
-            hasKm = (tr.itinerary || []).some(it => (it.departure_date || "").startsWith(prevDateStr));
-          } catch { /* ignore */ }
-        }
-        if (!hasKm) setMissingKm(t("dashboard.missing_km", { date: label }));
+        // Eén rit = één `Y Km Registratie`-document met een `datum`-veld, dus
+        // dit is één simpele lijstquery. Vroeger stond hier een Travel
+        // Request-zoektocht met een child-tabel-scan erachteraan; zie
+        // lib/declaraties.ts voor waarom dat doctype vervangen is.
+        const ritten = await fetchKmRegistraties({ employee: myEmployeeId, vanaf: prevDateStr, tot: prevDateStr, limit: 1 });
+        if (ritten.length === 0) setMissingKm(t("dashboard.missing_km", { date: label }));
       } catch { /* ignore */ }
     })();
   }, [dataLoading, myEmployeeId, t, i18n.language]);

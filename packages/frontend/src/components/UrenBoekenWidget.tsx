@@ -5,6 +5,7 @@ import { getActiveInstance, getActiveCompany, getActiveEmployee } from "../lib/i
 import { useSessionEmployeeId } from "../lib/useSessionEmployee";
 import { fetchActivityTypes, fetchEmployeeActivityType } from "../lib/activityTypes";
 import { cleanBookingError } from "../lib/booking-error";
+import { bookingYear, bookTimeLog, resolveYearTimesheet } from "../lib/year-timesheet";
 import { TimesheetDetailsTable } from "../pages/Timesheets";
 import type { TimesheetDetail as TSDetail, ProjectInfo } from "../lib/timesheetValidation";
 import {
@@ -48,9 +49,18 @@ function getWeekMonday(d: string): string {
   return localDateStr(dt);
 }
 
-function getWeekSaturday(d: string): string {
+/**
+ * Einde van de weekband waarop de week-tabel filtert.
+ *
+ * Sinds de urenstaat per jaar loopt kan één sheet regels uit het hele jaar
+ * bevatten, dus de begrenzing tot "deze week" gebeurt op de regels zelf (op
+ * `from_time`) in plaats van op de sheet-datums. Zondag i.p.v. zaterdag zodat
+ * een zondagboeking niet stil buiten de band valt; de bestaande weekendregel
+ * (weekendrijen alleen tonen als er uren op staan) blijft daaronder gelden.
+ */
+function getWeekSunday(d: string): string {
   const mon = new Date(getWeekMonday(d) + "T12:00:00");
-  mon.setDate(mon.getDate() + 5); // Saturday, not Sunday
+  mon.setDate(mon.getDate() + 6);
   return localDateStr(mon);
 }
 
@@ -107,7 +117,12 @@ export default function UrenBoekenWidget({
   const [weekEntries, setWeekEntries] = useState<TSDetail[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loadingWeek, setLoadingWeek] = useState(false);
-  const [weekTimesheet, setWeekTimesheet] = useState<string | null>(null);
+  // De doorlopende urenstaat van deze medewerker voor het jaar van de
+  // boekdatum — het doel waar elke boeking als time_log aan wordt toegevoegd.
+  // Het jaar hoort bij de waarde: zonder dat zou een boeking die direct na een
+  // datumwissel naar een ánder jaar wordt ingediend nog op de sheet van het
+  // vorige jaar landen (de resolve-effect is dan nog niet klaar).
+  const [yearTimesheet, setYearTimesheet] = useState<{ year: number; name: string } | null>(null);
 
   // View mode (hide activity type + billable for employees)
   const [isEmployee, setIsEmployee] = useState(() => localStorage.getItem("view_mode") === "employee");
@@ -316,31 +331,25 @@ export default function UrenBoekenWidget({
     ).then(setTasks).catch(() => setTasks([]));
   }, [project]);
 
-  // Find existing week timesheet
+  // Zoek de doorlopende jaar-urenstaat van deze medewerker (zie
+  // lib/year-timesheet.ts voor het waarom en de herkenningsregels). `date`
+  // staat in de deps omdat het jaar eruit volgt: boeken op een datum in een
+  // ánder jaar moet naar (of naast) de urenstaat van dát jaar.
   useEffect(() => {
-    if (!employee || !date) { setWeekTimesheet(null); return; }
-    const monday = getWeekMonday(date);
-    const saturday = getWeekSaturday(date);
-    fetchList<{ name: string }>("Timesheet", {
-      fields: ["name"],
-      filters: [
-        ["employee", "=", employee],
-        ["start_date", ">=", monday],
-        ["start_date", "<=", saturday],
-        ["docstatus", "=", 0],
-      ],
-      limit_page_length: 1,
-      order_by: "modified desc",
-    }).then((list) => {
-      setWeekTimesheet(list.length > 0 ? list[0].name : null);
-    }).catch(() => setWeekTimesheet(null));
+    let cancelled = false;
+    const year = bookingYear(date);
+    if (!employee || year === null) { setYearTimesheet(null); return; }
+    resolveYearTimesheet(employee, date, fetchList).then((name) => {
+      if (!cancelled) setYearTimesheet(name ? { year, name } : null);
+    });
+    return () => { cancelled = true; };
   }, [employee, date]);
 
   // Load week entries (parallel fetch for speed)
   useEffect(() => {
     if (!employee || !date) { setWeekEntries([]); return; }
     const monday = getWeekMonday(date);
-    const saturday = getWeekSaturday(date);
+    const sunday = getWeekSunday(date);
     const delay = 0;
     const timer = setTimeout(() => {
       setLoadingWeek(true);
@@ -348,8 +357,13 @@ export default function UrenBoekenWidget({
         fields: ["name"],
         filters: [
           ["employee", "=", employee],
-          ["start_date", ">=", monday],
-          ["start_date", "<=", saturday],
+          // OVERLAP, geen "helemaal binnen de week". Een jaar-urenstaat loopt
+          // van januari tot december, dus een filter op `start_date` binnen
+          // deze week zou hem altijd missen en de tabel leeg laten. Deze band
+          // pakt zowel de jaarstaat als de oude week-sheets; de begrenzing tot
+          // déze week gebeurt hieronder per regel op `from_time`.
+          ["start_date", "<=", sunday],
+          ["end_date", ">=", monday],
           ["docstatus", "!=", 2],
         ],
         limit_page_length: 20,
@@ -387,9 +401,13 @@ export default function UrenBoekenWidget({
             });
           }
         }
-        // Filter out empty rows and weekend days with no hours
+        // Filter out empty rows, rows outside this week, and weekend days
+        // with no hours. De weekbegrenzing zit hier (en niet meer in het
+        // sheet-filter) omdat één jaar-urenstaat het hele jaar bevat.
         const filtered = allDetails.filter(d => {
           if (!d.from_time || !d.hours) return false; // skip empty rows
+          const logDate = d.from_time.split(" ")[0];
+          if (logDate < monday || logDate > sunday) return false;
           const day = new Date(d.from_time).getDay();
           const isWeekend = day === 0 || day === 6;
           return !isWeekend || d.hours > 0;
@@ -498,43 +516,24 @@ export default function UrenBoekenWidget({
         is_billable: billable ? 1 : 0,
       };
 
-      let tsName: string;
-
-      if (weekTimesheet) {
-        const existing = await fetchDocument<{ name: string; time_logs: Record<string, unknown>[] }>("Timesheet", weekTimesheet);
-        const existingLogs = (existing.time_logs || [])
-          .filter((log) => log.from_time && log.hours) // skip empty rows
-          .map((log) => ({
-          name: log.name,
-          doctype: "Timesheet Detail",
-          parent: weekTimesheet,
-          parenttype: "Timesheet",
-          parentfield: "time_logs",
-          activity_type: log.activity_type,
-          from_time: log.from_time,
-          to_time: log.to_time,
-          hours: log.hours,
-          project: log.project,
-          task: log.task,
-          description: log.description,
-          is_billable: log.is_billable,
-        }));
-        await updateDocument("Timesheet", weekTimesheet, {
-          time_logs: [...existingLogs, newTimeLog],
-        });
-        tsName = weekTimesheet;
-      } else {
-        const doc = await createDocument<{ name: string }>("Timesheet", {
-          employee,
-          company,
-          time_logs: [newTimeLog],
-        });
-        tsName = doc.name;
-        // Zonder dit blijft weekTimesheet null (deps [employee, date] wijzigen
-        // niet), en maakt de vólgende boeking in dezelfde week een tweede
-        // Timesheet aan i.p.v. een regel toe te voegen aan deze.
-        setWeekTimesheet(tsName);
+      const year = bookingYear(date);
+      if (year === null) {
+        throw new Error(t("hours_widget.invalid_date", { defaultValue: "Kies een geldige boekdatum." }));
       }
+
+      // Het hele boekpad (jaarstaat zoeken → adopteren → anders aanmaken, met
+      // het duplicaat-vangnet) zit in lib/year-timesheet.ts, zodat het onder
+      // unit-tests kan. De widget houdt alleen de React-state over.
+      const { name: tsName } = await bookTimeLog(
+        { employee, company, date, newLog: newTimeLog, knownSheet: yearTimesheet },
+        { fetchList, fetchDocument, createDocument, updateDocument }
+      );
+
+      // Zonder dit blijft `yearTimesheet` op de oude waarde staan (de deps
+      // [employee, date] wijzigen niet als je twee keer op dezelfde dag boekt),
+      // en zou de vólgende boeking een tweede jaarstaat aanmaken i.p.v. een
+      // regel toe te voegen aan deze.
+      setYearTimesheet({ year, name: tsName });
 
       setSuccess(t("hours_widget.success_message", { tsName }));
       // Add new entry to weekEntries locally (no re-fetch needed)
@@ -823,9 +822,9 @@ export default function UrenBoekenWidget({
           <h3 className="font-semibold text-slate-800">{t("hours_widget.title")}</h3>
         )}
         <div className="ml-auto flex items-center gap-3 text-sm text-slate-500 min-w-0">
-          {weekTimesheet && (
-            <a href={`${getErpNextLinkUrl()}/timesheet/${weekTimesheet}`} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-y-teal hover:underline font-mono truncate">{weekTimesheet}</a>
+          {yearTimesheet && (
+            <a href={`${getErpNextLinkUrl()}/timesheet/${yearTimesheet.name}`} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-y-teal hover:underline font-mono truncate">{yearTimesheet.name}</a>
           )}
           {weekTotal > 0 && <span className="font-semibold shrink-0">{weekTotal.toFixed(2)}u</span>}
         </div>

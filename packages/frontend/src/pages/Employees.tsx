@@ -1,5 +1,10 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { fetchList, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchList, fetchChildTable, getErpNextLinkUrl } from "../lib/erpnext";
+import {
+  bucketHoursByEmployeeWeek,
+  fetchTimesheetHourRows,
+  isoWeekOf,
+} from "../lib/timesheet-hours";
 import { fetchShiftHoursMap } from "../lib/shiftHours";
 import { Users, RefreshCw, Search, Filter, Cake, CalendarClock, FileWarning, Clock, Palmtree, Thermometer, UserPlus, X, Plus, Check, Printer, Trash2, Tag, ListChecks, FileText, CreditCard, Info } from "lucide-react";
 import CompanySelect from "../components/CompanySelect";
@@ -623,17 +628,15 @@ export default function Employees() {
   async function loadOverurenData() {
     try {
       const year = new Date().getFullYear();
-      const [tsList, appsList] = await Promise.all([
-        fetchList<{ name: string; employee: string; start_date: string; total_hours: number }>("Timesheet", {
-          fields: ["name", "employee", "start_date", "total_hours"],
-          filters: [
-            ["start_date", ">=", `${year}-01-01`],
-            ["start_date", "<=", `${year}-12-31`],
-            ["docstatus", "=", 1],
-          ],
-          limit_page_length: 0,
-          order_by: "start_date asc",
-        }),
+      const [hourRows, appsList] = await Promise.all([
+        // Uren op REGELNIVEAU. Met `total_hours` per sheet + de week van
+        // `start_date` zou een jaar-urenstaat (zie lib/year-timesheet.ts)
+        // integraal in week 1/2 landen en het overurensaldo onbruikbaar maken.
+        // Eén gedeelde fetch voor het hele jaar — zie lib/timesheet-hours.ts.
+        fetchTimesheetHourRows(
+          { from: `${year}-01-01`, to: `${year}-12-31` },
+          { fetchList, fetchChildTable }
+        ),
         fetchList<{ employee: string; leave_type: string; from_date: string; to_date: string; total_leave_days: number; status: string }>("Leave Application", {
           fields: ["employee", "leave_type", "from_date", "to_date", "total_leave_days", "status"],
           filters: [
@@ -645,24 +648,19 @@ export default function Employees() {
         }),
       ]);
 
+      // ISO-week uit de gedeelde helper — de lokale kopie hier is vervangen
+      // zodat Vakantieplanning, Medewerkers en de bucketing één rekenregel
+      // delen (lib/timesheet-hours.ts).
       const getISOWeek = (d: Date): number => {
-        const tmp = new Date(d.getTime());
-        tmp.setHours(0, 0, 0, 0);
-        tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
-        const w1 = new Date(tmp.getFullYear(), 0, 4);
-        return 1 + Math.round(((tmp.getTime() - w1.getTime()) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        return isoWeekOf(iso) ?? 53;
       };
       const now = new Date();
       const currentWeek = now.getFullYear() === year ? getISOWeek(now) : 53;
       const lastCompletedWeek = Math.max(0, currentWeek - 1);
 
-      const empWeeks = new Map<string, Map<number, number>>();
-      for (const ts of tsList) {
-        if (!empWeeks.has(ts.employee)) empWeeks.set(ts.employee, new Map());
-        const week = getISOWeek(new Date(ts.start_date));
-        const m = empWeeks.get(ts.employee)!;
-        m.set(week, (m.get(week) || 0) + ts.total_hours);
-      }
+      // Per geboekte regel in de week van zijn eigen datum.
+      const empWeeks = bucketHoursByEmployeeWeek(hourRows);
       for (const la of appsList) {
         if (!empWeeks.has(la.employee)) empWeeks.set(la.employee, new Map());
         const dailyH = contractHours[la.employee] ? contractHours[la.employee] / 5 : 0;

@@ -10,6 +10,11 @@ import DateRangeFilter from "../components/DateRangeFilter";
 import { useCompanies } from "../lib/DataContext";
 import { useTranslation } from "react-i18next";
 import { getActiveCompany } from "../lib/instances";
+import {
+  SALES_INVOICE_ACTIVE_FILTER,
+  DOCSTATUS_SUBMITTED,
+  draftShare,
+} from "../lib/invoice-docstatus";
 
 interface InvoiceTrend {
   month: string;
@@ -116,6 +121,7 @@ interface OmzetInvoice {
   customer_name: string | null;
   posting_date: string;
   net_total: number;
+  docstatus?: number;
 }
 
 type OmzetGranularity = "week" | "month" | "quarter" | "year";
@@ -303,7 +309,7 @@ export default function FinancieelDashboard() {
   const [unpaidSales, setUnpaidSales] = useState<{count: number; total: number}>({count: 0, total: 0});
 
   // Trend data
-  const [salesInvoices, setSalesInvoices] = useState<{posting_date: string; grand_total: number; outstanding_amount: number}[]>([]);
+  const [salesInvoices, setSalesInvoices] = useState<{posting_date: string; grand_total: number; outstanding_amount: number; docstatus?: number}[]>([]);
 
   // Uren tab
   const [urenStats, setUrenStats] = useState<UrenStats | null>(null);
@@ -360,10 +366,13 @@ export default function FinancieelDashboard() {
           ["outstanding_amount"],
           [...companyFilter, ...dateFilters, ["docstatus", "=", 1], ["outstanding_amount", ">", 0]]
         ),
-        fetchAll<{posting_date: string; grand_total: number; outstanding_amount: number}>(
+        // Omzettrend telt concepten mee (`docstatus != 2`); de KPI
+        // "onbetaalde verkoopfacturen" hieronder blijft strikt op definitieve
+        // facturen — een concept is geen vordering.
+        fetchAll<{posting_date: string; grand_total: number; outstanding_amount: number; docstatus?: number}>(
           "Sales Invoice",
-          ["posting_date", "grand_total", "outstanding_amount"],
-          [...companyFilter, ...dateFilters, ["docstatus", "=", 1]],
+          ["posting_date", "grand_total", "outstanding_amount", "docstatus"],
+          [...companyFilter, ...dateFilters, SALES_INVOICE_ACTIVE_FILTER],
           "posting_date asc"
         ),
       ]);
@@ -373,7 +382,9 @@ export default function FinancieelDashboard() {
         count: purchaseList.length,
         total: purchaseList.reduce((s, i) => s + i.outstanding_amount, 0),
       });
-      const outstandingSales = salesList.filter(i => i.outstanding_amount > 0);
+      const outstandingSales = salesList.filter(
+        i => i.outstanding_amount > 0 && i.docstatus === DOCSTATUS_SUBMITTED
+      );
       setUnpaidSales({
         count: outstandingSales.length,
         total: outstandingSales.reduce((s, i) => s + i.outstanding_amount, 0),
@@ -579,13 +590,14 @@ export default function FinancieelDashboard() {
     setLoadingOmzet(true);
     setError(null);
     try {
-      const filters: unknown[][] = [["docstatus", "=", 1]];
+      // Omzet per klant is een statistiek → concepten tellen mee.
+      const filters: unknown[][] = [SALES_INVOICE_ACTIVE_FILTER];
       if (company) filters.push(["company", "=", company]);
       if (omzetFrom) filters.push(["posting_date", ">=", omzetFrom]);
       if (omzetTo) filters.push(["posting_date", "<=", omzetTo]);
       const rows = await fetchAll<OmzetInvoice>(
         "Sales Invoice",
-        ["name", "customer", "customer_name", "posting_date", "net_total"],
+        ["name", "customer", "customer_name", "posting_date", "net_total", "docstatus"],
         filters,
         "posting_date asc"
       );
@@ -624,6 +636,11 @@ export default function FinancieelDashboard() {
   }, [salesInvoices]);
 
   const maxTrend = Math.max(...trendData.map(d => Math.max(d.total, d.outstanding)), 1);
+
+  // Conceptdeel van de omzettrend (incl. btw — trendData rekent op grand_total).
+  const salesDraft = useMemo(() => draftShare(salesInvoices, (i) => i.grand_total), [salesInvoices]);
+  // Conceptdeel van de omzet-per-klant-matrix (excl. btw — net_total).
+  const omzetDraft = useMemo(() => draftShare(omzetInvoices, (i) => i.net_total), [omzetInvoices]);
 
   // ─── Derived from backend stats ───
   const employeeMonthly = urenStats?.employeeMonthly || [];
@@ -869,6 +886,14 @@ export default function FinancieelDashboard() {
 
           {/* Chart */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            {!loading && salesDraft.hasDrafts && (
+              <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
+                <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+                  {t("invoice_draft.badge")}
+                </span>
+                {t("invoice_draft.included", { count: salesDraft.draftCount, amount: euro(salesDraft.draftAmount) })}
+              </div>
+            )}
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
                 <TrendingUp size={18} className="text-y-teal" />
@@ -1753,6 +1778,15 @@ export default function FinancieelDashboard() {
               {t("financieel_dashboard.amounts_excl_vat", { defaultValue: "Bedragen excl. BTW" })}
             </span>
           </div>
+
+          {!loadingOmzet && omzetDraft.hasDrafts && (
+            <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+              <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded">
+                {t("invoice_draft.badge")}
+              </span>
+              {t("invoice_draft.included", { count: omzetDraft.draftCount, amount: euro(omzetDraft.draftAmount) })}
+            </div>
+          )}
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
             {loadingOmzet ? (

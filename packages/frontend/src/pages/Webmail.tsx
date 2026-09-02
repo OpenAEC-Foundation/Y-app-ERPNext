@@ -1,21 +1,14 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useId, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
-  Mail, Trash2, Star, Archive, FolderOpen,
-  RefreshCw, Settings, Eye, EyeOff, User,
-  PenSquare, Reply, ReplyAll, Forward,
-  ChevronLeft, ChevronRight, ChevronDown, X, Paperclip,
-  FileText, FileImage, File,
-  FolderInput, Plus, ExternalLink, Check, Search,
-  Loader2,
-  FolderKanban,
-  ChevronsLeft, ChevronsRight,
-  Users, Users2,
-  AlertTriangle,
-  Send, Inbox, Info,
-  Tag, FolderPlus, Clock, CircleAlert, MailOpen,
-  RotateCcw, Server, AtSign,
+  Mail, Trash2, Star, Archive, FolderOpen, RefreshCw, Settings, Eye, EyeOff,
+  User, PenSquare, Reply, ReplyAll, Forward, ChevronLeft, ChevronRight,
+  ChevronDown, X, Paperclip, FileText, FileImage, File, FolderInput, Plus,
+  ExternalLink, Check, Search, Loader2, FolderKanban, ChevronsLeft,
+  ChevronsRight, Users, Users2, AlertTriangle, Send, Inbox, Info, Tag,
+  FolderPlus, Clock, CircleAlert, MailOpen, RotateCcw, AtSign,
+  ReceiptText, UserPlus, Link2, CheckCheck, Undo2,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -96,23 +89,41 @@ import {
 } from "../lib/mail-categories";
 import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
 import {
-  listVirtualFolders, listMailboxMessagesPaged, getMessageBody,
-  markRead, markUnread, sendMail, linkToDocument, hasEnabledEmailAccount,
-  projectOfFolder, searchMessages,
-  moveToTrash, bulkMoveToTrash, restoreFromTrash, bulkRestoreFromTrash,
-  deleteForever, bulkDeleteForever, listImapFolders,
-  bulkMarkRead, bulkMarkUnread, getConversation, listMailboxes,
-  getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
-  unseenCount,
-  MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
-  type ErpMailMessage, type ErpMailFolder, type ErpImapFolder, type ErpMailbox,
+  listVirtualFolders, listMailboxMessagesPaged, getMessageBody, markRead,
+  markUnread, sendMail, linkToDocument, hasEnabledEmailAccount, projectOfFolder,
+  searchMessages, bulkMoveToTrash,
+  bulkRestoreFromTrash, bulkDeleteForever,
+  bulkMarkRead, bulkMarkUnread, getConversation, listMailboxes, bulkMarkHandled,
+  bulkMarkUnhandled, filterUnhandled, getSignature, getQueueStatusFor,
+  createCustomFolder, deleteCustomFolder, tagMessage, unseenCount,
+  fetchThreadCompanions, MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT,
+  MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH, type ErpMailMessage,
+  type ErpMailFolder, type ErpMailbox, MAIL_FOLDER_HANDLED,
+  type BulkOutcome,
 } from "../lib/mail-erpnext";
+import { groupThreads, type MailThread } from "../lib/mail-threads";
 import {
-  appendSignature, buildReplyRecipients, formatAttachmentNames,
-  isValidFolderLabel, prefixSubject,
+  deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
+  newDraftKey, saveDraft, standaloneDrafts,
+  type MailDraftMap, type StoredMailDraft,
+} from "../lib/mail-drafts";
+import {
+  categoryOfDoctype, connectionFolderId, describeConnectionFolder, invalidateConnectionIndex,
+  isConnectionFolder, loadConnectionIndex, peekConnectionIndex,
+  type ConnectionIndex, type ConnectionObject, type MailConnection,
+} from "../lib/mail-connections";
+import ConnectionNav from "../components/mail/ConnectionNav";
+import MailConnectionChips from "../components/mail/MailConnectionChips";
+import {
+  buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
+  formatAttachmentNames, isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
-import { getFileUrl } from "../lib/erpnext";
 import { ondertekeningVoor } from "../lib/mail-signature-erpnext";
+import {
+  buildComposeBodyWithQuote, buildQuoteBlock, hasQuote,
+  shouldCollapseQuote, splitQuoteFromBody,
+} from "../lib/mail-quote";
+import { getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
 import CreateFolderModal from "../components/mail/CreateFolderModal";
@@ -121,7 +132,38 @@ import ImapSetup from "../components/mail/ImapSetup";
 import ReadingPane from "../components/mail/ReadingPane";
 import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
+import RichTextEditor from "../components/mail/RichTextEditor";
+import { toEmailHtml, ensureHtmlBody, htmlToPlainText } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import RecipientField from "../components/mail/RecipientField";
+import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
+import {
+  MAIL_SHORTCUT_KEYS, isEditableTarget, resolveMailShortcut,
+} from "../lib/mail-shortcuts";
+import { focusTrapAction, focusableWithin } from "../lib/focus-trap";
+import BookPurchaseInvoiceDialog from "../components/BookPurchaseInvoiceDialog";
+import CreateLeadDialog from "../components/CreateLeadDialog";
+import CreateQuotationDialog from "../components/CreateQuotationDialog";
+import QuoteActionButton from "../components/QuoteActionButton";
+import AddRelationDialog from "../components/AddRelationDialog";
+import SenderRelationAction, { type RelationSlotTone } from "../components/SenderRelationAction";
+import {
+  lookupExistingCached, primeRelationLookup, type ExistingRelation, type RelationResult,
+} from "../lib/erp-relation";
+import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
+import type { BookingResult } from "../lib/purchase-invoice";
+import {
+  classifyMailIntent, classifySender,
+  type MailIntent, type MailIntentContext,
+} from "../lib/mail-intent";
+import { fetchMailIntentContext } from "../lib/lead";
+import { decideQuoteAction, type QuoteParty } from "../lib/mail-quote-actions";
+import { fetchIntentBodies, pickIntentBodyCandidates } from "../lib/mail-intent-bodies";
+import {
+  dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
+} from "../lib/mail-suggestions";
+import { suggestProject, type ProjectSuggestion } from "../lib/project-suggest";
+import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
 
 /* ─── Types ─── */
 
@@ -3752,6 +3794,15 @@ const ERP_POLL_MS = 60_000;
 /** Zoekterm-debounce. Elke toetsaanslag is anders een lijstquery. */
 const ERP_SEARCH_DEBOUNCE_MS = 330;
 
+/**
+ * Hoe lang de opsteller stil moet zijn voordat het concept wordt weggeschreven.
+ * Kort genoeg dat een snelle wissel niets kost, lang genoeg dat normaal typen
+ * niet elke aanslag naar localStorage schrijft. Het wegklikken/wisselen
+ * schrijft daarnaast altijd meteen weg (`persistDraft`), dus dit venster kan
+ * nooit tekst kosten.
+ */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
+
 /** Bijlagetype dat `sendMail` accepteert. Afgeleid uit de adapter-signatuur,
  *  want het lucide-icoon `File` schaduwt de globale `File`-naam in dit
  *  bestand — `File[]` zou hier dus het verkeerde ding betekenen. */
@@ -3759,27 +3810,67 @@ type MailAttachmentFile = NonNullable<Parameters<typeof sendMail>[0]["attachment
 
 interface ErpDraft {
   mode: "new" | "reply" | "replyAll" | "forward";
+  /**
+   * Sleutel waaronder dit concept lokaal bewaard wordt (zie `lib/mail-drafts`).
+   * Zit in de opsteller-state zodat élke toetsaanslag naar dezelfde sleutel
+   * schrijft, ook nadat de gebruiker tussendoor een andere mail opende.
+   */
+  draftKey: string;
+  /** Communication waarop dit een antwoord/doorsturen is — voor het lijstlabel. */
+  draftMessageName?: string;
   to: string;
   cc: string;
   bcc: string;
   subject: string;
-  /** Wat de gebruiker typt (platte tekst; wordt bij verzenden HTML). */
-  body: string;
-  /** Email Account waarvandaan verstuurd wordt (docname). */
-  from: string;
   /**
-   * De ondertekening zoals hij in dit concept staat. Onderdeel van het
-   * concept en niet van de app-status, want de gebruiker mag hem aanpassen of
-   * weggooien zonder dat dat de volgende mail beïnvloedt.
+   * De volledige inhoud van het opstelvenster (HTML).
+   *
+   * Bij beantwoorden en doorsturen zit het geciteerde origineel hier ín, als
+   * afsluitend `<blockquote data-y-quote>` — zie `lib/mail-quote`. Zo is het
+   * tijdens het schrijven te lezen én te bewerken; vlak vóór verzenden splitst
+   * `splitQuoteFromBody` het er weer af zodat de handtekening boven het citaat
+   * belandt.
    */
-  signature: string;
-  /** Geciteerde originele mail (HTML) — komt onder de nieuwe tekst. */
-  quoteHtml: string;
-  /** Leesbare "Op <datum> schreef <naam>"-regel bij het citaat. */
-  quoteLabel: string;
+  body: string;
+  /**
+   * Email Account waarvandaan verstuurd wordt (docname). Leeg = de eigen
+   * postbus; de keuzelijst in de opsteller vult hem zodra je wisselt.
+   */
+  from?: string;
+  /**
+   * Gaat de handtekening onder dít bericht mee? Standaard ja; het
+   * opstelvenster toont hem live en laat hem per bericht uitzetten.
+   */
+  includeSignature: boolean;
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
   files: MailAttachmentFile[];
+}
+
+/**
+ * Onthoudt "alleen niet-afgehandeld" per instance. Bewust de `pref_`-prefix:
+ * dit is een gewone gebruikersvoorkeur die mág meereizen naar een ander
+ * apparaat (anders dan het mail-cachevenster, dat juist per apparaat hoort).
+ */
+function unhandledOnlyPrefKey(instanceId: string): string {
+  return `pref_${instanceId}_mail_unhandled_only`;
+}
+
+function readUnhandledOnlyPref(instanceId: string): boolean {
+  try {
+    return localStorage.getItem(unhandledOnlyPrefKey(instanceId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveUnhandledOnlyPref(instanceId: string, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(unhandledOnlyPrefKey(instanceId), "1");
+    else localStorage.removeItem(unhandledOnlyPrefKey(instanceId));
+  } catch {
+    /* privémodus / vol quotum: het filter werkt gewoon, alleen niet onthouden */
+  }
 }
 
 /** Eén map plus het geheugen van hoe diep hij al geladen was. */
@@ -3803,6 +3894,14 @@ async function fetchErpSlice(
   limit: number,
   mailbox: string,
 ): Promise<{ rows: ErpMailMessage[]; hasMore: boolean }> {
+  // Zoeken bínnen een connectie blijft binnen die connectie. Voor de gewone
+  // mappen is zoeken bewust wél mapoverstijgend (dat is wat je van een
+  // zoekbalk verwacht), maar een connectie is een *selectie* die de gebruiker
+  // zelf heeft aangezet — die mag een toetsaanslag niet stilletjes opheffen.
+  if (isConnectionFolder(folder)) {
+    const page = await listMailboxMessagesPaged(folder, { start, limit, search: term });
+    return { rows: page.messages, hasMore: page.hasMore };
+  }
   if (term) {
     const window = start + limit;
     const rows = await searchMessages(term, { limit: window });
@@ -3849,11 +3948,32 @@ function ErpNextWebmail() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  /**
+   * "Alleen niet-afgehandeld". Standaard **uit**: een filter dat mail verbergt
+   * mag niemand overkomen zonder dat hij het zelf aanzette. De keuze staat per
+   * apparaat/gebruiker in localStorage zodat hij een herlaadbeurt overleeft.
+   */
+  const [unhandledOnly, setUnhandledOnly] = useState(
+    () => readUnhandledOnlyPref(getActiveInstanceId()),
+  );
+  useEffect(() => {
+    saveUnhandledOnlyPref(getActiveInstanceId(), unhandledOnly);
+  }, [unhandledOnly]);
 
   const [selected, setSelected] = useState<ErpMailMessage | null>(null);
   const [body, setBody] = useState<{ html: string; attachments: { file_url: string; file_name: string }[] } | null>(null);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [thread, setThread] = useState<ErpMailMessage[]>([]);
+
+  /**
+   * De verzonden (of anderszins buiten deze map staande) berichten die de
+   * zichtbare gesprekken compleet maken. Aparte state, bewust níet samengevoegd
+   * met `messages`: ze mogen geen eigen regel worden en niet meetellen in de
+   * paginering of de mappentellers — zie `groupThreads` in `lib/mail-threads`.
+   */
+  const [threadExtras, setThreadExtras] = useState<ErpMailMessage[]>([]);
+  /** Welke gesprekken staan uitgeklapt? Standaard alles dicht, met een teller. */
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(() => new Set());
 
   /** Meervoudige selectie voor de bulkbalk. */
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
@@ -3862,6 +3982,13 @@ function ErpNextWebmail() {
 
   const [draft, setDraft] = useState<ErpDraft | null>(null);
   const [sending, setSending] = useState(false);
+  /**
+   * Alle lokaal bewaarde concepten van deze instance. Eén keer inlezen bij het
+   * openen van de mailpagina; daarna is deze state de bron voor het
+   * "Concept"-label in de lijst en houdt `persistDraft` hem gelijk met
+   * localStorage.
+   */
+  const [drafts, setDrafts] = useState<MailDraftMap>(() => loadDrafts(getActiveInstanceId()));
 
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
@@ -3876,13 +4003,91 @@ function ErpNextWebmail() {
   const [queueStatus, setQueueStatus] = useState<Record<string, string>>({});
 
   /** IMAP-mappen die ERPNext synct — alleen-lezen info, zie `listImapFolders`. */
-  const [imapFolders, setImapFolders] = useState<ErpImapFolder[]>([]);
+  /**
+   * Momentopname van de koppelingen. Wordt **lui** geladen: bij het openen van
+   * een mail (voor de connectiechips) of bij het uitklappen van de
+   * connectiekolom — niet bij het openen van de mailpagina, zodat die niet
+   * eerst op drie extra queries wacht.
+   */
+  const [connIndex, setConnIndex] = useState<ConnectionIndex | null>(() => peekConnectionIndex());
+  /** Bumpen zodra er iets aan de koppelingen verandert (koppelen, weggooien). */
+  const [connToken, setConnToken] = useState(0);
+
+  /** Vraag de momentopname op (en ververs hem na een koppelactie). */
+  const ensureConnIndex = useCallback((force?: boolean) => {
+    loadConnectionIndex(force ? { force: true } : undefined)
+      .then(setConnIndex)
+      .catch(() => { /* connecties zijn een navigatiehulp; de lijst werkt door */ });
+  }, []);
+
+  /**
+   * Er is iets aan de koppelingen veranderd. De momentopname is dan verouderd
+   * én de connectiekolom moet opnieuw tellen — maar alleen als hij al eens
+   * geladen is: anders zou een koppelactie de luiheid tenietdoen.
+   */
+  const connectionsChanged = useCallback(() => {
+    invalidateConnectionIndex();
+    setConnToken((n) => n + 1);
+    if (peekConnectionIndex()) ensureConnIndex(true);
+  }, [ensureConnIndex]);
+
+  /* ─── Mailherkenning: inkoopfactuur / lead / offerteaanvraag / project ─── */
+  /**
+   * Leveranciers, klanten en eigen maildomeinen — alles wat `classifyMailIntent`
+   * nodig heeft. Leeg = herkenning staat uit (bv. zonder leesrecht op Supplier
+   * en Customer); de webmail merkt daar verder niets van.
+   */
+  const [intentCtx, setIntentCtx] = useState<MailIntentContext>(
+    () => ({ suppliers: [], customers: [] }),
+  );
+  /** Mails waarvan de gebruiker zei "dit is het niet" (per apparaat, per soort). */
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissedMailSuggestions());
+  const [bookingFor, setBookingFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
+  const [leadFor, setLeadFor] = useState<{ msg: ErpMailMessage; intent: MailIntent } | null>(null);
+  /** Open staat de offertedialoog voor deze mail, met de partij die vaststaat. */
+  const [quoteFor, setQuoteFor] = useState<{ msg: ErpMailMessage; party: QuoteParty } | null>(null);
+  /** Melding na een geslaagde boeking, met een klikbaar factuurnummer. */
+  const [bookedNotice, setBookedNotice] = useState<BookingResult | null>(null);
+  /** Melding na een aangemaakte lead/offerteaanvraag. */
+  const [createdNotice, setCreatedNotice] = useState<
+    { doctype: "Lead" | "Opportunity"; result: BookingResult } | null
+  >(null);
+  /** Melding na een aangemaakte concept-offerte. */
+  const [quoteNotice, setQuoteNotice] = useState<BookingResult | null>(null);
+
+  /* ─── Afzender → relatie ─── */
+  /** Open staat de `AddRelationDialog` voor deze mail. */
+  const [relationFor, setRelationFor] = useState<ErpMailMessage | null>(null);
+  /**
+   * Is de afzender van de open mail al bekend in ERPNext? Het adres gaat mee
+   * in de state (zelfde patroon als `senderHistory`): zo kan de uitkomst van
+   * de vórige mail nooit heel even bij de huidige afzender horen.
+   */
+  const [senderRelation, setSenderRelation] = useState<
+    { email: string; found: ExistingRelation } | null
+  >(null);
+
+  /* ─── Projectsuggestie ─── */
+  const [projectHints, setProjectHints] = useState<
+    { name: string; projectName: string; customer?: string }[]
+  >([]);
+  /**
+   * Projecten waaraan eerdere mails van de afzender van de open mail hingen.
+   * Het adres gaat mee in de state: zo hoeft er bij een wissel geen
+   * synchrone reset te gebeuren en kan de historie van de vórige afzender
+   * nooit even meetellen voor de huidige.
+   */
+  const [senderHistory, setSenderHistory] = useState<{ sender: string; projects: string[] }>(
+    () => ({ sender: "", projects: [] }),
+  );
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   /**
    * Postbussen waar deze gebruiker in mag kijken: zijn eigen adres plus de
    * gedeelde bussen. De lijst komt uit `listMailboxes` en is dus per gebruiker
    * anders — wie geen eigen Email Account heeft, ziet alleen de gedeelde.
    */
+  const [signature, setSignature] = useState("");
   const [mailboxes, setMailboxes] = useState<ErpMailbox[]>([]);
   /** Actieve postbus (docname van het Email Account); "" = alles door elkaar. */
   const [mailbox, setMailbox] = useState("");
@@ -3916,9 +4121,6 @@ function ErpNextWebmail() {
     // Account aanpast — één keer per paginabezoek volstaat. De adapter geeft
     // bij een 403 (geen leesrecht op Email Account) gewoon [] terug, waarmee
     // de sectie stilletjes verdwijnt.
-    listImapFolders()
-      .then((rows) => { if (!cancelled) setImapFolders(rows); })
-      .catch(() => { /* informatieve sectie; afwezigheid is geen fout */ });
     // Postbussen: één keer per paginabezoek. Zonder leesrecht op Email Account
     // komt hier [] uit en verdwijnt de kiezer — de lijst toont dan gewoon
     // alles wat de gebruiker mag zien.
@@ -3931,6 +4133,23 @@ function ErpNextWebmail() {
         if (rows.length > 0) setMailbox((prev) => prev || rows[0].name);
       })
       .catch(() => { /* de tabbladen zijn optioneel */ });
+    // Eén keer per paginabezoek: de handtekening verandert niet tijdens een
+    // sessie, en zonder leesrecht op `Email Account` levert dit gewoon "".
+    getSignature()
+      .then((sig) => { if (!cancelled) setSignature(sig); })
+      .catch(() => { /* mail zonder handtekening is geen fout */ });
+    // Leveranciers, klanten en eigen maildomeinen voor de mailherkenning. Eén
+    // keer per paginabezoek (de modules cachen nog eens 10 minuten). Zonder
+    // leesrecht blijven de lijsten leeg en verschijnt er simpelweg geen
+    // labeltje — de rest van de webmail merkt er niets van.
+    fetchMailIntentContext()
+      .then((ctx) => { if (!cancelled) setIntentCtx(ctx); })
+      .catch(() => { /* herkenning uit; geen foutmelding voor een hulpmiddel */ });
+    // Projecten voor de "hoort dit bij…"-suggestie. Alleen naam, projectnaam
+    // en klant — zie `fetchProjectHints`.
+    fetchProjectHints()
+      .then((rows) => { if (!cancelled) setProjectHints(rows); })
+      .catch(() => { /* geen projectsuggestie; de handmatige koppelknop blijft */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -3978,23 +4197,17 @@ function ErpNextWebmail() {
    * zodra die verandert. Vers uit ERPNext: een gewijzigd telefoonnummer of
    * een nieuwe profielfoto staat er meteen in.
    */
-  const sigVoorRef = useRef("");
-  const draftFrom = draft?.from ?? "";
-  const laadOndertekening = useCallback((from: string) => {
-    void ondertekeningVoor(adresVan(from), from || undefined)
-      .then((html) => setDraft((prev) => (prev && prev.from === from ? { ...prev, signature: html } : prev)))
-      .catch(() => { /* zonder ondertekening kun je nog steeds mailen */ });
-  }, [adresVan]);
-
-  useEffect(() => {
-    if (!draft) { sigVoorRef.current = ""; return; }
-    if (sigVoorRef.current === draftFrom) return;
-    sigVoorRef.current = draftFrom;
-    laadOndertekening(draftFrom);
-    // `draft` staat er bewust niet bij: dit mag niet opnieuw draaien bij elke
-    // toetsaanslag in het concept.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftFrom, Boolean(draft), laadOndertekening]);
+  /**
+   * De handtekening wordt live uit ERPNext opgebouwd (naam, telefoon, foto,
+   * bedrijfsadres), zodat een gewijzigd telefoonnummer meteen meekomt. Voor
+   * een gedeelde postbus wint de handtekening die op dat account staat.
+   */
+  const laadOndertekening = useCallback(() => {
+    const box = mailbox;
+    void ondertekeningVoor(adresVan(box) || selfEmail, box || undefined)
+      .then(setSignature)
+      .catch(() => { /* zonder handtekening kun je nog steeds mailen */ });
+  }, [adresVan, mailbox, selfEmail]);
 
   const switchFolder = useCallback((id: string) => {
     setActiveFolder(id);
@@ -4002,6 +4215,10 @@ function ErpNextWebmail() {
     setBody(null);
     setThread([]);
     setChecked(new Set());
+    // Uitgeklapte gesprekken horen bij de lijst die nu vervangen wordt; ze
+    // laten staan zou in de nieuwe map willekeurige rijen opengevouwen tonen.
+    setExpandedThreads(new Set());
+    setThreadExtras([]);
     lastClickedRef.current = null;
   }, []);
 
@@ -4163,23 +4380,397 @@ function ErpNextWebmail() {
    * "terugzetten" naast te staan.
    */
   const isTrashFolder = activeFolder === MAIL_FOLDER_TRASH;
+  /** In de map "Afgehandeld" zou het niet-afgehandeld-filter alles wegfilteren. */
+  const isHandledFolder = activeFolder === MAIL_FOLDER_HANDLED;
   const searching = search.length > 0;
 
-  const filteredMessages = useMemo(
-    () => (unreadOnly && !isUnreadFolder ? messages.filter((m) => !m.seen) : messages),
-    [messages, unreadOnly, isUnreadFolder],
+  const filteredMessages = useMemo(() => {
+    let rows = messages;
+    if (unreadOnly && !isUnreadFolder) rows = rows.filter((m) => !m.seen);
+    // Combineert vanzelf met zoeken en met de connectie-selectie: die bepalen
+    // wélke berichten er in `messages` zitten, dit filter wat er van overblijft.
+    if (unhandledOnly && !isHandledFolder) rows = filterUnhandled(rows);
+    return rows;
+  }, [messages, unreadOnly, isUnreadFolder, unhandledOnly, isHandledFolder]);
+
+  /* ─── Gesprekken in de lijst ─── */
+
+  /**
+   * Haal de ontbrekende gespreksleden erbij (typisch je eigen verzonden
+   * antwoorden, die alleen in "Verzonden" staan).
+   *
+   * Hangt aan `messages`, niet aan `filteredMessages`: de lijstfilters bepalen
+   * wat je ziet, niet welk gesprek er bestaat — anders zou elke klik op
+   * "alleen ongelezen" opnieuw twee queries afvuren. De handtekening van de
+   * namen voorkomt dat een verse array met dezelfde inhoud (stille
+   * achtergrondverversing) het effect opnieuw laat lopen.
+   */
+  const messageSignature = useMemo(() => messages.map((m) => m.name).join(","), [messages]);
+  useEffect(() => {
+    let cancelled = false;
+    // Via de ref, zodat de handtekening de enige afhankelijkheid is: een verse
+    // array met dezelfde namen mag geen tweede ronde queries opleveren.
+    const seeds = messagesRef.current.map((m) => ({
+      name: m.name, ...(m.inReplyTo ? { inReplyTo: m.inReplyTo } : {}),
+    }));
+    fetchThreadCompanions(seeds)
+      .then((rows) => { if (!cancelled) setThreadExtras(rows); })
+      // Zonder de aanvulling toont de lijst gewoon de gesprekken die uit de
+      // map zelf af te leiden zijn — een gemist verzonden antwoord is geen
+      // reden om een foutmelding te tonen.
+      .catch(() => { if (!cancelled) setThreadExtras([]); });
+    return () => { cancelled = true; };
+  }, [messageSignature]);
+
+  /**
+   * De zichtbare regels. Gefilterd wordt vóór het groeperen: de filters zeggen
+   * "toon me alleen deze mails", dus een weggefilterd lid hoort ook niet
+   * ingeklapt onder een kop mee te reizen.
+   */
+  const threads = useMemo(
+    () => groupThreads(filteredMessages, threadExtras),
+    [filteredMessages, threadExtras],
   );
 
+  const toggleThread = useCallback((id: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Welke rijen in de lijst een "Inkoopfactuur"-labeltje krijgen.
+   *
+   * De lijst kent alleen onderwerp, afzender en `has_attachment` — geen
+   * bijlagenamen en geen body. De herkenning komt daarmee hooguit op `medium`
+   * uit; zodra de mail geopend is, herrekent `selectedIntent` hem mét
+   * bijlagen en body. Dat is bewust: een labeltje in de lijst is een uitnodiging
+   * om te kijken, en het openen kost geen extra call (de body wordt toch al
+   * opgehaald).
+   */
+  const herkenningAan = intentCtx.suppliers.length > 0 || intentCtx.customers.length > 0;
+
+  /**
+   * Mailteksten van de twijfelgevallen in de zichtbare lijst.
+   *
+   * Zonder tekst haalt een offerteaanvraag of lead waarvan het bewijs in de
+   * body staat de drempel niet, en verschijnt het label pas bij het openen van
+   * de mail — terwijl het in de inbox hoort te staan, net als het
+   * inkoopfactuurlabel. Zie `mail-intent-bodies.ts` voor waarom dit ná de
+   * eerste render gebeurt en niet als extra veld in de lijstquery.
+   */
+  const [intentBodies, setIntentBodies] = useState<Map<string, string>>(() => new Map());
+
+  // `intentBodies` staat bewust in de deps: `fetchIntentBodies` zet élke
+  // gevraagde naam in de map (ook de mails zonder bruikbare tekst), dus de
+  // volgende ronde levert een lege kandidatenlijst en het effect komt tot
+  // stilstand. Een ref zou hier alleen de lus verbergen, niet voorkomen.
+  useEffect(() => {
+    if (!herkenningAan || filteredMessages.length === 0) return;
+    const names = pickIntentBodyCandidates(
+      filteredMessages.map((m) => ({
+        name: m.name,
+        subject: m.subject,
+        sender: m.sender,
+        senderName: m.senderName,
+        date: m.date,
+        hasAttachments: m.hasAttachments,
+        sent: m.folder === MAIL_FOLDER_SENT,
+        ...(m.reference?.doctype ? { linkedDoctype: m.reference.doctype } : {}),
+      })),
+      intentCtx,
+      new Set(intentBodies.keys()),
+    );
+    if (names.length === 0) return;
+    let cancelled = false;
+    void fetchIntentBodies(names).then((fetched) => {
+      if (cancelled || fetched.size === 0) return;
+      setIntentBodies((prev) => {
+        const next = new Map(prev);
+        for (const [k, v] of fetched) next.set(k, v);
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [filteredMessages, intentCtx, herkenningAan, intentBodies]);
+
+  const listIntents = useMemo(() => {
+    const out = new Map<string, MailIntent>();
+    if (!herkenningAan) return out;
+    for (const m of filteredMessages) {
+      const bodyText = intentBodies.get(m.name);
+      const intent = classifyMailIntent({
+        subject: m.subject,
+        sender: m.sender,
+        senderName: m.senderName,
+        attachmentNames: [],
+        hasAttachment: m.hasAttachments,
+        mailDate: m.date,
+        direction: m.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+        ...(bodyText ? { bodyText } : {}),
+        ...(m.reference?.doctype ? { linkedDoctype: m.reference.doctype } : {}),
+      }, intentCtx);
+      if (intent.kind === "none") continue;
+      if (isMailSuggestionDismissed(dismissed, m.name, intent.kind)) continue;
+      out.set(m.name, intent);
+    }
+    return out;
+  }, [filteredMessages, intentCtx, dismissed, herkenningAan, intentBodies]);
+
+  /** Dezelfde herkenning voor de geopende mail, nu mét bijlagen en body. */
+  const selectedIntent = useMemo(() => {
+    if (!selected || !herkenningAan) return null;
+    const intent = classifyMailIntent({
+      subject: selected.subject,
+      sender: selected.sender,
+      senderName: selected.senderName,
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      hasAttachment: selected.hasAttachments,
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      mailDate: selected.date,
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+    }, intentCtx);
+    if (intent.kind === "none") return null;
+    if (isMailSuggestionDismissed(dismissed, selected.name, intent.kind)) return null;
+    return intent;
+  }, [selected, body, intentCtx, dismissed, herkenningAan]);
+
+  const handleDismissIntent = useCallback((name: string, kind: Parameters<typeof dismissMailSuggestion>[1]) => {
+    dismissMailSuggestion(name, kind);
+    setDismissed(readDismissedMailSuggestions());
+  }, []);
+
+  /**
+   * Historie van de afzender: projecten waaraan eerdere mails van dit adres
+   * gekoppeld zijn. Alleen ophalen voor de mail die openstaat — voor elke rij
+   * in de lijst zou dit een query per bericht betekenen.
+   */
+  useEffect(() => {
+    const sender = selected?.sender;
+    if (!sender) return;
+    let cancelled = false;
+    fetchSenderProjectHistory(sender)
+      .then((rows) => { if (!cancelled) setSenderHistory({ sender, projects: rows }); })
+      .catch(() => { /* signaal valt weg; de andere drie blijven */ });
+    return () => { cancelled = true; };
+  }, [selected?.sender]);
+
+  // Gememoiseerd: een verse array bij elke render zou de `useMemo` van de
+  // projectsuggestie elke keer opnieuw laten rekenen.
+  const senderProjects = useMemo(
+    () => (senderHistory.sender && senderHistory.sender === selected?.sender ? senderHistory.projects : []),
+    [senderHistory, selected?.sender],
+  );
+
+  /* ─── Afzender → relatie: is dit adres al bekend in ERPNext? ─── */
+  /**
+   * Alleen bij ontvangen mail: bij verzonden mail ben jíj de afzender en valt
+   * er niets vast te leggen. De check loopt via `lookupExistingCached`, dus
+   * hooguit één keer per adres per sessie — vijf mails van dezelfde persoon
+   * openen kost één ronde queries, niet vijf.
+   */
+  const relationSender = selected && selected.folder !== MAIL_FOLDER_SENT ? selected.sender : "";
+  useEffect(() => {
+    // Geen afzender om na te kijken (verzonden mail, of nog niets open): niets
+    // te doen. Bewust géén `setSenderRelation(null)` — een uitslag draagt het
+    // adres waar hij bij hoort, dus een oude uitslag kan hier nooit doorheen
+    // lekken, en een setState in de effect-body is precies de cascade-render
+    // die React afraadt.
+    if (!relationSender) return;
+    let cancelled = false;
+    lookupExistingCached(relationSender)
+      .then((found) => { if (!cancelled) setSenderRelation({ email: relationSender, found }); })
+      // Mislukt de check (rechten, netwerk), dan telt het adres als onbekend:
+      // de knop verschijnt en ERPNext blijft bij het aanmaken zelf het vangnet.
+      .catch(() => { if (!cancelled) setSenderRelation({ email: relationSender, found: {} }); });
+    return () => { cancelled = true; };
+  }, [relationSender]);
+
+  /** `null` zolang de check loopt; de actie rendert dan nog niets. */
+  const relationExisting = senderRelation?.email === relationSender ? senderRelation.found : null;
+
+  /**
+   * Na het vastleggen. `createRelation` heeft de sessiecache al goedgezet op
+   * het adres uit de dialoog; hier gaat hij óók onder het adres uit de mail in
+   * de cache. Dat verschilt alleen wanneer de gebruiker het e-mailveld in de
+   * dialoog aanpaste — en dan zou de chip bij déze mail anders uitblijven
+   * terwijl er wel degelijk iets is aangemaakt.
+   */
+  const handleRelationCreated = useCallback((email: string, result: RelationResult) => {
+    const found: ExistingRelation = { contact: result.contact };
+    if (result.customer) found.customer = result.customer;
+    primeRelationLookup(email, found);
+    setSenderRelation({ email, found });
+  }, []);
+
+  /**
+   * De relatie-actie staat altijd op precies één plek: in de actiebalk van de
+   * herkende bedoeling als die er is, anders in de chipregel onder de kop.
+   * Kleur en opschrift verschillen per plek, de rest niet.
+   */
+  const relationSlot = (tone: RelationSlotTone, label: string) => (
+    relationSender ? (
+      <SenderRelationAction
+        existing={relationExisting}
+        tone={tone}
+        label={label}
+        onAdd={() => { if (selected) setRelationFor(selected); }}
+      />
+    ) : null
+  );
+
+  /**
+   * De offerte-actie. Zelfde bron als de andere knoppen in de balk — de
+   * beslisregel staat in `mail-quote-actions.ts` zodat de webmail en de
+   * popout-lezer niet uit elkaar kunnen lopen, en zodat "waarom zie ik die
+   * knop (niet)?" met `node --test` te beantwoorden is.
+   *
+   * De klant komt uit dezelfde `classifySender` als de rest van de
+   * herkenning; de lead komt uit de adres-check die de relatie-actie tóch al
+   * doet (`relationExisting`), dus dit kost geen extra query.
+   */
+  const quoteAction = useMemo(() => {
+    if (!selected) return decideQuoteAction({ intentKind: "none", direction: "received" });
+    const facts = classifySender(selected.sender, intentCtx);
+    return decideQuoteAction({
+      intentKind: selectedIntent?.kind ?? "none",
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      ...(facts.customer ? { customer: facts.customer } : {}),
+      ...(relationExisting?.lead ? { lead: relationExisting.lead } : {}),
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+    });
+  }, [selected, intentCtx, selectedIntent, relationExisting]);
+
+  /**
+   * Klik op "Offerte maken" terwijl er nog geen klant of lead is. Bij een
+   * herkende lead is de leaddialoog de juiste eerste stap (die maakt meteen
+   * een partij waaraan geofferteerd kan worden); anders het vastleggen van de
+   * relatie. In beide gevallen biedt de melding daarna de offerte aan.
+   */
+  const handleQuoteNeedsParty = useCallback(() => {
+    if (!selected) return;
+    if (selectedIntent && (selectedIntent.kind === "lead" || selectedIntent.kind === "quote-request")) {
+      setLeadFor({ msg: selected, intent: selectedIntent });
+      return;
+    }
+    setRelationFor(selected);
+  }, [selected, selectedIntent]);
+
+  /**
+   * "Hoort dit bij project X?" — alleen wanneer er geen andere bedoeling is
+   * herkend (hooguit één voorstel per mail) en de mail nog nergens aan hangt.
+   */
+  const projectSuggestion: ProjectSuggestion | null = useMemo(() => {
+    if (!selected || projectHints.length === 0) return null;
+    if (isMailSuggestionDismissed(dismissed, selected.name, "project")) return null;
+    const facts = classifySender(selected.sender, intentCtx);
+    return suggestProject({
+      subject: selected.subject,
+      sender: selected.sender,
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      threadProjects: thread
+        .filter((m) => m.name !== selected.name && m.reference?.doctype === "Project")
+        .map((m) => m.reference!.name),
+      senderProjects,
+      ...(facts.customer ? { senderCustomer: facts.customer } : {}),
+      direction: selected.folder === MAIL_FOLDER_SENT ? "sent" : "received",
+      ...(selected.reference?.doctype ? { linkedDoctype: selected.reference.doctype } : {}),
+      intentKind: selectedIntent?.kind ?? "none",
+    }, projectHints);
+  }, [selected, body, thread, senderProjects, projectHints, intentCtx, dismissed, selectedIntent]);
+
+  /**
+   * Na een geslaagde boeking. De koppeling `Communication → Purchase Invoice`
+   * gaat ook lokaal meteen in de lijst en het leespaneel, zodat het labeltje
+   * verdwijnt en er in zijn plaats het factuurnummer staat — anders zou de
+   * gebruiker dezelfde mail nog eens kunnen boeken voordat de lijst ververst.
+   */
+  const handleInvoiceBooked = useCallback((communication: string, result: BookingResult) => {
+    setBookingFor(null);
+    setBookedNotice(result);
+    if (result.linkFailed) return;
+    const reference = { doctype: "Purchase Invoice", name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+    connectionsChanged();
+  }, [connectionsChanged]);
+
+  /** Idem voor een aangemaakte lead of offerteaanvraag. */
+  /** Idem voor een aangemaakte concept-offerte. */
+  const handleQuoteCreated = useCallback((communication: string, result: BookingResult) => {
+    setQuoteFor(null);
+    setQuoteNotice(result);
+    if (result.linkFailed) return;
+    const reference = { doctype: "Quotation", name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+    connectionsChanged();
+  }, [connectionsChanged]);
+
+  const handleLeadCreated = useCallback((
+    communication: string,
+    doctype: "Lead" | "Opportunity",
+    result: BookingResult,
+  ) => {
+    setLeadFor(null);
+    setCreatedNotice({ doctype, result });
+    if (result.linkFailed) return;
+    const reference = { doctype, name: result.name };
+    setMessages((prev) => prev.map((m) => (m.name === communication ? { ...m, reference } : m)));
+    setSelected((prev) => (prev && prev.name === communication ? { ...prev, reference } : prev));
+    connectionsChanged();
+  }, [connectionsChanged]);
+
   const customFolders = useMemo(() => folders.filter((f) => f.kind === "custom"), [folders]);
-  const projectFolders = useMemo(() => folders.filter((f) => f.kind === "project"), [folders]);
   const fixedFolders = useMemo(
     () => folders.filter((f) => f.kind !== "project" && f.kind !== "custom"),
     [folders],
   );
+  /**
+   * Leesbare naam van een map- of connectie-selectie. Connecties staan niet in
+   * `folders` (ze komen uit de momentopname), dus die krijgen hun eigen
+   * afleiding: "Projecten" of "Projecten · Kade Noord".
+   */
   const folderLabel = useCallback(
-    (id: string) => folders.find((f) => f.id === id)?.label || id,
-    [folders],
+    (id: string) => {
+      const conn = describeConnectionFolder(id, connIndex);
+      if (conn) {
+        const cat = t(conn.category.labelKey);
+        return conn.objectLabel ? `${cat} · ${conn.objectLabel}` : cat;
+      }
+      return folders.find((f) => f.id === id)?.label || id;
+    },
+    [folders, connIndex, t],
   );
+
+  /* ─── Connecties: momentopname, chips en koppel-acties ─── */
+
+  /**
+   * De connecties van de geopende mail.
+   *
+   * De momentopname is de bron, maar niet de enige: een koppeling die zojuist
+   * in dit scherm is gemaakt (factuur geboekt, project gekozen) staat er nog
+   * niet in en zou dan tot de volgende verversing onzichtbaar zijn. De live
+   * `reference` van de rij wordt daarom altijd meegenomen.
+   */
+  const selectedConnections = useMemo<MailConnection[]>(() => {
+    if (!selected) return [];
+    const out = [...(connIndex?.byMessage.get(selected.name) ?? [])];
+    const ref = selected.reference;
+    if (ref) {
+      const category = categoryOfDoctype(ref.doctype);
+      if (category && !out.some((c) => c.doctype === ref.doctype && c.name === ref.name)) {
+        out.push({ doctype: ref.doctype, name: ref.name, label: ref.name, category });
+      }
+    }
+    return out;
+  }, [selected, connIndex]);
+
+
 
   /* ─── Aflever-status van verzonden mail ─── */
   const sentNames = useMemo(
@@ -4234,10 +4825,122 @@ function ErpNextWebmail() {
     });
   }, [shiftUnseenBaseline, t]);
 
+  /* ─── Concepten: automatisch bewaren, lokaal per apparaat ─── */
+
+  /** De instance wisselt niet terwijl deze pagina openstaat. */
+  const instanceId = useMemo(() => getActiveInstanceId(), []);
+
+  /**
+   * Spiegel van het open concept, synchroon leesbaar. Het wegklikken van de
+   * opsteller ruimt de gedebouncete timer op — zonder deze spiegel zouden de
+   * laatste toetsaanslagen dáármee verdwijnen, precies het verlies dat deze
+   * hele functie moet voorkomen.
+   */
+  const draftRef = useRef<ErpDraft | null>(null);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+
+  const persistDraft = useCallback((d: ErpDraft | null) => {
+    if (!d) return;
+    setDrafts(saveDraft(instanceId, {
+      key: d.draftKey,
+      mode: d.mode,
+      ...(d.draftMessageName ? { messageName: d.draftMessageName } : {}),
+      to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body,
+      includeSignature: d.includeSignature,
+      // Leeg: het citaat zit tegenwoordig in `body`. De velden blijven in de
+      // opslagvorm staan zodat een concept van vóór die wijziging nog te
+      // herstellen is — zie `draftFromStored`.
+      quoteHtml: "", quoteLabel: "",
+      ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
+      ...(d.reference ? { reference: d.reference } : {}),
+    }));
+  }, [instanceId]);
+
+  // Tijdens het typen: één schrijfactie per rustmoment in plaats van per
+  // toetsaanslag.
+  useEffect(() => {
+    if (!draft) return;
+    const id = window.setTimeout(() => persistDraft(draft), DRAFT_SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [draft, persistDraft]);
+
+  // Vangnet bij het verlaten van de mailpagina (navigeren, tab sluiten).
+  useEffect(() => () => { persistDraft(draftRef.current); }, [persistDraft]);
+
+  /** Sluit de opsteller, maar bewaar eerst wat er staat. */
+  const closeDraft = useCallback(() => {
+    persistDraft(draftRef.current);
+    setDraft(null);
+  }, [persistDraft]);
+
+  /** Een bewaard concept terug naar de vorm die de opsteller kent. */
+  const draftFromStored = useCallback((d: StoredMailDraft): ErpDraft => {
+    // Concepten van vóór de opmaak-editor staan als platte tekst opgeslagen;
+    // `ensureHtmlBody` maakt daar HTML van (en filtert HTML die er al is), zodat
+    // een oud concept zijn regeleindes houdt in plaats van één lange zin te worden.
+    let body = ensureHtmlBody(d.body);
+    // Concept van vóór "citaat in de opsteller": het origineel stond toen in
+    // een apart veld. Hier hangen we het alsnog onder de tekst, zodat een
+    // hervat antwoord zijn citaat niet verliest.
+    if (d.quoteHtml && !hasQuote(body)) {
+      body += buildComposeBodyWithQuote(
+        buildQuoteBlock({ label: "", bodyHtml: d.quoteHtml })
+      );
+    }
+    return {
+      mode: d.mode,
+      draftKey: d.key,
+      ...(d.messageName ? { draftMessageName: d.messageName } : {}),
+      to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject,
+      body,
+      includeSignature: d.includeSignature,
+      ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
+      ...(d.reference ? { reference: d.reference } : {}),
+      // Bijlagen zijn niet serialiseerbaar — zie `lib/mail-drafts`.
+      files: [],
+    };
+  }, []);
+
+  const resumeDraft = useCallback((stored: StoredMailDraft) => {
+    persistDraft(draftRef.current);
+    setDraft(draftFromStored(stored));
+    setShowLinkPicker(false);
+    if (isMobile) setMobilePane("message");
+  }, [draftFromStored, isMobile, persistDraft]);
+
+  /**
+   * Weggooien is de enige manier waarop een concept verdwijnt zonder dat het
+   * verstuurd is, en dus de enige die een bevestiging verdient.
+   */
+  const discardDraft = useCallback((key: string) => {
+    if (!window.confirm(t("y_next.mail_draft_discard_confirm"))) return;
+    setDrafts(deleteDraft(instanceId, key));
+    setDraft((prev) => (prev && prev.draftKey === key ? null : prev));
+    setToast(t("y_next.mail_draft_discarded"));
+  }, [instanceId, t]);
+
+  /** Berichten met een onafgemaakt antwoord — voor het label in de lijst. */
+  const draftNames = useMemo(() => draftMessageNames(drafts), [drafts]);
+  /** Losstaande nieuwe berichten; die horen bij geen enkele regel. */
+  const looseDrafts = useMemo(() => standaloneDrafts(drafts), [drafts]);
+  const selectedDraft = useMemo(
+    () => (selected ? draftForMessage(drafts, selected.name) : undefined),
+    [drafts, selected],
+  );
+
   const openMessage = useCallback(async (msg: ErpMailMessage) => {
     setSelected(msg);
+    // Eerste geopende mail is het moment waarop de connecties nodig zijn — en
+    // laat genoeg dat de mailpagina er niet op wacht.
+    ensureConnIndex();
+    // Naar een andere mail springen mag een half getypt antwoord niet kosten —
+    // dat is precies waar de conceptopslag voor is.
+    persistDraft(draftRef.current);
     setDraft(null);
     setShowLinkPicker(false);
+    // De boekingsmelding hoort bij de vórige mail; hem laten staan zou het
+    // factuurnummer van mail A boven mail B tonen.
+    setBookedNotice(null);
     setBody(null);
     setThread([]);
     setBodyLoading(true);
@@ -4254,7 +4957,7 @@ function ErpNextWebmail() {
     } finally {
       setBodyLoading(false);
     }
-  }, [applySeen, isMobile, t]);
+  }, [applySeen, isMobile, t, ensureConnIndex, persistDraft]);
 
   /* ─── Conversatie: serverzijdig over de in_reply_to-graaf ─── */
   const selectedName = selected?.name ?? "";
@@ -4269,19 +4972,51 @@ function ErpNextWebmail() {
     return () => { cancelled = true; };
   }, [selectedName]);
 
+  /**
+   * Wat er als conversatie bóven de mail staat: de vereniging van twee
+   * bronnen. De server loopt de `in_reply_to`-boom af (ook buiten de geladen
+   * lijst), de lijstgroepering pakt daarnaast de doorgestuurde en
+   * losgeraakte berichten op (onderwerp + deelnemers) plus de apart opgehaalde
+   * verzonden antwoorden.
+   *
+   * Zonder die vereniging zou de lijstregel "4 berichten" zeggen en het
+   * leespaneel eronder "(2)" — één conversatie, twee getallen.
+   */
+  const conversationRows = useMemo(() => {
+    if (!selected) return [] as ErpMailMessage[];
+    const byName = new Map<string, ErpMailMessage>();
+    for (const m of thread) byName.set(m.name, m);
+    const listThread = threads.find((th) => th.names.includes(selected.name));
+    if (listThread) for (const m of listThread.messages) if (!byName.has(m.name)) byName.set(m.name, m);
+    byName.set(selected.name, byName.get(selected.name) ?? selected);
+    return [...byName.values()].sort((a, b) => {
+      if (a.date === b.date) return a.name.localeCompare(b.name);
+      return a.date < b.date ? -1 : 1;
+    });
+  }, [thread, threads, selected]);
+
   /* ─── Selectie ─── */
 
-  const toggleChecked = useCallback((name: string) => {
+  /**
+   * Een vinkje op een regel zet het hele gesprek aan of uit — dat is wat de
+   * regel voorstelt. Bulkacties raken daardoor álle leden; de bulkbalk toont
+   * het aantal berichten, niet het aantal regels, zodat "3 berichten
+   * verwijderen" nooit als verrassing komt.
+   */
+  const toggleChecked = useCallback((names: string[]) => {
     setChecked((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      const on = names.some((n) => !next.has(n));
+      for (const name of names) { if (on) next.add(name); else next.delete(name); }
       return next;
     });
   }, []);
 
-  const handleRowClick = useCallback((msg: ErpMailMessage, index: number, e: React.MouseEvent) => {
+  const handleRowClick = useCallback((
+    thread: MailThread<ErpMailMessage>, index: number, e: React.MouseEvent,
+  ) => {
     if (e.ctrlKey || e.metaKey) {
-      toggleChecked(msg.name);
+      toggleChecked(thread.names);
       lastClickedRef.current = index;
       return;
     }
@@ -4289,22 +5024,24 @@ function ErpNextWebmail() {
       const [from, to] = [lastClickedRef.current, index].sort((a, b) => a - b);
       setChecked((prev) => {
         const next = new Set(prev);
-        for (const m of filteredMessages.slice(from, to + 1)) next.add(m.name);
+        for (const th of threads.slice(from, to + 1)) for (const name of th.names) next.add(name);
         return next;
       });
       return;
     }
     lastClickedRef.current = index;
     setChecked(new Set());
-    void openMessage(msg);
-  }, [filteredMessages, openMessage, toggleChecked]);
+    void openMessage(thread.head);
+  }, [threads, openMessage, toggleChecked]);
 
-  const allChecked = filteredMessages.length > 0 && filteredMessages.every((m) => checked.has(m.name));
+  /** Alle namen die op de zichtbare regels staan (kop + leden). */
+  const visibleNames = useMemo(() => threads.flatMap((th) => th.names), [threads]);
+  const allChecked = visibleNames.length > 0 && visibleNames.every((n) => checked.has(n));
   const toggleAll = useCallback(() => {
-    setChecked((prev) => (prev.size >= filteredMessages.length && filteredMessages.length > 0
+    setChecked((prev) => (prev.size >= visibleNames.length && visibleNames.length > 0
       ? new Set()
-      : new Set(filteredMessages.map((m) => m.name))));
-  }, [filteredMessages]);
+      : new Set(visibleNames)));
+  }, [visibleNames]);
 
   /* ─── Prullenbak: weggooien, terugzetten, definitief verwijderen ─── */
 
@@ -4318,7 +5055,7 @@ function ErpNextWebmail() {
    */
   const applyRemoval = useCallback(async (
     names: string[],
-    run: (names: string[]) => Promise<void>,
+    run: (names: string[]) => Promise<BulkOutcome>,
     okMessage: (count: number) => string,
     failMessage: string,
     permissionMessage: string,
@@ -4333,8 +5070,23 @@ function ErpNextWebmail() {
     if (selectedName && doomed.has(selectedName)) { setSelected(null); setBody(null); setThread([]); }
 
     try {
-      await run(names);
-      setToast(okMessage(names.length));
+      const { failed, error } = await run(names);
+      if (failed.length === 0) {
+        setToast(okMessage(names.length));
+      } else {
+        // Deelfout: precies de berichten die het niet haalden komen terug in de
+        // lijst, en de gebruiker krijgt het te zien. Zonder dit meldde de UI
+        // "5 verwijderd" terwijl er vier bleven staan — een geslaagd ogende
+        // actie die niets deed, zonder enige foutmelding.
+        const stuck = new Set(failed);
+        const restored = before.filter((m) => !doomed.has(m.name) || stuck.has(m.name));
+        messagesRef.current = restored;
+        setMessages(restored);
+        setToast(isPermissionError(error)
+          ? permissionMessage
+          : `${failMessage} (${failed.length}/${names.length})`
+            + (error instanceof Error ? `: ${error.message}` : ""));
+      }
     } catch (err) {
       // Alles faalde (de bulk-adapter gooit alleen dán) — de lijst terugzetten
       // is eerlijker dan berichten laten verdwijnen die er nog zijn.
@@ -4347,9 +5099,12 @@ function ErpNextWebmail() {
       // Deelfouten slikt de bulk-adapter in, dus alleen een verse lijst vertelt
       // wat er werkelijk gebeurd is.
       refreshFolders();
+      // Een weggegooide mail hoort ook uit zijn connecties te verdwijnen: de
+      // momentopname sluit getrashte mail uit.
+      connectionsChanged();
       silentReload();
     }
-  }, [refreshFolders, selectedName, silentReload]);
+  }, [connectionsChanged, refreshFolders, selectedName, silentReload]);
 
   /**
    * Naar de Prullenbak. Bewust géén bevestiging: de actie is omkeerbaar, en
@@ -4358,7 +5113,7 @@ function ErpNextWebmail() {
    */
   const handleTrash = useCallback((names: string[]) => applyRemoval(
     names,
-    (list) => (list.length === 1 ? moveToTrash(list[0]) : bulkMoveToTrash(list)),
+    bulkMoveToTrash,
     (count) => (count === 1
       ? t("y_next.mail_moved_to_trash")
       : t("y_next.mail_moved_to_trash_many", { count })),
@@ -4369,7 +5124,7 @@ function ErpNextWebmail() {
   /** Terug uit de Prullenbak; het bericht keert terug in zijn eigen map. */
   const handleRestore = useCallback((names: string[]) => applyRemoval(
     names,
-    (list) => (list.length === 1 ? restoreFromTrash(list[0]) : bulkRestoreFromTrash(list)),
+    bulkRestoreFromTrash,
     (count) => (count === 1
       ? t("y_next.mail_restored")
       : t("y_next.mail_restored_many", { count })),
@@ -4390,7 +5145,7 @@ function ErpNextWebmail() {
     if (!ok) return;
     void applyRemoval(
       names,
-      (list) => (list.length === 1 ? deleteForever(list[0]) : bulkDeleteForever(list)),
+      bulkDeleteForever,
       (count) => (count === 1
         ? t("y_next.mail_deleted")
         : t("y_next.mail_deleted_many", { count })),
@@ -4408,10 +5163,104 @@ function ErpNextWebmail() {
     else void handleTrash(names);
   }, [handleDeleteForever, handleTrash, isTrashFolder]);
 
+  /**
+   * Waar een knop in de lintbalk op werkt.
+   *
+   * De aangevinkte berichten gaan vóór op het geopende bericht: wie
+   * vakjes aanzet heeft daarmee al gezegd waar de volgende actie over gaat.
+   * Zonder deze regel bleef de knop "Verwijderen" in de lintbalk grijs zolang
+   * er geen mail geopend was — je kon vinkjes zetten en er gebeurde niets. Dat
+   * was de "de verwijderknop doet niets"-klacht.
+   */
+  const actionTargets = useMemo(
+    () => (checked.size > 0 ? [...checked] : selected ? [selected.name] : []),
+    [checked, selected],
+  );
+
+  /**
+   * Zijn álle doelen al afgehandeld? Dan betekent de knop "heropenen". Een
+   * gemengde selectie vinkt af — dat is de richting die de gebruiker bedoelt
+   * als hij een stapel selecteert.
+   */
+  const allTargetsHandled = useMemo(() => {
+    if (actionTargets.length === 0) return false;
+    const byName = new Map(messages.map((m) => [m.name, m]));
+    return actionTargets.every((name) => (byName.get(name) ?? selected)?.handled === true);
+  }, [actionTargets, messages, selected]);
+
+  /**
+   * Zelfde regel voor gelezen/ongelezen: is álles al gelezen, dan betekent de
+   * U-toets "terug naar ongelezen"; anders "markeer als gelezen".
+   */
+  const allTargetsSeen = useMemo(() => {
+    if (actionTargets.length === 0) return false;
+    const byName = new Map(messages.map((m) => [m.name, m]));
+    return actionTargets.every((name) => (byName.get(name) ?? selected)?.seen === true);
+  }, [actionTargets, messages, selected]);
+
+  /* ─── Afgehandeld: `Communication.status` ─── */
+
+  /**
+   * Vink af of heropen. Anders dan verwijderen verdwijnt het bericht hier
+   * niet uit de lijst — behalve wanneer het filter of de map dat afdwingt, en
+   * dat regelt `filteredMessages` vanzelf op de bijgewerkte rij.
+   */
+  const applyHandled = useCallback(async (names: string[], handled: boolean) => {
+    if (names.length === 0) return;
+    const target = new Set(names);
+    const before = messagesRef.current;
+    const next = before.map((m) => (target.has(m.name) ? { ...m, handled } : m));
+    messagesRef.current = next;
+    setMessages(next);
+    setSelected((prev) => (prev && target.has(prev.name) ? { ...prev, handled } : prev));
+    setChecked(new Set());
+
+    const revert = () => {
+      messagesRef.current = before;
+      setMessages(before);
+      setSelected((prev) => {
+        if (!prev || !target.has(prev.name)) return prev;
+        const original = before.find((m) => m.name === prev.name);
+        return original ? { ...prev, handled: original.handled } : prev;
+      });
+    };
+
+    try {
+      const { failed, error } = await (handled
+        ? bulkMarkHandled(names)
+        : bulkMarkUnhandled(names));
+      if (failed.length === 0) {
+        setToast(handled
+          ? (names.length === 1
+            ? t("y_next.mail_marked_handled")
+            : t("y_next.mail_marked_handled_many", { count: names.length }))
+          : t("y_next.mail_marked_unhandled"));
+      } else {
+        // Deelfout: alles terug naar de serverwaarheid en zeggen wat er misging.
+        revert();
+        setToast(isPermissionError(error)
+          ? t("y_next.mail_no_write_permission")
+          : `${t("y_next.mail_handled_failed")} (${failed.length}/${names.length})`);
+      }
+    } catch (err) {
+      revert();
+      setToast(isPermissionError(err)
+        ? t("y_next.mail_no_write_permission")
+        : t("y_next.mail_handled_failed") + (err instanceof Error ? `: ${err.message}` : ""));
+    } finally {
+      refreshFolders();
+      silentReload();
+    }
+  }, [refreshFolders, silentReload, t]);
+
   /* ─── Bulk: gelezen / ongelezen ─── */
 
-  const handleBulkSeen = useCallback(async (seen: boolean) => {
-    const names = [...checked];
+  /**
+   * `names` is optioneel zodat de sneltoets dezelfde weg loopt als de
+   * bulkbalk: die geeft de aangevinkte rijen door, de sneltoets
+   * `actionTargets` (aangevinkt, anders de geopende mail).
+   */
+  const handleBulkSeen = useCallback(async (seen: boolean, names: string[] = [...checked]) => {
     if (names.length === 0) return;
     const target = new Set(names);
     const before = messagesRef.current;
@@ -4426,16 +5275,97 @@ function ErpNextWebmail() {
     shiftUnseenBaseline(seen ? -flipped : flipped);
 
     try {
-      await (seen ? bulkMarkRead(names) : bulkMarkUnread(names));
+      const { failed, error } = await (seen ? bulkMarkRead(names) : bulkMarkUnread(names));
+      if (failed.length > 0) {
+        // Zelfde regel als bij verwijderen: een deels mislukte actie mag niet
+        // als geslaagd ogen. Terug naar de serverwaarheid en het zeggen.
+        messagesRef.current = before;
+        setMessages(before);
+        shiftUnseenBaseline(seen ? flipped : -flipped);
+        setToast(isPermissionError(error)
+          ? t("y_next.mail_no_write_permission")
+          : t("y_next.mail_action_failed", { count: failed.length }));
+      }
     } catch (err) {
       messagesRef.current = before;
       setMessages(before);
+      shiftUnseenBaseline(seen ? flipped : -flipped);
       setToast(isPermissionError(err) ? t("y_next.mail_no_write_permission") : t("webmail.load_failed"));
     } finally {
       refreshFolders();
       silentReload();
     }
   }, [checked, refreshFolders, shiftUnseenBaseline, silentReload, t]);
+
+  /* ─── Sneltoetsen ─── */
+
+  /**
+   * Delete/Backspace, U, E, Enter en Escape doen hetzelfde als de knoppen in
+   * de lintbalk — inclusief de regel welke berichten ze raken (`actionTargets`:
+   * aangevinkte rijen, anders de geopende mail). De beslissing "mag deze toets
+   * nú vuren?" staat in `lib/mail-shortcuts.ts` en is daar getest; hier staat
+   * alleen de bedrading.
+   *
+   * De luisteraar hangt aan `window`, niet aan een rij: het lijstpaneel heeft
+   * geen focus zolang je alleen vinkjes zet, en dan zou de toets nooit
+   * aankomen — precies de klacht ("de Delete-toets doet niets").
+   */
+  const dialogOpen = Boolean(
+    bookingFor || leadFor || relationFor || folderMenu
+    || assignOpen || showLinkPicker || projectPickerOpen || newFolderOpen,
+  );
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const action = resolveMailShortcut(e, {
+        editing: isEditableTarget(e.target as HTMLElement | null),
+        dialogOpen,
+        composing: draft !== null,
+        hasTargets: actionTargets.length > 0,
+        inTrash: isTrashFolder,
+      });
+      if (!action) return;
+      e.preventDefault();
+      switch (action) {
+        case "trash":
+          handleDeleteAction(actionTargets);
+          break;
+        case "delete-forever":
+          handleDeleteForever(actionTargets);
+          break;
+        case "toggle-read":
+          void handleBulkSeen(!allTargetsSeen, actionTargets);
+          break;
+        case "toggle-handled":
+          // In de Prullenbak bestaat "afhandelen" niet — daar staat de knop
+          // ook niet, dus de toets hoort daar evenmin iets te doen.
+          if (!isTrashFolder) void applyHandled(actionTargets, !allTargetsHandled);
+          break;
+        case "open": {
+          const target = messagesRef.current.find((m) => m.name === actionTargets[0]);
+          if (target && target.name !== selectedName) void openMessage(target);
+          break;
+        }
+        case "dismiss":
+          // Eerst de selectie, dan het leespaneel: één Escape hoort niet
+          // allebei weg te halen.
+          if (checked.size > 0) setChecked(new Set());
+          else if (selectedName) { setSelected(null); setBody(null); setThread([]); }
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    actionTargets, allTargetsHandled, allTargetsSeen, applyHandled, checked.size,
+    dialogOpen, draft, handleBulkSeen, handleDeleteAction, handleDeleteForever,
+    isTrashFolder, openMessage, selectedName,
+  ]);
+
+  /** "Verwijderen (Delete)" — het label met zijn toets erachter. */
+  const withKeys = useCallback(
+    (label: string, keys: string) => t("y_next.mail_shortcut_hint", { label, keys }),
+    [t],
+  );
 
   /* ─── Toewijzen aan een eigen map (tag) of projectmap (referentie) ─── */
 
@@ -4511,14 +5441,16 @@ function ErpNextWebmail() {
     }
     setChecked(new Set());
     refreshFolders();
-  }, [refreshFolders, silentReload, t]);
+    connectionsChanged();
+  }, [connectionsChanged, refreshFolders, silentReload, t]);
 
   /* ─── Slepen ─── */
 
-  const handleDragStart = useCallback((msg: ErpMailMessage, e: React.DragEvent) => {
+  const handleDragStart = useCallback((msg: ErpMailMessage, e: React.DragEvent, threadNames?: string[]) => {
     // Sleep je een aangevinkt bericht, dan gaat de hele selectie mee; sleep je
-    // een ander bericht, dan alleen dat ene (en blijft de selectie ongemoeid).
-    const names = checked.has(msg.name) ? [...checked] : [msg.name];
+    // een andere regel, dan gaat dat hele gesprek mee — dezelfde regel als het
+    // vinkje en de rij-acties, zodat "deze regel" overal hetzelfde betekent.
+    const names = checked.has(msg.name) ? [...checked] : (threadNames ?? [msg.name]);
     dragNamesRef.current = names;
     e.dataTransfer.setData("text/plain", names.join(","));
     e.dataTransfer.effectAllowed = "copyMove";
@@ -4538,6 +5470,27 @@ function ErpNextWebmail() {
     if (folder.kind === "trash") { void handleTrash(names); return; }
     void assignToFolder(folder, names);
   }, [assignToFolder, handleTrash]);
+
+  /**
+   * Sleep een mail op een connectie-object. Alleen projecten zijn een zinnig
+   * doel: dat is de koppeling die Y-next zelf zet. Een klant volgt uit het
+   * e-mailadres en een factuur uit het boeken — die "toewijzen" zou een
+   * onwaarheid vastleggen.
+   */
+  const handleDropOnConnection = useCallback((obj: ConnectionObject, e: React.DragEvent) => {
+    e.preventDefault();
+    const fromRef = dragNamesRef.current;
+    const names = fromRef.length > 0
+      ? fromRef
+      : (e.dataTransfer.getData("text/plain") || "").split(",").filter(Boolean);
+    dragNamesRef.current = [];
+    if (names.length === 0 || obj.doctype !== "Project") return;
+    void assignToFolder(
+      { id: connectionFolderId({ category: obj.category, doctype: obj.doctype, docname: obj.name }),
+        label: obj.label, unseen: 0, kind: "project", project: obj.name },
+      names,
+    );
+  }, [assignToFolder]);
 
   /* ─── Eigen mappen: aanmaken en verwijderen ─── */
 
@@ -4584,10 +5537,11 @@ function ErpNextWebmail() {
   }
 
   function openCompose() {
+    persistDraft(draftRef.current);
     setDraft({
-      mode: "new", to: "", cc: "", bcc: "", subject: "", body: "",
-      from: standaardAfzender(), signature: "",
-      quoteHtml: "", quoteLabel: "",
+      mode: "new", draftKey: newDraftKey(), from: standaardAfzender(),
+      to: "", cc: "", bcc: "", subject: "", body: "",
+      includeSignature: true,
       reference: folderReference(),
       files: [],
     });
@@ -4598,23 +5552,31 @@ function ErpNextWebmail() {
   function openReply(all: boolean) {
     const msg = selected;
     if (!msg) return;
+    // Was er al een antwoord begonnen op deze mail? Dan is "beantwoorden"
+    // hetzelfde als "hervatten" — een leeg venster zou de bewaarde tekst
+    // overschrijven zodra de gebruiker weer iets typt.
+    const key = draftKeyFor(all ? "replyAll" : "reply", msg.name);
+    const saved = drafts[key];
+    if (saved) { resumeDraft(saved); return; }
     const label = t("webmail.reply_quote_header", {
       date: formatFullDate(msg.date),
       name: msg.senderName || msg.sender,
       email: msg.sender,
     });
     const recipients = buildReplyRecipients(msg, selfEmail, all);
+    persistDraft(draftRef.current);
     setDraft({
       mode: all ? "replyAll" : "reply",
+      draftKey: key,
+      draftMessageName: msg.name,
       to: recipients.to,
       cc: recipients.cc,
       bcc: "",
       subject: prefixSubject(msg.subject, "Re"),
-      body: "",
-      from: standaardAfzender(),
-      signature: "",
-      quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
-      quoteLabel: label,
+      // Het citaat gaat mee ín de opsteller: zichtbaar tijdens het schrijven,
+      // en te bewerken of te wissen als je het niet wilt meesturen.
+      body: buildComposeBodyWithQuote(buildQuoteBlock({ label, bodyHtml: body?.html || "" })),
+      includeSignature: true,
       inReplyTo: msg.name,
       reference: msg.reference,
       files: [],
@@ -4625,6 +5587,9 @@ function ErpNextWebmail() {
   function openForward() {
     const msg = selected;
     if (!msg) return;
+    const fwdKey = draftKeyFor("forward", msg.name);
+    const savedFwd = drafts[fwdKey];
+    if (savedFwd) { resumeDraft(savedFwd); return; }
     const label = t("webmail.forward_quote_header", {
       name: msg.senderName || msg.sender,
       email: msg.sender,
@@ -4636,17 +5601,19 @@ function ErpNextWebmail() {
     const attachLine = attachNames
       ? `<p style="color:#64748b">${textBodyToHtml(t("y_next.mail_forward_attachments", { names: attachNames }))}</p>`
       : "";
+    persistDraft(draftRef.current);
     setDraft({
       mode: "forward",
+      draftKey: fwdKey,
+      draftMessageName: msg.name,
       to: "",
       cc: "",
       bcc: "",
       subject: prefixSubject(msg.subject, "Fwd"),
-      body: "",
-      quoteHtml: `<p>${textBodyToHtml(label)}</p>${attachLine}${body?.html || ""}`,
-      quoteLabel: label,
-      from: standaardAfzender(),
-      signature: "",
+      body: buildComposeBodyWithQuote(buildQuoteBlock({
+        label, bodyHtml: body?.html || "", noticeHtml: attachLine,
+      })),
+      includeSignature: true,
       reference: msg.reference,
       files: [],
     });
@@ -4658,14 +5625,21 @@ function ErpNextWebmail() {
     if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
     setSending(true);
     setToast(t("webmail.message_sending"));
-    // De handtekening staat als los, bewerkbaar blok in het concept (het
-    // tekstvak zelf is platte tekst) en komt hier onder de getypte tekst —
-    // vóór het citaat, zoals elke mailclient doet. Leeggemaakt door de
-    // gebruiker betekent: geen handtekening.
-    const typed = appendSignature(textBodyToHtml(draft.body), draft.signature);
-    const html = draft.quoteHtml
-      ? `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${draft.quoteHtml}</blockquote>`
-      : typed;
+    // Het citaat staat ín het tekstvak (zodat je het tijdens het schrijven
+    // ziet en kunt bijwerken); hier gaat het er weer af, want de handtekening
+    // hoort ertússen — tekst → handtekening → citaat, zoals elke mailclient.
+    // Wat de gebruiker uit het citaat wegknipte, is dus ook echt weg.
+    // `buildOutgoingHtml` deelt zijn handtekening-afleiding met de preview in
+    // het opstelvenster, dus een uitgezette schakelaar betekent hier ook echt
+    // geen handtekening. `toEmailHtml` maakt van de opgemaakte tekst
+    // mailclient-veilige HTML: whitelist, inline styles, geen classes.
+    const { typed, quote } = splitQuoteFromBody(draft.body);
+    const html = buildOutgoingHtml({
+      bodyHtml: toEmailHtml(typed),
+      signature,
+      includeSignature: draft.includeSignature,
+      quoteHtml: quote,
+    });
     try {
       await sendMail({
         to: draft.to.trim(),
@@ -4676,8 +5650,19 @@ function ErpNextWebmail() {
         attachments: draft.files.length > 0 ? draft.files : undefined,
         inReplyTo: draft.inReplyTo,
         reference: draft.reference,
-        sender: adresVan(draft.from) || undefined,
+        sender: adresVan(draft.from || "") || undefined,
       });
+      // De ranking van de adressuggesties leert van wat je écht verstuurt,
+      // niet alleen van wat je uit de lijst koos — een adres dat je intikte of
+      // plakte hoort de volgende keer bovenaan te staan. Leeg label: dat laat
+      // een eerder onthouden naam staan (zie `bumpFrequency`).
+      const instanceId = getActiveInstanceId();
+      for (const address of parseRecipientEmails([draft.to, draft.cc, draft.bcc].filter(Boolean).join(", "))) {
+        bumpFrequency(instanceId, address, "");
+      }
+      // Verstuurd = afgemaakt: het concept hoort weg, anders blijft er een
+      // "Concept"-label staan bij een mail die je net beantwoord hebt.
+      setDrafts(deleteDraft(instanceId, draft.draftKey));
       setDraft(null);
       setToast(t("webmail.message_sent"));
       refreshAll();
@@ -4693,13 +5678,18 @@ function ErpNextWebmail() {
     const msg = selected;
     if (!msg) return;
     setShowLinkPicker(false);
+    setProjectPickerOpen(false);
     const reference = { doctype: "Project", name: projectName };
     setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
     setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
     try {
-      await linkToDocument(msg.name, "Project", projectName);
+      // `linkMailToProject` zet `reference_*` én een `timeline_links`-rij, zodat
+      // de mail in de projecttijdlijn blijft staan ook als hij later aan iets
+      // anders wordt gekoppeld — zie `communication-link.ts`.
+      await linkMailToProject(msg.name, projectName, msg.sender);
       setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
       refreshFolders();
+      connectionsChanged();
     } catch (err) {
       setToast(t("webmail.link_create_error", { message: err instanceof Error ? err.message : String(err) }));
     }
@@ -4757,6 +5747,7 @@ function ErpNextWebmail() {
   const folderIcon = (kind: ErpMailFolder["kind"]) =>
     kind === "sent" ? Send
       : kind === "unread" ? EyeOff
+      : kind === "handled" ? CheckCheck
       : kind === "trash" ? Trash2
       : kind === "project" ? FolderKanban
       : kind === "custom" ? Tag
@@ -4794,6 +5785,11 @@ function ErpNextWebmail() {
           <Icon size={13} className={active ? "text-blue-600" : "text-slate-400"} />
           <span className="truncate flex-1 text-left">{f.label}</span>
           {f.unseen > 0 && <span className="text-[10px] font-semibold text-blue-600">{f.unseen}</span>}
+          {/* "Afgehandeld" telt een totaal, geen ongelezen — grijs, want het
+              is een stand van zaken en geen "hier moet je nog wat mee". */}
+          {f.unseen === 0 && (f.total ?? 0) > 0 && (
+            <span className="text-[10px] font-medium text-slate-400">{f.total}</span>
+          )}
         </button>
         {f.kind === "custom" && (
           <button
@@ -4847,7 +5843,19 @@ function ErpNextWebmail() {
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {fixedFolders.map(renderFolderButton)}
 
-        {/* Eigen mappen — ERPNext-tags, dus wél aan te maken en te verwijderen */}
+        {/* Connecties — de hoofdstructuur. Een mail hoort bij de documenten
+            waar hij aan hangt (project, klant, inkoopfactuur, offerte, lead),
+            en kan er dus in meerdere tegelijk staan. */}
+        <ConnectionNav
+          activeFolder={activeFolder}
+          onSelect={(id) => { switchFolder(id); if (isMobile) setMobilePane("list"); }}
+          onDropOnObject={handleDropOnConnection}
+          reloadToken={connToken}
+        />
+
+        {/* Eigen mappen — ERPNext-tags. Blijven bestaan als handmatig label,
+            maar staan onder de connecties: ze zijn de uitzondering, niet de
+            ordening. */}
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <span className="text-[10px] uppercase tracking-wide text-slate-400">
             {t("y_next.mail_folders_section")}
@@ -4879,50 +5887,10 @@ function ErpNextWebmail() {
           <p className="px-3 py-1 text-[11px] text-slate-400 italic">{t("y_next.mail_no_custom_folders")}</p>
         )}
         {customFolders.map(renderFolderButton)}
-
-        {projectFolders.length > 0 && (
-          <>
-            <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
-              {t("nav.projects")}
-            </div>
-            {projectFolders.map(renderFolderButton)}
-          </>
-        )}
-
-        {/* IMAP-mappen — bewust alleen-lezen. ERPNext haalt deze mappen op,
-            maar legt per binnengehaalde mail niet vast uit wélke map hij komt
-            (`Communication.imap_folder` blijft leeg), dus er valt niet op te
-            filteren. Klikbare rijen zouden hier niets doen. */}
-        {imapFolders.length > 0 && (
-          <>
-            <div className="flex items-center gap-1 px-3 pt-3 pb-1">
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                {t("y_next.mail_imap_folders_section")}
-              </span>
-              <Info size={10} className="text-slate-300" aria-hidden />
-            </div>
-            {imapFolders.map((f) => (
-              <div
-                key={`${f.account}::${f.folderName}`}
-                title={t("y_next.mail_imap_folder_hint", { account: f.account })}
-                className="flex items-center gap-2 px-3 py-1 text-xs text-slate-400 cursor-default"
-              >
-                <Server size={12} className="text-slate-300 flex-shrink-0" />
-                <span className="truncate flex-1">{f.folderName}</span>
-                {f.appendTo && (
-                  <span className="text-[10px] text-slate-400 truncate">{f.appendTo}</span>
-                )}
-              </div>
-            ))}
-            <p className="px-3 pt-0.5 text-[10px] leading-snug text-slate-400 italic">
-              {t("y_next.mail_imap_folders_note")}
-            </p>
-          </>
-        )}
       </div>
       <div className="flex items-start gap-1.5 px-3 py-2 border-t border-slate-200 text-[10px] leading-snug text-slate-400">
         <Info size={11} className="mt-0.5 flex-shrink-0" />
-        <span>{t("y_next.mail_direct_note")}</span>
+        <span>{t("y_next.conn_note")}</span>
       </div>
     </>
   );
@@ -4955,13 +5923,31 @@ function ErpNextWebmail() {
           {/* In de Prullenbak komt "terugzetten" ernaast; de prullenbakknop
               zelf betekent daar "definitief verwijderen". */}
           {isTrashFolder && (
-            <button onClick={() => selected && void handleRestore([selected.name])} disabled={!selected}
+            <button onClick={() => actionTargets.length > 0 && void handleRestore(actionTargets)}
+              disabled={actionTargets.length === 0}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
               <RotateCcw size={14} /> <span className="hidden md:inline">{t("y_next.mail_restore")}</span>
             </button>
           )}
-          <button onClick={() => selected && handleDeleteAction([selected.name])} disabled={!selected}
-            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+          {/* Afvinken hoort naast beantwoorden: het is de andere manier om een
+              mail "weg te werken" zonder hem kwijt te raken. */}
+          {!isTrashFolder && (
+            <button
+              onClick={() => actionTargets.length > 0 && void applyHandled(actionTargets, !allTargetsHandled)}
+              disabled={actionTargets.length === 0}
+              title={withKeys(allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-30 disabled:cursor-default cursor-pointer">
+              {allTargetsHandled ? <Undo2 size={14} /> : <CheckCheck size={14} />}
+              <span className="hidden md:inline">
+                {allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+              </span>
+            </button>
+          )}
+          <button onClick={() => actionTargets.length > 0 && handleDeleteAction(actionTargets)}
+            disabled={actionTargets.length === 0}
+            title={isTrashFolder
+              ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+              : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:cursor-default cursor-pointer">
             <Trash2 size={14} />
             <span className="hidden md:inline">
@@ -4995,6 +5981,11 @@ function ErpNextWebmail() {
                   {folders.map((f) => (
                     <option key={f.id} value={f.id}>{f.label}{f.unseen ? ` (${f.unseen})` : ""}</option>
                   ))}
+                  {/* Een connectie staat niet in `folders`; zonder deze optie
+                      zou de selector op mobiel leeg staan bij een connectie. */}
+                  {isConnectionFolder(activeFolder) && (
+                    <option value={activeFolder}>{folderLabel(activeFolder)}</option>
+                  )}
                 </select>
               </div>
             )}
@@ -5002,20 +5993,49 @@ function ErpNextWebmail() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-semibold text-slate-800 truncate">
-                    {searching ? t("y_next.mail_search_results") : folderLabel(activeFolder)}
+                    {searching && !isConnectionFolder(activeFolder)
+                      ? t("y_next.mail_search_results")
+                      : folderLabel(activeFolder)}
                   </span>
                   <span className="text-xs text-slate-400">{filteredMessages.length}</span>
+                  {/* Filtert de lijst op een connectie? Dan hoort dat zichtbaar
+                      te zijn én in één klik weg te kunnen — anders lijkt een
+                      lege lijst een lege mailbox. */}
+                  {isConnectionFolder(activeFolder) && (
+                    <button onClick={() => switchFolder(MAIL_FOLDER_INBOX)}
+                      title={t("y_next.conn_clear")}
+                      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100 cursor-pointer flex-shrink-0">
+                      <Link2 size={9} /> {t("y_next.conn_clear")} <X size={9} />
+                    </button>
+                  )}
                 </div>
-                {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
-                {!isUnreadFolder && (
-                  <button onClick={() => setUnreadOnly((v) => !v)}
-                    title={unreadOnly ? t("webmail.show_all_messages") : t("webmail.show_unread_only")}
-                    className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-                      unreadOnly ? "bg-blue-100 text-blue-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    }`}>
-                    {unreadOnly ? <Eye size={14} /> : <EyeOff size={14} />}
-                  </button>
-                )}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* In de map "Afgehandeld" zou dit filter de hele lijst
+                      wegfilteren — daar heeft het geen betekenis. */}
+                  {!isHandledFolder && (
+                    <button onClick={() => setUnhandledOnly((v) => !v)}
+                      title={unhandledOnly
+                        ? t("y_next.mail_show_all_handled")
+                        : t("y_next.mail_only_unhandled")}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer transition-colors ${
+                        unhandledOnly
+                          ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      }`}>
+                      <CheckCheck size={10} /> {t("y_next.mail_only_unhandled_short")}
+                    </button>
+                  )}
+                  {/* In de virtuele map "Ongelezen" zou dit filter niets doen — dan niet tonen. */}
+                  {!isUnreadFolder && (
+                    <button onClick={() => setUnreadOnly((v) => !v)}
+                      title={unreadOnly ? t("webmail.show_all_messages") : t("webmail.show_unread_only")}
+                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                        unreadOnly ? "bg-blue-100 text-blue-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      }`}>
+                      {unreadOnly ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="relative mt-2">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -5040,15 +6060,18 @@ function ErpNextWebmail() {
                 <input type="checkbox" checked={allChecked} onChange={toggleAll}
                   title={t("y_next.mail_select_all")}
                   className="mr-1 cursor-pointer" />
+                {/* Expliciet het aantal *berichten*: een vinkje op een
+                    gespreksregel selecteert al zijn leden, en de bulkactie
+                    hoort niet meer te raken dan hier staat. */}
                 <span className="text-[11px] font-medium text-blue-800">
-                  {t("webmail.n_selected", { count: checked.size })}
+                  {t("y_next.mail_n_messages_selected", { count: checked.size })}
                 </span>
                 <div className="flex-1" />
-                <button onClick={() => void handleBulkSeen(true)} title={t("webmail.mark_read")}
+                <button onClick={() => void handleBulkSeen(true)} title={withKeys(t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer">
                   <MailOpen size={13} />
                 </button>
-                <button onClick={() => void handleBulkSeen(false)} title={t("webmail.mark_unread")}
+                <button onClick={() => void handleBulkSeen(false)} title={withKeys(t("webmail.mark_unread"), MAIL_SHORTCUT_KEYS.toggleRead)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-blue-600 cursor-pointer">
                   <Mail size={13} />
                 </button>
@@ -5071,6 +6094,14 @@ function ErpNextWebmail() {
                     </div>
                   )}
                 </div>
+                {!isTrashFolder && (
+                  <button
+                    onClick={() => void applyHandled([...checked], !allTargetsHandled)}
+                    title={withKeys(allTargetsHandled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
+                    className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
+                    {allTargetsHandled ? <Undo2 size={13} /> : <CheckCheck size={13} />}
+                  </button>
+                )}
                 {isTrashFolder && (
                   <button onClick={() => void handleRestore([...checked])} title={t("y_next.mail_restore")}
                     className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-emerald-700 cursor-pointer">
@@ -5078,11 +6109,13 @@ function ErpNextWebmail() {
                   </button>
                 )}
                 <button onClick={() => handleDeleteAction([...checked])}
-                  title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                  title={isTrashFolder
+                    ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+                    : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-red-600 cursor-pointer">
                   <Trash2 size={13} />
                 </button>
-                <button onClick={() => setChecked(new Set())} title={t("webmail.clear_selection")}
+                <button onClick={() => setChecked(new Set())} title={withKeys(t("webmail.clear_selection"), MAIL_SHORTCUT_KEYS.dismiss)}
                   className="p-1.5 rounded text-slate-500 hover:bg-white hover:text-slate-700 cursor-pointer">
                   <X size={13} />
                 </button>
@@ -5114,14 +6147,63 @@ function ErpNextWebmail() {
                   </button>
                 </div>
               )}
-              {!loading && !error && filteredMessages.length === 0 && (
+              {!loading && !error && threads.length === 0 && (
                 <div className="p-8 text-center text-sm text-slate-400">
                   {searching ? t("webmail.no_results") : t("webmail.no_messages")}
                 </div>
               )}
+              {/* Losstaande concepten — nieuwe berichten die nog niet de deur
+                  uit zijn. Ze hangen aan geen enkele mail, dus staan ze op één
+                  plek: bovenaan Postvak IN. Bewust niet óók in een eigen map;
+                  twee plekken voor hetzelfde concept is precies hoe je er één
+                  kwijtraakt. */}
+              {!searching && activeFolder === MAIL_FOLDER_INBOX && looseDrafts.length > 0 && (
+                <div className="border-b border-amber-200 bg-amber-50/50">
+                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                    {t("y_next.mail_drafts_section")}{" "}
+                    <span className="font-normal text-amber-600">({looseDrafts.length})</span>
+                  </div>
+                  {looseDrafts.map((d) => (
+                    <div
+                      key={d.key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => resumeDraft(d)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); resumeDraft(d); }
+                      }}
+                      title={t("y_next.mail_draft_resume")}
+                      className="group flex cursor-pointer items-start gap-2 border-t border-amber-100 py-2 pl-3 pr-3 hover:bg-amber-100/50">
+                      <PenSquare size={12} className="mt-1 flex-shrink-0 text-amber-600" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm text-slate-700">
+                            {d.to || t("y_next.mail_draft_no_recipient")}
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {formatDate(new Date(d.updatedAt).toISOString())}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                          {d.subject || t("webmail.no_subject")}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); discardDraft(d.key); }}
+                        title={t("y_next.mail_draft_discard")}
+                        className="mt-0.5 cursor-pointer rounded p-1 text-amber-500 hover:bg-white hover:text-red-600">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {(() => {
                 let lastGroup = "";
-                return filteredMessages.map((msg, index) => {
+                return threads.map((thread, index) => {
+                  // Eén regel per gesprek: de kop is het nieuwste bericht uit
+                  // deze map, de rest zit eronder (ingeklapt met een teller).
+                  const msg = thread.head;
                   const group = getDateGroup(msg.date);
                   const showHeader = group !== lastGroup;
                   lastGroup = group;
@@ -5131,8 +6213,23 @@ function ErpNextWebmail() {
                   const sentRow = isSentFolder || msg.folder === MAIL_FOLDER_SENT;
                   const who = sentRow ? (msg.recipients || msg.sender) : (msg.senderName || msg.sender);
                   const queue = queueStatus[msg.name];
+                  const members = thread.messages.filter((m) => m.name !== msg.name);
+                  // Staat er een ánder lid open, dan klapt het gesprek vanzelf
+                  // uit — anders is de mail die je leest onvindbaar in de lijst.
+                  const openMember = Boolean(selected && selected.name !== msg.name
+                    && thread.names.includes(selected.name));
+                  const expanded = expandedThreads.has(thread.id) || openMember;
+                  // De regel stáát voor het gesprek: vinkje en rij-acties raken
+                  // álle leden, en zeggen dat er met zoveel woorden bij.
+                  const rowNames = thread.names;
+                  const many = thread.count > 1;
+                  const countLabel = t("y_next.mail_thread_count", { count: thread.count });
+                  // Ongelezen op gespreksniveau: één ongelezen lid maakt de
+                  // regel vet, ook als de kop zelf al gelezen is.
+                  const unread = thread.unread;
+                  const hasDraft = rowNames.some((n) => draftNames.has(n));
                   return (
-                    <div key={msg.name}>
+                    <div key={thread.id}>
                       {showHeader && (
                         <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                           {group}
@@ -5142,9 +6239,9 @@ function ErpNextWebmail() {
                         role="button"
                         tabIndex={0}
                         draggable
-                        onDragStart={(e) => handleDragStart(msg, e)}
+                        onDragStart={(e) => handleDragStart(msg, e, rowNames)}
                         onDragEnd={() => { dragNamesRef.current = []; setDragOver(null); }}
-                        onClick={(e) => handleRowClick(msg, index, e)}
+                        onClick={(e) => handleRowClick(thread, index, e)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openMessage(msg); }
                         }}
@@ -5153,36 +6250,97 @@ function ErpNextWebmail() {
                         className={`group relative w-full text-left pl-3 pr-3 py-2.5 border-b border-slate-100 cursor-pointer transition-colors ${
                           isChecked ? "bg-blue-50 border-l-4 border-l-blue-500"
                             : isActive ? "bg-blue-100 border-l-4 border-l-blue-600"
-                            : !msg.seen ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
+                            : unread ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
                             : "border-l-2 border-l-transparent hover:bg-slate-50"
                         }`}>
-                        <div className="flex items-start gap-2">
+                        <div className={`flex items-start gap-2 ${
+                          // Afgehandeld = gedaan: subtiel gedimd, zodat de rij
+                          // herkenbaar is zonder te verdwijnen.
+                          msg.handled && !isActive ? "opacity-60" : ""
+                        }`}>
                           <input
                             type="checkbox"
                             checked={isChecked}
                             onClick={(e) => e.stopPropagation()}
-                            onChange={() => { toggleChecked(msg.name); lastClickedRef.current = index; }}
+                            onChange={() => { toggleChecked(rowNames); lastClickedRef.current = index; }}
+                            title={many
+                              ? t("y_next.mail_thread_select_all", { count: thread.count })
+                              : t("y_next.mail_select_all")}
                             className={`mt-1 cursor-pointer flex-shrink-0 ${isChecked ? "" : "opacity-0 group-hover:opacity-100"}`}
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className={`text-sm truncate ${!msg.seen ? "font-semibold text-slate-900" : "text-slate-700"}`}>
-                                {who || t("webmail.no_subject")}
+                              <span className={`flex items-center gap-1 text-sm truncate ${unread ? "font-semibold text-slate-900" : "text-slate-700"}`}>
+                                {msg.handled && (
+                                  <CheckCheck size={11} className="text-emerald-600 flex-shrink-0"
+                                    aria-label={t("y_next.mail_handled")} />
+                                )}
+                                <span className="truncate">{who || t("webmail.no_subject")}</span>
                               </span>
                               <div className="flex items-center gap-1 shrink-0">
                                 {msg.hasAttachments && <Paperclip size={11} className="text-slate-400" />}
                                 <span className="text-[11px] text-slate-400">{formatDate(msg.date)}</span>
                               </div>
                             </div>
-                            <p className={`text-xs truncate mt-0.5 ${!msg.seen ? "font-medium text-slate-800" : "text-slate-500"}`}>
+                            <p className={`text-xs truncate mt-0.5 ${unread ? "font-medium text-slate-800" : "text-slate-500"}`}>
                               {msg.subject || t("webmail.no_subject")}
                             </p>
                             <div className="flex items-center gap-2 mt-0.5">
+                              {/* Gesprek: teller + uitklapper. Standaard dicht,
+                                  zodat de lijst één regel per gesprek blijft. */}
+                              {many && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleThread(thread.id); }}
+                                  title={expanded ? t("y_next.mail_thread_collapse") : t("y_next.mail_thread_expand")}
+                                  className="inline-flex flex-shrink-0 cursor-pointer items-center gap-0.5 rounded-full bg-slate-100 px-1.5 text-[10px] font-medium text-slate-600 hover:bg-slate-200">
+                                  {expanded ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+                                  {countLabel}
+                                </button>
+                              )}
+                              {/* Hier moet je nog iets afmaken. */}
+                              {hasDraft && (
+                                <span title={t("y_next.mail_draft_resume")}
+                                  className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                  <PenSquare size={9} /> {t("y_next.mail_draft_label")}
+                                </span>
+                              )}
                               {msg.reference?.doctype === "Project" && (
                                 <span className="text-[10px] text-emerald-600 truncate flex items-center gap-1">
                                   <FolderKanban size={10} /> {msg.reference.name}
                                 </span>
                               )}
+                              {msg.reference?.doctype === "Purchase Invoice" && (
+                                <span title={t("y_next.pinv_booked_as", { name: msg.reference.name })}
+                                  className="text-[10px] text-indigo-600 truncate flex items-center gap-1">
+                                  <ReceiptText size={10} /> {msg.reference.name}
+                                </span>
+                              )}
+                              {(msg.reference?.doctype === "Lead" || msg.reference?.doctype === "Opportunity") && (
+                                <span title={t("y_next.lead_created_as", { name: msg.reference.name })}
+                                  className="flex items-center gap-1 truncate text-[10px] text-violet-600">
+                                  <UserPlus size={10} /> {msg.reference.name}
+                                </span>
+                              )}
+                              {/* Voorstel: inkoopfactuur, lead of offerteaanvraag — hooguit één per rij. */}
+                              {(() => {
+                                const hint = listIntents.get(msg.name);
+                                if (!hint) return null;
+                                if (hint.kind === "purchase-invoice") {
+                                  return (
+                                    <span title={t("y_next.pinv_label_hint")}
+                                      className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                      <ReceiptText size={9} /> {t("y_next.pinv_label")}
+                                    </span>
+                                  );
+                                }
+                                const quote = hint.kind === "quote-request";
+                                return (
+                                  <span title={t(quote ? "y_next.quote_label_hint" : "y_next.lead_label_hint")}
+                                    className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 text-[10px] font-medium text-violet-800">
+                                    <UserPlus size={9} /> {t(quote ? "y_next.quote_label" : "y_next.lead_label")}
+                                  </span>
+                                );
+                              })()}
                               {/* Herkomst tonen zodra de rij niet uit de actieve map komt (zoekmodus). */}
                               {searching && (
                                 <span className="text-[10px] text-slate-400 truncate">
@@ -5205,23 +6363,91 @@ function ErpNextWebmail() {
                             </div>
                           </div>
                         </div>
-                        <div className="absolute right-2 bottom-2 hidden group-hover:flex items-center gap-1">
+                        {/* Rij-acties. Op een aanraakscherm bestaat "hover"
+                            niet, dus daar staan ze permanent — anders is de
+                            prullenbak op mobiel simpelweg onbereikbaar. Op
+                            desktop verschijnen ze bij hover én bij
+                            toetsenbordfocus. Ze werken op het hele gesprek; de
+                            tooltip zegt om hoeveel berichten het gaat. */}
+                        <div className={`absolute right-2 bottom-2 items-center gap-1 ${
+                          isMobile ? "flex" : "hidden group-hover:flex group-focus-within:flex"
+                        }`}>
                           {isTrashFolder && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); void handleRestore([msg.name]); }}
-                              title={t("y_next.mail_restore")}
+                              onClick={(e) => { e.stopPropagation(); void handleRestore(rowNames); }}
+                              title={many ? `${t("y_next.mail_restore")} · ${countLabel}` : t("y_next.mail_restore")}
                               className="p-1 rounded bg-white/90 text-slate-400 hover:text-emerald-700 cursor-pointer">
                               <RotateCcw size={12} />
                             </button>
                           )}
+                          {!isTrashFolder && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void applyHandled(rowNames, !msg.handled); }}
+                              title={`${msg.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}${many ? ` · ${countLabel}` : ""}`}
+                              className={`p-1 rounded bg-white/90 cursor-pointer ${
+                                msg.handled ? "text-emerald-600 hover:text-slate-500" : "text-slate-400 hover:text-emerald-700"
+                              }`}>
+                              {msg.handled ? <Undo2 size={12} /> : <CheckCheck size={12} />}
+                            </button>
+                          )}
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteAction([msg.name]); }}
-                            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteAction(rowNames); }}
+                            title={`${isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}${many ? ` · ${countLabel}` : ""}`}
                             className="p-1 rounded bg-white/90 text-slate-400 hover:text-red-600 cursor-pointer">
                             <Trash2 size={12} />
                           </button>
                         </div>
                       </div>
+                      {/* De vorige berichten van dit gesprek: ingesprongen achter
+                          een dun lijntje, chronologisch (oudste eerst). Wat jij
+                          zelf verstuurde krijgt een pijltje en een label, zodat
+                          je in één oogopslag ziet wie wat zei. */}
+                      {expanded && members.length > 0 && (
+                        <div className="border-b border-slate-100 bg-slate-50/60 pl-6">
+                          <div className="border-l border-slate-200">
+                            {members.map((m) => {
+                              const memberSent = m.folder === MAIL_FOLDER_SENT;
+                              const memberWho = memberSent
+                                ? (m.recipients || m.sender)
+                                : (m.senderName || m.sender);
+                              const memberActive = selected?.name === m.name;
+                              const memberChecked = checked.has(m.name);
+                              return (
+                                <div
+                                  key={m.name}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => void openMessage(m)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openMessage(m); }
+                                  }}
+                                  className={`flex cursor-pointer items-center gap-2 border-t border-slate-100 py-1.5 pl-3 pr-3 text-xs first:border-t-0 ${
+                                    memberActive ? "bg-blue-100" : memberChecked ? "bg-blue-50" : "hover:bg-white"
+                                  }`}>
+                                  {memberSent
+                                    ? <Reply size={11} className="flex-shrink-0 -scale-x-100 text-blue-500"
+                                        aria-label={t("y_next.mail_thread_sent_label")} />
+                                    : <Mail size={11} className="flex-shrink-0 text-slate-400" />}
+                                  <span className={`truncate ${m.seen ? "text-slate-600" : "font-semibold text-slate-900"}`}>
+                                    {memberSent ? t("y_next.mail_thread_sent_label") : memberWho}
+                                  </span>
+                                  {memberSent && (
+                                    <span className="truncate text-[11px] text-slate-400">{memberWho}</span>
+                                  )}
+                                  {draftNames.has(m.name) && (
+                                    <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                      <PenSquare size={9} /> {t("y_next.mail_draft_label")}
+                                    </span>
+                                  )}
+                                  <div className="flex-1" />
+                                  {m.hasAttachments && <Paperclip size={10} className="flex-shrink-0 text-slate-400" />}
+                                  <span className="flex-shrink-0 text-[11px] text-slate-400">{formatDate(m.date)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 });
@@ -5253,13 +6479,21 @@ function ErpNextWebmail() {
 
             {draft ? (
               <ErpComposePane
+                // Eén opsteller-instantie per concept: het openklappen van
+                // Cc/Bcc en de stand van het citaat horen bij dít bericht en
+                // mogen niet blijven staan als je naar een ander concept
+                // springt.
+                key={draft.draftKey}
                 draft={draft}
                 sending={sending}
                 mailboxes={mailboxes}
+                signature={signature}
                 onChange={setDraft}
-                onRestoreSignature={() => laadOndertekening(draft.from)}
+                onRestoreSignature={laadOndertekening}
                 onSend={() => void handleSend()}
-                onClose={() => setDraft(null)}
+                // Sluiten bewaart: alleen "concept verwijderen" gooit weg.
+                onClose={closeDraft}
+                onDiscard={() => discardDraft(draft.draftKey)}
               />
             ) : !selected ? (
               <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
@@ -5291,7 +6525,7 @@ function ErpNextWebmail() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => applySeen(selected.name, !selected.seen)}
-                        title={selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read")}
+                        title={withKeys(selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         {selected.seen ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -5299,6 +6533,20 @@ function ErpNextWebmail() {
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         <ExternalLink size={14} />
                       </button>
+                      {!isTrashFolder && (
+                        <button onClick={() => void applyHandled([selected.name], !selected.handled)}
+                          title={withKeys(selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"), MAIL_SHORTCUT_KEYS.toggleHandled)}
+                          className={`flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium cursor-pointer ${
+                            selected.handled
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+                          }`}>
+                          {selected.handled ? <Undo2 size={14} /> : <CheckCheck size={14} />}
+                          <span className="hidden lg:inline">
+                            {selected.handled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
+                          </span>
+                        </button>
+                      )}
                       {isTrashFolder && (
                         <button onClick={() => void handleRestore([selected.name])} title={t("y_next.mail_restore")}
                           className="p-1.5 rounded text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer">
@@ -5306,24 +6554,46 @@ function ErpNextWebmail() {
                         </button>
                       )}
                       <button onClick={() => handleDeleteAction([selected.name])}
-                        title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                        title={isTrashFolder
+                          ? withKeys(t("y_next.mail_delete_forever"), MAIL_SHORTCUT_KEYS.deleteForever)
+                          : withKeys(t("y_next.mail_move_to_trash"), MAIL_SHORTCUT_KEYS.trash)}
                         className="p-1.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer">
                         <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Projectkoppeling — native Communication-referentie */}
-                  <div className="relative mt-2 flex items-center gap-2">
-                    {selected.reference?.doctype === "Project" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-                        <FolderKanban size={11} /> {selected.reference.name}
-                      </span>
-                    )}
+                  {/* Alle connecties van deze mail. Niet alleen
+                      `reference_*` (dat is enkelvoudig en toont dus alleen de
+                      laatst gemaakte koppeling) maar de vereniging met de
+                      `Communication Link`-child-tabel — zie mail-connections.ts. */}
+                  <div className="relative mt-2 flex flex-wrap items-center gap-2">
+                    <MailConnectionChips
+                      connections={selectedConnections}
+                      onOpen={(conn) => switchFolder(connectionFolderId({
+                        category: conn.category, doctype: conn.doctype, docname: conn.name,
+                      }))}
+                    />
                     <button onClick={() => { setShowLinkPicker((v) => !v); setProjectSearch(""); }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
                       <FolderKanban size={11} /> {t("webmail.link_to_project")}
                     </button>
+                    {/* Is er geen bedoeling herkend, dan is dit de actiebalk
+                        van deze mail en hoort de relatie-actie hier. Staat er
+                        wél een factuur- of leadbalk, dan zit hij dáár — nooit
+                        op twee plekken tegelijk. */}
+                    {!selectedIntent && relationSlot("slate", t("y_next.rel_add_button"))}
+                    {/* Offerte maken kan óók zonder herkende bedoeling: een
+                        klant die belt "stuur even een offerte" laat geen
+                        aanvraagwoorden in zijn mail achter. Staat er wél een
+                        bedoelingsbalk, dan zit de knop dáár — nooit dubbel. */}
+                    {!selectedIntent && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
                     {showLinkPicker && (
                       <div className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-lg border border-slate-200 z-50 flex flex-col max-h-72">
                         <div className="p-2 border-b border-slate-100">
@@ -5347,14 +6617,303 @@ function ErpNextWebmail() {
                   </div>
                 </div>
 
-                {/* Conversatie — serverzijdig over de in_reply_to-graaf */}
-                {thread.length > 1 && (
+                {/* Inkoopfactuur-suggestie. Staat bóven de conversatie en de
+                    body: het is een handeling, geen achtergrondinformatie. */}
+                {selectedIntent?.kind === "purchase-invoice" && (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 flex-shrink-0">
+                    <ReceiptText size={14} className="text-amber-600 flex-shrink-0" />
+                    <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
+                    <span
+                      title={selectedIntent.reasons
+                        .map((r) => t(`y_next.pinv_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                      {t(`y_next.pinv_confidence_${selectedIntent.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => setBookingFor({ msg: selected, intent: selectedIntent })}
+                      className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700 cursor-pointer">
+                      <ReceiptText size={11} /> {t("y_next.pinv_book")}
+                    </button>
+                    {relationSlot("amber", t("y_next.rel_add_button"))}
+                    <button
+                      onClick={() => handleDismissIntent(selected.name, "purchase-invoice")}
+                      className="rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100 cursor-pointer">
+                      {t("y_next.pinv_dismiss")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Lead / offerteaanvraag — zelfde plek en vorm als de
+                    factuurbalk, in een eigen kleur zodat je in één oogopslag
+                    ziet dat dit het verkoopspoor is. */}
+                {(selectedIntent?.kind === "lead" || selectedIntent?.kind === "quote-request") && (
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-violet-100 bg-violet-50 px-5 py-2">
+                    <UserPlus size={14} className="flex-shrink-0 text-violet-600" />
+                    <span className="text-xs font-medium text-violet-900">
+                      {t(selectedIntent.kind === "quote-request" ? "y_next.quote_banner" : "y_next.lead_banner")}
+                    </span>
+                    <span
+                      title={selectedIntent.reasons
+                        .map((r) => t(`y_next.intent_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+                      {t(`y_next.lead_confidence_${selectedIntent.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    {/* Bij een offerteaanvraag is "Offerte maken" de primaire
+                        actie — dat is letterlijk waar de mail om vraagt — en
+                        zakt de Opportunity naar een tekstknop. Bij een lead is
+                        het andersom: eerst de relatie vastleggen. Twee gevulde
+                        knoppen naast elkaar zou geen keuze aanbieden maar er
+                        één verbergen. */}
+                    {quoteAction.emphasis === "primary" && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
+                    <button
+                      onClick={() => setLeadFor({ msg: selected, intent: selectedIntent })}
+                      className={quoteAction.emphasis === "primary"
+                        ? "inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                        : "flex cursor-pointer items-center gap-1.5 rounded bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700"}>
+                      <UserPlus size={11} />
+                      {t(selectedIntent.kind === "quote-request" ? "y_next.lead_create_quote" : "y_next.lead_create_lead")}
+                    </button>
+                    {quoteAction.emphasis !== "primary" && selected && (
+                      <QuoteActionButton
+                        decision={quoteAction}
+                        onQuote={(party) => setQuoteFor({ msg: selected, party })}
+                        onNeedParty={handleQuoteNeedsParty}
+                      />
+                    )}
+                    {/* Bundeling bij een onbekende afzender.
+                        "Maak er een lead van" en "leg hem vast als relatie"
+                        zijn twee antwoorden op dezelfde situatie. Ze als twee
+                        even zware knoppen naast elkaar zetten dwingt de
+                        gebruiker tot een keuze die hij op dat moment niet kan
+                        maken — en de verkeerde keuze is duur: een Lead die
+                        later een klant wordt, converteert ERPNext zélf naar
+                        Customer + Contact, andersom moet je het handwerk
+                        overdoen. Daarom blijft de Lead de primaire knop en
+                        staat de smallere variant ernaast als secundaire
+                        tekstknop: "Alleen als relatie vastleggen". Is de
+                        afzender al bekend, dan vervalt de keuze en staat hier
+                        alleen nog het chipje met het bestaande record. */}
+                    {relationSlot("violet", t("y_next.rel_only_relation"))}
+                    <button
+                      onClick={() => handleDismissIntent(selected.name, selectedIntent.kind === "quote-request" ? "quote-request" : "lead")}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-violet-800 hover:bg-violet-100">
+                      {t("y_next.lead_dismiss")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Projectsuggestie — bewust subtieler dan de twee balken
+                    hierboven: dit stelt geen nieuw document voor, alleen een
+                    koppeling die met één klik weer te veranderen is. */}
+                {projectSuggestion && (
+                  <div className="relative flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-5 py-2">
+                    <FolderKanban size={14} className="flex-shrink-0 text-emerald-600" />
+                    <span className="text-xs text-emerald-900">
+                      {t("y_next.proj_suggest_banner", {
+                        project: projectHints.find((p) => p.name === projectSuggestion.project)?.projectName
+                          ?? projectSuggestion.project,
+                      })}
+                    </span>
+                    <span
+                      title={projectSuggestion.reasons
+                        .map((r) => t(`y_next.proj_suggest_reason_${r.replace(/[:-]/g, "_")}`, { defaultValue: r }))
+                        .join(" · ")}
+                      className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                      {t(`y_next.proj_suggest_confidence_${projectSuggestion.confidence}`)}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => void linkToProject(projectSuggestion.project)}
+                      className="flex cursor-pointer items-center gap-1.5 rounded bg-emerald-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-emerald-700">
+                      <FolderKanban size={11} /> {t("y_next.proj_suggest_link")}
+                    </button>
+                    <button
+                      onClick={() => { setProjectPickerOpen((v) => !v); setProjectSearch(""); }}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+                      {t("y_next.proj_suggest_other")}
+                    </button>
+                    <button
+                      onClick={() => handleDismissIntent(selected.name, "project")}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100">
+                      {t("y_next.proj_suggest_dismiss")}
+                    </button>
+                    {projectPickerOpen && (
+                      <div className="absolute right-5 top-full z-50 mt-1 flex max-h-72 w-80 flex-col rounded-lg border border-slate-200 bg-white shadow-lg">
+                        <div className="border-b border-slate-100 p-2">
+                          <input type="search" autoFocus value={projectSearch}
+                            onChange={(e) => setProjectSearch(e.target.value)}
+                            placeholder={t("webmail.search_project")}
+                            className="w-full rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-1">
+                          {projectMatches.length === 0 ? (
+                            <p className="px-3 py-2 text-xs italic text-slate-400">{t("webmail.no_results")}</p>
+                          ) : projectMatches.map((p) => (
+                            <button key={p.name}
+                              onClick={() => { setProjectPickerOpen(false); void linkToProject(p.name); }}
+                              className="w-full cursor-pointer truncate px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                              {p.name}{p.project_name ? ` — ${p.project_name}` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Uitkomst van een aangemaakte lead/offerteaanvraag. */}
+                {createdNotice && (
+                  <div className="flex flex-shrink-0 flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>
+                        {t(createdNotice.doctype === "Opportunity" ? "y_next.lead_quote_created_ok" : "y_next.lead_created_ok")}{" "}
+                      </span>
+                      <a href={`${getErpNextLinkUrl()}/${createdNotice.doctype === "Lead" ? "lead" : "opportunity"}/${encodeURIComponent(createdNotice.result.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {createdNotice.result.name}
+                      </a>
+                      {createdNotice.result.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.lead_attachments_failed", {
+                            names: createdNotice.result.failedAttachments.join(", "),
+                          })}
+                        </p>
+                      )}
+                      {createdNotice.result.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+                      )}
+                      {/* De vervolgstap waar de gebruiker om vroeg: een lead
+                          is een geldige `quotation_to`, dus vanaf hier kan de
+                          offerte meteen — zonder eerst een klant te maken. */}
+                      {createdNotice.doctype === "Lead" && selected && (
+                        <button
+                          onClick={() => {
+                            setQuoteFor({ msg: selected, party: { doctype: "Lead", name: createdNotice.result.name } });
+                            setCreatedNotice(null);
+                          }}
+                          className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
+                          <FileText size={11} /> {t("y_next.quote_create_from_lead")}
+                        </button>
+                      )}
+                    </div>
+                    <button onClick={() => setCreatedNotice(null)} title={t("common.close")}
+                      className="cursor-pointer rounded p-0.5 text-emerald-600 hover:bg-emerald-100">
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Uitkomst van een aangemaakte concept-offerte. */}
+                {quoteNotice && (
+                  <div className="flex flex-shrink-0 flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>{t("y_next.quote_created_ok")} </span>
+                      <a href={`${getErpNextLinkUrl()}/quotation/${encodeURIComponent(quoteNotice.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {quoteNotice.name}
+                      </a>
+                      {quoteNotice.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.lead_attachments_failed", { names: quoteNotice.failedAttachments.join(", ") })}
+                        </p>
+                      )}
+                      {quoteNotice.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.lead_link_failed")}</p>
+                      )}
+                    </div>
+                    <button onClick={() => setQuoteNotice(null)} title={t("common.close")}
+                      className="cursor-pointer rounded p-0.5 text-emerald-600 hover:bg-emerald-100">
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Uitkomst van de boeking. Blijft staan tot de gebruiker hem
+                    wegklikt — een toast van vier seconden is te kort voor een
+                    factuurnummer dat je wilt aanklikken. */}
+                {bookedNotice && (
+                  <div className="flex flex-wrap items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-2 text-xs text-emerald-800 flex-shrink-0">
+                    <Check size={14} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <span>{t("y_next.pinv_booked_ok")} </span>
+                      <a href={`${getErpNextLinkUrl()}/purchase-invoice/${encodeURIComponent(bookedNotice.name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="font-semibold underline hover:text-emerald-900">
+                        {bookedNotice.name}
+                      </a>
+                      {bookedNotice.failedAttachments.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">
+                          {t("y_next.pinv_attachments_failed", {
+                            names: bookedNotice.failedAttachments.join(", "),
+                          })}
+                        </p>
+                      )}
+                      {bookedNotice.linkFailed && (
+                        <p className="mt-0.5 text-[11px] text-amber-700">{t("y_next.pinv_link_failed")}</p>
+                      )}
+                    </div>
+                    <button onClick={() => setBookedNotice(null)} title={t("common.close")}
+                      className="rounded p-0.5 text-emerald-600 hover:bg-emerald-100 cursor-pointer">
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Onafgemaakt antwoord op deze mail.
+                    Bewust een knop en niet "het opstelvenster gaat vanzelf
+                    open": je klikte op een mail om hem te lézen, en het
+                    antwoordvenster zou die mail dan meteen weer wegduwen. De
+                    balk maakt zichtbaar dat er nog iets ligt en laat de keuze
+                    bij de gebruiker — één klik, en de tekst staat er weer. */}
+                {/* (Deze tak rendert alleen wanneer er géén opsteller open
+                    staat, dus de balk kan nooit naast zijn eigen concept staan.) */}
+                {selectedDraft && (
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2">
+                    <PenSquare size={14} className="flex-shrink-0 text-amber-600" />
+                    <span className="min-w-0 flex-1 truncate text-xs text-amber-900">
+                      {t("y_next.mail_draft_banner")}
+                      <span className="ml-1 text-amber-700/80">
+                        {/* De body is opgemaakte HTML; in een balk van één regel
+                            hoort de leesbare tekst, niet de tags. */}
+                        {htmlToPlainText(selectedDraft.body).slice(0, 80) || selectedDraft.subject}
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => resumeDraft(selectedDraft)}
+                      className="flex cursor-pointer items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700">
+                      <PenSquare size={11} /> {t("y_next.mail_draft_resume")}
+                    </button>
+                    <button
+                      onClick={() => discardDraft(selectedDraft.key)}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
+                      {t("y_next.mail_draft_discard")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Conversatie — de in_reply_to-graaf van de server, verenigd
+                    met de gespreksgroepering uit de lijst (zie conversationRows). */}
+                {conversationRows.length > 1 && (
                   <div className="px-5 py-2 border-b border-slate-100 bg-slate-50 flex-shrink-0">
                     <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
-                      {t("webmail.thread_all_messages", { count: thread.length })}
+                      {t("webmail.thread_all_messages", { count: conversationRows.length })}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {thread.map((m) => {
+                      {conversationRows.map((m) => {
                         const current = m.name === selected.name;
                         return (
                           <button key={m.name} disabled={current} onClick={() => void openMessage(m)}
@@ -5395,6 +6954,74 @@ function ErpNextWebmail() {
         )}
       </div>
 
+      {bookingFor && (
+        <BookPurchaseInvoiceDialog
+          message={{
+            name: bookingFor.msg.name,
+            subject: bookingFor.msg.subject,
+            sender: bookingFor.msg.sender,
+            date: bookingFor.msg.date,
+            // Een Communication kan maar aan één document hangen; boeken
+            // vervangt de projectkoppeling. Het project gaat daarom mee naar
+            // het `project`-veld van de factuur in plaats van te verdwijnen.
+            ...(bookingFor.msg.reference?.doctype === "Project"
+              ? { project: bookingFor.msg.reference.name }
+              : {}),
+          }}
+          guess={bookingFor.intent.invoice!}
+          suppliers={intentCtx.suppliers as SupplierHint[]}
+          onClose={() => setBookingFor(null)}
+          onBooked={(result) => handleInvoiceBooked(bookingFor.msg.name, result)}
+        />
+      )}
+
+      {leadFor && (leadFor.intent.kind === "lead" || leadFor.intent.kind === "quote-request") && (
+        <CreateLeadDialog
+          message={{
+            name: leadFor.msg.name,
+            subject: leadFor.msg.subject,
+            sender: leadFor.msg.sender,
+            date: leadFor.msg.date,
+          }}
+          intent={leadFor.intent}
+          customers={intentCtx.customers}
+          onClose={() => setLeadFor(null)}
+          onCreated={(doctype, result) => handleLeadCreated(leadFor.msg.name, doctype, result)}
+        />
+      )}
+
+      {quoteFor && (
+        <CreateQuotationDialog
+          message={{
+            name: quoteFor.msg.name,
+            subject: quoteFor.msg.subject,
+            sender: quoteFor.msg.sender,
+            date: quoteFor.msg.date,
+            ...(body && selected?.name === quoteFor.msg.name && body.html
+              ? { bodyText: plainTextFromHtml(body.html) }
+              : {}),
+          }}
+          party={quoteFor.party}
+          customers={intentCtx.customers}
+          onClose={() => setQuoteFor(null)}
+          onCreated={(result) => handleQuoteCreated(quoteFor.msg.name, result)}
+        />
+      )}
+
+      {/* De dialoog sluit zichzelf niet na succes — hij toont eerst waar het
+          terechtkwam. De chip in de balk staat op dat moment al goed. */}
+      {relationFor && (
+        <AddRelationDialog
+          sender={{
+            email: relationFor.sender,
+            ...(relationFor.senderName ? { displayName: relationFor.senderName } : {}),
+            ...(body && selected?.name === relationFor.name ? { bodyText: body.html } : {}),
+          }}
+          onClose={() => setRelationFor(null)}
+          onCreated={(result) => handleRelationCreated(relationFor.sender, result)}
+        />
+      )}
+
       {/* Contextmenu op een eigen map */}
       {folderMenu && selectedMenuFolder && (
         <>
@@ -5429,61 +7056,153 @@ function ErpNextWebmail() {
  * Bewust een eigen, kleine component in plaats van `ComposeWindow`: die laatste
  * hangt aan de Express-server (NextCloud-bestandenkiezer, handtekening-endpoint,
  * base64-`SendPayload`) en zou hier zichtbare knoppen opleveren die niets doen.
+ *
+ * ── Het toetsenbord blijft binnen het venster ────────────────────────────
+ *
+ * Het venster staat in het leespaneel, mét de berichtenlijst en de zijbalk
+ * ernaast. Tab liep daardoor het venster uit: vanuit het laatste veld stond je
+ * opeens op een mailrij erachter. Daarom een focus-val — Tab op het laatste
+ * element gaat terug naar het eerste, Shift+Tab op het eerste naar het laatste
+ * (beslisregel in `lib/focus-trap.ts`).
+ *
+ * **Escape is de ontsnappingsroute** en dat is geen detail: een focus-val
+ * zonder uitweg sluit iemand die alleen het toetsenbord gebruikt op. Escape
+ * sluit dit venster; het concept blijft daarbij bewaard (alleen "concept
+ * verwijderen" gooit weg). Haal die tak nooit weg zonder een andere uitweg
+ * terug te zetten.
+ *
+ * Twee handelingen gaan vóór de val, en allebei melden ze dat met
+ * `preventDefault()` — waarop `focusTrapAction` zich terugtrekt:
+ *
+ * - **Tab in het tekstvak** springt in; binnen een lijst zet dat het item een
+ *   niveau dieper. Shift+Tab springt weer uit — maar alléén als er iets uit te
+ *   springen valt, anders zou het tekstvak doodlopend zijn en zouden de
+ *   knoppen onderin met het toetsenbord onbereikbaar worden. Zie
+ *   `tabCommand` in `lib/rich-text-commands.ts` voor die afweging.
+ * - **Tab in Aan/Cc/Bcc met een open suggestielijst** kiest die suggestie.
+ *   Zie `RecipientField`. Pas als de lijst dicht is, doet Tab het gewone
+ *   veld-naar-veld-werk binnen de val.
  */
-function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignature, onSend, onClose }: {
+/** Eén opmaak voor Aan/Cc/Bcc — ze horen er identiek uit te zien. */
+const RECIPIENT_INPUT_CLASS =
+  "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
+
+function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend, onClose, onDiscard }: {
   draft: ErpDraft;
   sending: boolean;
+  /** Postbussen waaruit verstuurd kan worden; bij één valt de keuze weg. */
   mailboxes: ErpMailbox[];
+  /** Volledige handtekening-HTML; "" = de gebruiker heeft er geen. */
+  signature: string;
   onChange: (next: ErpDraft) => void;
   onRestoreSignature: () => void;
   onSend: () => void;
+  /** Wegklikken — de tekst blijft als concept bewaard. */
   onClose: () => void;
+  /** Weggooien — de enige manier waarop een concept verdwijnt zonder verzenden. */
+  onDiscard: () => void;
 }) {
   const { t } = useTranslation();
+  const paneRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
+  /**
+   * Staat het geciteerde origineel open?
+   *
+   * De regel (zie `lib/mail-quote`): korter dan zestien regels → gewoon open,
+   * want dát is de context die je bij het antwoorden meteen wilt zien. Langer
+   * → afgeknot achter de uitklapper, anders duwt een draad van veertig regels
+   * het typvak uit beeld. Eén keer beslist, bij het openen van dít concept —
+   * daarna is het de knop die bepaalt (de opsteller wordt per concept opnieuw
+   * gemonteerd, zie de `key` op `ErpComposePane`).
+   */
+  const [showQuote, setShowQuote] = useState(() => !shouldCollapseQuote(draft.body));
+  /** Alleen tonen wat er is: geen uitklapper bij een nieuw bericht. */
+  const quoteInBody = hasQuote(draft.body);
+  // De frequentie-ranking van de adressuggesties hangt aan de instance; één
+  // keer uitlezen volstaat, hij wisselt niet terwijl je een mail opstelt.
+  const instanceId = useMemo(() => getActiveInstanceId(), []);
   const set = <K extends keyof ErpDraft>(key: K, value: ErpDraft[K]) => onChange({ ...draft, [key]: value });
+  // Dezelfde afleiding als het verzendpad: staat hier iets, dan gaat exact dat
+  // mee de deur uit. Leeg → geen preview én geen handtekening in de mail.
+  const previewSignature = effectiveSignature(signature, draft.includeSignature);
+  const hasSignature = Boolean((signature || "").trim());
 
   /**
-   * De ondertekening is echte, bewerkbare inhoud in een contentEditable — geen
-   * blok dat er bij het verzenden ongezien aan geplakt wordt. Daarom zetten we
-   * de HTML via een ref en niet via React: React zou het veld bij elke
-   * toetsaanslag elders in het concept opnieuw opbouwen en de cursor (en de
-   * aanpassingen) kwijtraken. `laatstGezet` onthoudt wat er in het veld staat,
-   * zodat we alleen schrijven als de bron werkelijk veranderde — bij een nieuwe
-   * afzender bijvoorbeeld.
+   * Waar de cursor staat zodra het venster opengaat. Bij een nieuw bericht is
+   * dat het adresveld (dat moet je nog invullen); bij beantwoorden en
+   * doorsturen het tekstvak, want de adressen staan er al in. Eén keer, bij
+   * het monteren — `mode` wisselt niet terwijl je typt.
    */
-  const sigRef = useRef<HTMLDivElement>(null);
-  const laatstGezet = useRef<string | null>(null);
-  useEffect(() => {
-    const el = sigRef.current;
-    if (!el) { laatstGezet.current = null; return; }
-    if (laatstGezet.current === draft.signature) return;
-    laatstGezet.current = draft.signature;
-    el.innerHTML = draft.signature;
-  }, [draft.signature]);
+  const startInBody = draft.mode !== "new";
+
+  /**
+   * De focus-val. Escape eerst (de uitweg), daarna de omloop.
+   *
+   * De val stuurt alleen de *randen* bij; alles daartussen doet de browser
+   * zelf, in DOM-volgorde. `focusTrapAction` laat een Tab die een kind al
+   * heeft afgehandeld (inspringen in de tekst, suggestie kiezen) met rust.
+   */
+  const handlePaneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && !e.defaultPrevented) {
+      // Sluiten bewaart het concept — daarom mag Escape dit gewoon doen.
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    // Alleen Tab kan de val in werking zetten; de rest van de beslissing ligt
+    // bij `focusTrapAction`. Deze ene vergelijking staat hier zodat er niet bij
+    // élke getikte letter door de DOM gelopen wordt.
+    if (e.key !== "Tab") return;
+    const root = paneRef.current;
+    if (!root) return;
+    const items = focusableWithin(root);
+    const action = focusTrapAction(e, {
+      index: items.indexOf(document.activeElement as HTMLElement),
+      count: items.length,
+    });
+    if (!action) return;
+    e.preventDefault();
+    (action === "first" ? items[0] : items[items.length - 1]).focus();
+  };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div ref={paneRef} onKeyDown={handlePaneKeyDown}
+      role="dialog" aria-modal="true" aria-labelledby={titleId}
+      className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-        <span className="text-sm font-semibold text-slate-700">
+        <span id={titleId} className="text-sm font-semibold text-slate-700">
           {draft.mode === "forward" ? t("webmail.forward")
             : draft.mode === "replyAll" ? t("webmail.reply_all")
             : draft.mode === "new" ? t("webmail.new_message")
             : t("webmail.reply")}
         </span>
-        <button onClick={onClose} title={t("common.close")}
-          className="p-1 rounded text-slate-400 hover:bg-slate-200 cursor-pointer">
-          <X size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* "Bewaard op dit apparaat" staat er letterlijk: het concept reist
+              niet mee naar een andere computer (zie lib/mail-drafts). */}
+          <span className="hidden text-[10px] text-slate-400 md:inline">
+            {t("y_next.mail_draft_autosave_hint")}
+          </span>
+          <button onClick={onDiscard} title={t("y_next.mail_draft_discard")}
+            className="p-1 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer">
+            <Trash2 size={14} />
+          </button>
+          <button onClick={onClose} title={t("y_next.mail_draft_close_keeps")}
+            className="p-1 rounded text-slate-400 hover:bg-slate-200 cursor-pointer">
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 py-2 space-y-1.5 border-b border-slate-200 flex-shrink-0">
         {mailboxes.length > 1 && (
           <label className="flex items-center gap-2">
             <span className="w-16 text-[11px] text-slate-400">{t("y_next.mail_from_label")}</span>
-            <select value={draft.from} onChange={(e) => set("from", e.target.value)}
+            <select value={draft.from || mailboxes[0]?.name || ""}
+              onChange={(e) => set("from", e.target.value)}
               className="flex-1 px-2 py-1 text-xs bg-transparent border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400 cursor-pointer">
               {mailboxes.map((m) => (
                 <option key={m.name} value={m.name}>{m.emailId}</option>
@@ -5492,10 +7211,17 @@ function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignatur
           </label>
         )}
         <div className="flex items-center gap-2">
-          <span className="w-16 text-[11px] text-slate-400">{t("webmail.to_label")}</span>
-          <input value={draft.to} onChange={(e) => set("to", e.target.value)}
-            placeholder={t("webmail.recipient_placeholder")}
-            className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
+          <div className="flex-1 min-w-0">
+            <RecipientField
+              label={t("webmail.to_label")}
+              value={draft.to}
+              onChange={(next) => set("to", next)}
+              instanceId={instanceId}
+              placeholder={t("webmail.recipient_placeholder")}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+              autoFocus={!startInBody}
+            />
+          </div>
           <button onClick={() => setShowCcBcc((v) => !v)}
             className={`px-1.5 py-0.5 rounded text-[11px] cursor-pointer ${showCcBcc ? "bg-slate-200 text-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>
             {t("y_next.mail_show_cc")}
@@ -5503,16 +7229,20 @@ function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignatur
         </div>
         {showCcBcc && (
           <>
-            <label className="flex items-center gap-2">
-              <span className="w-16 text-[11px] text-slate-400">Cc</span>
-              <input value={draft.cc} onChange={(e) => set("cc", e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
-            </label>
-            <label className="flex items-center gap-2">
-              <span className="w-16 text-[11px] text-slate-400">{t("y_next.mail_bcc_label")}</span>
-              <input value={draft.bcc} onChange={(e) => set("bcc", e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
-            </label>
+            <RecipientField
+              label="Cc"
+              value={draft.cc}
+              onChange={(next) => set("cc", next)}
+              instanceId={instanceId}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+            />
+            <RecipientField
+              label={t("y_next.mail_bcc_label")}
+              value={draft.bcc}
+              onChange={(next) => set("bcc", next)}
+              instanceId={instanceId}
+              inputClassName={RECIPIENT_INPUT_CLASS}
+            />
           </>
         )}
         <label className="flex items-center gap-2">
@@ -5522,47 +7252,65 @@ function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignatur
         </label>
       </div>
 
-      <textarea value={draft.body} onChange={(e) => set("body", e.target.value)}
+      {/* Opmaak-editor in plaats van een kaal tekstvak: vet/cursief, lijsten,
+          koppen, kleur, links en citaten — zie `components/mail/RichTextEditor`.
+          De inhoud is HTML; `toEmailHtml` maakt hem bij verzenden mailveilig.
+          Bij beantwoorden staat het geciteerde origineel er onderin ín: te
+          lezen, te scrollen en te bewerken zoals de rest van de tekst. */}
+      <RichTextEditor
+        value={draft.body}
+        onChange={(html) => set("body", html)}
         placeholder={t("webmail.editor_placeholder")}
-        className="flex-1 min-h-0 w-full px-4 py-3 text-sm text-slate-800 resize-none focus:outline-none" />
+        ariaLabel={t("webmail.editor_placeholder")}
+        className="flex-1 min-h-0"
+        autoFocus={startInBody}
+        collapseQuote={quoteInBody && !showQuote}
+      />
 
-      <div className="px-4 pb-2 flex-shrink-0">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] uppercase tracking-wide text-slate-400">
-            {t("y_next.mail_signature_label")}
-          </span>
-          {draft.signature ? (
-            <button type="button" onClick={() => set("signature", "")}
-              title={t("y_next.mail_signature_remove")}
-              className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 cursor-pointer">
-              <Trash2 size={11} />
+      {/* Uitklapper voor het citaat. Staat los van het tekstvak (een knop ín
+          een `contentEditable` is geen betrouwbaar bedieningselement), maar
+          bedient inhoud die er wél in staat. */}
+      {quoteInBody && (
+        <button type="button" onClick={() => setShowQuote((v) => !v)}
+          aria-expanded={showQuote}
+          className="mx-4 mb-1 flex items-center gap-1.5 self-start rounded px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 flex-shrink-0 cursor-pointer">
+          <Reply size={11} className="flex-shrink-0" />
+          {showQuote ? t("y_next.mail_quote_hide_original") : t("y_next.mail_quote_show_original")}
+        </button>
+      )}
+
+      {/* Handtekening zoals hij verstuurd wordt — niet een belofte dat er
+          later iets aangeplakt wordt, maar de echte HTML, hier al zichtbaar.
+          In de verzonden mail komt hij tússen de tekst en het citaat te staan
+          (`buildOutgoingHtml`); hier staat hij eronder, als vaste strook, zodat
+          hij de schrijfruimte niet in tweeën knipt. */}
+      {hasSignature && (
+        <div className="mx-4 mb-2 rounded border border-slate-200 bg-slate-50/70 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              {t("y_next.mail_signature_label")}
+            </span>
+            <button type="button"
+              onClick={() => set("includeSignature", !draft.includeSignature)}
+              title={draft.includeSignature
+                ? t("y_next.mail_signature_toggle_off")
+                : t("y_next.mail_signature_toggle_on")}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-slate-200 hover:text-slate-600 cursor-pointer">
+              {draft.includeSignature ? <Eye size={12} /> : <EyeOff size={12} />}
+              {draft.includeSignature
+                ? t("y_next.mail_signature_toggle_off")
+                : t("y_next.mail_signature_toggle_on")}
             </button>
+          </div>
+          {previewSignature ? (
+            <div
+              className="max-h-40 overflow-auto px-3 pb-2 text-sm text-slate-700 [&_img]:inline-block [&_img]:max-w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: previewSignature }} />
           ) : (
-            <button type="button" onClick={onRestoreSignature}
-              className="text-[11px] text-blue-600 hover:underline cursor-pointer">
-              {t("y_next.mail_signature_add")}
-            </button>
+            <p className="px-3 pb-2 text-[11px] italic text-slate-400">
+              {t("y_next.mail_signature_omitted")}
+            </p>
           )}
-        </div>
-        {draft.signature && (
-          <div
-            ref={sigRef}
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => {
-              const html = e.currentTarget.innerHTML;
-              laatstGezet.current = html;
-              set("signature", html);
-            }}
-            className="max-h-44 overflow-y-auto rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs focus:outline-none focus:border-blue-400 focus:bg-white"
-          />
-        )}
-      </div>
-
-      {draft.quoteLabel && (
-        <div className="px-4 pb-2 text-[11px] text-slate-400 flex items-start gap-1 flex-shrink-0">
-          <Reply size={11} className="mt-0.5 flex-shrink-0" />
-          <span className="truncate">{draft.quoteLabel}</span>
         </div>
       )}
 
@@ -5572,9 +7320,14 @@ function ErpComposePane({ draft, sending, mailboxes, onChange, onRestoreSignatur
           {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
           {sending ? t("webmail.sending") : t("webmail.send")}
         </button>
-        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs hover:bg-slate-100 cursor-pointer">
+        {/* `sr-only` in plaats van `hidden`: een `display:none`-invoerveld is
+            geen tab-stop, en dan zou "Bijlage" het enige onbereikbare
+            bedieningselement in de toetsenbordcyclus zijn. Zo staat het veld
+            er wél in (en opent Enter/spatie de bestandskiezer), zonder dat het
+            zichtbaar wordt; `focus-within` tekent de rand om het label. */}
+        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-600 rounded text-xs hover:bg-slate-100 cursor-pointer focus-within:ring-2 focus-within:ring-blue-400">
           <Paperclip size={13} /> {t("webmail.attachment_btn")}
-          <input type="file" multiple className="hidden"
+          <input type="file" multiple className="sr-only"
             onChange={(e) => {
               const picked = Array.from(e.target.files ?? []);
               if (picked.length > 0) onChange({ ...draft, files: [...draft.files, ...picked] });

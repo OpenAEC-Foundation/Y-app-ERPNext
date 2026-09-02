@@ -438,14 +438,30 @@ function cacheKey(url: string): string {
   return `${getActiveInstance().id}::${url}`;
 }
 
-/** Invalidate cache entries matching a doctype (call after mutations) */
+/**
+ * Invalidate cache entries matching a doctype (call after mutations).
+ *
+ * Raakt twee vormen, want tellingen lopen niet via `/api/resource`:
+ * de REST-lijsten (`/api/resource/<doctype>…`) én de RPC's die het doctype in
+ * hun querystring dragen (`frappe.client.get_count?doctype=<doctype>&…`,
+ * idem `get_list`). Zonder die tweede vorm bleef een badge na een
+ * schrijfactie tot 30 s de oude telling tonen — een map die leeg is maar "2"
+ * blijft zeggen leest als een kapotte teller.
+ */
 export function invalidateCache(doctype?: string) {
   if (!doctype) { responseCache.clear(); return; }
   // Mutations are scoped to the current instance — only drop that
   // instance's entries, not every tenant's cached copy of the doctype.
   const prefix = `${getActiveInstance().id}::`;
+  // Exacte doctype-match in de querystring: `doctype=Communication` mag geen
+  // `doctype=Communication%20Link` meetrekken (en andersom).
+  const rpcDoctype = `doctype=${encodeURIComponent(doctype)}`;
   for (const key of responseCache.keys()) {
-    if (key.startsWith(prefix) && key.includes(`/api/resource/${doctype}`)) {
+    if (!key.startsWith(prefix)) continue;
+    const rpcAt = key.indexOf(rpcDoctype);
+    const rpcMatch = rpcAt >= 0
+      && (key.length === rpcAt + rpcDoctype.length || key[rpcAt + rpcDoctype.length] === "&");
+    if (key.includes(`/api/resource/${doctype}`) || rpcMatch) {
       responseCache.delete(key);
     }
   }
@@ -476,6 +492,15 @@ export async function fetchList<T = Record<string, unknown>>(
     limit_page_length?: number;
     limit_start?: number;
     order_by?: string;
+    /**
+     * `GROUP BY`-expressie. Nodig zodra een filter op een **child-tabel**
+     * staat (bv. `["Communication Link", "link_doctype", "=", "Project"]`):
+     * Frappe joint die tabel er dan bij en levert de parent één keer per
+     * gematchte child-rij op. Live geverifieerd op de doelinstance: dezelfde
+     * query gaf 94 rijen voor 36 verschillende Communications, en `distinct=1`
+     * hielp daar niet tegen — alleen `group_by` ontdubbelt.
+     */
+    group_by?: string;
   }
 ): Promise<T[]> {
   // Doctype confirmed missing on this instance (no app installed for it) —
@@ -508,6 +533,9 @@ export async function fetchList<T = Record<string, unknown>>(
   }
   if (params?.order_by) {
     searchParams.set("order_by", params.order_by);
+  }
+  if (params?.group_by) {
+    searchParams.set("group_by", params.group_by);
   }
 
   const url = buildApiUrl(`/api/resource/${doctype}`, searchParams);

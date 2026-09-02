@@ -5,6 +5,12 @@
 
 import { createDocument, updateDocument, fetchList, callMethod } from "./erpnext";
 import { getActiveCompany, getActiveEmployee } from "./instances";
+import {
+  SALES_INVOICE_ACTIVE_FILTER,
+  SALES_INVOICE_FINAL_FILTER,
+  draftShare,
+  isDraftInvoice,
+} from "./invoice-docstatus";
 
 /* ─── Types ─── */
 
@@ -257,21 +263,21 @@ export const INTENTS: Intent[] = [
       { name: "query", type: "text", required: false, label: "Zoekterm (klant/nummer)" },
     ],
     execute: async (slots) => {
-      const filters: unknown[][] = [["docstatus", "=", 1]];
-      if (slots.query) {
-        filters.push(["customer_name", "like", `%${slots.query}%`]);
-      } else {
-        filters.push(["outstanding_amount", ">", 0]);
-      }
-      const invoices = await fetchList<{ name: string; customer_name: string; net_total: number; outstanding_amount: number; status: string }>("Sales Invoice", {
-        fields: ["name", "customer_name", "net_total", "outstanding_amount", "status"],
+      // Zoeken op klant → ook concepten tonen (die zijn juist het meest gezocht).
+      // Zonder zoekterm valt de intent terug op "openstaand", en dat is per
+      // definitie alleen een definitieve factuur.
+      const filters: unknown[][] = slots.query
+        ? [SALES_INVOICE_ACTIVE_FILTER, ["customer_name", "like", `%${slots.query}%`]]
+        : [SALES_INVOICE_FINAL_FILTER, ["outstanding_amount", ">", 0]];
+      const invoices = await fetchList<{ name: string; customer_name: string; net_total: number; outstanding_amount: number; status: string; docstatus?: number }>("Sales Invoice", {
+        fields: ["name", "customer_name", "net_total", "outstanding_amount", "status", "docstatus"],
         filters,
         limit_page_length: 10,
         order_by: "posting_date desc",
       });
       if (invoices.length === 0) return `Geen facturen gevonden${slots.query ? ` voor "${slots.query}"` : ""}.`;
       return invoices.map((i) =>
-        `• ${i.name} — ${i.customer_name}: €${i.net_total?.toLocaleString("nl-NL")} (openstaand: €${i.outstanding_amount?.toLocaleString("nl-NL")}) [${i.status}]`
+        `• ${i.name} — ${i.customer_name}: €${i.net_total?.toLocaleString("nl-NL")} (openstaand: €${i.outstanding_amount?.toLocaleString("nl-NL")}) [${i.status}]${isDraftInvoice(i) ? " (concept)" : ""}`
       ).join("\n");
     },
   },
@@ -813,25 +819,30 @@ export const INTENTS: Intent[] = [
     ],
     execute: async (slots) => {
       const year = new Date().getFullYear();
+      // Zelfde keuze als de Omzet-pagina: concepten tellen mee, geannuleerde niet.
       const filters: unknown[][] = [
-        ["docstatus", "=", 1],
+        SALES_INVOICE_ACTIVE_FILTER,
         ["posting_date", ">=", `${year}-01-01`],
         ["posting_date", "<=", `${year}-12-31`],
       ];
       if (slots.company) filters.push(["company", "=", slots.company]);
-      const invoices = await fetchList<{ net_total: number; posting_date: string }>("Sales Invoice", {
-        fields: ["net_total", "posting_date"],
+      const invoices = await fetchList<{ net_total: number; posting_date: string; docstatus?: number }>("Sales Invoice", {
+        fields: ["net_total", "posting_date", "docstatus"],
         filters,
         limit_page_length: 0,
       });
       const total = invoices.reduce((s, i) => s + (i.net_total || 0), 0);
+      const share = draftShare(invoices, (i) => i.net_total);
       const months = new Map<string, number>();
       for (const inv of invoices) {
         const m = inv.posting_date?.slice(0, 7) || "onbekend";
         months.set(m, (months.get(m) || 0) + (inv.net_total || 0));
       }
       const monthLines = Array.from(months).sort().map(([m, v]) => `  ${m}: €${v.toLocaleString("nl-NL")}`).join("\n");
-      return `Omzet ${year}${slots.company ? ` (${slots.company})` : ""}:\nTotaal: €${total.toLocaleString("nl-NL")}\n${invoices.length} facturen\n\nPer maand:\n${monthLines}`;
+      const draftLine = share.hasDrafts
+        ? `\nWaarvan concept: €${share.draftAmount.toLocaleString("nl-NL")} (${share.draftCount} factuur/facturen nog niet ingeboekt)`
+        : "";
+      return `Omzet ${year}${slots.company ? ` (${slots.company})` : ""}:\nTotaal: €${total.toLocaleString("nl-NL")}${draftLine}\n${invoices.length} facturen\n\nPer maand:\n${monthLines}`;
     },
   },
   {
@@ -848,7 +859,8 @@ export const INTENTS: Intent[] = [
       { name: "company", type: "company", required: false, label: "Bedrijf", defaultFn: defaultCompany },
     ],
     execute: async (slots) => {
-      const filters: unknown[][] = [["docstatus", "=", 1], ["outstanding_amount", ">", 0]];
+      // Openstaand = vordering → alleen definitieve facturen.
+      const filters: unknown[][] = [SALES_INVOICE_FINAL_FILTER, ["outstanding_amount", ">", 0]];
       if (slots.company) filters.push(["company", "=", slots.company]);
       const invoices = await fetchList<{ name: string; customer_name: string; outstanding_amount: number; posting_date: string }>("Sales Invoice", {
         fields: ["name", "customer_name", "outstanding_amount", "posting_date"],
