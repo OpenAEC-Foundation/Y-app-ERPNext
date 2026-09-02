@@ -8,8 +8,12 @@
  * De Y-next-webmail leest hem daar ook als eerste (zie `getSignature()` in
  * `packages/frontend/src/lib/mail-erpnext.ts`).
  *
+ * **Begint met de groet.** De handtekening opent met "Met vriendelijke groet,"
+ * — zie `SIGNATURE_GREETING` voor waarom die regel hier hoort en niet in de
+ * losse berichtteksten.
+ *
  * **Idempotent, en respecteert maatwerk.** Elke gegenereerde handtekening
- * eindigt op de marker `<!-- y-next-signature v1 -->`. Bij een herhaalde run:
+ * eindigt op de marker `<!-- y-next-signature v3 -->`. Bij een herhaalde run:
  *
  *  - handtekening leeg          → schrijven;
  *  - handtekening MET marker    → overschrijven met de nieuwe versie;
@@ -23,7 +27,7 @@
  * nooit byte-identiek aan wat wij sturen; daarom is er bewust géén
  * "ongewijzigd"-pad op basis van stringvergelijking — een marker-hit
  * betekent simpelweg herschrijven. `hasMarker` herkent élk versienummer, zodat
- * een v1-handtekening bij deze run gewoon naar v2 wordt bijgewerkt.
+ * een v1- of v2-handtekening bij deze run gewoon naar v3 wordt bijgewerkt.
  *
  * **Eén logo, en alleen een publieke URL.** `Company.company_logo` wijst op
  * deze instance naar een Frappe-File. Staat die onder `/private/files/`, dan
@@ -52,7 +56,25 @@ import { resolve as resolvePath } from "node:path";
 const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 
 /** Marker die een door dit script gegenereerde handtekening herkenbaar maakt. */
-export const SIGNATURE_MARKER = "<!-- y-next-signature v2 -->";
+export const SIGNATURE_MARKER = "<!-- y-next-signature v3 -->";
+
+/**
+ * De groetregel, en waarom hij hier hoort.
+ *
+ * "Met vriendelijke groet," is geen vrije tekst per mail maar een vast
+ * onderdeel van de afsluiting: hij hoort altijd, en altijd op dezelfde manier,
+ * boven de naam te staan. Door hem in de handtekening te zetten staat hij in
+ * élke mail goed — ook in de mails die de app zelf opstelt (offerte,
+ * betalingsherinnering), want ERPNext plakt de `User.email_signature` daar
+ * onder de inhoud.
+ *
+ * De keerzijde: elke plek die zélf een groet in de tekst zette, groet nu
+ * dubbel. Daarom zijn die groetregels uit de standaardteksten gehaald
+ * (`quotation_create.email_body_default`, `sales_invoices.reminder_email_body`)
+ * — de groet komt voortaan uit één bron. De opsteller van de webmail voegde
+ * nooit zelf een groet toe en hoefde dus niet aangepast te worden.
+ */
+export const SIGNATURE_GREETING = "Met vriendelijke groet,";
 
 /**
  * Herkent élke versie van onze marker. Cruciaal voor de upgrade: een
@@ -215,6 +237,11 @@ export function buildSignatureHtml(person) {
   const site = websiteParts(person?.website);
 
   const rows = [];
+  // De groet opent de handtekening — zelfde lettertype en -grootte als de rest
+  // van de tekstcel, met alleen wat lucht eronder in plaats van een witregel.
+  rows.push(
+    `<div style="padding-bottom:6px;">${escapeHtml(SIGNATURE_GREETING)}</div>`
+  );
   rows.push(
     `<div style="font-size:15px;font-weight:bold;line-height:1.25;color:${BRAND_DARK};">${escapeHtml(fullName)}</div>`
   );
@@ -295,7 +322,8 @@ export function buildSignatureHtml(person) {
 
 /**
  * true zodra een opgeslagen handtekening door dit script is gemaakt — welke
- * versie dan ook, zodat een oude v1 bij deze run naar v2 wordt bijgewerkt.
+ * versie dan ook, zodat een oude v1 of v2 bij deze run naar v3 wordt
+ * bijgewerkt.
  */
 export function hasMarker(html) {
   return MARKER_PATTERN.test(String(html ?? ""));

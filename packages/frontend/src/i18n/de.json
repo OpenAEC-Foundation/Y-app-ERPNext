@@ -1610,7 +1610,7 @@
   "sales_invoices.not_sent": "Nicht gesendet",
   "sales_invoices.send_reminder_to": "Erinnerung senden an {{email}}",
   "sales_invoices.reminder_sent_to": "Erinnerung gesendet an {{email}}",
-  "sales_invoices.reminder_email_body": "<p>Sehr geehrte Damen und Herren,</p>\n<p>wir möchten Sie freundlich an die offene Rechnung <strong>{{name}}</strong> in Höhe von <strong>{{amount}}</strong> erinnern.</p>\n<p>Das Fälligkeitsdatum war <strong>{{due_date}}</strong>. Wir bitten Sie, den offenen Betrag möglichst bald zu begleichen.</p>\n<p>Mit freundlichen Grüßen</p>",
+  "sales_invoices.reminder_email_body": "<p>Sehr geehrte Damen und Herren,</p>\n<p>wir möchten Sie freundlich an die offene Rechnung <strong>{{name}}</strong> in Höhe von <strong>{{amount}}</strong> erinnern.</p>\n<p>Das Fälligkeitsdatum war <strong>{{due_date}}</strong>. Wir bitten Sie, den offenen Betrag möglichst bald zu begleichen.</p>",
   "sales_invoices.invoices_count_short": "{{count}} Rechnungen",
   "sales_invoices.total_outstanding_label": "Gesamtoffen",
   "sales_invoices.kpi_average": "Durchschnitt",
@@ -2435,7 +2435,7 @@
   "quotation_create.email_subject": "Betreff",
   "quotation_create.email_subject_default": "Angebot {{name}}",
   "quotation_create.email_body": "Nachricht",
-  "quotation_create.email_body_default": "Sehr geehrte(r) {{customer}},\n\nanbei erhalten Sie unser Angebot {{name}} über {{total}} exkl. USt.\n\nWir freuen uns auf Ihre Rückmeldung.\n\nMit freundlichen Grüßen",
+  "quotation_create.email_body_default": "Sehr geehrte(r) {{customer}},\n\nanbei erhalten Sie unser Angebot {{name}} über {{total}} exkl. USt.\n\nWir freuen uns auf Ihre Rückmeldung.",
   "quotation_create.send_email": "E-Mail senden",
   "quotation_create.email_sent": "E-Mail an {{email}} gesendet",
   "quotation_create.email_error": "Fehler beim Senden der E-Mail",
@@ -2456,7 +2456,7 @@
   "invoice_email.to": "An",
   "invoice_email.subject": "Betreff",
   "invoice_email.body": "Nachricht",
-  "invoice_email.body_hint": "Ende mit der Grußformel — Name und Kontaktdaten ergänzt ERPNext aus deiner User Signature.",
+  "invoice_email.body_hint": "Schließe mit deinem letzten Satz — Grußformel, Name und Kontaktdaten kommen aus deiner Signatur.",
   "invoice_email.signature_preview": "Signatur (aus ERPNext, wird angehängt)",
   "invoice_email.letterhead": "Briefpapier",
   "invoice_email.print_format": "Print Format",
@@ -2956,6 +2956,6 @@
   "webmail.color_green": "Grün",
   "webmail.color_blue": "Blau",
   "webmail.color_purple": "Lila",
-  "y_next.mail_quote_show": "Zitat anzeigen",
-  "y_next.mail_quote_hide": "Zitat ausblenden"
+  "y_next.mail_quote_show_original": "Ursprüngliche Nachricht anzeigen",
+  "y_next.mail_quote_hide_original": "Ursprüngliche Nachricht ausblenden"
 }

@@ -1739,7 +1739,7 @@
   "sales_invoices.not_sent": "Niet verzonden",
   "sales_invoices.send_reminder_to": "Herinnering sturen naar {{email}}",
   "sales_invoices.reminder_sent_to": "Herinnering verzonden naar {{email}}",
-  "sales_invoices.reminder_email_body": "<p>Geachte heer/mevrouw,</p>\n<p>Wij willen u vriendelijk herinneren aan de openstaande factuur <strong>{{name}}</strong> ter waarde van <strong>{{amount}}</strong>.</p>\n<p>De vervaldatum was <strong>{{due_date}}</strong>. Wij verzoeken u vriendelijk het openstaande bedrag zo spoedig mogelijk te voldoen.</p>\n<p>Met vriendelijke groet</p>",
+  "sales_invoices.reminder_email_body": "<p>Geachte heer/mevrouw,</p>\n<p>Wij willen u vriendelijk herinneren aan de openstaande factuur <strong>{{name}}</strong> ter waarde van <strong>{{amount}}</strong>.</p>\n<p>De vervaldatum was <strong>{{due_date}}</strong>. Wij verzoeken u vriendelijk het openstaande bedrag zo spoedig mogelijk te voldoen.</p>",
   "sales_invoices.invoices_count_short": "{{count}} facturen",
   "sales_invoices.total_outstanding_label": "Totaal openstaand",
   "sales_invoices.kpi_average": "Gemiddeld",
@@ -2412,7 +2412,7 @@
   "quotation_create.email_subject": "Onderwerp",
   "quotation_create.email_subject_default": "Offerte {{name}}",
   "quotation_create.email_body": "Bericht",
-  "quotation_create.email_body_default": "Beste {{customer}},\n\nHierbij ontvangt u onze offerte {{name}} ter waarde van {{total}} excl. BTW.\n\nWij horen graag van u.\n\nMet vriendelijke groet",
+  "quotation_create.email_body_default": "Beste {{customer}},\n\nHierbij ontvangt u onze offerte {{name}} ter waarde van {{total}} excl. BTW.\n\nWij horen graag van u.",
   "quotation_create.send_email": "Email verzenden",
   "quotation_create.email_sent": "Email verstuurd naar {{email}}",
   "quotation_create.email_error": "Fout bij verzenden email",
@@ -2434,7 +2434,7 @@
   "invoice_email.to": "Aan",
   "invoice_email.subject": "Onderwerp",
   "invoice_email.body": "Bericht",
-  "invoice_email.body_hint": "Eindig op de groet — naam en contactgegevens worden door ERPNext aangevuld uit je User Signature.",
+  "invoice_email.body_hint": "Sluit af met je laatste zin — de groet, je naam en contactgegevens komen uit je handtekening.",
   "invoice_email.signature_preview": "Handtekening (uit ERPNext, wordt aangehangen)",
   "invoice_email.letterhead": "Briefpapier",
   "invoice_email.print_format": "Print Format",
@@ -2970,6 +2970,6 @@
   "webmail.color_green": "Groen",
   "webmail.color_blue": "Blauw",
   "webmail.color_purple": "Paars",
-  "y_next.mail_quote_show": "Toon citaat",
-  "y_next.mail_quote_hide": "Verberg citaat"
+  "y_next.mail_quote_show_original": "Toon origineel bericht",
+  "y_next.mail_quote_hide_original": "Verberg origineel bericht"
 }

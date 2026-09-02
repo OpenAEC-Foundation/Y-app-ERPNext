@@ -1739,7 +1739,7 @@
   "sales_invoices.not_sent": "Not sent",
   "sales_invoices.send_reminder_to": "Send reminder to {{email}}",
   "sales_invoices.reminder_sent_to": "Reminder sent to {{email}}",
-  "sales_invoices.reminder_email_body": "<p>Dear Sir/Madam,</p>\n<p>We would like to kindly remind you of the outstanding invoice <strong>{{name}}</strong> in the amount of <strong>{{amount}}</strong>.</p>\n<p>The due date was <strong>{{due_date}}</strong>. We kindly ask you to settle the outstanding amount as soon as possible.</p>\n<p>Best regards</p>",
+  "sales_invoices.reminder_email_body": "<p>Dear Sir/Madam,</p>\n<p>We would like to kindly remind you of the outstanding invoice <strong>{{name}}</strong> in the amount of <strong>{{amount}}</strong>.</p>\n<p>The due date was <strong>{{due_date}}</strong>. We kindly ask you to settle the outstanding amount as soon as possible.</p>",
   "sales_invoices.invoices_count_short": "{{count}} invoices",
   "sales_invoices.total_outstanding_label": "Total outstanding",
   "sales_invoices.kpi_average": "Average",
@@ -2412,7 +2412,7 @@
   "quotation_create.email_subject": "Subject",
   "quotation_create.email_subject_default": "Quotation {{name}}",
   "quotation_create.email_body": "Message",
-  "quotation_create.email_body_default": "Dear {{customer}},\n\nPlease find attached our quotation {{name}} for {{total}} excl. VAT.\n\nWe look forward to hearing from you.\n\nKind regards",
+  "quotation_create.email_body_default": "Dear {{customer}},\n\nPlease find attached our quotation {{name}} for {{total}} excl. VAT.\n\nWe look forward to hearing from you.",
   "quotation_create.send_email": "Send email",
   "quotation_create.email_sent": "Email sent to {{email}}",
   "quotation_create.email_error": "Error sending email",
@@ -2434,7 +2434,7 @@
   "invoice_email.to": "To",
   "invoice_email.subject": "Subject",
   "invoice_email.body": "Message",
-  "invoice_email.body_hint": "End with the greeting — your name and details are appended by ERPNext from your User Signature.",
+  "invoice_email.body_hint": "End with your closing sentence — the greeting, your name and details come from your signature.",
   "invoice_email.signature_preview": "Signature (from ERPNext, appended automatically)",
   "invoice_email.letterhead": "Letterhead",
   "invoice_email.print_format": "Print Format",
@@ -2970,6 +2970,6 @@
   "webmail.color_green": "Green",
   "webmail.color_blue": "Blue",
   "webmail.color_purple": "Purple",
-  "y_next.mail_quote_show": "Show quote",
-  "y_next.mail_quote_hide": "Hide quote"
+  "y_next.mail_quote_show_original": "Show original message",
+  "y_next.mail_quote_hide_original": "Hide original message"
 }

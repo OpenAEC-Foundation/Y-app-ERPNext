@@ -126,6 +126,10 @@ import {
   buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
   formatAttachmentNames, isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
+import {
+  buildComposeBodyWithQuote, buildQuoteBlock, hasQuote,
+  shouldCollapseQuote, splitQuoteFromBody,
+} from "../lib/mail-quote";
 import { getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
@@ -136,7 +140,7 @@ import ReadingPane from "../components/mail/ReadingPane";
 import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
 import RichTextEditor from "../components/mail/RichTextEditor";
-import { toEmailHtml, ensureHtmlBody, htmlToPlainText, sanitizeEditorHtml } from "../lib/mail-html";
+import { toEmailHtml, ensureHtmlBody, htmlToPlainText } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import RecipientField from "../components/mail/RecipientField";
 import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
@@ -3825,12 +3829,16 @@ interface ErpDraft {
   cc: string;
   bcc: string;
   subject: string;
-  /** Wat de gebruiker typt (platte tekst; wordt bij verzenden HTML). */
+  /**
+   * De volledige inhoud van het opstelvenster (HTML).
+   *
+   * Bij beantwoorden en doorsturen zit het geciteerde origineel hier ín, als
+   * afsluitend `<blockquote data-y-quote>` — zie `lib/mail-quote`. Zo is het
+   * tijdens het schrijven te lezen én te bewerken; vlak vóór verzenden splitst
+   * `splitQuoteFromBody` het er weer af zodat de handtekening boven het citaat
+   * belandt.
+   */
   body: string;
-  /** Geciteerde originele mail (HTML) — komt onder de nieuwe tekst. */
-  quoteHtml: string;
-  /** Leesbare "Op <datum> schreef <naam>"-regel bij het citaat. */
-  quoteLabel: string;
   /**
    * Gaat de handtekening onder dít bericht mee? Standaard ja; het
    * opstelvenster toont hem live en laat hem per bericht uitzetten.
@@ -4742,7 +4750,10 @@ function ErpNextWebmail() {
       ...(d.draftMessageName ? { messageName: d.draftMessageName } : {}),
       to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body,
       includeSignature: d.includeSignature,
-      quoteHtml: d.quoteHtml, quoteLabel: d.quoteLabel,
+      // Leeg: het citaat zit tegenwoordig in `body`. De velden blijven in de
+      // opslagvorm staan zodat een concept van vóór die wijziging nog te
+      // herstellen is — zie `draftFromStored`.
+      quoteHtml: "", quoteLabel: "",
       ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
       ...(d.reference ? { reference: d.reference } : {}),
     }));
@@ -4766,22 +4777,32 @@ function ErpNextWebmail() {
   }, [persistDraft]);
 
   /** Een bewaard concept terug naar de vorm die de opsteller kent. */
-  const draftFromStored = useCallback((d: StoredMailDraft): ErpDraft => ({
-    mode: d.mode,
-    draftKey: d.key,
-    ...(d.messageName ? { draftMessageName: d.messageName } : {}),
-    to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject,
+  const draftFromStored = useCallback((d: StoredMailDraft): ErpDraft => {
     // Concepten van vóór de opmaak-editor staan als platte tekst opgeslagen;
     // `ensureHtmlBody` maakt daar HTML van (en filtert HTML die er al is), zodat
     // een oud concept zijn regeleindes houdt in plaats van één lange zin te worden.
-    body: ensureHtmlBody(d.body),
-    quoteHtml: d.quoteHtml, quoteLabel: d.quoteLabel,
-    includeSignature: d.includeSignature,
-    ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
-    ...(d.reference ? { reference: d.reference } : {}),
-    // Bijlagen zijn niet serialiseerbaar — zie `lib/mail-drafts`.
-    files: [],
-  }), []);
+    let body = ensureHtmlBody(d.body);
+    // Concept van vóór "citaat in de opsteller": het origineel stond toen in
+    // een apart veld. Hier hangen we het alsnog onder de tekst, zodat een
+    // hervat antwoord zijn citaat niet verliest.
+    if (d.quoteHtml && !hasQuote(body)) {
+      body += buildComposeBodyWithQuote(
+        buildQuoteBlock({ label: "", bodyHtml: d.quoteHtml })
+      );
+    }
+    return {
+      mode: d.mode,
+      draftKey: d.key,
+      ...(d.messageName ? { draftMessageName: d.messageName } : {}),
+      to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject,
+      body,
+      includeSignature: d.includeSignature,
+      ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
+      ...(d.reference ? { reference: d.reference } : {}),
+      // Bijlagen zijn niet serialiseerbaar — zie `lib/mail-drafts`.
+      files: [],
+    };
+  }, []);
 
   const resumeDraft = useCallback((stored: StoredMailDraft) => {
     persistDraft(draftRef.current);
@@ -5423,7 +5444,6 @@ function ErpNextWebmail() {
     setDraft({
       mode: "new", draftKey: newDraftKey(),
       to: "", cc: "", bcc: "", subject: "", body: "",
-      quoteHtml: "", quoteLabel: "",
       includeSignature: true,
       reference: folderReference(),
       files: [],
@@ -5456,9 +5476,9 @@ function ErpNextWebmail() {
       cc: recipients.cc,
       bcc: "",
       subject: prefixSubject(msg.subject, "Re"),
-      body: "",
-      quoteHtml: `<p>${textBodyToHtml(label)}</p>${body?.html || ""}`,
-      quoteLabel: label,
+      // Het citaat gaat mee ín de opsteller: zichtbaar tijdens het schrijven,
+      // en te bewerken of te wissen als je het niet wilt meesturen.
+      body: buildComposeBodyWithQuote(buildQuoteBlock({ label, bodyHtml: body?.html || "" })),
       includeSignature: true,
       inReplyTo: msg.name,
       reference: msg.reference,
@@ -5493,9 +5513,9 @@ function ErpNextWebmail() {
       cc: "",
       bcc: "",
       subject: prefixSubject(msg.subject, "Fwd"),
-      body: "",
-      quoteHtml: `<p>${textBodyToHtml(label)}</p>${attachLine}${body?.html || ""}`,
-      quoteLabel: label,
+      body: buildComposeBodyWithQuote(buildQuoteBlock({
+        label, bodyHtml: body?.html || "", noticeHtml: attachLine,
+      })),
       includeSignature: true,
       reference: msg.reference,
       files: [],
@@ -5508,17 +5528,20 @@ function ErpNextWebmail() {
     if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
     setSending(true);
     setToast(t("webmail.message_sending"));
-    // De handtekening zit niet in het tekstvak maar wordt hier onder de
-    // getypte tekst gezet — vóór het citaat, zoals elke mailclient doet.
+    // Het citaat staat ín het tekstvak (zodat je het tijdens het schrijven
+    // ziet en kunt bijwerken); hier gaat het er weer af, want de handtekening
+    // hoort ertússen — tekst → handtekening → citaat, zoals elke mailclient.
+    // Wat de gebruiker uit het citaat wegknipte, is dus ook echt weg.
     // `buildOutgoingHtml` deelt zijn handtekening-afleiding met de preview in
     // het opstelvenster, dus een uitgezette schakelaar betekent hier ook echt
     // geen handtekening. `toEmailHtml` maakt van de opgemaakte tekst
     // mailclient-veilige HTML: whitelist, inline styles, geen classes.
+    const { typed, quote } = splitQuoteFromBody(draft.body);
     const html = buildOutgoingHtml({
-      bodyHtml: toEmailHtml(draft.body),
+      bodyHtml: toEmailHtml(typed),
       signature,
       includeSignature: draft.includeSignature,
-      quoteHtml: draft.quoteHtml,
+      quoteHtml: quote,
     });
     try {
       await sendMail({
@@ -6323,6 +6346,11 @@ function ErpNextWebmail() {
 
             {draft ? (
               <ErpComposePane
+                // Eén opsteller-instantie per concept: het openklappen van
+                // Cc/Bcc en de stand van het citaat horen bij dít bericht en
+                // mogen niet blijven staan als je naar een ander concept
+                // springt.
+                key={draft.draftKey}
                 draft={draft}
                 sending={sending}
                 signature={signature}
@@ -6942,9 +6970,19 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
-  // Het citaat staat ingeklapt: het gaat wél mee de deur uit (zie
-  // `buildOutgoingHtml`), maar het hoort het typvak niet weg te duwen.
-  const [showQuote, setShowQuote] = useState(false);
+  /**
+   * Staat het geciteerde origineel open?
+   *
+   * De regel (zie `lib/mail-quote`): korter dan zestien regels → gewoon open,
+   * want dát is de context die je bij het antwoorden meteen wilt zien. Langer
+   * → afgeknot achter de uitklapper, anders duwt een draad van veertig regels
+   * het typvak uit beeld. Eén keer beslist, bij het openen van dít concept —
+   * daarna is het de knop die bepaalt (de opsteller wordt per concept opnieuw
+   * gemonteerd, zie de `key` op `ErpComposePane`).
+   */
+  const [showQuote, setShowQuote] = useState(() => !shouldCollapseQuote(draft.body));
+  /** Alleen tonen wat er is: geen uitklapper bij een nieuw bericht. */
+  const quoteInBody = hasQuote(draft.body);
   // De frequentie-ranking van de adressuggesties hangt aan de instance; één
   // keer uitlezen volstaat, hij wisselt niet terwijl je een mail opstelt.
   const instanceId = useMemo(() => getActiveInstanceId(), []);
@@ -7066,7 +7104,9 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
 
       {/* Opmaak-editor in plaats van een kaal tekstvak: vet/cursief, lijsten,
           koppen, kleur, links en citaten — zie `components/mail/RichTextEditor`.
-          De inhoud is HTML; `toEmailHtml` maakt hem bij verzenden mailveilig. */}
+          De inhoud is HTML; `toEmailHtml` maakt hem bij verzenden mailveilig.
+          Bij beantwoorden staat het geciteerde origineel er onderin ín: te
+          lezen, te scrollen en te bewerken zoals de rest van de tekst. */}
       <RichTextEditor
         value={draft.body}
         onChange={(html) => set("body", html)}
@@ -7074,11 +7114,26 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
         ariaLabel={t("webmail.editor_placeholder")}
         className="flex-1 min-h-0"
         autoFocus={startInBody}
+        collapseQuote={quoteInBody && !showQuote}
       />
+
+      {/* Uitklapper voor het citaat. Staat los van het tekstvak (een knop ín
+          een `contentEditable` is geen betrouwbaar bedieningselement), maar
+          bedient inhoud die er wél in staat. */}
+      {quoteInBody && (
+        <button type="button" onClick={() => setShowQuote((v) => !v)}
+          aria-expanded={showQuote}
+          className="mx-4 mb-1 flex items-center gap-1.5 self-start rounded px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 flex-shrink-0 cursor-pointer">
+          <Reply size={11} className="flex-shrink-0" />
+          {showQuote ? t("y_next.mail_quote_hide_original") : t("y_next.mail_quote_show_original")}
+        </button>
+      )}
 
       {/* Handtekening zoals hij verstuurd wordt — niet een belofte dat er
           later iets aangeplakt wordt, maar de echte HTML, hier al zichtbaar.
-          Staat bewust boven het citaat: dat is ook de volgorde in de mail. */}
+          In de verzonden mail komt hij tússen de tekst en het citaat te staan
+          (`buildOutgoingHtml`); hier staat hij eronder, als vaste strook, zodat
+          hij de schrijfruimte niet in tweeën knipt. */}
       {hasSignature && (
         <div className="mx-4 mb-2 rounded border border-slate-200 bg-slate-50/70 flex-shrink-0">
           <div className="flex items-center justify-between gap-2 px-2.5 py-1">
@@ -7105,27 +7160,6 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
             <p className="px-3 pb-2 text-[11px] italic text-slate-400">
               {t("y_next.mail_signature_omitted")}
             </p>
-          )}
-        </div>
-      )}
-
-      {/* Het geciteerde origineel — als citaatblok met de dunne lijn die de
-          ontvanger straks óók ziet, zodat herkenbaar is dat je erbóven typt.
-          Standaard ingeklapt: een lange draad zou anders het typvak wegduwen. */}
-      {draft.quoteLabel && (
-        <div className="mx-4 mb-2 border-l-2 border-slate-300 pl-3 flex-shrink-0">
-          <button type="button" onClick={() => setShowQuote((v) => !v)}
-            className="flex w-full items-start gap-1 text-left text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer">
-            <Reply size={11} className="mt-0.5 flex-shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{draft.quoteLabel}</span>
-            <span className="flex-shrink-0">
-              {showQuote ? t("y_next.mail_quote_hide") : t("y_next.mail_quote_show")}
-            </span>
-          </button>
-          {showQuote && (
-            <div
-              className="mt-1 max-h-40 overflow-auto pr-2 text-xs text-slate-500 [&_img]:max-w-full [&_table]:border-collapse"
-              dangerouslySetInnerHTML={{ __html: sanitizeEditorHtml(draft.quoteHtml) }} />
           )}
         </div>
       )}

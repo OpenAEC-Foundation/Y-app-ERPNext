@@ -79,7 +79,7 @@ const BTN_BASE =
 const BTN_ACTIVE = "bg-slate-300 text-slate-900";
 
 export default function RichTextEditor({
-  value, onChange, placeholder, className, ariaLabel, autoFocus,
+  value, onChange, placeholder, className, ariaLabel, autoFocus, collapseQuote,
 }: {
   /** De HTML van het bericht. Verandert deze van buitenaf, dan herlaadt het vak. */
   value: string;
@@ -88,6 +88,12 @@ export default function RichTextEditor({
   className?: string;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /**
+   * Toont het geciteerde origineel (`blockquote[data-y-quote]`) afgeknot in
+   * plaats van volledig. Puur weergave: de inhoud staat er nog steeds
+   * helemaal in en gaat ook helemaal mee. De regel staat in `index.css`.
+   */
+  collapseQuote?: boolean;
 }) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -123,8 +129,27 @@ export default function RichTextEditor({
     setEmpty(isHtmlEmpty(clean));
   }, [value]);
 
+  /*
+   * Focus mét een cursor die bovenáán staat.
+   *
+   * `focus()` alleen laat de cursor in Chrome landen waar de browser hem het
+   * handigst vindt — bij een antwoord met een citaat onderin het vak is dat
+   * niet betrouwbaar de eerste lege alinea. Bij beantwoorden hoor je bóven het
+   * citaat te beginnen, dus zetten we het bereik expliciet op het begin.
+   */
   useEffect(() => {
-    if (autoFocus) editorRef.current?.focus();
+    if (!autoFocus) return;
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch { /* geen selectie-API (test-omgeving): focus volstaat */ }
   }, [autoFocus]);
 
   /*
@@ -471,6 +496,7 @@ export default function RichTextEditor({
         <div
           ref={editorRef}
           contentEditable
+          data-quote-collapsed={collapseQuote ? "1" : undefined}
           suppressContentEditableWarning
           role="textbox"
           aria-multiline="true"

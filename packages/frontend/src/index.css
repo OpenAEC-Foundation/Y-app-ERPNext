@@ -120,3 +120,21 @@ body {
   max-width: 100%;
   height: auto;
 }
+
+/*
+ * Ingeklapt citaat in het opstelvenster.
+ *
+ * Het geciteerde origineel is gewone inhoud van de editor (één
+ * `blockquote[data-y-quote]`, zie `lib/mail-quote.ts`). Bij een lange draad
+ * opent het afgeknot zodat het de schrijfruimte niet opeet; de uitklapper in
+ * `ErpComposePane` haalt `data-quote-collapsed` weg en dan staat het er weer
+ * helemaal. Puur weergave — de inhoud blijft volledig in het bericht staan en
+ * gaat dus ook volledig mee de deur uit.
+ */
+[contenteditable][data-quote-collapsed="1"] blockquote[data-y-quote] {
+  max-height: 3.5rem;
+  overflow: hidden;
+  /* Onderaan uitvloeien, zodat zichtbaar is dat er meer staat. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}

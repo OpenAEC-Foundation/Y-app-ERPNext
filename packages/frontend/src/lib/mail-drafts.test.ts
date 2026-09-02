@@ -16,6 +16,7 @@ import {
   type MailDraftMap,
   type StoredMailDraft,
 } from "./mail-drafts.ts";
+import { buildComposeBodyWithQuote, buildQuoteBlock } from "./mail-quote.ts";
 
 /**
  * `node --test` draait zonder DOM; een minimale localStorage volstaat, want de
@@ -63,6 +64,22 @@ test("hasDraftContent: een antwoord telt pas mee zodra er tekst staat", () => {
   assert.equal(hasDraftContent(base), false, "voorgevulde Aan/Onderwerp zijn niet van de gebruiker");
   assert.equal(hasDraftContent({ ...base, body: "   " }), false);
   assert.equal(hasDraftContent({ ...base, body: "hoi" }), true);
+});
+
+test("hasDraftContent: het meegeleverde citaat maakt nog geen concept", () => {
+  // Sinds het citaat gewone inhoud van de opsteller is, staat het ín `body`.
+  // Een antwoord openen en meteen wegklikken hoort daarom nog steeds géén
+  // "Concept"-label achter te laten.
+  const quoted = buildComposeBodyWithQuote(
+    buildQuoteBlock({ label: "Op 1 mei schreef Klant:", bodyHtml: "<p>Wat kost dit?</p>" }),
+  );
+  const base = { mode: "reply" as const, to: "a@b.nl", cc: "", bcc: "", subject: "Re: X", body: quoted };
+  assert.equal(hasDraftContent(base), false, "alleen het citaat is niet getypt");
+  assert.equal(
+    hasDraftContent({ ...base, body: `<p>Ik kijk ernaar.</p>${quoted}` }),
+    true,
+    "zodra er tekst boven het citaat staat, is het wél een concept",
+  );
 });
 
 test("hasDraftContent: bij een nieuw bericht telt ook een ingevuld adres of onderwerp", () => {

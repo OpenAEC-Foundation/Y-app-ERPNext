@@ -35,6 +35,9 @@
  * deze module veroorzaakt wordt.
  */
 
+import { isHtmlEmpty } from "./mail-html.ts";
+import { splitQuoteFromBody } from "./mail-quote.ts";
+
 /** Hoeveel concepten er maximaal bewaard blijven, nieuwste eerst. */
 export const MAX_DRAFTS = 50;
 /** Ouder dan dit → weg. 30 dagen: lang genoeg voor "ik pak het maandag op". */
@@ -101,11 +104,17 @@ export function newDraftKey(): string {
  * gebruiker. Bij een antwoord telt daarom alléén de getypte tekst; bij een
  * nieuw bericht telt ook een ingevulde geadresseerde of onderwerpregel, want
  * dáár heeft de gebruiker die zelf ingetikt.
+ *
+ * Sinds het citaat gewone inhoud van de opsteller is (zie `mail-quote.ts`),
+ * staat het geciteerde origineel ín `body`. Dat is niet "getypt": het wordt er
+ * door de app in gezet. Daarom eerst afsplitsen, en pas dan kijken of er nog
+ * iets zichtbaars overblijft — twee lege alinea's boven een citaat zijn geen
+ * concept.
  */
 export function hasDraftContent(draft: {
   mode: MailDraftMode; to: string; cc: string; bcc: string; subject: string; body: string;
 }): boolean {
-  if (draft.body.trim()) return true;
+  if (!isHtmlEmpty(splitQuoteFromBody(draft.body).typed)) return true;
   if (draft.mode !== "new") return false;
   return Boolean(draft.to.trim() || draft.cc.trim() || draft.bcc.trim() || draft.subject.trim());
 }

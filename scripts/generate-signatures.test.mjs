@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   requiredEnv,
   parseArgs,
+  SIGNATURE_GREETING,
   buildSignatureHtml,
   formatIban,
   resolveLogoUrl,
@@ -16,6 +17,7 @@ import {
 
 /** De marker van de vorige generatie — moet nog steeds herkend worden. */
 const MARKER_V1 = "<!-- y-next-signature v1 -->";
+const MARKER_V2 = "<!-- y-next-signature v2 -->";
 
 /* ────────────────────────────── helpers ────────────────────────────── */
 
@@ -183,9 +185,10 @@ test("parseArgs: --dry-run en --force", () => {
 
 /* ───────────────────────────── HTML-opbouw ───────────────────────────── */
 
-test("buildSignatureHtml: toont alle ERPNext-gegevens en sluit af met de v2-marker", () => {
+test("buildSignatureHtml: toont alle ERPNext-gegevens en sluit af met de v3-marker", () => {
   const html = buildSignatureHtml(FULL_PERSON);
 
+  assert.match(html, /Met vriendelijke groet,/);
   assert.match(html, /Bjorn Fidder/);
   assert.match(html, /Projectleider/);
   assert.match(html, /OpenAEC Studio BV/);
@@ -198,6 +201,35 @@ test("buildSignatureHtml: toont alle ERPNext-gegevens en sluit af met de v2-mark
   assert.match(html, /KvK 99480697 · BTW NL869009096B01 · IBAN NL95 RABO 0169 7495 09/);
   assert.ok(html.endsWith(SIGNATURE_MARKER));
   assert.ok(hasMarker(html));
+});
+
+test("buildSignatureHtml: opent met de groet, precies één keer en boven de naam", () => {
+  const html = buildSignatureHtml(FULL_PERSON);
+  assert.equal(SIGNATURE_GREETING, "Met vriendelijke groet,");
+  const hits = html.split(SIGNATURE_GREETING).length - 1;
+  assert.equal(hits, 1, "de groet hoort er precies één keer in te staan");
+  assert.ok(
+    html.indexOf(SIGNATURE_GREETING) < html.indexOf("Bjorn Fidder"),
+    "de groet staat bóven de naam",
+  );
+  // Ruimte via padding, niet via lege regels — een `<br>` of lege div zou in
+  // Outlook een ongelijke afstand geven.
+  assert.ok(!html.includes("<br"));
+  assert.ok(!/<div[^>]*>\s*<\/div>/.test(html));
+});
+
+test("buildSignatureHtml: de groet erft de typografie van de rest, geen eigen lettertype", () => {
+  const html = buildSignatureHtml(FULL_PERSON);
+  const greetDiv = html.slice(html.indexOf("<div"), html.indexOf(SIGNATURE_GREETING));
+  assert.ok(!/font-family/.test(greetDiv), "geen eigen lettertype");
+  assert.ok(!/font-size/.test(greetDiv), "geen eigen tekstgrootte");
+  assert.match(greetDiv, /padding-bottom:6px/, "alleen wat lucht onder de groet");
+});
+
+test("buildSignatureHtml: ook de kaalste handtekening groet", () => {
+  const minimal = buildSignatureHtml({ fullName: "Naam Zonder Rest" });
+  assert.match(minimal, /Met vriendelijke groet,/);
+  assert.ok(minimal.indexOf(SIGNATURE_GREETING) < minimal.indexOf("Naam Zonder Rest"));
 });
 
 test("buildSignatureHtml: mailclient-veilig — tabel, inline styles, geen flex/grid of webfonts", () => {
@@ -237,9 +269,9 @@ test("buildSignatureHtml: ontbrekende velden geven géén lege regels", () => {
     email: "jan@example.com",
   });
 
-  // Alleen naam, bedrijf en de contactregel — geen lege div, geen losse
-  // scheidingsstip, geen kale tel:/http-link, geen adres- of voetregel.
-  assert.equal(html.split("<div").length - 1, 3);
+  // Alleen de groet, naam, bedrijf en de contactregel — geen lege div, geen
+  // losse scheidingsstip, geen kale tel:/http-link, geen adres- of voetregel.
+  assert.equal(html.split("<div").length - 1, 4);
   assert.ok(!/<div[^>]*>\s*<\/div>/.test(html));
   assert.ok(!html.includes("tel:"));
   assert.ok(!html.includes('href="https://"'));
@@ -249,11 +281,11 @@ test("buildSignatureHtml: ontbrekende velden geven géén lege regels", () => {
   assert.match(html, /Jan Heikens/);
 });
 
-test("buildSignatureHtml: volledig = acht regels; kaal = één regel", () => {
-  assert.equal(buildSignatureHtml(FULL_PERSON).split("<div").length - 1, 8);
+test("buildSignatureHtml: volledig = negen regels; kaal = groet plus naam", () => {
+  assert.equal(buildSignatureHtml(FULL_PERSON).split("<div").length - 1, 9);
 
   const minimal = buildSignatureHtml({ fullName: "Naam Zonder Rest" });
-  assert.equal(minimal.split("<div").length - 1, 1);
+  assert.equal(minimal.split("<div").length - 1, 2);
   assert.ok(!minimal.includes("mailto:"));
   assert.ok(!minimal.includes("<img"));
 });
@@ -326,10 +358,13 @@ test("decideAction: leeg schrijven, marker overschrijven, maatwerk overslaan (te
   assert.equal(decideAction("<p>zelfgemaakt</p>", true), "write");
 });
 
-test("hasMarker: herkent óók de v1-marker, zodat oude handtekeningen worden bijgewerkt", () => {
+test("hasMarker: herkent óók v1 en v2, zodat oude handtekeningen worden bijgewerkt", () => {
   assert.notEqual(SIGNATURE_MARKER, MARKER_V1);
+  assert.notEqual(SIGNATURE_MARKER, MARKER_V2);
   assert.ok(hasMarker(`<table>...</table>${MARKER_V1}`));
+  assert.ok(hasMarker(`<table>...</table>${MARKER_V2}`));
   assert.equal(decideAction(`<table>...</table>${MARKER_V1}`, false), "write");
+  assert.equal(decideAction(`<table>...</table>${MARKER_V2}`, false), "write");
   // Frappe's sanitizer mag de comment normaliseren zonder dat we 'm kwijtraken.
   assert.ok(hasMarker("<!--  y-next-signature v1  -->"));
   assert.ok(!hasMarker("<p>Groet, Bjorn</p>"));
@@ -474,8 +509,8 @@ test("generateSignatures: een bestaande gegenereerde handtekening wordt bijgewer
   assert.deepEqual(log.lines, ["Bjorn Fidder: bijgewerkt."]);
 });
 
-test("generateSignatures: een v1-handtekening wordt bijgewerkt naar v2", async () => {
-  const users = [{ ...FULL_USER, email_signature: `<table>oud</table>${MARKER_V1}` }];
+test("generateSignatures: een v2-handtekening wordt bijgewerkt naar v3, mét groet", async () => {
+  const users = [{ ...FULL_USER, email_signature: `<table>oud</table>${MARKER_V2}` }];
   const mock = installFetchMock((url, init) => {
     if (init?.method === "PUT") return { status: 200, body: { data: {} } };
     return backend(users)(url);
@@ -486,7 +521,8 @@ test("generateSignatures: een v1-handtekening wordt bijgewerkt naar v2", async (
     assert.deepEqual(result.written, ["bjorn@example.com"]);
     const payload = JSON.parse(mock.puts()[0].init.body);
     assert.ok(payload.email_signature.endsWith(SIGNATURE_MARKER));
-    assert.ok(!payload.email_signature.includes(MARKER_V1));
+    assert.ok(!payload.email_signature.includes(MARKER_V2));
+    assert.match(payload.email_signature, /Met vriendelijke groet,/);
     assert.match(payload.email_signature, /IBAN NL95 RABO 0169 7495 09/);
   } finally {
     log.restore();

@@ -69,6 +69,18 @@ const ALLOWED_TAGS = new Set([
 /** Attributen die op élk toegestaan element mogen blijven staan. */
 const GLOBAL_ATTRS = new Set(["style", "dir", "lang", "title"]);
 
+/**
+ * De enige `data-*`-attributen die het filter overleven.
+ *
+ * `data-y-quote` markeert het geciteerde origineel in het opstelvenster (zie
+ * `mail-quote.ts`). Het moet door dit filter komen, want élke inhoud die de
+ * editor in gaat — ook een teruggehaald concept — passeert `sanitizeEditorHtml`,
+ * en zonder de markering weet het verzendpad niet meer waar de tekst ophoudt
+ * en het citaat begint. Een `data-`-attribuut kan niets uitvoeren en de waarde
+ * wordt hoe dan ook ge-escaped; de rest van de `data-*`-ruimte blijft dicht.
+ */
+const ALLOWED_DATA_ATTRS = new Set(["data-y-quote"]);
+
 /** Extra attributen per tag. Alles wat hier niet staat, valt weg. */
 const TAG_ATTRS: Record<string, Set<string>> = {
   a: new Set(["href", "target", "rel"]),
@@ -82,6 +94,7 @@ const TAG_ATTRS: Record<string, Set<string>> = {
   ol: new Set(["start", "type"]),
   ul: new Set(["type"]),
   li: new Set(["value"]),
+  blockquote: new Set(["data-y-quote"]),
 };
 
 /**
@@ -335,7 +348,8 @@ function cleanTag(name: string, attrs: Attr[], allowDataImage: boolean): CleanTa
   const extra = TAG_ATTRS[name];
   const kept: Attr[] = [];
   for (const a of attrs) {
-    if (a.name.startsWith("on") || a.name.startsWith("data-") || a.name.startsWith("xmlns")) continue;
+    if (a.name.startsWith("on") || a.name.startsWith("xmlns")) continue;
+    if (a.name.startsWith("data-") && !ALLOWED_DATA_ATTRS.has(a.name)) continue;
     if (!GLOBAL_ATTRS.has(a.name) && !(extra && extra.has(a.name))) continue;
     if (a.name === "style") {
       const style = sanitizeStyle(a.value);
