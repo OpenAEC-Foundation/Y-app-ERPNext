@@ -979,6 +979,76 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
   });
 }
 
+/* ─── Gesprekken in de lijst: de ontbrekende leden erbij halen ─── */
+
+/**
+ * Hoeveel zichtbare berichten er hooguit meegaan in de aanvullende query. De
+ * lijst toont er standaard 50 per pagina; wie tien keer "Meer laden" klikt
+ * krijgt niet ook een `IN`-clausule met vijfhonderd namen.
+ */
+const MAX_COMPANION_SEEDS = 120;
+
+/**
+ * De berichten die de zichtbare gesprekken compleet maken, maar zelf niet in
+ * de huidige map staan — in de praktijk je eigen verzonden antwoorden, die
+ * alleen in "Verzonden" staan en dus in Postvak IN ontbreken.
+ *
+ * **Twee begrensde queries, geen scan van de Verzonden-map.** Beide lopen over
+ * een `IN`-lijst van namen die de lijst al kent:
+ *
+ * 1. `in_reply_to in [zichtbare namen]` — alles wat een antwoord is op iets in
+ *    beeld (jouw verzonden reactie, maar ook een antwoord dat in een andere
+ *    map beland is).
+ * 2. `name in [ontbrekende ouders]` — de berichten waarnaar een zichtbare mail
+ *    verwijst maar die zelf niet in de lijst staan (`missingParentNames`).
+ *
+ * Dat is dus **hooguit twee extra requests per lijst**, ongeacht hoeveel rijen
+ * er staan — geen query per regel. Mislukt een tak (rechten, netwerk), dan
+ * levert hij een lege lijst: een gesprek dat één lid mist is een kleiner
+ * probleem dan een lijst die niet laadt.
+ *
+ * Getrashte berichten blijven eruit (`NOT_TRASHED`): een weggegooid antwoord
+ * hoort niet als thread-lid terug te komen onder een mail in Postvak IN.
+ */
+export async function fetchThreadCompanions(
+  messages: { name: string; inReplyTo?: string }[],
+): Promise<ErpMailMessage[]> {
+  const seeds = messages.slice(0, MAX_COMPANION_SEEDS);
+  const names = seeds.map((m) => m.name).filter(Boolean);
+  if (names.length === 0) return [];
+
+  const known = new Set(names);
+  const parents: string[] = [];
+  for (const msg of seeds) {
+    const parent = msg.inReplyTo;
+    if (!parent || known.has(parent) || parents.includes(parent)) continue;
+    parents.push(parent);
+  }
+
+  const query = (filters: unknown[][]) =>
+    fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [["communication_type", "=", "Communication"], NOT_TRASHED, ...filters],
+      order_by: "communication_date desc",
+      limit_page_length: MAX_COMPANION_SEEDS,
+    }).catch(() => [] as Record<string, unknown>[]);
+
+  const [replies, ancestors] = await Promise.all([
+    query([["in_reply_to", "in", names]]),
+    parents.length > 0 ? query([["name", "in", parents]]) : Promise.resolve([]),
+  ]);
+
+  const out: ErpMailMessage[] = [];
+  const seen = new Set(known);
+  for (const row of [...replies, ...ancestors]) {
+    const name = toStr(row.name);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(mapMessage(row, folderForRow(row)));
+  }
+  return out;
+}
+
 /**
  * De handtekening van de ingelogde medewerker, als HTML.
  *

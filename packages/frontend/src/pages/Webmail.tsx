@@ -104,11 +104,17 @@ import {
   bulkMarkHandled, bulkMarkUnhandled, filterUnhandled,
   bulkMarkRead, bulkMarkUnread, getConversation, getSignature,
   getQueueStatusFor, createCustomFolder, deleteCustomFolder, tagMessage,
-  unseenCount,
+  unseenCount, fetchThreadCompanions,
   MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT, MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH,
   MAIL_FOLDER_HANDLED,
   type ErpMailMessage, type ErpMailFolder, type BulkOutcome,
 } from "../lib/mail-erpnext";
+import { groupThreads, type MailThread } from "../lib/mail-threads";
+import {
+  deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
+  newDraftKey, saveDraft, standaloneDrafts,
+  type MailDraftMap, type StoredMailDraft,
+} from "../lib/mail-drafts";
 import {
   categoryOfDoctype, connectionFolderId, describeConnectionFolder, invalidateConnectionIndex,
   isConnectionFolder, loadConnectionIndex, peekConnectionIndex,
@@ -3788,6 +3794,15 @@ const ERP_POLL_MS = 60_000;
 /** Zoekterm-debounce. Elke toetsaanslag is anders een lijstquery. */
 const ERP_SEARCH_DEBOUNCE_MS = 330;
 
+/**
+ * Hoe lang de opsteller stil moet zijn voordat het concept wordt weggeschreven.
+ * Kort genoeg dat een snelle wissel niets kost, lang genoeg dat normaal typen
+ * niet elke aanslag naar localStorage schrijft. Het wegklikken/wisselen
+ * schrijft daarnaast altijd meteen weg (`persistDraft`), dus dit venster kan
+ * nooit tekst kosten.
+ */
+const DRAFT_SAVE_DEBOUNCE_MS = 500;
+
 /** Bijlagetype dat `sendMail` accepteert. Afgeleid uit de adapter-signatuur,
  *  want het lucide-icoon `File` schaduwt de globale `File`-naam in dit
  *  bestand — `File[]` zou hier dus het verkeerde ding betekenen. */
@@ -3795,6 +3810,14 @@ type MailAttachmentFile = NonNullable<Parameters<typeof sendMail>[0]["attachment
 
 interface ErpDraft {
   mode: "new" | "reply" | "replyAll" | "forward";
+  /**
+   * Sleutel waaronder dit concept lokaal bewaard wordt (zie `lib/mail-drafts`).
+   * Zit in de opsteller-state zodat élke toetsaanslag naar dezelfde sleutel
+   * schrijft, ook nadat de gebruiker tussendoor een andere mail opende.
+   */
+  draftKey: string;
+  /** Communication waarop dit een antwoord/doorsturen is — voor het lijstlabel. */
+  draftMessageName?: string;
   to: string;
   cc: string;
   bcc: string;
@@ -3924,6 +3947,16 @@ function ErpNextWebmail() {
   const [bodyLoading, setBodyLoading] = useState(false);
   const [thread, setThread] = useState<ErpMailMessage[]>([]);
 
+  /**
+   * De verzonden (of anderszins buiten deze map staande) berichten die de
+   * zichtbare gesprekken compleet maken. Aparte state, bewust níet samengevoegd
+   * met `messages`: ze mogen geen eigen regel worden en niet meetellen in de
+   * paginering of de mappentellers — zie `groupThreads` in `lib/mail-threads`.
+   */
+  const [threadExtras, setThreadExtras] = useState<ErpMailMessage[]>([]);
+  /** Welke gesprekken staan uitgeklapt? Standaard alles dicht, met een teller. */
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(() => new Set());
+
   /** Meervoudige selectie voor de bulkbalk. */
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const lastClickedRef = useRef<number | null>(null);
@@ -3931,6 +3964,13 @@ function ErpNextWebmail() {
 
   const [draft, setDraft] = useState<ErpDraft | null>(null);
   const [sending, setSending] = useState(false);
+  /**
+   * Alle lokaal bewaarde concepten van deze instance. Eén keer inlezen bij het
+   * openen van de mailpagina; daarna is deze state de bron voor het
+   * "Concept"-label in de lijst en houdt `persistDraft` hem gelijk met
+   * localStorage.
+   */
+  const [drafts, setDrafts] = useState<MailDraftMap>(() => loadDrafts(getActiveInstanceId()));
 
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
@@ -4085,6 +4125,10 @@ function ErpNextWebmail() {
     setBody(null);
     setThread([]);
     setChecked(new Set());
+    // Uitgeklapte gesprekken horen bij de lijst die nu vervangen wordt; ze
+    // laten staan zou in de nieuwe map willekeurige rijen opengevouwen tonen.
+    setExpandedThreads(new Set());
+    setThreadExtras([]);
     lastClickedRef.current = null;
   }, []);
 
@@ -4240,6 +4284,53 @@ function ErpNextWebmail() {
     if (unhandledOnly && !isHandledFolder) rows = filterUnhandled(rows);
     return rows;
   }, [messages, unreadOnly, isUnreadFolder, unhandledOnly, isHandledFolder]);
+
+  /* ─── Gesprekken in de lijst ─── */
+
+  /**
+   * Haal de ontbrekende gespreksleden erbij (typisch je eigen verzonden
+   * antwoorden, die alleen in "Verzonden" staan).
+   *
+   * Hangt aan `messages`, niet aan `filteredMessages`: de lijstfilters bepalen
+   * wat je ziet, niet welk gesprek er bestaat — anders zou elke klik op
+   * "alleen ongelezen" opnieuw twee queries afvuren. De handtekening van de
+   * namen voorkomt dat een verse array met dezelfde inhoud (stille
+   * achtergrondverversing) het effect opnieuw laat lopen.
+   */
+  const messageSignature = useMemo(() => messages.map((m) => m.name).join(","), [messages]);
+  useEffect(() => {
+    let cancelled = false;
+    // Via de ref, zodat de handtekening de enige afhankelijkheid is: een verse
+    // array met dezelfde namen mag geen tweede ronde queries opleveren.
+    const seeds = messagesRef.current.map((m) => ({
+      name: m.name, ...(m.inReplyTo ? { inReplyTo: m.inReplyTo } : {}),
+    }));
+    fetchThreadCompanions(seeds)
+      .then((rows) => { if (!cancelled) setThreadExtras(rows); })
+      // Zonder de aanvulling toont de lijst gewoon de gesprekken die uit de
+      // map zelf af te leiden zijn — een gemist verzonden antwoord is geen
+      // reden om een foutmelding te tonen.
+      .catch(() => { if (!cancelled) setThreadExtras([]); });
+    return () => { cancelled = true; };
+  }, [messageSignature]);
+
+  /**
+   * De zichtbare regels. Gefilterd wordt vóór het groeperen: de filters zeggen
+   * "toon me alleen deze mails", dus een weggefilterd lid hoort ook niet
+   * ingeklapt onder een kop mee te reizen.
+   */
+  const threads = useMemo(
+    () => groupThreads(filteredMessages, threadExtras),
+    [filteredMessages, threadExtras],
+  );
+
+  const toggleThread = useCallback((id: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   /**
    * Welke rijen in de lijst een "Inkoopfactuur"-labeltje krijgen.
@@ -4626,11 +4717,100 @@ function ErpNextWebmail() {
     });
   }, [shiftUnseenBaseline, t]);
 
+  /* ─── Concepten: automatisch bewaren, lokaal per apparaat ─── */
+
+  /** De instance wisselt niet terwijl deze pagina openstaat. */
+  const instanceId = useMemo(() => getActiveInstanceId(), []);
+
+  /**
+   * Spiegel van het open concept, synchroon leesbaar. Het wegklikken van de
+   * opsteller ruimt de gedebouncete timer op — zonder deze spiegel zouden de
+   * laatste toetsaanslagen dáármee verdwijnen, precies het verlies dat deze
+   * hele functie moet voorkomen.
+   */
+  const draftRef = useRef<ErpDraft | null>(null);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+
+  const persistDraft = useCallback((d: ErpDraft | null) => {
+    if (!d) return;
+    setDrafts(saveDraft(instanceId, {
+      key: d.draftKey,
+      mode: d.mode,
+      ...(d.draftMessageName ? { messageName: d.draftMessageName } : {}),
+      to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body,
+      includeSignature: d.includeSignature,
+      quoteHtml: d.quoteHtml, quoteLabel: d.quoteLabel,
+      ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
+      ...(d.reference ? { reference: d.reference } : {}),
+    }));
+  }, [instanceId]);
+
+  // Tijdens het typen: één schrijfactie per rustmoment in plaats van per
+  // toetsaanslag.
+  useEffect(() => {
+    if (!draft) return;
+    const id = window.setTimeout(() => persistDraft(draft), DRAFT_SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [draft, persistDraft]);
+
+  // Vangnet bij het verlaten van de mailpagina (navigeren, tab sluiten).
+  useEffect(() => () => { persistDraft(draftRef.current); }, [persistDraft]);
+
+  /** Sluit de opsteller, maar bewaar eerst wat er staat. */
+  const closeDraft = useCallback(() => {
+    persistDraft(draftRef.current);
+    setDraft(null);
+  }, [persistDraft]);
+
+  /** Een bewaard concept terug naar de vorm die de opsteller kent. */
+  const draftFromStored = useCallback((d: StoredMailDraft): ErpDraft => ({
+    mode: d.mode,
+    draftKey: d.key,
+    ...(d.messageName ? { draftMessageName: d.messageName } : {}),
+    to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body,
+    quoteHtml: d.quoteHtml, quoteLabel: d.quoteLabel,
+    includeSignature: d.includeSignature,
+    ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
+    ...(d.reference ? { reference: d.reference } : {}),
+    // Bijlagen zijn niet serialiseerbaar — zie `lib/mail-drafts`.
+    files: [],
+  }), []);
+
+  const resumeDraft = useCallback((stored: StoredMailDraft) => {
+    persistDraft(draftRef.current);
+    setDraft(draftFromStored(stored));
+    setShowLinkPicker(false);
+    if (isMobile) setMobilePane("message");
+  }, [draftFromStored, isMobile, persistDraft]);
+
+  /**
+   * Weggooien is de enige manier waarop een concept verdwijnt zonder dat het
+   * verstuurd is, en dus de enige die een bevestiging verdient.
+   */
+  const discardDraft = useCallback((key: string) => {
+    if (!window.confirm(t("y_next.mail_draft_discard_confirm"))) return;
+    setDrafts(deleteDraft(instanceId, key));
+    setDraft((prev) => (prev && prev.draftKey === key ? null : prev));
+    setToast(t("y_next.mail_draft_discarded"));
+  }, [instanceId, t]);
+
+  /** Berichten met een onafgemaakt antwoord — voor het label in de lijst. */
+  const draftNames = useMemo(() => draftMessageNames(drafts), [drafts]);
+  /** Losstaande nieuwe berichten; die horen bij geen enkele regel. */
+  const looseDrafts = useMemo(() => standaloneDrafts(drafts), [drafts]);
+  const selectedDraft = useMemo(
+    () => (selected ? draftForMessage(drafts, selected.name) : undefined),
+    [drafts, selected],
+  );
+
   const openMessage = useCallback(async (msg: ErpMailMessage) => {
     setSelected(msg);
     // Eerste geopende mail is het moment waarop de connecties nodig zijn — en
     // laat genoeg dat de mailpagina er niet op wacht.
     ensureConnIndex();
+    // Naar een andere mail springen mag een half getypt antwoord niet kosten —
+    // dat is precies waar de conceptopslag voor is.
+    persistDraft(draftRef.current);
     setDraft(null);
     setShowLinkPicker(false);
     // De boekingsmelding hoort bij de vórige mail; hem laten staan zou het
@@ -4652,7 +4832,7 @@ function ErpNextWebmail() {
     } finally {
       setBodyLoading(false);
     }
-  }, [applySeen, isMobile, t, ensureConnIndex]);
+  }, [applySeen, isMobile, t, ensureConnIndex, persistDraft]);
 
   /* ─── Conversatie: serverzijdig over de in_reply_to-graaf ─── */
   const selectedName = selected?.name ?? "";
@@ -4667,19 +4847,51 @@ function ErpNextWebmail() {
     return () => { cancelled = true; };
   }, [selectedName]);
 
+  /**
+   * Wat er als conversatie bóven de mail staat: de vereniging van twee
+   * bronnen. De server loopt de `in_reply_to`-boom af (ook buiten de geladen
+   * lijst), de lijstgroepering pakt daarnaast de doorgestuurde en
+   * losgeraakte berichten op (onderwerp + deelnemers) plus de apart opgehaalde
+   * verzonden antwoorden.
+   *
+   * Zonder die vereniging zou de lijstregel "4 berichten" zeggen en het
+   * leespaneel eronder "(2)" — één conversatie, twee getallen.
+   */
+  const conversationRows = useMemo(() => {
+    if (!selected) return [] as ErpMailMessage[];
+    const byName = new Map<string, ErpMailMessage>();
+    for (const m of thread) byName.set(m.name, m);
+    const listThread = threads.find((th) => th.names.includes(selected.name));
+    if (listThread) for (const m of listThread.messages) if (!byName.has(m.name)) byName.set(m.name, m);
+    byName.set(selected.name, byName.get(selected.name) ?? selected);
+    return [...byName.values()].sort((a, b) => {
+      if (a.date === b.date) return a.name.localeCompare(b.name);
+      return a.date < b.date ? -1 : 1;
+    });
+  }, [thread, threads, selected]);
+
   /* ─── Selectie ─── */
 
-  const toggleChecked = useCallback((name: string) => {
+  /**
+   * Een vinkje op een regel zet het hele gesprek aan of uit — dat is wat de
+   * regel voorstelt. Bulkacties raken daardoor álle leden; de bulkbalk toont
+   * het aantal berichten, niet het aantal regels, zodat "3 berichten
+   * verwijderen" nooit als verrassing komt.
+   */
+  const toggleChecked = useCallback((names: string[]) => {
     setChecked((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      const on = names.some((n) => !next.has(n));
+      for (const name of names) { if (on) next.add(name); else next.delete(name); }
       return next;
     });
   }, []);
 
-  const handleRowClick = useCallback((msg: ErpMailMessage, index: number, e: React.MouseEvent) => {
+  const handleRowClick = useCallback((
+    thread: MailThread<ErpMailMessage>, index: number, e: React.MouseEvent,
+  ) => {
     if (e.ctrlKey || e.metaKey) {
-      toggleChecked(msg.name);
+      toggleChecked(thread.names);
       lastClickedRef.current = index;
       return;
     }
@@ -4687,22 +4899,24 @@ function ErpNextWebmail() {
       const [from, to] = [lastClickedRef.current, index].sort((a, b) => a - b);
       setChecked((prev) => {
         const next = new Set(prev);
-        for (const m of filteredMessages.slice(from, to + 1)) next.add(m.name);
+        for (const th of threads.slice(from, to + 1)) for (const name of th.names) next.add(name);
         return next;
       });
       return;
     }
     lastClickedRef.current = index;
     setChecked(new Set());
-    void openMessage(msg);
-  }, [filteredMessages, openMessage, toggleChecked]);
+    void openMessage(thread.head);
+  }, [threads, openMessage, toggleChecked]);
 
-  const allChecked = filteredMessages.length > 0 && filteredMessages.every((m) => checked.has(m.name));
+  /** Alle namen die op de zichtbare regels staan (kop + leden). */
+  const visibleNames = useMemo(() => threads.flatMap((th) => th.names), [threads]);
+  const allChecked = visibleNames.length > 0 && visibleNames.every((n) => checked.has(n));
   const toggleAll = useCallback(() => {
-    setChecked((prev) => (prev.size >= filteredMessages.length && filteredMessages.length > 0
+    setChecked((prev) => (prev.size >= visibleNames.length && visibleNames.length > 0
       ? new Set()
-      : new Set(filteredMessages.map((m) => m.name))));
-  }, [filteredMessages]);
+      : new Set(visibleNames)));
+  }, [visibleNames]);
 
   /* ─── Prullenbak: weggooien, terugzetten, definitief verwijderen ─── */
 
@@ -5107,10 +5321,11 @@ function ErpNextWebmail() {
 
   /* ─── Slepen ─── */
 
-  const handleDragStart = useCallback((msg: ErpMailMessage, e: React.DragEvent) => {
+  const handleDragStart = useCallback((msg: ErpMailMessage, e: React.DragEvent, threadNames?: string[]) => {
     // Sleep je een aangevinkt bericht, dan gaat de hele selectie mee; sleep je
-    // een ander bericht, dan alleen dat ene (en blijft de selectie ongemoeid).
-    const names = checked.has(msg.name) ? [...checked] : [msg.name];
+    // een andere regel, dan gaat dat hele gesprek mee — dezelfde regel als het
+    // vinkje en de rij-acties, zodat "deze regel" overal hetzelfde betekent.
+    const names = checked.has(msg.name) ? [...checked] : (threadNames ?? [msg.name]);
     dragNamesRef.current = names;
     e.dataTransfer.setData("text/plain", names.join(","));
     e.dataTransfer.effectAllowed = "copyMove";
@@ -5197,8 +5412,10 @@ function ErpNextWebmail() {
   }
 
   function openCompose() {
+    persistDraft(draftRef.current);
     setDraft({
-      mode: "new", to: "", cc: "", bcc: "", subject: "", body: "",
+      mode: "new", draftKey: newDraftKey(),
+      to: "", cc: "", bcc: "", subject: "", body: "",
       quoteHtml: "", quoteLabel: "",
       includeSignature: true,
       reference: folderReference(),
@@ -5211,14 +5428,23 @@ function ErpNextWebmail() {
   function openReply(all: boolean) {
     const msg = selected;
     if (!msg) return;
+    // Was er al een antwoord begonnen op deze mail? Dan is "beantwoorden"
+    // hetzelfde als "hervatten" — een leeg venster zou de bewaarde tekst
+    // overschrijven zodra de gebruiker weer iets typt.
+    const key = draftKeyFor(all ? "replyAll" : "reply", msg.name);
+    const saved = drafts[key];
+    if (saved) { resumeDraft(saved); return; }
     const label = t("webmail.reply_quote_header", {
       date: formatFullDate(msg.date),
       name: msg.senderName || msg.sender,
       email: msg.sender,
     });
     const recipients = buildReplyRecipients(msg, selfEmail, all);
+    persistDraft(draftRef.current);
     setDraft({
       mode: all ? "replyAll" : "reply",
+      draftKey: key,
+      draftMessageName: msg.name,
       to: recipients.to,
       cc: recipients.cc,
       bcc: "",
@@ -5237,6 +5463,9 @@ function ErpNextWebmail() {
   function openForward() {
     const msg = selected;
     if (!msg) return;
+    const fwdKey = draftKeyFor("forward", msg.name);
+    const savedFwd = drafts[fwdKey];
+    if (savedFwd) { resumeDraft(savedFwd); return; }
     const label = t("webmail.forward_quote_header", {
       name: msg.senderName || msg.sender,
       email: msg.sender,
@@ -5248,8 +5477,11 @@ function ErpNextWebmail() {
     const attachLine = attachNames
       ? `<p style="color:#64748b">${textBodyToHtml(t("y_next.mail_forward_attachments", { names: attachNames }))}</p>`
       : "";
+    persistDraft(draftRef.current);
     setDraft({
       mode: "forward",
+      draftKey: fwdKey,
+      draftMessageName: msg.name,
       to: "",
       cc: "",
       bcc: "",
@@ -5299,6 +5531,9 @@ function ErpNextWebmail() {
       for (const address of parseRecipientEmails([draft.to, draft.cc, draft.bcc].filter(Boolean).join(", "))) {
         bumpFrequency(instanceId, address, "");
       }
+      // Verstuurd = afgemaakt: het concept hoort weg, anders blijft er een
+      // "Concept"-label staan bij een mail die je net beantwoord hebt.
+      setDrafts(deleteDraft(instanceId, draft.draftKey));
       setDraft(null);
       setToast(t("webmail.message_sent"));
       refreshAll();
@@ -5661,8 +5896,11 @@ function ErpNextWebmail() {
                 <input type="checkbox" checked={allChecked} onChange={toggleAll}
                   title={t("y_next.mail_select_all")}
                   className="mr-1 cursor-pointer" />
+                {/* Expliciet het aantal *berichten*: een vinkje op een
+                    gespreksregel selecteert al zijn leden, en de bulkactie
+                    hoort niet meer te raken dan hier staat. */}
                 <span className="text-[11px] font-medium text-blue-800">
-                  {t("webmail.n_selected", { count: checked.size })}
+                  {t("y_next.mail_n_messages_selected", { count: checked.size })}
                 </span>
                 <div className="flex-1" />
                 <button onClick={() => void handleBulkSeen(true)} title={withKeys(t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
@@ -5745,14 +5983,63 @@ function ErpNextWebmail() {
                   </button>
                 </div>
               )}
-              {!loading && !error && filteredMessages.length === 0 && (
+              {!loading && !error && threads.length === 0 && (
                 <div className="p-8 text-center text-sm text-slate-400">
                   {searching ? t("webmail.no_results") : t("webmail.no_messages")}
                 </div>
               )}
+              {/* Losstaande concepten — nieuwe berichten die nog niet de deur
+                  uit zijn. Ze hangen aan geen enkele mail, dus staan ze op één
+                  plek: bovenaan Postvak IN. Bewust niet óók in een eigen map;
+                  twee plekken voor hetzelfde concept is precies hoe je er één
+                  kwijtraakt. */}
+              {!searching && activeFolder === MAIL_FOLDER_INBOX && looseDrafts.length > 0 && (
+                <div className="border-b border-amber-200 bg-amber-50/50">
+                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                    {t("y_next.mail_drafts_section")}{" "}
+                    <span className="font-normal text-amber-600">({looseDrafts.length})</span>
+                  </div>
+                  {looseDrafts.map((d) => (
+                    <div
+                      key={d.key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => resumeDraft(d)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); resumeDraft(d); }
+                      }}
+                      title={t("y_next.mail_draft_resume")}
+                      className="group flex cursor-pointer items-start gap-2 border-t border-amber-100 py-2 pl-3 pr-3 hover:bg-amber-100/50">
+                      <PenSquare size={12} className="mt-1 flex-shrink-0 text-amber-600" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm text-slate-700">
+                            {d.to || t("y_next.mail_draft_no_recipient")}
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {formatDate(new Date(d.updatedAt).toISOString())}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                          {d.subject || t("webmail.no_subject")}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); discardDraft(d.key); }}
+                        title={t("y_next.mail_draft_discard")}
+                        className="mt-0.5 cursor-pointer rounded p-1 text-amber-500 hover:bg-white hover:text-red-600">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {(() => {
                 let lastGroup = "";
-                return filteredMessages.map((msg, index) => {
+                return threads.map((thread, index) => {
+                  // Eén regel per gesprek: de kop is het nieuwste bericht uit
+                  // deze map, de rest zit eronder (ingeklapt met een teller).
+                  const msg = thread.head;
                   const group = getDateGroup(msg.date);
                   const showHeader = group !== lastGroup;
                   lastGroup = group;
@@ -5762,8 +6049,23 @@ function ErpNextWebmail() {
                   const sentRow = isSentFolder || msg.folder === MAIL_FOLDER_SENT;
                   const who = sentRow ? (msg.recipients || msg.sender) : (msg.senderName || msg.sender);
                   const queue = queueStatus[msg.name];
+                  const members = thread.messages.filter((m) => m.name !== msg.name);
+                  // Staat er een ánder lid open, dan klapt het gesprek vanzelf
+                  // uit — anders is de mail die je leest onvindbaar in de lijst.
+                  const openMember = Boolean(selected && selected.name !== msg.name
+                    && thread.names.includes(selected.name));
+                  const expanded = expandedThreads.has(thread.id) || openMember;
+                  // De regel stáát voor het gesprek: vinkje en rij-acties raken
+                  // álle leden, en zeggen dat er met zoveel woorden bij.
+                  const rowNames = thread.names;
+                  const many = thread.count > 1;
+                  const countLabel = t("y_next.mail_thread_count", { count: thread.count });
+                  // Ongelezen op gespreksniveau: één ongelezen lid maakt de
+                  // regel vet, ook als de kop zelf al gelezen is.
+                  const unread = thread.unread;
+                  const hasDraft = rowNames.some((n) => draftNames.has(n));
                   return (
-                    <div key={msg.name}>
+                    <div key={thread.id}>
                       {showHeader && (
                         <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                           {group}
@@ -5773,9 +6075,9 @@ function ErpNextWebmail() {
                         role="button"
                         tabIndex={0}
                         draggable
-                        onDragStart={(e) => handleDragStart(msg, e)}
+                        onDragStart={(e) => handleDragStart(msg, e, rowNames)}
                         onDragEnd={() => { dragNamesRef.current = []; setDragOver(null); }}
-                        onClick={(e) => handleRowClick(msg, index, e)}
+                        onClick={(e) => handleRowClick(thread, index, e)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openMessage(msg); }
                         }}
@@ -5784,7 +6086,7 @@ function ErpNextWebmail() {
                         className={`group relative w-full text-left pl-3 pr-3 py-2.5 border-b border-slate-100 cursor-pointer transition-colors ${
                           isChecked ? "bg-blue-50 border-l-4 border-l-blue-500"
                             : isActive ? "bg-blue-100 border-l-4 border-l-blue-600"
-                            : !msg.seen ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
+                            : unread ? "bg-white border-l-2 border-l-blue-400 hover:bg-slate-50"
                             : "border-l-2 border-l-transparent hover:bg-slate-50"
                         }`}>
                         <div className={`flex items-start gap-2 ${
@@ -5796,12 +6098,15 @@ function ErpNextWebmail() {
                             type="checkbox"
                             checked={isChecked}
                             onClick={(e) => e.stopPropagation()}
-                            onChange={() => { toggleChecked(msg.name); lastClickedRef.current = index; }}
+                            onChange={() => { toggleChecked(rowNames); lastClickedRef.current = index; }}
+                            title={many
+                              ? t("y_next.mail_thread_select_all", { count: thread.count })
+                              : t("y_next.mail_select_all")}
                             className={`mt-1 cursor-pointer flex-shrink-0 ${isChecked ? "" : "opacity-0 group-hover:opacity-100"}`}
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className={`flex items-center gap-1 text-sm truncate ${!msg.seen ? "font-semibold text-slate-900" : "text-slate-700"}`}>
+                              <span className={`flex items-center gap-1 text-sm truncate ${unread ? "font-semibold text-slate-900" : "text-slate-700"}`}>
                                 {msg.handled && (
                                   <CheckCheck size={11} className="text-emerald-600 flex-shrink-0"
                                     aria-label={t("y_next.mail_handled")} />
@@ -5813,10 +6118,28 @@ function ErpNextWebmail() {
                                 <span className="text-[11px] text-slate-400">{formatDate(msg.date)}</span>
                               </div>
                             </div>
-                            <p className={`text-xs truncate mt-0.5 ${!msg.seen ? "font-medium text-slate-800" : "text-slate-500"}`}>
+                            <p className={`text-xs truncate mt-0.5 ${unread ? "font-medium text-slate-800" : "text-slate-500"}`}>
                               {msg.subject || t("webmail.no_subject")}
                             </p>
                             <div className="flex items-center gap-2 mt-0.5">
+                              {/* Gesprek: teller + uitklapper. Standaard dicht,
+                                  zodat de lijst één regel per gesprek blijft. */}
+                              {many && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleThread(thread.id); }}
+                                  title={expanded ? t("y_next.mail_thread_collapse") : t("y_next.mail_thread_expand")}
+                                  className="inline-flex flex-shrink-0 cursor-pointer items-center gap-0.5 rounded-full bg-slate-100 px-1.5 text-[10px] font-medium text-slate-600 hover:bg-slate-200">
+                                  {expanded ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+                                  {countLabel}
+                                </button>
+                              )}
+                              {/* Hier moet je nog iets afmaken. */}
+                              {hasDraft && (
+                                <span title={t("y_next.mail_draft_resume")}
+                                  className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                  <PenSquare size={9} /> {t("y_next.mail_draft_label")}
+                                </span>
+                              )}
                               {msg.reference?.doctype === "Project" && (
                                 <span className="text-[10px] text-emerald-600 truncate flex items-center gap-1">
                                   <FolderKanban size={10} /> {msg.reference.name}
@@ -5880,22 +6203,23 @@ function ErpNextWebmail() {
                             niet, dus daar staan ze permanent — anders is de
                             prullenbak op mobiel simpelweg onbereikbaar. Op
                             desktop verschijnen ze bij hover én bij
-                            toetsenbordfocus. */}
+                            toetsenbordfocus. Ze werken op het hele gesprek; de
+                            tooltip zegt om hoeveel berichten het gaat. */}
                         <div className={`absolute right-2 bottom-2 items-center gap-1 ${
                           isMobile ? "flex" : "hidden group-hover:flex group-focus-within:flex"
                         }`}>
                           {isTrashFolder && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); void handleRestore([msg.name]); }}
-                              title={t("y_next.mail_restore")}
+                              onClick={(e) => { e.stopPropagation(); void handleRestore(rowNames); }}
+                              title={many ? `${t("y_next.mail_restore")} · ${countLabel}` : t("y_next.mail_restore")}
                               className="p-1 rounded bg-white/90 text-slate-400 hover:text-emerald-700 cursor-pointer">
                               <RotateCcw size={12} />
                             </button>
                           )}
                           {!isTrashFolder && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); void applyHandled([msg.name], !msg.handled); }}
-                              title={msg.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}
+                              onClick={(e) => { e.stopPropagation(); void applyHandled(rowNames, !msg.handled); }}
+                              title={`${msg.handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled")}${many ? ` · ${countLabel}` : ""}`}
                               className={`p-1 rounded bg-white/90 cursor-pointer ${
                                 msg.handled ? "text-emerald-600 hover:text-slate-500" : "text-slate-400 hover:text-emerald-700"
                               }`}>
@@ -5903,13 +6227,63 @@ function ErpNextWebmail() {
                             </button>
                           )}
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteAction([msg.name]); }}
-                            title={isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteAction(rowNames); }}
+                            title={`${isTrashFolder ? t("y_next.mail_delete_forever") : t("y_next.mail_move_to_trash")}${many ? ` · ${countLabel}` : ""}`}
                             className="p-1 rounded bg-white/90 text-slate-400 hover:text-red-600 cursor-pointer">
                             <Trash2 size={12} />
                           </button>
                         </div>
                       </div>
+                      {/* De vorige berichten van dit gesprek: ingesprongen achter
+                          een dun lijntje, chronologisch (oudste eerst). Wat jij
+                          zelf verstuurde krijgt een pijltje en een label, zodat
+                          je in één oogopslag ziet wie wat zei. */}
+                      {expanded && members.length > 0 && (
+                        <div className="border-b border-slate-100 bg-slate-50/60 pl-6">
+                          <div className="border-l border-slate-200">
+                            {members.map((m) => {
+                              const memberSent = m.folder === MAIL_FOLDER_SENT;
+                              const memberWho = memberSent
+                                ? (m.recipients || m.sender)
+                                : (m.senderName || m.sender);
+                              const memberActive = selected?.name === m.name;
+                              const memberChecked = checked.has(m.name);
+                              return (
+                                <div
+                                  key={m.name}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => void openMessage(m)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openMessage(m); }
+                                  }}
+                                  className={`flex cursor-pointer items-center gap-2 border-t border-slate-100 py-1.5 pl-3 pr-3 text-xs first:border-t-0 ${
+                                    memberActive ? "bg-blue-100" : memberChecked ? "bg-blue-50" : "hover:bg-white"
+                                  }`}>
+                                  {memberSent
+                                    ? <Reply size={11} className="flex-shrink-0 -scale-x-100 text-blue-500"
+                                        aria-label={t("y_next.mail_thread_sent_label")} />
+                                    : <Mail size={11} className="flex-shrink-0 text-slate-400" />}
+                                  <span className={`truncate ${m.seen ? "text-slate-600" : "font-semibold text-slate-900"}`}>
+                                    {memberSent ? t("y_next.mail_thread_sent_label") : memberWho}
+                                  </span>
+                                  {memberSent && (
+                                    <span className="truncate text-[11px] text-slate-400">{memberWho}</span>
+                                  )}
+                                  {draftNames.has(m.name) && (
+                                    <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                                      <PenSquare size={9} /> {t("y_next.mail_draft_label")}
+                                    </span>
+                                  )}
+                                  <div className="flex-1" />
+                                  {m.hasAttachments && <Paperclip size={10} className="flex-shrink-0 text-slate-400" />}
+                                  <span className="flex-shrink-0 text-[11px] text-slate-400">{formatDate(m.date)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 });
@@ -5946,7 +6320,9 @@ function ErpNextWebmail() {
                 signature={signature}
                 onChange={setDraft}
                 onSend={() => void handleSend()}
-                onClose={() => setDraft(null)}
+                // Sluiten bewaart: alleen "concept verwijderen" gooit weg.
+                onClose={closeDraft}
+                onDiscard={() => discardDraft(draft.draftKey)}
               />
             ) : !selected ? (
               <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
@@ -6326,14 +6702,45 @@ function ErpNextWebmail() {
                   </div>
                 )}
 
-                {/* Conversatie — serverzijdig over de in_reply_to-graaf */}
-                {thread.length > 1 && (
+                {/* Onafgemaakt antwoord op deze mail.
+                    Bewust een knop en niet "het opstelvenster gaat vanzelf
+                    open": je klikte op een mail om hem te lézen, en het
+                    antwoordvenster zou die mail dan meteen weer wegduwen. De
+                    balk maakt zichtbaar dat er nog iets ligt en laat de keuze
+                    bij de gebruiker — één klik, en de tekst staat er weer. */}
+                {/* (Deze tak rendert alleen wanneer er géén opsteller open
+                    staat, dus de balk kan nooit naast zijn eigen concept staan.) */}
+                {selectedDraft && (
+                  <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2">
+                    <PenSquare size={14} className="flex-shrink-0 text-amber-600" />
+                    <span className="min-w-0 flex-1 truncate text-xs text-amber-900">
+                      {t("y_next.mail_draft_banner")}
+                      <span className="ml-1 text-amber-700/80">
+                        {selectedDraft.body.trim().slice(0, 80) || selectedDraft.subject}
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => resumeDraft(selectedDraft)}
+                      className="flex cursor-pointer items-center gap-1.5 rounded bg-amber-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-amber-700">
+                      <PenSquare size={11} /> {t("y_next.mail_draft_resume")}
+                    </button>
+                    <button
+                      onClick={() => discardDraft(selectedDraft.key)}
+                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100">
+                      {t("y_next.mail_draft_discard")}
+                    </button>
+                  </div>
+                )}
+
+                {/* Conversatie — de in_reply_to-graaf van de server, verenigd
+                    met de gespreksgroepering uit de lijst (zie conversationRows). */}
+                {conversationRows.length > 1 && (
                   <div className="px-5 py-2 border-b border-slate-100 bg-slate-50 flex-shrink-0">
                     <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
-                      {t("webmail.thread_all_messages", { count: thread.length })}
+                      {t("webmail.thread_all_messages", { count: conversationRows.length })}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {thread.map((m) => {
+                      {conversationRows.map((m) => {
                         const current = m.name === selected.name;
                         return (
                           <button key={m.name} disabled={current} onClick={() => void openMessage(m)}
@@ -6481,14 +6888,17 @@ function ErpNextWebmail() {
 const RECIPIENT_INPUT_CLASS =
   "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
 
-function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }: {
+function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, onDiscard }: {
   draft: ErpDraft;
   sending: boolean;
   /** Volledige handtekening-HTML; "" = de gebruiker heeft er geen. */
   signature: string;
   onChange: (next: ErpDraft) => void;
   onSend: () => void;
+  /** Wegklikken — de tekst blijft als concept bewaard. */
   onClose: () => void;
+  /** Weggooien — de enige manier waarop een concept verdwijnt zonder verzenden. */
+  onDiscard: () => void;
 }) {
   const { t } = useTranslation();
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
@@ -6512,10 +6922,21 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose }
             : draft.mode === "new" ? t("webmail.new_message")
             : t("webmail.reply")}
         </span>
-        <button onClick={onClose} title={t("common.close")}
-          className="p-1 rounded text-slate-400 hover:bg-slate-200 cursor-pointer">
-          <X size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* "Bewaard op dit apparaat" staat er letterlijk: het concept reist
+              niet mee naar een andere computer (zie lib/mail-drafts). */}
+          <span className="hidden text-[10px] text-slate-400 md:inline">
+            {t("y_next.mail_draft_autosave_hint")}
+          </span>
+          <button onClick={onDiscard} title={t("y_next.mail_draft_discard")}
+            className="p-1 rounded text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer">
+            <Trash2 size={14} />
+          </button>
+          <button onClick={onClose} title={t("y_next.mail_draft_close_keeps")}
+            className="p-1 rounded text-slate-400 hover:bg-slate-200 cursor-pointer">
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 py-2 space-y-1.5 border-b border-slate-200 flex-shrink-0">
