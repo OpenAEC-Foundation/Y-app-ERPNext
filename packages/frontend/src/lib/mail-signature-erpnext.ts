@@ -6,7 +6,7 @@
  * wijzigt in zijn User- of Employee-record, verwacht dat de volgende mail het
  * nieuwe nummer draagt — niet dat iemand ergens ook nog een blok HTML
  * bijwerkt. Daarom bouwen we hem bij elke keer opstellen opnieuw op uit de
- * bron: User (naam, telefoon, foto), Employee (functie, mobiel, bedrijf) en
+ * bron: User (naam, telefoon, foto), Employee (mobiel, bedrijf) en
  * Address (het vestigingsadres van dat bedrijf).
  *
  * Voor gedeelde postbussen (info@, cooperatie@) bestaat geen persoon; die
@@ -41,7 +41,6 @@ interface ErpUser {
 interface ErpEmployee {
   name: string;
   employee_name?: string;
-  designation?: string;
   cell_number?: string;
   company?: string;
   image?: string;
@@ -66,15 +65,6 @@ function esc(v: unknown): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-/**
- * Functienamen dragen een sorteervoorvoegsel ("A_", "B2_", "C5_") zodat ze in
- * ERPNext-lijsten op niveau gegroepeerd staan. Dat hoort niet onder iemands
- * naam in een mail.
- */
-export function schoonFunctie(designation: string): string {
-  return s(designation).replace(/^[A-Z]\d*_/, "").trim();
 }
 
 /**
@@ -114,7 +104,6 @@ export function opmaakOndertekening(input: {
   bedrijf: string;
 }): string {
   const { voor, rest } = splitsNaam(input.user, input.employee);
-  const functie = schoonFunctie(s(input.employee?.designation));
   const telefoon = kiesTelefoon(input.user, input.employee);
   const foto = kiesFoto(input.user, input.employee);
   const bedrijf = HANDELSNAAM[input.bedrijf] || input.bedrijf;
@@ -126,14 +115,10 @@ export function opmaakOndertekening(input: {
     const naam = `<strong style="color:${KLEUR_ACCENT}">${esc(voor)}</strong>`
       + (rest ? ` <span style="color:${KLEUR_DONKER}">${esc(rest)}</span>` : "");
     regels.push(foto
-      ? `<p style="margin:0 0 2px 0"><img src="${esc(foto)}" width="56" height="56"`
+      ? `<p style="margin:0 0 10px 0"><img src="${esc(foto)}" width="56" height="56"`
         + ` style="border-radius:50%;vertical-align:middle;margin-right:8px" alt=""> ${naam}</p>`
-      : `<p style="margin:0 0 2px 0">${naam}</p>`);
+      : `<p style="margin:0 0 10px 0">${naam}</p>`);
   }
-  if (functie) {
-    regels.push(`<p style="margin:0 0 10px 0;color:${KLEUR_DONKER};font-size:13px">${esc(functie)}</p>`);
-  }
-
   regels.push(`<p style="margin:0 0 8px 0"><a href="${WEBSITE}" rel="noopener noreferrer">`
     + `<img src="${LOGO_URL}" width="215" height="56" alt="${esc(bedrijf)}"></a></p>`);
 
@@ -179,7 +164,7 @@ export async function ondertekeningVoor(emailId: string, emailAccount?: string):
 
   try {
     const employees = await fetchList<ErpEmployee>("Employee", {
-      fields: ["name", "employee_name", "designation", "cell_number", "company", "image"],
+      fields: ["name", "employee_name", "cell_number", "company", "image"],
       filters: [["user_id", "=", adres], ["status", "=", "Active"]],
       limit_page_length: 1,
     });
