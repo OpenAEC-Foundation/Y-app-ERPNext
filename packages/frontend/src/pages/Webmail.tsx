@@ -135,6 +135,8 @@ import ImapSetup from "../components/mail/ImapSetup";
 import ReadingPane from "../components/mail/ReadingPane";
 import FloatingMailWindow from "../components/mail/FloatingMailWindow";
 import ComposeWindow from "../components/mail/ComposeWindow";
+import RichTextEditor from "../components/mail/RichTextEditor";
+import { toEmailHtml, ensureHtmlBody, htmlToPlainText, sanitizeEditorHtml } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
 import RecipientField from "../components/mail/RecipientField";
 import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
@@ -4767,7 +4769,11 @@ function ErpNextWebmail() {
     mode: d.mode,
     draftKey: d.key,
     ...(d.messageName ? { draftMessageName: d.messageName } : {}),
-    to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body,
+    to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject,
+    // Concepten van vóór de opmaak-editor staan als platte tekst opgeslagen;
+    // `ensureHtmlBody` maakt daar HTML van (en filtert HTML die er al is), zodat
+    // een oud concept zijn regeleindes houdt in plaats van één lange zin te worden.
+    body: ensureHtmlBody(d.body),
     quoteHtml: d.quoteHtml, quoteLabel: d.quoteLabel,
     includeSignature: d.includeSignature,
     ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
@@ -5501,13 +5507,14 @@ function ErpNextWebmail() {
     if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
     setSending(true);
     setToast(t("webmail.message_sending"));
-    // De handtekening zit niet in het tekstvak (dat is platte tekst, de
-    // handtekening is HTML) maar wordt hier onder de getypte tekst gezet —
-    // vóór het citaat, zoals elke mailclient doet. `buildOutgoingHtml` deelt
-    // zijn handtekening-afleiding met de preview in het opstelvenster, dus
-    // een uitgezette schakelaar betekent hier ook echt geen handtekening.
+    // De handtekening zit niet in het tekstvak maar wordt hier onder de
+    // getypte tekst gezet — vóór het citaat, zoals elke mailclient doet.
+    // `buildOutgoingHtml` deelt zijn handtekening-afleiding met de preview in
+    // het opstelvenster, dus een uitgezette schakelaar betekent hier ook echt
+    // geen handtekening. `toEmailHtml` maakt van de opgemaakte tekst
+    // mailclient-veilige HTML: whitelist, inline styles, geen classes.
     const html = buildOutgoingHtml({
-      bodyHtml: textBodyToHtml(draft.body),
+      bodyHtml: toEmailHtml(draft.body),
       signature,
       includeSignature: draft.includeSignature,
       quoteHtml: draft.quoteHtml,
@@ -6716,7 +6723,9 @@ function ErpNextWebmail() {
                     <span className="min-w-0 flex-1 truncate text-xs text-amber-900">
                       {t("y_next.mail_draft_banner")}
                       <span className="ml-1 text-amber-700/80">
-                        {selectedDraft.body.trim().slice(0, 80) || selectedDraft.subject}
+                        {/* De body is opgemaakte HTML; in een balk van één regel
+                            hoort de leesbare tekst, niet de tags. */}
+                        {htmlToPlainText(selectedDraft.body).slice(0, 80) || selectedDraft.subject}
                       </span>
                     </span>
                     <button
@@ -6904,6 +6913,9 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
+  // Het citaat staat ingeklapt: het gaat wél mee de deur uit (zie
+  // `buildOutgoingHtml`), maar het hoort het typvak niet weg te duwen.
+  const [showQuote, setShowQuote] = useState(false);
   // De frequentie-ranking van de adressuggesties hangt aan de instance; één
   // keer uitlezen volstaat, hij wisselt niet terwijl je een mail opstelt.
   const instanceId = useMemo(() => getActiveInstanceId(), []);
@@ -6981,9 +6993,16 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
         </label>
       </div>
 
-      <textarea value={draft.body} onChange={(e) => set("body", e.target.value)}
+      {/* Opmaak-editor in plaats van een kaal tekstvak: vet/cursief, lijsten,
+          koppen, kleur, links en citaten — zie `components/mail/RichTextEditor`.
+          De inhoud is HTML; `toEmailHtml` maakt hem bij verzenden mailveilig. */}
+      <RichTextEditor
+        value={draft.body}
+        onChange={(html) => set("body", html)}
         placeholder={t("webmail.editor_placeholder")}
-        className="flex-1 min-h-0 w-full px-4 py-3 text-sm text-slate-800 resize-none focus:outline-none" />
+        ariaLabel={t("webmail.editor_placeholder")}
+        className="flex-1 min-h-0"
+      />
 
       {/* Handtekening zoals hij verstuurd wordt — niet een belofte dat er
           later iets aangeplakt wordt, maar de echte HTML, hier al zichtbaar.
@@ -7018,10 +7037,24 @@ function ErpComposePane({ draft, sending, signature, onChange, onSend, onClose, 
         </div>
       )}
 
+      {/* Het geciteerde origineel — als citaatblok met de dunne lijn die de
+          ontvanger straks óók ziet, zodat herkenbaar is dat je erbóven typt.
+          Standaard ingeklapt: een lange draad zou anders het typvak wegduwen. */}
       {draft.quoteLabel && (
-        <div className="px-4 pb-2 text-[11px] text-slate-400 flex items-start gap-1 flex-shrink-0">
-          <Reply size={11} className="mt-0.5 flex-shrink-0" />
-          <span className="truncate">{draft.quoteLabel}</span>
+        <div className="mx-4 mb-2 border-l-2 border-slate-300 pl-3 flex-shrink-0">
+          <button type="button" onClick={() => setShowQuote((v) => !v)}
+            className="flex w-full items-start gap-1 text-left text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer">
+            <Reply size={11} className="mt-0.5 flex-shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{draft.quoteLabel}</span>
+            <span className="flex-shrink-0">
+              {showQuote ? t("y_next.mail_quote_hide") : t("y_next.mail_quote_show")}
+            </span>
+          </button>
+          {showQuote && (
+            <div
+              className="mt-1 max-h-40 overflow-auto pr-2 text-xs text-slate-500 [&_img]:max-w-full [&_table]:border-collapse"
+              dangerouslySetInnerHTML={{ __html: sanitizeEditorHtml(draft.quoteHtml) }} />
+          )}
         </div>
       )}
 
