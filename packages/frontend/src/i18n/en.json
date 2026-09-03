@@ -2356,6 +2356,8 @@
   "messages.send_no_permission": "You are not allowed to create messages in ERPNext. Ask your administrator for the role that permits this.",
   "messages.storage_hint": "Messages are stored in ERPNext and are visible only to you and the recipient.",
   "messages.attach_image": "Add image",
+  "messages.attach_image_title": "Add image — or paste with Ctrl+V, or drop it here",
+  "messages.drop_image_here": "Drop the image here",
   "messages.remove_image": "Remove image",
   "messages.image_label": "Image",
   "messages.image_too_large": "Image is too large (maximum {{mb}} MB).",
@@ -2976,5 +2978,6 @@
   "webmail.color_blue": "Blue",
   "webmail.color_purple": "Purple",
   "y_next.mail_quote_show_original": "Show original message",
-  "y_next.mail_quote_hide_original": "Hide original message"
+  "y_next.mail_quote_hide_original": "Hide original message",
+  "agenda.source_mailbox": "Colleagues’ calendars"
 }

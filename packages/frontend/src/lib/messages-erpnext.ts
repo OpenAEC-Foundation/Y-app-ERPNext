@@ -538,6 +538,90 @@ export class MessageImageError extends Error {
   }
 }
 
+/* ─── Afbeeldingen uit het klembord ─── */
+
+/** Extensie die bij een toegestaan mimetype hoort. */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/**
+ * Namen die browsers verzinnen voor een afbeelding die niet uit een bestand
+ * komt. Chrome, Firefox en Safari leveren een geplakte schermafdruk allemaal
+ * af als `image.png`; dat is geen naam maar een plaatshouder. Zou je die
+ * laten staan, dan heet elke geplakte afbeelding in de hele ERPNext-site
+ * `image.png` en is in de bijlagenlijst niets meer terug te vinden. Een naam
+ * die de gebruiker zélf aan een bestand gaf blijft wél staan — die zegt iets.
+ */
+const PLACEHOLDER_NAMES = new Set(["", "image", "image.png", "image.jpg", "image.jpeg", "blob"]);
+
+export function isPlaceholderImageName(name: string): boolean {
+  return PLACEHOLDER_NAMES.has(name.trim().toLowerCase());
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * Verzint een bestandsnaam voor een geplakte afbeelding.
+ *
+ * Tijdstempel tot op de seconde plus een korte willekeurige staart: twee
+ * schermafdrukken binnen dezelfde seconde zijn zeldzaam maar niet onmogelijk,
+ * en Frappe hernoemt bij een botsing zelf — wat een bestand oplevert waarvan
+ * de naam in het bericht niet meer klopt met die op de server.
+ */
+export function clipboardImageName(
+  mimeType: string,
+  now: Date = new Date(),
+  salt: string = Math.random().toString(36).slice(2, 6),
+): string {
+  const extension = IMAGE_EXTENSIONS[mimeType] ?? "png";
+  const stamp =
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `afbeelding-${stamp}-${salt}.${extension}`;
+}
+
+/**
+ * Geeft hetzelfde bestand terug, maar met een bruikbare naam als de browser
+ * er geen meegaf. Het `File`-object wordt alleen opnieuw opgebouwd als dat
+ * nodig is — een echte bestandsnaam overleeft dus ongewijzigd.
+ */
+export function withUsableImageName(file: File, now?: Date): File {
+  if (!isPlaceholderImageName(file.name)) return file;
+  return new File([file], clipboardImageName(file.type, now), { type: file.type });
+}
+
+/**
+ * Vist de eerste bruikbare afbeelding uit een klembord- of sleep-payload.
+ *
+ * Waarom `items` en niet alleen `files`: bij het plakken van een afbeelding
+ * die je in een andere webpagina hebt gekopieerd zet de browser naast het
+ * bestand ook `text/html` op het klembord. `files` is dan gevuld, maar bij
+ * sommige bronnen alleen `items` — beide aflopen is de enige vorm die overal
+ * werkt. Niet-afbeeldingen worden overgeslagen in plaats van geweigerd: wie
+ * een stuk tekst plakt hoort gewoon tekst te plakken, geen foutmelding.
+ */
+export function firstImageFrom(data: DataTransfer | null | undefined): File | null {
+  if (!data) return null;
+
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) return file;
+  }
+
+  for (const file of Array.from(data.files ?? [])) {
+    if (file.type.startsWith("image/")) return file;
+  }
+
+  return null;
+}
+
 /** Reden waarom een gekozen bestand niet verstuurd kan worden, of `null`. */
 export type ImageRejection = "type" | "size";
 

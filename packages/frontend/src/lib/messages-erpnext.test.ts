@@ -20,11 +20,14 @@ import {
   MessageImageError,
   buildMessageLink,
   checkImage,
+  clipboardImageName,
   contactNameMap,
   countUnread,
+  firstImageFrom,
   groupThreads,
   htmlToText,
   isMessageLink,
+  isPlaceholderImageName,
   isSafeFileUrl,
   listContacts,
   listMessages,
@@ -34,6 +37,7 @@ import {
   rowToMessage,
   sendMessage,
   textToHtml,
+  withUsableImageName,
   type ErpMessage,
 } from "./messages-erpnext.ts";
 
@@ -183,6 +187,83 @@ test("isMessageLink: alleen het merk zelf of het merk met query telt", () => {
 test("parseImageFromLink: een onveilige URL levert géén afbeelding op", () => {
   const evil = `${MESSAGE_LINK}?img=${encodeURIComponent("https://tracker.example/px.gif")}`;
   assert.equal(parseImageFromLink(evil), null);
+});
+
+/* ─── Klembord en slepen ─── */
+
+test("isPlaceholderImageName: herkent de namen die browsers voor een schermafdruk verzinnen", () => {
+  for (const name of ["image.png", "IMAGE.PNG", "image", "blob", "", "  "]) {
+    assert.equal(isPlaceholderImageName(name), true, name);
+  }
+  assert.equal(isPlaceholderImageName("bouwput-noordgevel.jpg"), false);
+});
+
+test("clipboardImageName: tijdstempel plus staart, met de extensie van het mimetype", () => {
+  const at = new Date(2026, 8, 3, 9, 5, 7);
+  assert.equal(clipboardImageName("image/png", at, "a4f9"), "afbeelding-20260903-090507-a4f9.png");
+  assert.equal(clipboardImageName("image/jpeg", at, "a4f9"), "afbeelding-20260903-090507-a4f9.jpg");
+  assert.equal(clipboardImageName("image/webp", at, "a4f9"), "afbeelding-20260903-090507-a4f9.webp");
+  // Onbekend type valt terug op png in plaats van een naam zonder extensie.
+  assert.equal(clipboardImageName("image/onbekend", at, "a4f9"), "afbeelding-20260903-090507-a4f9.png");
+});
+
+test("clipboardImageName: twee plakacties op dezelfde seconde botsen niet", () => {
+  const at = new Date(2026, 8, 3, 9, 5, 7);
+  assert.notEqual(clipboardImageName("image/png", at), clipboardImageName("image/png", at));
+});
+
+test("withUsableImageName: hernoemt alleen wat geen echte naam heeft", () => {
+  const pasted = new File([new Uint8Array(4)], "image.png", { type: "image/png" });
+  const renamed = withUsableImageName(pasted, new Date(2026, 8, 3, 9, 5, 7));
+  assert.notEqual(renamed.name, "image.png");
+  assert.match(renamed.name, /^afbeelding-20260903-090507-[a-z0-9]+\.png$/);
+  assert.equal(renamed.type, "image/png");
+  assert.equal(renamed.size, 4);
+
+  // Een naam die de gebruiker zelf koos blijft staan — en het File-object
+  // wordt dan niet eens opnieuw opgebouwd.
+  const picked = new File([new Uint8Array(4)], "bouwput.jpg", { type: "image/jpeg" });
+  assert.equal(withUsableImageName(picked), picked);
+});
+
+/**
+ * Minimale DataTransfer-nabootsing: `node --test` draait zonder DOM, dus de
+ * echte klembord-API bestaat hier niet. Wat hier getest wordt is de keuze
+ * tussen `items` en `files`, niet de browser.
+ */
+function fakeTransfer(opts: { items?: { kind: string; type: string; file?: File }[]; files?: File[] }): DataTransfer {
+  return {
+    items: (opts.items ?? []).map((i) => ({
+      kind: i.kind,
+      type: i.type,
+      getAsFile: () => i.file ?? null,
+    })),
+    files: opts.files ?? [],
+  } as unknown as DataTransfer;
+}
+
+test("firstImageFrom: pakt de afbeelding uit items, ook naast de tekst die erbij zit", () => {
+  const png = new File([new Uint8Array(2)], "image.png", { type: "image/png" });
+  const data = fakeTransfer({
+    items: [
+      { kind: "string", type: "text/html" },
+      { kind: "string", type: "text/plain" },
+      { kind: "file", type: "image/png", file: png },
+    ],
+  });
+  assert.equal(firstImageFrom(data), png);
+});
+
+test("firstImageFrom: valt terug op files als items niets bruikbaars geeft", () => {
+  const jpg = new File([new Uint8Array(2)], "foto.jpg", { type: "image/jpeg" });
+  assert.equal(firstImageFrom(fakeTransfer({ files: [jpg] })), jpg);
+});
+
+test("firstImageFrom: gewone tekst of een niet-afbeelding levert niets op", () => {
+  assert.equal(firstImageFrom(fakeTransfer({ items: [{ kind: "string", type: "text/plain" }] })), null);
+  const pdf = new File([new Uint8Array(2)], "offerte.pdf", { type: "application/pdf" });
+  assert.equal(firstImageFrom(fakeTransfer({ files: [pdf] })), null);
+  assert.equal(firstImageFrom(null), null);
 });
 
 /* ─── checkImage ─── */

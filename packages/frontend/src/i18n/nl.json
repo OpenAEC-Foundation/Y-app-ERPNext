@@ -2356,6 +2356,8 @@
   "messages.send_no_permission": "Je mag geen berichten aanmaken in ERPNext. Vraag de beheerder om de rol die dit toestaat.",
   "messages.storage_hint": "Berichten worden opgeslagen in ERPNext en zijn alleen zichtbaar voor jou en de ontvanger.",
   "messages.attach_image": "Afbeelding toevoegen",
+  "messages.attach_image_title": "Afbeelding toevoegen — of plakken met Ctrl+V, of hierheen slepen",
+  "messages.drop_image_here": "Laat de afbeelding hier los",
   "messages.remove_image": "Afbeelding verwijderen",
   "messages.image_label": "Afbeelding",
   "messages.image_too_large": "Afbeelding is te groot (maximaal {{mb}} MB).",
@@ -2976,5 +2978,6 @@
   "webmail.color_blue": "Blauw",
   "webmail.color_purple": "Paars",
   "y_next.mail_quote_show_original": "Toon origineel bericht",
-  "y_next.mail_quote_hide_original": "Verberg origineel bericht"
+  "y_next.mail_quote_hide_original": "Verberg origineel bericht",
+  "agenda.source_mailbox": "Agenda collega’s"
 }

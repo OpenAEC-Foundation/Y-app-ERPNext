@@ -42,11 +42,13 @@ import {
   checkImage,
   contactNameMap,
   countUnread,
+  firstImageFrom,
   groupThreads,
   listContacts,
   listMessages,
   markMessagesRead,
   sendMessage,
+  withUsableImageName,
   type ErpMessage,
   type ErpMessageContact,
   type ErpMessageImage,
@@ -139,9 +141,12 @@ export default function Messages() {
   const [pickerSearch, setPickerSearch] = useState("");
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [lightbox, setLightbox] = useState<ErpMessageImage | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /** Aantal geneste elementen waar de sleepcursor momenteel boven hangt. */
+  const dragDepth = useRef(0);
   /**
    * Namen die we al als gelezen hebben weggeschreven. Zonder dit stuurt elke
    * poll opnieuw een `mark_as_read` voor hetzelfde bericht: de lijst komt vers
@@ -240,6 +245,22 @@ export default function Messages() {
     };
   }, [load]);
 
+  /**
+   * Een bestand dat náást de neerzetzone landt, opent de browser standaard in
+   * het tabblad zelf — de app verdwijnt dan, inclusief het getypte concept.
+   * Zolang dit scherm openstaat wordt die standaard uitgezet; de zone
+   * hieronder handelt de echte drop af.
+   */
+  useEffect(() => {
+    const swallow = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
+
   // Sidebar-badge. Opruimen bij unmount, anders blijft de teller van het
   // laatste bezoek hangen terwijl de gebruiker allang ergens anders is.
   useEffect(() => {
@@ -267,12 +288,20 @@ export default function Messages() {
   }, [selected, activeThread?.messages.length]);
 
   /**
-   * Bestandkeuze. De controle gebeurt hier, vóór er iets verstuurd wordt:
-   * pas ná het aanmaken van het bericht afkeuren zou een half bericht
-   * achterlaten dat niet meer weg te halen is.
+   * Eén ingang voor alle drie de manieren om een afbeelding aan te leveren —
+   * paperclip, plakken en slepen. Ze delen daarmee dezelfde controles en
+   * dezelfde foutmeldingen; een tweede pad zou vroeg of laat een andere
+   * grens hanteren dan de eerste.
+   *
+   * De controle gebeurt hier, vóór er iets verstuurd wordt: pas ná het
+   * aanmaken van het bericht afkeuren zou een half bericht achterlaten dat
+   * niet meer weg te halen is.
    */
-  function handlePickImage(file: File | null) {
-    if (!file) return;
+  function handlePickImage(candidate: File | null) {
+    if (!candidate) return;
+    // Een geplakte schermafdruk heet bij elke browser `image.png`; hier
+    // krijgt hij een naam waaraan je hem later nog herkent.
+    const file = withUsableImageName(candidate);
     const rejection = checkImage(file);
     if (rejection === "type") {
       setSendError(t("messages.image_type_unsupported"));
@@ -291,6 +320,48 @@ export default function Messages() {
     // De input leegmaken, anders vuurt `change` niet als je hetzelfde
     // bestand direct opnieuw kiest.
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  /**
+   * Plakken in het invoerveld. `preventDefault` alleen wanneer er
+   * daadwerkelijk een afbeelding uit het klembord komt: wie tekst plakt hoort
+   * gewoon tekst te plakken, en een klembord met een gekopieerde afbeelding
+   * uit een webpagina draagt naast het bestand vaak óók tekst mee.
+   */
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const image = firstImageFrom(e.clipboardData);
+    if (!image) return;
+    e.preventDefault();
+    handlePickImage(image);
+  }
+
+  function dragCarriesFiles(data: DataTransfer | null): boolean {
+    return Array.from(data?.types ?? []).includes("Files");
+  }
+
+  /**
+   * Slepen wordt geteld in plaats van geschakeld. Een `dragleave` vuurt óók
+   * bij elk onderliggend element dat de cursor passeert, dus met een simpele
+   * boolean knippert de overlay zich suf zodra je over een berichtbubbel
+   * beweegt.
+   */
+  function handleDragEnter(e: React.DragEvent) {
+    if (!activeThread || !dragCarriesFiles(e.dataTransfer)) return;
+    dragDepth.current += 1;
+    setDragging(true);
+  }
+
+  function handleDragLeave() {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!activeThread) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    handlePickImage(firstImageFrom(e.dataTransfer));
   }
 
   async function handleSend() {
@@ -438,7 +509,14 @@ export default function Messages() {
   const ordered = activeThread ? [...activeThread.messages].reverse() : [];
 
   const threadPane = (
-    <div className="flex flex-col h-full min-h-0 bg-slate-50">
+    <div
+      className="relative flex flex-col h-full min-h-0 bg-slate-50"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      // Zonder preventDefault op dragover weigert de browser de drop.
+      onDragOver={(e) => { if (activeThread) e.preventDefault(); }}
+      onDrop={handleDrop}
+    >
       {!activeThread ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-2 px-6 text-center">
           <MessageSquare size={40} className="text-slate-300" />
@@ -532,6 +610,17 @@ export default function Messages() {
             </div>
           )}
 
+          {dragging && (
+            // `pointer-events-none`: de overlay mag de drop niet zelf
+            // opvangen, want dan telt de dragleave van het onderliggende
+            // element niet meer en blijft hij hangen.
+            <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center bg-y-teal/10 border-2 border-dashed border-y-teal rounded-lg">
+              <span className="px-4 py-2 rounded-lg bg-white/90 text-sm font-medium text-slate-700 shadow-sm">
+                {t("messages.drop_image_here")}
+              </span>
+            </div>
+          )}
+
           {pendingImage && previewUrl && (
             <div className="mx-3 mb-2 flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
               <img src={previewUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
@@ -563,7 +652,9 @@ export default function Messages() {
               disabled={sending}
               className="p-2 text-slate-500 hover:text-y-teal disabled:opacity-50 cursor-pointer"
               aria-label={t("messages.attach_image")}
-              title={t("messages.attach_image")}
+              // De tooltip noemt ook plakken en slepen: zonder aanwijzing
+              // gaat niemand het uit zichzelf proberen.
+              title={t("messages.attach_image_title")}
             >
               <Paperclip size={18} />
             </button>
@@ -578,6 +669,7 @@ export default function Messages() {
                   void handleSend();
                 }
               }}
+              onPaste={handlePaste}
               rows={1}
               placeholder={t("messenger.type_message")}
               className="flex-1 resize-none max-h-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
