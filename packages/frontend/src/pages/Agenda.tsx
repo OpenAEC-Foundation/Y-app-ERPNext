@@ -11,6 +11,12 @@ import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
 import { haalAgendas, eindTijd, haalCollegas, kleurenVoorCollegas, type Collega } from "../lib/agenda-mailserver";
 import { resolveSessionUser } from "../lib/session";
+import {
+  antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, kanAntwoorden,
+  nieuweAfspraakUid, verstuurAfspraak,
+  type MailserverAfspraak, type MailserverGenodigde,
+} from "../lib/agenda-mailserver";
+import type { Deelnamestatus } from "../lib/ical";
 import { RecipientInput } from "../components/RecipientInput";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
@@ -38,6 +44,15 @@ interface EventItem {
    *  detail/edit-scherm dezelfde afspraak kan bijwerken en mensen kan her-notificeren. */
   icalUid?: string;
   attendees?: string[];
+  /** Voor type "mailbox": de gegevens die het beantwoorden mogelijk maken. */
+  uitnodiging?: {
+    /** De UID uit de mailserver-agenda; hier hangt het .ics-bestand aan. */
+    uid: string;
+    /** In wiens agenda deze kopie staat. */
+    agenda: string;
+    organisator?: string;
+    genodigden: MailserverGenodigde[];
+  };
 }
 
 type ViewType = "month" | "week" | "day";
@@ -69,7 +84,7 @@ interface CreateForm {
   inviteEmails: string;
   jitsiRoom: string;
   withJitsi: boolean;
-  calendarTarget: string; // "erpnext" | "caldav:<calendarId>"
+  calendarTarget: string; // "erpnext" | "mailserver" | "caldav:<calendarId>"
 }
 
 interface CustomCalendar {
@@ -581,7 +596,43 @@ function CreateModal({ initial, onClose, onCreated }: {
       let inviteIcs: string | undefined;
       let inviteAccount: string | undefined;
 
-      if (form.type === "event" && form.calendarTarget.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
+      if (form.type === "event" && form.calendarTarget === "mailserver") {
+        /*
+         * De mailserver-agenda: dit is de enige route waarlangs een afspraak
+         * bij een collega in de agenda belandt. Hij schrijft dezelfde afspraak
+         * - zelfde UID - in de agenda van de organisator en van elke
+         * genodigde, met hun deelnamestand erin. De genodigde ziet hem meteen
+         * staan en kan hem accepteren of afwijzen.
+         *
+         * De organisator komt uit de sessie en niet uit dit formulier; het
+         * Server Script weigert een afspraak namens iemand anders.
+         */
+        const ik = (await resolveSessionUser()) || "";
+        if (!ik.includes("@")) throw new Error(t("agenda.no_session_email"));
+        const uitslag = await verstuurAfspraak({
+          uid: nieuweAfspraakUid(),
+          titel: form.title.trim(),
+          start: form.allDay ? `${form.date}T00:00:00` : `${form.date}T${form.startTime}:00`,
+          eind: form.allDay ? `${form.date}T00:00:00` : `${form.date}T${form.endTime}:00`,
+          tijdzone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Amsterdam",
+          heleDag: form.allDay,
+          omschrijving: description || undefined,
+          locatie: form.location || undefined,
+          organisator: { email: ik.toLowerCase() },
+          genodigden: inviteRecipients.map((email) => ({ email: email.toLowerCase() })),
+        });
+        if (uitslag.geschreven.length === 0) {
+          throw new Error(uitslag.mislukt[0]?.reden || t("agenda.invite_failed"));
+        }
+        // Een agenda die niet lukte mag de afspraak niet ongedaan maken, maar
+        // stilzwijgend voorbijgaan hoort ook niet: dan denk je dat een collega
+        // is uitgenodigd terwijl dat niet zo is.
+        if (uitslag.mislukt.length > 0) {
+          setError(t("agenda.invite_partial", {
+            agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
+          }));
+        }
+      } else if (form.type === "event" && form.calendarTarget.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
         // Doel = privé CalDAV-agenda: schrijf een VEVENT via de server (PUT .ics).
         const calId = form.calendarTarget.slice("caldav:".length);
         const cal = writableCalDav.find(c => c.id === calId);
@@ -705,15 +756,18 @@ function CreateModal({ initial, onClose, onCreated }: {
             </button>
           </div>
 
-          {/* Doel-agenda (alleen voor afspraken, en alleen als er schrijfbare
-              CalDAV-agenda's zijn). Laatst gekozen wordt de default. */}
-          {form.type === "event" && writableCalDav.length > 0 && (
+          {/* Doel-agenda (alleen voor afspraken). Laatst gekozen wordt de
+              default. De mailserver staat er altijd bij: dat is de agenda die
+              collega's ook zien, en de enige route waarlangs een uitnodiging
+              bij hen aankomt. */}
+          {form.type === "event" && (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.target_calendar_label", { defaultValue: "Agenda" })}</label>
               <select value={form.calendarTarget}
                 onChange={e => { const v = e.target.value; setForm(f => ({ ...f, calendarTarget: v })); setDefaultCalendarTarget(v); }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 <option value="erpnext">{t("agenda.target_erpnext", { defaultValue: "ERPNext" })}</option>
+                <option value="mailserver">{t("agenda.target_mailserver")}</option>
                 {writableCalDav.map(c => (
                   <option key={c.id} value={`caldav:${c.id}`}>{c.name}</option>
                 ))}
@@ -830,9 +884,117 @@ function CreateModal({ initial, onClose, onCreated }: {
 
 /* ─── Event detail / edit modal ─── */
 
-function EventDetailModal({ event, calendars, onClose, onUpdated }: {
+/**
+ * De uitnodigingsstrook: wie er gevraagd zijn, wie er al geantwoord heeft, en
+ * — als jij zelf gevraagd bent — de knoppen om te antwoorden.
+ *
+ * Alleen bij afspraken die Y-Next zelf heeft neergelegd valt er te antwoorden.
+ * Bij een afspraak uit een ander agendaprogramma kennen we het bestandspad op
+ * de mailserver niet, en dan tonen we alleen wie er komt. Zie `kanAntwoorden`.
+ */
+function Uitnodiging({ event, ik, onGeantwoord }: {
+  event: EventItem;
+  ik: string;
+  onGeantwoord: () => void;
+}) {
+  const { t } = useTranslation();
+  const [bezig, setBezig] = useState<Deelnamestatus | null>(null);
+  const [fout, setFout] = useState("");
+  const [gegeven, setGegeven] = useState<Deelnamestatus | null>(null);
+
+  const uitnodiging = event.uitnodiging;
+  if (!uitnodiging || uitnodiging.genodigden.length === 0) return null;
+
+  const alsAfspraak: MailserverAfspraak = {
+    gebruiker: uitnodiging.agenda,
+    id: event.id,
+    uid: uitnodiging.uid,
+    genodigden: uitnodiging.genodigden,
+  };
+  const magAntwoorden = kanAntwoorden(alsAfspraak, ik);
+  const stand = gegeven ?? eigenDeelname(alsAfspraak, ik);
+
+  async function antwoord(status: Deelnamestatus) {
+    if (!uitnodiging) return;
+    setBezig(status);
+    setFout("");
+    try {
+      // Het bestand zoals het op de server staat, zodat het antwoord één regel
+      // verandert en al het andere laat staan.
+      const ics = await haalAfspraakIcs(uitnodiging.uid);
+      if (!ics) throw new Error(t("agenda.invite_failed"));
+      await antwoordOpUitnodiging({
+        uid: uitnodiging.uid,
+        ics,
+        email: ik,
+        status,
+        organisator: uitnodiging.organisator,
+      });
+      setGegeven(status);
+      onGeantwoord();
+    } catch (err) {
+      setFout(t("agenda.invite_answer_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setBezig(null);
+    }
+  }
+
+  const standTekst = stand === "accepted" ? t("agenda.invite_you_accepted")
+    : stand === "declined" ? t("agenda.invite_you_declined")
+    : stand === "tentative" ? t("agenda.invite_you_tentative")
+    : t("agenda.invite_answer");
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <Users size={13} className="text-slate-500" />
+        <span className="text-xs font-medium text-slate-700">{t("agenda.invite_guests")}</span>
+      </div>
+      <ul className="space-y-0.5">
+        {uitnodiging.genodigden.map((g) => (
+          <li key={g.email} className="flex items-center gap-1.5 text-[11px] text-slate-600">
+            <span className={`h-1.5 w-1.5 rounded-full ${
+              g.status === "accepted" ? "bg-green-500"
+                : g.status === "declined" ? "bg-red-400"
+                : g.status === "tentative" ? "bg-amber-400"
+                : "bg-slate-300"
+            }`} />
+            <span className="truncate">{g.naam || g.email}</span>
+            {g.organisator && <span className="text-slate-400">({t("agenda.invite_answer")})</span>}
+          </li>
+        ))}
+      </ul>
+      {magAntwoorden && (
+        <div className="mt-2 border-t border-slate-200 pt-2">
+          <p className="mb-1.5 text-[11px] text-slate-500">{standTekst}</p>
+          <div className="flex gap-1.5">
+            {(["accepted", "tentative", "declined"] as const).map((status) => (
+              <button key={status} onClick={() => void antwoord(status)} disabled={bezig !== null}
+                className={`rounded px-2 py-1 text-[11px] font-medium cursor-pointer disabled:opacity-50 ${
+                  stand === status
+                    ? "bg-slate-700 text-white"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                }`}>
+                {t(status === "accepted" ? "agenda.invite_accept"
+                  : status === "declined" ? "agenda.invite_decline"
+                  : "agenda.invite_tentative")}
+              </button>
+            ))}
+          </div>
+          {fout && <p className="mt-1.5 text-[11px] text-red-600">{fout}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
   event: EventItem;
   calendars: CustomCalendar[];
+  /** E-mailadres van de ingelogde gebruiker; bepaalt of dit een uitnodiging is. */
+  ik: string;
   onClose: () => void;
   onUpdated: () => void;
 }) {
@@ -1061,6 +1223,8 @@ function EventDetailModal({ event, calendars, onClose, onUpdated }: {
 
         <div className="p-5 space-y-4">
           {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <Uitnodiging event={event} ik={ik} onGeantwoord={onUpdated} />
 
           {/* Title */}
           {editing ? (
@@ -1344,6 +1508,8 @@ export default function Agenda() {
   // Collega-agenda's: de lijst om uit te kiezen, en wat er aan staat.
   const [collegas, setCollegas] = useState<Collega[]>([]);
   const [gekozenCollegas, setGekozenCollegasState] = useState<string[]>([]);
+  /** Eigen adres; bepaalt of een afspraak voor jou een uitnodiging is. */
+  const [ikZelf, setIkZelf] = useState("");
 
   useEffect(() => {
     let gestopt = false;
@@ -1351,6 +1517,7 @@ export default function Agenda() {
       const [lijst, ik] = await Promise.all([haalCollegas(), resolveSessionUser()]);
       if (gestopt) return;
       setCollegas(lijst);
+      setIkZelf(String(ik || "").toLowerCase());
       const bewaard = getGekozenCollegas();
       if (bewaard !== null) { setGekozenCollegasState(bewaard); return; }
       // Eerste keer: alleen je eigen agenda. Meteen die van iedereen tonen
@@ -1546,6 +1713,14 @@ export default function Agenda() {
             type: "mailbox",
             color: collegaKleuren.get(a.gebruiker) || TYPE_COLORS.mailbox,
             owner: a.gebruiker.split("@")[0],
+            uitnodiging: a.uid
+              ? {
+                  uid: a.uid,
+                  agenda: a.gebruiker,
+                  organisator: (a.genodigden ?? []).find((g) => g.organisator)?.email,
+                  genodigden: a.genodigden ?? [],
+                }
+              : undefined,
           });
         }
       }
@@ -1734,7 +1909,7 @@ export default function Agenda() {
       if (cal.enabled) items.push({ label: cal.name, color: cal.color });
     }
     return items;
-  }, [erpSources, calendars, o365Enabled, gekozenCollegas, collegaKleuren, t]);
+  }, [erpSources, calendars, o365Enabled, t]);
 
   /* ─── Click-to-create handler ─── */
 
@@ -2415,6 +2590,7 @@ export default function Agenda() {
       {/* Event detail modal */}
       {detailEvent && (
         <EventDetailModal
+          ik={ikZelf}
           event={detailEvent}
           calendars={calendars}
           onClose={() => setDetailEvent(null)}

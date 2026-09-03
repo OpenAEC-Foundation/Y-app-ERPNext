@@ -2993,5 +2993,18 @@
   "y_next.link_any_type_search": "Soort document…",
   "y_next.link_any_search": "Zoek in {{doctype}}…",
   "y_next.link_any_failed": "Zoeken mislukt: {{error}}",
-  "webmail.split_resize": "Sleep om het antwoordvenster hoger of lager te maken"
+  "webmail.split_resize": "Sleep om het antwoordvenster hoger of lager te maken",
+  "agenda.target_mailserver": "Mailserver (collega's zien hem ook)",
+  "agenda.no_session_email": "Je ERPNext-gebruiker heeft geen e-mailadres; zonder dat kan er geen uitnodiging uit.",
+  "agenda.invite_failed": "De afspraak kon niet naar de mailserver geschreven worden.",
+  "agenda.invite_partial": "De afspraak staat in je eigen agenda, maar niet bij: {{agendas}}",
+  "agenda.invite_answer": "Je bent uitgenodigd",
+  "agenda.invite_accept": "Accepteren",
+  "agenda.invite_decline": "Afwijzen",
+  "agenda.invite_tentative": "Misschien",
+  "agenda.invite_you_accepted": "Je hebt geaccepteerd",
+  "agenda.invite_you_declined": "Je hebt afgewezen",
+  "agenda.invite_you_tentative": "Je hebt misschien geantwoord",
+  "agenda.invite_answer_failed": "Antwoorden mislukt: {{error}}",
+  "agenda.invite_guests": "Genodigden"
 }

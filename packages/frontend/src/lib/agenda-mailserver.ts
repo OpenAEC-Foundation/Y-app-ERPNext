@@ -11,12 +11,15 @@
  * in handen krijgen. Nu blijft hij op de server, en bepaalt ERPNext wie wat
  * mag zien.
  *
- * Dit bestand leest alleen. Een afspraak maken of accepteren hoort namens de
- * ingelogde gebruiker te gebeuren en krijgt een eigen script, waar de
- * gebruiker uit de sessie komt en niet uit het verzoek — anders zou je via de
- * app in andermans agenda kunnen schrijven.
+ * Schrijven loopt over een tweede script (`agenda_schrijven`), waar de
+ * handelende gebruiker uit de sessie komt en niet uit het verzoek — anders zou
+ * je via de app in andermans agenda kunnen schrijven. Dat script gebruikt
+ * CalDAV in plaats van JMAP: de mailserver laat bij een JMAP-create de
+ * genodigden stilzwijgend vallen, en een uitnodiging zonder genodigden is geen
+ * uitnodiging. Lezen blijft JMAP — dáár komen ze wél netjes uit.
  */
 import { callMethod, fetchList } from "./erpnext.ts";
+import { bouwAfspraakIcs, zetDeelname, type AfspraakInvoer, type Deelnamestatus } from "./ical.ts";
 
 /** Eén afspraak zoals het Server Script hem teruggeeft. */
 export interface MailserverAfspraak {
@@ -32,6 +35,16 @@ export interface MailserverAfspraak {
   hele_dag?: boolean;
   status?: string;
   privacy?: string;
+  /** Blijft gelijk in alle agenda's waar deze afspraak in staat. */
+  uid?: string;
+  genodigden?: MailserverGenodigde[];
+}
+
+export interface MailserverGenodigde {
+  email: string;
+  naam?: string;
+  status?: Deelnamestatus | string;
+  organisator?: boolean;
 }
 
 interface Antwoord {
@@ -161,4 +174,122 @@ export function kleurenVoorCollegas(collegas: Collega[]): Map<string, string> {
   const uit = new Map<string, string>();
   collegas.forEach((c, i) => uit.set(c.email, COLLEGA_KLEUREN[i % COLLEGA_KLEUREN.length]));
   return uit;
+}
+
+/* ─────────────────────────────── Schrijven ───────────────────────────── */
+
+/** Wat `agenda_schrijven` per agenda terugmeldt. */
+export interface SchrijfUitslag {
+  geschreven: string[];
+  mislukt: Array<{ agenda: string; reden: string }>;
+}
+
+/**
+ * Zet een afspraak in de agenda van de organisator en van elke genodigde.
+ *
+ * Eén .ics, in meerdere agenda's, met dezelfde UID: zo ziet iedereen dezelfde
+ * afspraak en kan een antwoord van de één in de kopie van de ander landen.
+ * De organisator hoort altijd de ingelogde gebruiker te zijn; het Server
+ * Script weigert het anders — daar staat de controle die telt.
+ */
+export async function verstuurAfspraak(afspraak: AfspraakInvoer): Promise<SchrijfUitslag> {
+  const agendas = [
+    afspraak.organisator.email,
+    ...(afspraak.genodigden ?? []).map((g) => g.email),
+  ];
+  return schrijf("opslaan", afspraak.uid, bouwAfspraakIcs(afspraak), agendas);
+}
+
+/**
+ * Het ruwe .ics van een afspraak uit je eigen agenda. Nodig om te kunnen
+ * antwoorden: het antwoord verandert één regel in het bestand zoals het er
+ * staat, in plaats van er een nieuw bestand overheen te leggen.
+ */
+export async function haalAfspraakIcs(uid: string): Promise<string | undefined> {
+  const res = (await callMethod("agenda_schrijven", { actie: "lezen", uid })) as
+    { ics?: unknown } | null;
+  return typeof res?.ics === "string" && res.ics.includes("BEGIN:VCALENDAR") ? res.ics : undefined;
+}
+
+/**
+ * Beantwoordt een uitnodiging: je eigen kopie krijgt de nieuwe stand, en die
+ * van de organisator ook — anders weet die niet of je komt.
+ *
+ * Werkt op het .ics van de afspraak zelf en niet op een opnieuw opgebouwde
+ * versie, zodat alles wat wij niet kennen (herhalingen, herinneringen, velden
+ * van andere agendaprogramma's) blijft staan. Zie `zetDeelname`.
+ */
+export async function antwoordOpUitnodiging(args: {
+  uid: string;
+  ics: string;
+  /** Het adres van degene die antwoordt — dat is de regel die verandert. */
+  email: string;
+  status: Deelnamestatus;
+  organisator?: string;
+}): Promise<SchrijfUitslag> {
+  const nieuw = zetDeelname(args.ics, args.email, args.status);
+  const agendas = [args.email];
+  if (args.organisator) agendas.push(args.organisator);
+  return schrijf("antwoorden", args.uid, nieuw, agendas);
+}
+
+/**
+ * Wat een genodigde met deze afspraak kan: alleen wanneer hij nog niet
+ * geantwoord heeft én Y-Next hem zelf heeft neergelegd. Bij een afspraak uit
+ * een ander agendaprogramma kennen we het bestandspad niet en kunnen we er
+ * dus niets in wijzigen — dan tonen we alleen de stand.
+ */
+export function kanAntwoorden(afspraak: MailserverAfspraak, ik: string): boolean {
+  if (!isEigenAfspraak(afspraak.uid)) return false;
+  const mij = ik.trim().toLowerCase();
+  return (afspraak.genodigden ?? []).some((g) => g.email === mij && !g.organisator);
+}
+
+/** De stand van deze persoon bij deze afspraak, als hij genodigd is. */
+export function eigenDeelname(
+  afspraak: MailserverAfspraak, ik: string,
+): Deelnamestatus | undefined {
+  const mij = ik.trim().toLowerCase();
+  const rij = (afspraak.genodigden ?? []).find((g) => g.email === mij);
+  if (!rij) return undefined;
+  const status = String(rij.status || "needs-action");
+  return status === "accepted" || status === "declined" || status === "tentative"
+    ? status
+    : "needs-action";
+}
+
+async function schrijf(
+  actie: "opslaan" | "antwoorden",
+  uid: string,
+  ics: string,
+  agendas: string[],
+): Promise<SchrijfUitslag> {
+  const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
+  const res = (await callMethod("agenda_schrijven", {
+    actie, uid, ics, agendas: uniek.join(","),
+  })) as Partial<SchrijfUitslag> | null;
+  return {
+    geschreven: Array.isArray(res?.geschreven) ? res.geschreven : [],
+    mislukt: Array.isArray(res?.mislukt) ? res.mislukt : [],
+  };
+}
+
+/**
+ * Een nieuwe UID voor een afspraak uit Y-Next.
+ *
+ * Het voorvoegsel is geen sieraad: alleen afspraken die wij zelf hebben
+ * neergelegd, liggen op een bestandspad dat we kunnen terugrekenen uit de UID.
+ * Bij een afspraak uit een ander agendaprogramma weten we dat pad niet, en
+ * daarom bieden we daar geen accepteren aan. Zie `isEigenAfspraak`.
+ */
+export function nieuweAfspraakUid(): string {
+  const willekeurig = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `ynext-${willekeurig}@3bm.co.nl`;
+}
+
+/** Heeft Y-Next deze afspraak zelf neergelegd? Dan kunnen we hem bijwerken. */
+export function isEigenAfspraak(uid?: string): boolean {
+  return typeof uid === "string" && uid.startsWith("ynext-");
 }

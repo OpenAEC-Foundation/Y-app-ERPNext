@@ -2993,5 +2993,18 @@
   "y_next.link_any_type_search": "Dokumentart…",
   "y_next.link_any_search": "In {{doctype}} suchen…",
   "y_next.link_any_failed": "Suche fehlgeschlagen: {{error}}",
-  "webmail.split_resize": "Ziehen, um den Antwortbereich zu vergrößern oder zu verkleinern"
+  "webmail.split_resize": "Ziehen, um den Antwortbereich zu vergrößern oder zu verkleinern",
+  "agenda.target_mailserver": "Mailserver (Kollegen sehen ihn auch)",
+  "agenda.no_session_email": "Dein ERPNext-Benutzer hat keine E-Mail-Adresse; ohne die kann keine Einladung verschickt werden.",
+  "agenda.invite_failed": "Der Termin konnte nicht auf den Mailserver geschrieben werden.",
+  "agenda.invite_partial": "Der Termin steht in deinem eigenen Kalender, aber nicht bei: {{agendas}}",
+  "agenda.invite_answer": "Du bist eingeladen",
+  "agenda.invite_accept": "Annehmen",
+  "agenda.invite_decline": "Ablehnen",
+  "agenda.invite_tentative": "Vielleicht",
+  "agenda.invite_you_accepted": "Du hast angenommen",
+  "agenda.invite_you_declined": "Du hast abgelehnt",
+  "agenda.invite_you_tentative": "Du hast mit vielleicht geantwortet",
+  "agenda.invite_answer_failed": "Antwort fehlgeschlagen: {{error}}",
+  "agenda.invite_guests": "Gäste"
 }

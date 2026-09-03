@@ -2993,5 +2993,18 @@
   "y_next.link_any_type_search": "Document type…",
   "y_next.link_any_search": "Search {{doctype}}…",
   "y_next.link_any_failed": "Search failed: {{error}}",
-  "webmail.split_resize": "Drag to resize the reply pane"
+  "webmail.split_resize": "Drag to resize the reply pane",
+  "agenda.target_mailserver": "Mail server (colleagues see it too)",
+  "agenda.no_session_email": "Your ERPNext user has no email address; an invitation cannot be sent without one.",
+  "agenda.invite_failed": "The appointment could not be written to the mail server.",
+  "agenda.invite_partial": "The appointment is in your own calendar, but not in: {{agendas}}",
+  "agenda.invite_answer": "You have been invited",
+  "agenda.invite_accept": "Accept",
+  "agenda.invite_decline": "Decline",
+  "agenda.invite_tentative": "Maybe",
+  "agenda.invite_you_accepted": "You accepted",
+  "agenda.invite_you_declined": "You declined",
+  "agenda.invite_you_tentative": "You answered maybe",
+  "agenda.invite_answer_failed": "Reply failed: {{error}}",
+  "agenda.invite_guests": "Guests"
 }
