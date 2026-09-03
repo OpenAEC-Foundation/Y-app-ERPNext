@@ -844,17 +844,35 @@ export async function deleteDocument(
   invalidateCache(doctype);
 }
 
+/**
+ * Extra's die Frappe's `upload_file` kent maar die lang niet elke aanroeper
+ * wil. `optimize` laat Frappe de afbeelding **server-side** herschalen en
+ * hercomprimeren (Pillow) vóór hij hem wegschrijft. Dat is beter dan een
+ * canvas-truc in de browser: het werkt in elke webview, kost hier geen code,
+ * en een client die het overslaat kan het resultaat niet stiekem oprekken.
+ * Niet-afbeeldingen en SVG laat Frappe ongemoeid.
+ */
+export interface UploadOptions {
+  optimize?: boolean;
+  maxWidth?: number;
+  maxHeight?: number;
+}
+
 export async function uploadFile(
   file: File,
   doctype: string,
   docname: string,
-  isPrivate: boolean = false
+  isPrivate: boolean = false,
+  options?: UploadOptions
 ): Promise<FileInfo> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("doctype", doctype);
   formData.append("docname", docname);
   formData.append("is_private", isPrivate ? "1" : "0");
+  if (options?.optimize) formData.append("optimize", "1");
+  if (options?.maxWidth !== undefined) formData.append("max_width", String(options.maxWidth));
+  if (options?.maxHeight !== undefined) formData.append("max_height", String(options.maxHeight));
 
   const url = `/api/method/upload_file`;
   const res = await mutationFetch(url, {

@@ -28,12 +28,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageSquare, Send, Search, RefreshCw, Plus, ChevronLeft, X, Loader2, AlertCircle,
+  Paperclip, ImageIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import ImageLightbox from "../components/ImageLightbox";
 import { setBadgeCount } from "../lib/badges";
 import { isPermissionError } from "../lib/permission-error";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_BYTES,
+  MessageImageError,
+  checkImage,
   contactNameMap,
   countUnread,
   groupThreads,
@@ -43,11 +49,15 @@ import {
   sendMessage,
   type ErpMessage,
   type ErpMessageContact,
+  type ErpMessageImage,
   type ErpMessageThread,
 } from "../lib/messages-erpnext";
 
 /** Ververs-interval. Zie de kopjes-uitleg: pollen in plaats van websockets. */
 const POLL_INTERVAL_MS = 20_000;
+
+/** `accept`-waarde van de bestandskiezer, afgeleid van de adapter-allowlist. */
+const ACCEPTED_IMAGE_TYPES = [...ALLOWED_IMAGE_TYPES].join(",");
 
 /* ─── Presentatie-helpers ─── */
 
@@ -127,14 +137,29 @@ export default function Messages() {
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [lightbox, setLightbox] = useState<ErpMessageImage | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   /**
    * Namen die we al als gelezen hebben weggeschreven. Zonder dit stuurt elke
    * poll opnieuw een `mark_as_read` voor hetzelfde bericht: de lijst komt vers
    * van de server en het `read`-veld is pas bij de volgende ronde bijgewerkt.
    */
   const markedRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Voorbeeld van de nog niet verstuurde afbeelding. Een blob-URL houdt het
+   * bestand in het geheugen tot je hem intrekt, dus hij wordt bij elke
+   * wisseling netjes vrijgegeven — anders stapelt dat op bij iemand die tien
+   * foto's achter elkaar doorstuurt.
+   */
+  const previewUrl = useMemo(
+    () => (pendingImage ? URL.createObjectURL(pendingImage) : null),
+    [pendingImage],
+  );
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const names = useMemo(() => contactNameMap(contacts), [contacts]);
   const threads = useMemo(() => groupThreads(messages, names), [messages, names]);
@@ -157,6 +182,7 @@ export default function Messages() {
       messages: [],
       lastBody: "",
       lastAt: "",
+      lastHasImage: false,
       unread: 0,
     };
   }, [threads, selected, names]);
@@ -240,35 +266,84 @@ export default function Messages() {
     threadEndRef.current?.scrollIntoView({ block: "end" });
   }, [selected, activeThread?.messages.length]);
 
+  /**
+   * Bestandkeuze. De controle gebeurt hier, vóór er iets verstuurd wordt:
+   * pas ná het aanmaken van het bericht afkeuren zou een half bericht
+   * achterlaten dat niet meer weg te halen is.
+   */
+  function handlePickImage(file: File | null) {
+    if (!file) return;
+    const rejection = checkImage(file);
+    if (rejection === "type") {
+      setSendError(t("messages.image_type_unsupported"));
+      return;
+    }
+    if (rejection === "size") {
+      setSendError(t("messages.image_too_large", { mb: Math.round(MAX_IMAGE_BYTES / (1024 * 1024)) }));
+      return;
+    }
+    setSendError(null);
+    setPendingImage(file);
+  }
+
+  function clearPendingImage() {
+    setPendingImage(null);
+    // De input leegmaken, anders vuurt `change` niet als je hetzelfde
+    // bestand direct opnieuw kiest.
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   async function handleSend() {
     const text = draft.trim();
-    if (!text || !selected || sending) return;
+    if ((!text && !pendingImage) || !selected || sending) return;
     setSending(true);
     setSendError(null);
     try {
-      await sendMessage(selected, text);
+      await sendMessage(selected, text, pendingImage ?? undefined);
       setDraft("");
+      clearPendingImage();
       await load(true);
     } catch (e) {
-      // Een 403 is hier geen ruis maar de meest waarschijnlijke oorzaak:
-      // `create` op Notification Log hangt op deze instance aan de rol
-      // "Employee". Wie die rol niet heeft moet weten dat het aan rechten
-      // ligt en niet aan zijn internetverbinding.
-      setSendError(
-        isPermissionError(e)
-          ? t("messages.send_no_permission")
-          : `${t("messenger.send_error")}${e instanceof Error && e.message ? `: ${e.message}` : ""}`,
-      );
+      if (e instanceof MessageImageError) {
+        // De tekst ís bezorgd; alleen de foto niet. Het opstelveld wordt
+        // daarom wél geleegd — nog een keer op verzenden drukken zou de
+        // ontvanger een dubbel bericht bezorgen.
+        setDraft("");
+        clearPendingImage();
+        await load(true);
+        setSendError(t("messages.image_send_failed"));
+      } else {
+        // Een 403 is hier geen ruis maar de meest waarschijnlijke oorzaak:
+        // `create` op Notification Log hangt op deze instance aan de rol
+        // "Employee". Wie die rol niet heeft moet weten dat het aan rechten
+        // ligt en niet aan zijn internetverbinding.
+        setSendError(
+          isPermissionError(e)
+            ? t("messages.send_no_permission")
+            : `${t("messenger.send_error")}${e instanceof Error && e.message ? `: ${e.message}` : ""}`,
+        );
+      }
     } finally {
       setSending(false);
     }
   }
 
-  function startConversation(user: string) {
+  /**
+   * Van gesprek wisselen gooit het concept én de gekozen foto weg. Ze laten
+   * staan zou de volgende verzendknop de bijlage naar de verkeerde collega
+   * sturen — een fout die je niet meer kunt terugnemen.
+   */
+  function openConversation(user: string) {
     setSelected(user);
+    setDraft("");
+    clearPendingImage();
+    setSendError(null);
+  }
+
+  function startConversation(user: string) {
+    openConversation(user);
     setPickerOpen(false);
     setPickerSearch("");
-    setSendError(null);
   }
 
   const pickerContacts = useMemo(() => {
@@ -317,7 +392,7 @@ export default function Messages() {
           visibleThreads.map((thread) => (
             <button
               key={thread.counterpart}
-              onClick={() => { setSelected(thread.counterpart); setSendError(null); }}
+              onClick={() => openConversation(thread.counterpart)}
               className={`w-full text-left flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${
                 thread.counterpart === selected ? "bg-y-teal/5" : ""
               }`}
@@ -335,8 +410,11 @@ export default function Messages() {
                   </span>
                 </span>
                 <span className="flex items-center justify-between gap-2 mt-0.5">
-                  <span className={`text-xs truncate ${thread.unread > 0 ? "text-slate-700 font-medium" : "text-slate-400"}`}>
-                    {thread.lastBody}
+                  <span className={`flex items-center gap-1 text-xs truncate ${thread.unread > 0 ? "text-slate-700 font-medium" : "text-slate-400"}`}>
+                    {thread.lastHasImage && <ImageIcon size={12} className="flex-shrink-0" />}
+                    {/* Een bericht dat alleen een foto is heeft geen tekst —
+                        dan is het label de enige zinvolle samenvatting. */}
+                    {thread.lastBody || (thread.lastHasImage ? t("messages.image_label") : "")}
                   </span>
                   {thread.unread > 0 && (
                     <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-y-teal text-white text-[10px] font-semibold flex items-center justify-center">
@@ -417,6 +495,19 @@ export default function Messages() {
                             : "bg-white border border-slate-200 text-slate-700 rounded-bl-sm"
                         }`}
                       >
+                        {message.image && (
+                          // `src` is een eigen-origin pad dat de adapter al
+                          // door `isSafeFileUrl` heeft gehaald; de browser
+                          // stuurt de ERPNext-sessiecookie mee en Frappe
+                          // beslist zelf of dit privébestand geleverd wordt.
+                          <img
+                            src={message.image.url}
+                            alt={message.image.name}
+                            loading="lazy"
+                            onClick={() => setLightbox(message.image ?? null)}
+                            className="mb-1.5 max-h-64 w-auto max-w-full rounded-lg cursor-zoom-in bg-slate-100"
+                          />
+                        )}
                         {message.body}
                         <span
                           className={`block text-[10px] mt-1 ${
@@ -441,7 +532,41 @@ export default function Messages() {
             </div>
           )}
 
+          {pendingImage && previewUrl && (
+            <div className="mx-3 mb-2 flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <img src={previewUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
+              <span className="flex-1 min-w-0 text-xs text-slate-600 truncate">{pendingImage.name}</span>
+              <button
+                onClick={clearPendingImage}
+                className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer flex-shrink-0"
+                aria-label={t("messages.remove_image")}
+                title={t("messages.remove_image")}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
           <div className="p-3 bg-white border-t border-slate-200 flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              // Uit dezelfde constante als de controle in de adapter, zodat
+              // de bestandskiezer nooit iets aanbiedt dat daarna alsnog
+              // geweigerd wordt.
+              accept={ACCEPTED_IMAGE_TYPES}
+              className="hidden"
+              onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              className="p-2 text-slate-500 hover:text-y-teal disabled:opacity-50 cursor-pointer"
+              aria-label={t("messages.attach_image")}
+              title={t("messages.attach_image")}
+            >
+              <Paperclip size={18} />
+            </button>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -459,7 +584,7 @@ export default function Messages() {
             />
             <button
               onClick={() => void handleSend()}
-              disabled={sending || draft.trim().length === 0}
+              disabled={sending || (draft.trim().length === 0 && !pendingImage)}
               className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-sm font-medium"
             >
               {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
@@ -566,6 +691,14 @@ export default function Messages() {
             </div>
           </div>
         </div>
+      )}
+
+      {lightbox && (
+        <ImageLightbox
+          imageUrl={lightbox.url}
+          filename={lightbox.name}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   );

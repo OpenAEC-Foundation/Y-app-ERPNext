@@ -12,17 +12,24 @@ import assert from "node:assert/strict";
 import { invalidateCache } from "./erpnext.ts";
 import { resetSessionUserCache } from "./session.ts";
 import {
+  MAX_IMAGE_BYTES,
   MESSAGE_DOCTYPE,
   MESSAGE_DOCUMENT_TYPE,
   MESSAGE_LINK,
   MESSAGE_TYPE,
+  MessageImageError,
+  buildMessageLink,
+  checkImage,
   contactNameMap,
   countUnread,
   groupThreads,
   htmlToText,
+  isMessageLink,
+  isSafeFileUrl,
   listContacts,
   listMessages,
   markMessagesRead,
+  parseImageFromLink,
   previewOf,
   rowToMessage,
   sendMessage,
@@ -131,6 +138,64 @@ test("previewOf: kapt lange berichten af en maakt er één regel van", () => {
   assert.ok(preview.endsWith("…"));
 });
 
+/* ─── Afbeeldings-URL in het link-veld ─── */
+
+test("isSafeFileUrl: alleen eigen-origin bestandspaden komen erdoor", () => {
+  assert.equal(isSafeFileUrl("/private/files/foto.jpg"), true);
+  assert.equal(isSafeFileUrl("/files/logo.png"), true);
+
+  // Een externe URL zou bij het openen van het bericht het IP-adres van de
+  // ontvanger naar de afzender lekken — een baken vermomd als foto.
+  assert.equal(isSafeFileUrl("https://tracker.example/px.gif"), false);
+  // Protocol-relatief: begint met een slash en gaat toch naar een ander domein.
+  assert.equal(isSafeFileUrl("//tracker.example/px.gif"), false);
+  assert.equal(isSafeFileUrl("javascript:alert(1)"), false);
+  assert.equal(isSafeFileUrl("data:image/png;base64,AAAA"), false);
+  assert.equal(isSafeFileUrl("/private/files/../../etc/passwd"), false);
+  assert.equal(isSafeFileUrl('/private/files/a" onerror="x'), false);
+  assert.equal(isSafeFileUrl("/etc/passwd"), false);
+  assert.equal(isSafeFileUrl(""), false);
+  assert.equal(isSafeFileUrl(`/private/files/${"a".repeat(600)}.jpg`), false);
+});
+
+test("buildMessageLink/parseImageFromLink: het pad overleeft de heen-en-weerweg", () => {
+  const link = buildMessageLink("/private/files/vakantie foto&co.jpg");
+  assert.ok(isMessageLink(link));
+  assert.deepEqual(parseImageFromLink(link), {
+    url: "/private/files/vakantie foto&co.jpg",
+    name: "vakantie foto&co.jpg",
+  });
+});
+
+test("buildMessageLink: zonder afbeelding blijft het kale merk staan", () => {
+  assert.equal(buildMessageLink(), MESSAGE_LINK);
+  assert.equal(parseImageFromLink(MESSAGE_LINK), null);
+});
+
+test("isMessageLink: alleen het merk zelf of het merk met query telt", () => {
+  assert.equal(isMessageLink(MESSAGE_LINK), true);
+  assert.equal(isMessageLink(`${MESSAGE_LINK}?img=%2Ffiles%2Fa.png`), true);
+  // Geen prefix-match op een willekeurige langere route.
+  assert.equal(isMessageLink(`${MESSAGE_LINK}-nep`), false);
+  assert.equal(isMessageLink("/app/user"), false);
+});
+
+test("parseImageFromLink: een onveilige URL levert géén afbeelding op", () => {
+  const evil = `${MESSAGE_LINK}?img=${encodeURIComponent("https://tracker.example/px.gif")}`;
+  assert.equal(parseImageFromLink(evil), null);
+});
+
+/* ─── checkImage ─── */
+
+test("checkImage: type en grootte worden vóór het versturen geweigerd", () => {
+  assert.equal(checkImage({ type: "image/jpeg", size: 1000 }), null);
+  assert.equal(checkImage({ type: "image/webp", size: 1000 }), null);
+  // SVG kan script bevatten en wordt door Frappe's optimize niet aangeraakt.
+  assert.equal(checkImage({ type: "image/svg+xml", size: 1000 }), "type");
+  assert.equal(checkImage({ type: "application/pdf", size: 1000 }), "type");
+  assert.equal(checkImage({ type: "image/png", size: MAX_IMAGE_BYTES + 1 }), "size");
+});
+
 /* ─── rowToMessage ─── */
 
 test("rowToMessage: een rij van een ander is een ONTVANGEN bericht met owner als afzender", () => {
@@ -176,6 +241,26 @@ test("rowToMessage: zonder email_content valt hij terug op subject", () => {
   assert.equal(message.body, "Hallo");
 });
 
+test("rowToMessage: een afbeelding komt uit het link-veld", () => {
+  const message = rowToMessage(
+    row({ link: buildMessageLink("/private/files/bouwput.jpg") }),
+    ME,
+  );
+  assert.ok(message);
+  assert.deepEqual(message.image, { url: "/private/files/bouwput.jpg", name: "bouwput.jpg" });
+});
+
+test("rowToMessage: een bericht met een externe afbeeldings-URL blijft een bericht, maar zónder afbeelding", () => {
+  // Het bericht zelf mag niet verdwijnen — alleen het baken wordt genegeerd.
+  const message = rowToMessage(
+    row({ link: `${MESSAGE_LINK}?img=${encodeURIComponent("https://tracker.example/px.gif")}` }),
+    ME,
+  );
+  assert.ok(message);
+  assert.equal(message.image, undefined);
+  assert.equal(message.body, "Hallo");
+});
+
 /* ─── groupThreads / countUnread ─── */
 
 function msg(overrides: Partial<ErpMessage>): ErpMessage {
@@ -208,6 +293,15 @@ test("groupThreads: groepeert per collega, nieuwste gesprek bovenaan, met naam u
   assert.equal(threads[1].counterpartName, "Lara Nazari");
   // Binnen een gesprek: nieuwste eerst.
   assert.deepEqual(threads[1].messages.map((m) => m.name), ["a", "c"]);
+});
+
+test("groupThreads: lastHasImage volgt het nieuwste bericht, ook als dat geen tekst heeft", () => {
+  const threads = groupThreads([
+    msg({ name: "b", createdAt: "2026-09-03 12:00:00", body: "", image: { url: "/files/a.png", name: "a.png" } }),
+    msg({ name: "a", createdAt: "2026-09-03 10:00:00", body: "tekst" }),
+  ]);
+  assert.equal(threads[0].lastHasImage, true);
+  assert.equal(threads[0].lastBody, "");
 });
 
 test("groupThreads + countUnread: alleen ontvangen ongelezen post telt mee", () => {
@@ -339,6 +433,141 @@ test("sendMessage: een mislukte eigen kopie maakt de aflevering niet ongedaan", 
   try {
     await sendMessage("lara@3bm.co.nl", "Hoi");
     assert.equal(posts, 2);
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+/* ─── sendMessage met afbeelding ─── */
+
+function jpeg(name = "bouwput.jpg", bytes = 64): File {
+  return new File([new Uint8Array(bytes)], name, { type: "image/jpeg" });
+}
+
+/** Leest een veld uit de multipart-body van de upload-call. */
+function formField(init: RequestInit | undefined, key: string): unknown {
+  const body = init?.body;
+  return body instanceof FormData ? body.get(key) : undefined;
+}
+
+test("sendMessage met afbeelding: privé-upload aan het bericht van de ONTVANGER, daarna de link", async () => {
+  await resetState();
+  let created = 0;
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith("/api/method/upload_file")) {
+      return { status: 200, body: { message: { name: "F1", file_url: "/private/files/bouwput.jpg" } } };
+    }
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      created += 1;
+      return { status: 200, body: { data: { name: created === 1 ? "NL-ontvangen" : "NL-verzonden" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendMessage("lara@3bm.co.nl", "Kijk", jpeg());
+
+    const upload = mock.calls.find((c) => c.url.startsWith("/api/method/upload_file"));
+    assert.ok(upload);
+    // Privé — anders is het bestand zonder inloggen op te vragen.
+    assert.equal(formField(upload.init, "is_private"), "1");
+    // Aan het Notification Log van de ONTVANGER: díe koppeling is wat haar
+    // leesrecht op het privébestand geeft.
+    assert.equal(formField(upload.init, "doctype"), MESSAGE_DOCTYPE);
+    assert.equal(formField(upload.init, "docname"), "NL-ontvangen");
+    // Server-side terugschalen, zodat een telefoonfoto niet op ware grootte blijft staan.
+    assert.equal(formField(upload.init, "optimize"), "1");
+    assert.equal(formField(upload.init, "max_width"), "1600");
+
+    const put = mock.calls.find((c) => c.init?.method === "PUT");
+    assert.ok(put);
+    assert.equal(bodyOf(put.init).link, buildMessageLink("/private/files/bouwput.jpg"));
+
+    // De eigen verzonden kopie draagt dezelfde link, dus dezelfde afbeelding.
+    const posts = mock.calls.filter((c) => c.init?.method === "POST" && c.url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`));
+    assert.equal(posts.length, 2);
+    assert.equal(bodyOf(posts[1].init).link, buildMessageLink("/private/files/bouwput.jpg"));
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendMessage: een mislukte upload meldt zich apart — de tekst is namelijk al bezorgd", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith("/api/method/upload_file")) return { status: 403, body: { exception: "nee" } };
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      return { status: 200, body: { data: { name: "NL-ontvangen" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await assert.rejects(
+      () => sendMessage("lara@3bm.co.nl", "Kijk", jpeg()),
+      (err: unknown) => err instanceof MessageImageError,
+    );
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendMessage: een server-URL die de veiligheidscheck niet haalt wordt niet in het bericht gezet", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith("/api/method/upload_file")) {
+      return { status: 200, body: { message: { name: "F1", file_url: "https://elders.example/x.jpg" } } };
+    }
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      return { status: 200, body: { data: { name: "NL-ontvangen" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await assert.rejects(() => sendMessage("lara@3bm.co.nl", "Kijk", jpeg()), MessageImageError);
+    assert.ok(!mock.calls.some((c) => c.init?.method === "PUT"));
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendMessage: een te groot of verkeerd bestand wordt geweigerd vóór er iets geschreven is", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    const tooBig = new File([new Uint8Array(10)], "groot.png", { type: "image/png" });
+    Object.defineProperty(tooBig, "size", { value: MAX_IMAGE_BYTES + 1 });
+    await assert.rejects(() => sendMessage("lara@3bm.co.nl", "", tooBig));
+    assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendMessage: alleen een afbeelding, zonder tekst, is een geldig bericht", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith("/api/method/upload_file")) {
+      return { status: 200, body: { message: { name: "F1", file_url: "/private/files/a.jpg" } } };
+    }
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      return { status: 200, body: { data: { name: "NL-ontvangen" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendMessage("lara@3bm.co.nl", "", jpeg());
+    assert.ok(mock.calls.some((c) => c.url.startsWith("/api/method/upload_file")));
   } finally {
     mock.restore();
     await resetState();

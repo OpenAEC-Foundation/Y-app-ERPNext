@@ -75,6 +75,45 @@
  * Voor een ontvangen bericht wordt die waarde genegeerd — daar is `owner` de
  * waarheid; voor een verzonden bericht is het je eigen invoer en dus per
  * definitie betrouwbaar.
+ *
+ * ─── Afbeeldingen ───
+ *
+ * Een afbeelding is een gewone Frappe `File` met `is_private = 1`, gehangen
+ * aan het **Notification Log van de ontvanger**. Die koppeling is niet
+ * cosmetisch maar dragend voor de rechten: Frappe serveert `/private/files/…`
+ * via `download_private_file`, dat `File.has_permission` aanroept, en die
+ * geeft toegang aan (a) de eigenaar — de afzender — en (b) iedereen die het
+ * document waaraan het bestand hangt mag lezen. Zonder die koppeling zou
+ * alleen de afzender zijn eigen foto kunnen bekijken.
+ *
+ * De **vindbaarheid** loopt daarentegen niet via de bijlage-relatie maar via
+ * het `link`-veld: `/y-next#/messenger?img=<pad>`. Twee redenen om de URL mee
+ * te sturen in plaats van hem per bericht op te zoeken:
+ *
+ *  1. De lijst wordt elke 20 seconden opnieuw opgehaald. Een tweede query op
+ *     `File` bij elke poll verdubbelt het verkeer voor iets dat nooit
+ *     verandert.
+ *  2. Het `File`-leesfilter van Frappe hangt af van de impliciete rol
+ *     "Desk User" — een detail dat bij een upgrade kan schuiven. De URL in
+ *     het bericht doet dat niet.
+ *
+ * **Waarom `link` en niet een ander veld.** `email_content` en `subject`
+ * worden door de ERPNext-bel als HTML gerenderd; daar hoort geen markup in,
+ * en dat is precies waarom de berichttekst geëscaped wordt weggeschreven.
+ * `attached_file` lijkt de voor de hand liggende plek, maar Frappe's eigen
+ * `notification_log.js` leest dat veld als een print-format-beschrijving en
+ * interpoleert `attachment.name` rechtstreeks in de HTML van het
+ * desk-formulier — een veld met een bestaande betekenis kapen levert daar
+ * een kapotte (of erger: injecteerbare) weergave op. `link` is het enige
+ * veld op dit doctype dat per definitie een URL bevat en nergens als rijke
+ * inhoud wordt uitgevoerd: de bel maakt er een `href` van, meer niet. De
+ * waarde blijft bovendien een werkende link naar dit scherm.
+ *
+ * Bij het teruglezen is de URL onvertrouwd — hij komt uit een document dat
+ * de afzender heeft geschreven. `isSafeFileUrl` laat daarom uitsluitend
+ * eigen-origin bestandspaden door. Een externe URL zou anders bij het openen
+ * van het bericht stilletjes het IP-adres en de user-agent van de ontvanger
+ * naar de afzender lekken; een baken vermomd als foto.
  */
 
 import {
@@ -83,6 +122,7 @@ import {
   fetchList,
   invalidateCache,
   updateDocument,
+  uploadFile,
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
 
@@ -114,13 +154,54 @@ export const MESSAGE_DOCUMENT_TYPE = "User";
  */
 export const MESSAGE_LINK = "/y-next#/messenger";
 
+/** Queryparameter in `link` waarin het pad naar de afbeelding staat. */
+const MESSAGE_IMAGE_PARAM = "img";
+
 /** Hoeveel tekens van het bericht in `subject` (en dus in de desk-bel) komen. */
 const SUBJECT_PREVIEW_LENGTH = 140;
 
 /** Standaard paginagrootte van `listMessages`. */
 const DEFAULT_MESSAGE_LIMIT = 300;
 
+/**
+ * Maximale uploadgrootte, 5 MB.
+ *
+ * Ruim genoeg voor een telefoonfoto en ruim ónder Frappe's eigen grens
+ * (standaard 10 MB) én onder wat nginx zonder aanpassing doorlaat, zodat de
+ * gebruiker een nette melding krijgt in plaats van een afgekapte request met
+ * een 413 die nergens landt. Wat er daarna van overblijft bepaalt de server:
+ * `optimize` schaalt terug naar `IMAGE_MAX_DIMENSION` en hercomprimeert, dus
+ * wat er uiteindelijk opgeslagen wordt is doorgaans een fractie hiervan.
+ */
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Langste zijde waarnaar Frappe server-side terugschaalt. */
+const IMAGE_MAX_DIMENSION = 1600;
+
+/**
+ * Toegestane afbeeldingstypen.
+ *
+ * SVG staat er bewust niet bij. Frappe's `optimize_image` laat SVG
+ * ongemoeid passeren, en een SVG is een XML-document dat script kan
+ * bevatten: onschadelijk in een `<img>`, maar niet zodra iemand hem opent of
+ * downloadt vanuit de lightbox. Rasterformaten hebben dat probleem niet.
+ */
+export const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 /* ─── Types ─── */
+
+/** Een afbeelding die aan een bericht hangt. */
+export interface ErpMessageImage {
+  /** Eigen-origin pad (`/private/files/…`), al gevalideerd. */
+  url: string;
+  /** Bestandsnaam voor het bijschrift en de download-knop. */
+  name: string;
+}
 
 /** Eén bericht zoals de UI het consumeert. */
 export interface ErpMessage {
@@ -135,6 +216,8 @@ export interface ErpMessage {
   /** `creation` van ERPNext, ongeparseerd (sorteert lexicaal correct). */
   createdAt: string;
   read: boolean;
+  /** Afbeelding bij dit bericht, als er één is en de URL door de check kwam. */
+  image?: ErpMessageImage;
 }
 
 /** Alle berichten met één collega, plus wat de gesprekslijst moet tonen. */
@@ -148,6 +231,13 @@ export interface ErpMessageThread {
   lastBody: string;
   /** `createdAt` van het nieuwste bericht. */
   lastAt: string;
+  /**
+   * Of het nieuwste bericht een afbeelding draagt. De gesprekslijst toont
+   * daarmee "Afbeelding" in plaats van een lege regel bij een bericht zonder
+   * tekst — het label zelf hoort in de UI-laag, want dit bestand kent geen
+   * vertalingen.
+   */
+  lastHasImage: boolean;
   /** Aantal ongelezen ontvangen berichten in dit gesprek. */
   unread: number;
 }
@@ -225,6 +315,77 @@ export function previewOf(text: string): string {
     : oneLine;
 }
 
+/* ─── Afbeeldings-URL in het link-veld ─── */
+
+/**
+ * Laat uitsluitend een eigen-origin bestandspad van deze ERPNext-site door.
+ *
+ * De waarde komt uit een document dat de áfzender heeft geschreven, dus dit
+ * is een echte invoercontrole en geen opsmuk. Zonder deze filter kan een
+ * afzender `img=https://…/pixel.gif` meesturen; het openen van het bericht
+ * haalt dat plaatje dan op en verklapt het IP-adres, de user-agent en het
+ * moment van lezen aan een derde partij. Een schema (`javascript:`, `data:`)
+ * voert in een `<img>` weliswaar niets uit, maar wordt hier evengoed
+ * geweigerd: één regel die alleen "/files/…" en "/private/files/…" toelaat is
+ * makkelijker juist te houden dan een lijst met verboden vormen.
+ *
+ * `//host/pad` moet expliciet geweigerd worden — dat is een geldige
+ * protocol-relatieve URL naar een ander domein, en begint toch met een slash.
+ */
+export function isSafeFileUrl(url: string): boolean {
+  if (!url || url.length > 512) return false;
+  if (url.startsWith("//") || url.includes("\\") || url.includes("..")) return false;
+  if (!url.startsWith("/files/") && !url.startsWith("/private/files/")) return false;
+  // Aanhalingstekens, tags en stuurtekens horen niet in een pad. Spaties wél:
+  // Frappe laat die in bestandsnamen staan, dus ze weigeren zou een deel van
+  // de legitieme uploads stilletjes onzichtbaar maken.
+  for (const ch of url) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 32 || code === 127) return false;
+    if (ch === '"' || ch === "'" || ch === "<" || ch === ">") return false;
+  }
+  return true;
+}
+
+/** Bouwt de `link`-waarde: het merk, plus optioneel het pad naar de afbeelding. */
+export function buildMessageLink(fileUrl?: string): string {
+  if (!fileUrl) return MESSAGE_LINK;
+  return `${MESSAGE_LINK}?${MESSAGE_IMAGE_PARAM}=${encodeURIComponent(fileUrl)}`;
+}
+
+/** Herkent een `link` als de onze — met of zonder afbeeldingsparameter. */
+export function isMessageLink(link: string): boolean {
+  return link === MESSAGE_LINK || link.startsWith(`${MESSAGE_LINK}?`);
+}
+
+/**
+ * Haalt de afbeelding uit een `link`, of `null` als er geen is of de URL de
+ * controle niet doorstaat. De weergavenaam is het laatste padsegment; Frappe
+ * plakt daar bij een naamconflict een suffix aan, maar het blijft de naam die
+ * de afzender koos en is dus herkenbaarder dan het File-docname.
+ */
+export function parseImageFromLink(link: string): ErpMessageImage | null {
+  const queryAt = link.indexOf("?");
+  if (queryAt < 0) return null;
+
+  let raw: string | null;
+  try {
+    raw = new URLSearchParams(link.slice(queryAt + 1)).get(MESSAGE_IMAGE_PARAM);
+  } catch {
+    return null;
+  }
+  if (!raw || !isSafeFileUrl(raw)) return null;
+
+  let name = raw.split("/").pop() || raw;
+  try {
+    name = decodeURIComponent(name);
+  } catch {
+    // Een kapotte percent-escape mag geen bericht onzichtbaar maken; dan
+    // toont de UI gewoon het onbewerkte segment.
+  }
+  return { url: raw, name };
+}
+
 /* ─── Rij → bericht ─── */
 
 /**
@@ -240,8 +401,9 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
   const name = toStr(row.name);
   const owner = toStr(row.owner);
   const forUser = toStr(row.for_user);
+  const link = toStr(row.link);
   if (!name || !owner || forUser !== me) return null;
-  if (toStr(row.link) !== MESSAGE_LINK) return null;
+  if (!isMessageLink(link)) return null;
 
   const outgoing = owner === me;
   const counterpart = outgoing ? toStr(row.document_name) : owner;
@@ -249,6 +411,7 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
 
   const html = toStr(row.email_content);
   const body = html ? htmlToText(html) : toStr(row.subject);
+  const image = parseImageFromLink(link);
 
   return {
     name,
@@ -257,6 +420,7 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
     body,
     createdAt: toStr(row.creation),
     read: Number(row.read) === 1,
+    ...(image ? { image } : {}),
   };
 }
 
@@ -332,6 +496,7 @@ export function groupThreads(
       messages: sorted,
       lastBody: previewOf(sorted[0]?.body || ""),
       lastAt: sorted[0]?.createdAt || "",
+      lastHasImage: Boolean(sorted[0]?.image),
       unread: sorted.filter((m) => m.direction === "in" && !m.read).length,
     });
   }
@@ -359,25 +524,64 @@ export function countUnread(messages: ErpMessage[]): number {
 /* ─── Schrijven ─── */
 
 /**
- * Verstuur een bericht aan één collega.
+ * Het bericht is bezorgd, maar de afbeelding haalde het niet.
+ *
+ * Een eigen fouttype omdat de gebruiker hier iets anders moet horen dan bij
+ * een gewone verzendfout: opnieuw versturen levert een dúbbel bericht op. De
+ * tekst staat al bij de ontvanger en dat valt niet terug te draaien —
+ * `Notification Log` geeft de rol `Employee` geen `delete`.
+ */
+export class MessageImageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MessageImageError";
+  }
+}
+
+/** Reden waarom een gekozen bestand niet verstuurd kan worden, of `null`. */
+export type ImageRejection = "type" | "size";
+
+/** Controleert een gekozen bestand vóór er ook maar iets verstuurd wordt. */
+export function checkImage(file: { type: string; size: number }): ImageRejection | null {
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) return "type";
+  if (file.size > MAX_IMAGE_BYTES) return "size";
+  return null;
+}
+
+/**
+ * Verstuur een bericht aan één collega, eventueel met één afbeelding.
  *
  * De afzender staat nergens in deze payload: `owner` wordt door Frappe zelf
  * gezet en negeert wat de client meestuurt. `from_user` gaat wél mee, puur
  * zodat de ERPNext-desk-bel de juiste naam toont — deze module leest dat veld
  * nooit terug.
  *
- * De ontvangerskopie gaat als eerste de deur uit: dát is de aflevering. Als
- * de eigen verzonden-kopie daarna faalt is het bericht wél bezorgd, en een
- * fout gooien zou de gebruiker aanzetten tot een tweede poging — dus een
- * dubbel bericht bij de ontvanger. De verzendlijst mist dan hooguit één regel
- * tot de volgende keer.
+ * De volgorde is niet willekeurig. De ontvangerskopie gaat als eerste de deur
+ * uit, want dát is de aflevering, en de bijlage kan pas gehangen worden aan
+ * een document dat bestaat. Daarna:
+ *
+ *  - **Upload mislukt** ⇒ `MessageImageError`. De tekst is dan al bezorgd;
+ *    dat verzwijgen zou de gebruiker laten denken dat er niets gebeurd is en
+ *    hem het bericht nóg een keer laten sturen.
+ *  - **Eigen verzonden-kopie mislukt** ⇒ stil. Het bericht is bezorgd, en een
+ *    fout gooien zou tot een tweede, dubbele verzending leiden. De
+ *    verzendlijst mist dan hooguit één regel.
+ *
+ * Eén afbeelding per bericht, bewust: de vindbaarheid loopt via één
+ * `img`-parameter in `link`, en wie drie foto's wil sturen stuurt drie
+ * berichten. Een lijst in dat veld proppen maakt de validatie aan de
+ * leeskant een stuk minder overzichtelijk voor iets wat zelden gevraagd wordt.
  */
-export async function sendMessage(to: string, text: string): Promise<void> {
+export async function sendMessage(to: string, text: string, image?: File): Promise<void> {
   const me = await resolveSessionUser();
   if (!me) throw new Error("Geen ERPNext-sessie");
 
   const body = text.trim();
-  if (!body || !to) return;
+  if ((!body && !image) || !to) return;
+
+  // Weigeren vóór de eerste schrijfactie: een afgekeurd bestand mag geen
+  // half bericht achterlaten.
+  if (image && checkImage(image)) throw new Error("Afbeelding is niet toegestaan");
 
   const shared = {
     type: MESSAGE_TYPE,
@@ -385,15 +589,39 @@ export async function sendMessage(to: string, text: string): Promise<void> {
     subject: previewOf(body),
     email_content: textToHtml(body),
     from_user: me,
-    link: MESSAGE_LINK,
   };
 
-  await createDocument(MESSAGE_DOCTYPE, {
+  const received = await createDocument<{ name?: string }>(MESSAGE_DOCTYPE, {
     ...shared,
     for_user: to,
     document_name: me,
     read: 0,
+    link: MESSAGE_LINK,
   });
+
+  let link = MESSAGE_LINK;
+  if (image) {
+    const receivedName = toStr(received?.name);
+    try {
+      if (!receivedName) throw new Error("Geen docname teruggekregen");
+      // `is_private = 1`: het bestand hoort niet publiek opvraagbaar te zijn.
+      // De koppeling aan het Notification Log van de ONTVANGER is wat hem
+      // voor haar leesbaar maakt (zie de kopjes-uitleg); de afzender komt er
+      // hoe dan ook bij, want die is de eigenaar.
+      const uploaded = await uploadFile(image, MESSAGE_DOCTYPE, receivedName, true, {
+        optimize: true,
+        maxWidth: IMAGE_MAX_DIMENSION,
+        maxHeight: IMAGE_MAX_DIMENSION,
+      });
+      const fileUrl = toStr(uploaded?.file_url);
+      if (!isSafeFileUrl(fileUrl)) throw new Error(`Onverwachte bestands-URL: ${fileUrl}`);
+      link = buildMessageLink(fileUrl);
+      await updateDocument(MESSAGE_DOCTYPE, receivedName, { link });
+    } catch (err) {
+      invalidateCache(MESSAGE_DOCTYPE);
+      throw new MessageImageError(err instanceof Error ? err.message : "Upload mislukt");
+    }
+  }
 
   try {
     await createDocument(MESSAGE_DOCTYPE, {
@@ -401,6 +629,7 @@ export async function sendMessage(to: string, text: string): Promise<void> {
       for_user: me,
       document_name: to,
       read: 1,
+      link,
     });
   } catch {
     // Bewust stil: zie de toelichting hierboven.
