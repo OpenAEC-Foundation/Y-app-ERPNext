@@ -9,6 +9,7 @@ import {
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
+import { haalAgendas, eindTijd } from "../lib/agenda-mailserver";
 import { RecipientInput } from "../components/RecipientInput";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
@@ -25,7 +26,7 @@ interface EventItem {
   start: string;
   end?: string;
   allDay: boolean;
-  type: "event" | "task" | "leave" | "timesheet" | "meeting" | "ical" | "o365";
+  type: "event" | "task" | "leave" | "timesheet" | "meeting" | "ical" | "o365" | "mailbox";
   color: string;
   description?: string;
   location?: string;
@@ -88,7 +89,7 @@ interface CustomCalendar {
 // (deelnemers, actiepunten) dekt. Zie MeetingNotes.tsx (BLOCKED) — deze bron
 // is daarom hier verwijderd i.p.v. gegate, zodat de agenda geen dode toggle
 // toont voor data die nooit kan laden.
-type ErpSourceKey = "events" | "tasks" | "leaves" | "timesheets";
+type ErpSourceKey = "events" | "tasks" | "leaves" | "timesheets" | "mailbox";
 
 interface ErpSourceConfig {
   key: ErpSourceKey;
@@ -101,6 +102,7 @@ const ERP_SOURCES: ErpSourceConfig[] = [
   { key: "tasks", label: "agenda.source_tasks", color: "#f59e0b" },
   { key: "leaves", label: "agenda.source_leaves", color: "#ef4444" },
   { key: "timesheets", label: "agenda.source_timesheets", color: "#10b981" },
+  { key: "mailbox", label: "agenda.source_mailbox", color: "#0ea5e9" },
 ];
 
 const TYPE_COLORS: Record<string, string> = {
@@ -111,6 +113,7 @@ const TYPE_COLORS: Record<string, string> = {
   meeting: "#7c3aed",
   ical: "#8b5cf6",
   o365: "#0078d4",
+  mailbox: "#0ea5e9",
 };
 
 const TYPE_LABEL_KEYS: Record<string, string> = {
@@ -205,6 +208,7 @@ const ERP_SOURCE_DEFAULTS: Record<ErpSourceKey, boolean> = {
   tasks: true,
   leaves: true,
   timesheets: false,
+  mailbox: true,
 };
 
 function getErpSourceEnabled(key: ErpSourceKey): boolean {
@@ -1192,6 +1196,7 @@ export default function Agenda() {
     tasks: getErpSourceEnabled("tasks"),
     leaves: getErpSourceEnabled("leaves"),
     timesheets: getErpSourceEnabled("timesheets"),
+    mailbox: getErpSourceEnabled("mailbox"),
   });
 
   // Custom calendars
@@ -1341,6 +1346,26 @@ export default function Agenda() {
           }
         }
       });
+
+      // Agenda's van de mailserver. Los van `fetches` hierboven omdat het
+      // resultaat een andere vorm heeft en de adapter zijn eigen fouten al
+      // opvangt — een onbereikbare mailserver hoort de agenda niet leeg te maken.
+      if (erpSources.mailbox) {
+        const { afspraken } = await haalAgendas(dateRange.start, dateRange.end);
+        for (const a of afspraken) {
+          if (!a.start) continue;
+          items.push({
+            id: `mb-${a.gebruiker}-${a.id}`,
+            title: a.titel || t("agenda.no_title"),
+            start: a.start.replace("T", " "),
+            end: eindTijd(a.start, a.duur),
+            allDay: !!a.hele_dag,
+            type: "mailbox",
+            color: TYPE_COLORS.mailbox,
+            owner: a.gebruiker.split("@")[0],
+          });
+        }
+      }
 
       // Leaves
       if (erpSources.leaves) {
