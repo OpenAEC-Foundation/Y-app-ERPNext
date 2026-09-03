@@ -94,6 +94,7 @@
   "nav.timesheets": "Timesheets",
   "nav.contacts": "Contacts",
   "nav.calendar": "Calendar",
+  "nav.weekplanning": "Week planning",
   "nav.documents": "Documents",
   "nav.wiki": "Knowledge Base",
   "nav.section.organisation": "Organisation",
@@ -2626,6 +2627,7 @@
   "y_next.pinv_error_series_stuck": "ERPNext cannot issue an invoice number: the naming series lags behind the existing invoices. An administrator fixes this in Settings → Document Naming Settings → update the ACC-PINV series.",
   "y_next.pinv_error_permission": "You are not allowed to create purchase invoices. Ask your administrator for the Accounts User role.",
   "y_next.pinv_error_duplicate_bill": "This invoice number has already been booked for this supplier.",
+  "y_next.pinv_error_due_date": "This supplier's payment term had already expired on the posting date. Set the posting date to the invoice date, or remove the payment term from the supplier.",
   "y_next.pinv_error_generic": "Booking failed. Try again or create the invoice in ERPNext.",
   "y_next.pinv_reason_supplier_contact_email": "Supplier matched on the sender address",
   "y_next.pinv_reason_supplier_domain": "Supplier matched on the sender domain",
@@ -2981,5 +2983,9 @@
   "y_next.mail_quote_hide_original": "Hide original message",
   "agenda.source_mailbox": "Colleagues’ calendars",
   "agenda.colleagues": "Colleagues",
-  "agenda.resize_panel": "Drag to resize the column"
+  "agenda.resize_panel": "Drag to resize the column",
+  "weekplanning.open_new_tab": "Open in new tab",
+  "webmail.download_all": "All",
+  "webmail.download_all_hint": "Download all attachments as one zip",
+  "webmail.attachments_zip_name": "attachments"
 }

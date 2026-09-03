@@ -28,6 +28,7 @@ const Tasks = lazy(() => import("./pages/Tasks"));
 const Subtasks = lazy(() => import("./pages/Subtasks"));
 const Planning = lazy(() => import("./pages/Planning"));
 const Agenda = lazy(() => import("./pages/Agenda"));
+const Weekplanning = lazy(() => import("./pages/Weekplanning"));
 const Employees = lazy(() => import("./pages/Employees"));
 const FinancieelDashboard = lazy(() => import("./pages/FinancieelDashboard"));
 const Revenue = lazy(() => import("./pages/Revenue"));
@@ -555,6 +556,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/subtasks" element={gate("/subtasks", <Subtasks />)} />
                   <Route path="/planning" element={gate("/planning", <Planning />)} />
                   <Route path="/calendar" element={gate("/calendar", <Agenda />)} />
+                  <Route path="/weekplanning" element={gate("/weekplanning", <Weekplanning />)} />
                   <Route path="/employees" element={gate("/employees", <Employees />)} />
                   <Route path="/financieel-dashboard" element={gate("/financieel-dashboard", <FinancieelDashboard />)} />
                   <Route path="/revenue" element={gate("/revenue", <Revenue />)} />

@@ -1832,6 +1832,7 @@ function ErpNextMailView({ name }: { name: string }) {
           <ErpAttachmentList
             attachments={body.attachments}
             onError={setPopupError}
+            subject={doc?.subject}
             className="border-t border-slate-200 px-6 py-4"
           />
         )}

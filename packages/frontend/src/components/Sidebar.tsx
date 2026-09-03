@@ -5,7 +5,7 @@ import {
   TrendingUp, Clock, PieChart, BookOpen, Receipt, Truck, Timer,
   FileSpreadsheet, Wallet, CalendarCheck, Settings, BarChart3,
   ListTodo, LayoutDashboard, UserCheck, Cloud, ListTree,
-  Calendar, ChevronDown, ChevronRight, Landmark, BookMarked, Shield, MessageSquare, ClipboardList, Contact,
+  Calendar, CalendarRange, ChevronDown, ChevronRight, Landmark, BookMarked, Shield, MessageSquare, ClipboardList, Contact,
   Target, Banknote, PenLine, X, PanelLeftClose, PanelLeftOpen, Puzzle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -32,7 +32,7 @@ export type Page =
   | "btw" | "loonaangifte" | "expenses" | "deliverynotes" | "timesheets"
   | "leave" | "todo" | "settings" | "profitability"
   | "nextcloud-files" | "nextcloud-talk" | "webmail" | "subtasks"
-  | "calendar" | "ledgers" | "bank-transactions" | "booking-program"
+  | "calendar" | "weekplanning" | "ledgers" | "bank-transactions" | "booking-program"
   | "wiki" | "passwords" | "messenger" | "erpnext-overview" | "contacts"
   | "meeting-notes" | "leads" | "liquidity-planning" | "letters"
   | "release-notes"
@@ -71,7 +71,7 @@ const ROLE_PAGE_MAP: Record<string, Set<Page>> = {
 
 /** Pages everyone can see regardless of roles */
 const UNIVERSAL_PAGES: Set<Page> = new Set([
-  "dashboard", "settings", "contacts", "calendar", "todo", "wiki",
+  "dashboard", "settings", "contacts", "calendar", "weekplanning", "todo", "wiki",
   "webmail", "messenger", "meeting-notes", "letters", "release-notes",
   "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview",
 ]);
@@ -139,6 +139,7 @@ function getSections(): NavSection[] {
         { id: "contacts", labelKey: "nav.contacts", icon: Contact },
         { id: "messenger", labelKey: "nav.messenger", icon: MessageSquare },
         { id: "calendar", labelKey: "nav.calendar", icon: Calendar },
+        { id: "weekplanning", labelKey: "nav.weekplanning", icon: CalendarRange },
         { id: "nextcloud-files", labelKey: "nav.documents", icon: Cloud, visibility: "employer" },
         { id: "financieel-dashboard", labelKey: "nav.statistics", icon: BarChart3, visibility: "employer" },
       ],

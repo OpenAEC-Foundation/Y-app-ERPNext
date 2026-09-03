@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, FileText, Paperclip } from "lucide-react";
+import { Download, FileArchive, FileText, Loader2, Paperclip } from "lucide-react";
 import { getFileUrl } from "../../lib/erpnext";
 import { isPdfName } from "../../lib/mail-erpnext-compose";
 import { isPermissionError } from "../../lib/permission-error";
@@ -8,6 +9,7 @@ import {
   openAttachmentInTab,
   type MailAttachmentRef,
 } from "../../lib/mail-attachment";
+import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
 
 /**
  * Bijlagenpaneel van de Communication-mail (Y-next).
@@ -34,14 +36,17 @@ import {
  */
 export type ErpAttachment = MailAttachmentRef;
 
-export default function ErpAttachmentList({ attachments, onError, className }: {
+export default function ErpAttachmentList({ attachments, onError, className, subject }: {
   attachments: ErpAttachment[];
   /** Meldkanaal richting de gebruiker (toast of foutregel). */
   onError: (message: string) => void;
   /** Container-styling; het leespaneel en de popout hebben andere marges. */
   className?: string;
+  /** Onderwerp van de mail; wordt de naam van het zip-bestand. */
+  subject?: string;
 }) {
   const { t } = useTranslation();
+  const [zipBezig, setZipBezig] = useState(false);
   if (attachments.length === 0) return null;
 
   /**
@@ -78,6 +83,44 @@ export default function ErpAttachmentList({ attachments, onError, className }: {
     void checkAttachmentAccess(att).catch((err) => report(err, fallbackKey));
   }
 
+  /**
+   * Alle bijlagen in één zip. De browser mag meerdere downloads uit één klik
+   * weigeren of er een toestemmingsvraag over stellen, en je houdt dan losse
+   * bestanden over; één archief is precies wat er gevraagd wordt.
+   *
+   * Alles wordt eerst opgehaald en pas daarna aangeboden: een half archief is
+   * erger dan een foutmelding, dus mislukt er één bijlage, dan gaat de hele
+   * download niet door en zegt de melding waarom.
+   */
+  async function handleDownloadAll() {
+    if (zipBezig) return;
+    setZipBezig(true);
+    try {
+      const namen = uniekeNamen(attachments.map((a) => a.file_name));
+      const bestanden = await Promise.all(attachments.map(async (att, i) => {
+        const res = await fetch(getFileUrl(att.file_url), { credentials: "include" });
+        if (!res.ok) {
+          throw Object.assign(new Error(`${att.file_name} (HTTP ${res.status})`), { status: res.status });
+        }
+        return { naam: namen[i], data: new Uint8Array(await res.arrayBuffer()) };
+      }));
+
+      const zip = maakZip(bestanden);
+      const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${veiligeBestandsnaam(subject ?? "", t("webmail.attachments_zip_name"))}.zip`;
+      link.click();
+      // Pas vrijgeven nadat de browser de download heeft opgepakt; direct
+      // intrekken laat hem afbreken.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      report(err, "y_next.attachment_download_failed");
+    } finally {
+      setZipBezig(false);
+    }
+  }
+
   return (
     <div className={className ?? "border-t border-slate-200 px-5 py-2.5 flex-shrink-0"}>
       <p className="text-[11px] text-slate-500 mb-1.5 flex items-center gap-1">
@@ -85,6 +128,16 @@ export default function ErpAttachmentList({ attachments, onError, className }: {
         {attachments.length === 1
           ? t("webmail.one_attachment")
           : t("webmail.n_attachments", { count: attachments.length })}
+        {attachments.length > 1 && (
+          <button onClick={() => void handleDownloadAll()} disabled={zipBezig}
+            title={t("webmail.download_all_hint")}
+            className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 disabled:opacity-50 cursor-pointer">
+            {zipBezig
+              ? <Loader2 size={11} className="animate-spin" />
+              : <FileArchive size={11} />}
+            {t("webmail.download_all")}
+          </button>
+        )}
       </p>
       <div className="flex flex-wrap gap-2">
         {attachments.map((att) => {

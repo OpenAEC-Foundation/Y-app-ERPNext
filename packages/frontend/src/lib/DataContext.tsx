@@ -102,6 +102,9 @@ export function DataProvider({ children, userRoles }: { children: ReactNode; use
     const [compResult, empResult, projResult, custResult, leaveResult] = await Promise.allSettled([
       fetchList<Company>("Company", {
         fields: ["name", "company_name", "abbr"],
+        // Uitgeschakelde bedrijven horen niet in een keuzelijst; hun boekingen
+        // blijven wel bestaan. Het vinkje staat op de Company in ERPNext.
+        filters: [["disabled", "=", 0]],
         limit_page_length: 0,
       }),
       // Fetch employees

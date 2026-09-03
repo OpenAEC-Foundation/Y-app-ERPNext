@@ -32,6 +32,8 @@ import {
 } from "./mail-suggestions.ts";
 import {
   buildPurchaseInvoicePayload,
+  dueDateFromTerms,
+  type PaymentTermRow,
   type PurchaseInvoiceInput,
 } from "./purchase-invoice-payload.ts";
 
@@ -274,18 +276,50 @@ export type BookingResult = MailDocumentResult;
  * mail. Gooit alleen wanneer het aanmaken zelf mislukt — zie
  * `createDocumentFromMail`.
  */
-export function bookPurchaseInvoiceFromMail(args: {
+export async function bookPurchaseInvoiceFromMail(args: {
   input: PurchaseInvoiceInput;
   /** Communication-docname van de mail. */
   communication: string;
   attachments: BookingAttachment[];
 }): Promise<BookingResult> {
+  const input = args.input.dueDate
+    ? args.input
+    : { ...args.input, dueDate: await vervaldatumUitTermijn(args.input) };
   return createDocumentFromMail({
     doctype: "Purchase Invoice",
-    payload: buildPurchaseInvoicePayload(args.input),
+    payload: buildPurchaseInvoicePayload(input),
     communication: args.communication,
     attachments: args.attachments,
   });
+}
+
+/**
+ * De vervaldatum die bij deze factuur hoort, gerekend vanaf de factuurdatum
+ * en de betalingstermijn van de leverancier. Zonder deze datum weigert ERPNext
+ * elke factuur waarvan de termijn al verstreken is op de boekdatum — zie
+ * `dueDateFromTerms` voor het waarom.
+ *
+ * Lukt het ophalen niet, dan geeft dit `undefined` en blijft het veld weg. Dat
+ * is precies het oude gedrag: een factuur van vandaag boekt dan gewoon door,
+ * en een oudere loopt tegen de melding van ERPNext aan in plaats van tegen een
+ * fout uit deze functie.
+ */
+async function vervaldatumUitTermijn(
+  input: PurchaseInvoiceInput,
+): Promise<string | undefined> {
+  if (!input.billDate) return undefined;
+  try {
+    const leverancier = await fetchDocument<{ payment_terms?: string }>(
+      "Supplier", input.supplier,
+    );
+    if (!leverancier.payment_terms) return undefined;
+    const template = await fetchDocument<{ terms?: PaymentTermRow[] }>(
+      "Payment Terms Template", leverancier.payment_terms,
+    );
+    return dueDateFromTerms(input.billDate, template.terms);
+  } catch {
+    return undefined;
+  }
 }
 
 /* ──────────────────────── "Nee, geen factuur" ────────────────────────── */
@@ -324,7 +358,8 @@ export function isInvoiceSuggestionDismissed(dismissed: Set<string>, communicati
 
 /* ─────────────────────────── Foutvertaling ───────────────────────────── */
 
-export type BookingErrorKind = "series-stuck" | "permission" | "duplicate-bill" | "generic";
+export type BookingErrorKind =
+  | "series-stuck" | "permission" | "duplicate-bill" | "due-date" | "generic";
 
 /**
  * Vertaalt een mislukte boeking naar een categorie waar de UI iets zinnigs
@@ -350,6 +385,11 @@ export function classifyBookingError(err: unknown): BookingErrorKind {
   // nummer als "Supplier Invoice No exists in Purchase Invoice …". Dat is een
   // inhoudelijke dubbeling en iets heel anders dan een vastgelopen reeks.
   if (/supplier invoice no|leveranciersfactuurnummer/i.test(message)) return "duplicate-bill";
+  // De vervaldatum-toets van ERPNext. `vervaldatumUitTermijn` vangt dit
+  // normaal af; komt hij er tóch langs (termijn met een grondslag die we niet
+  // kennen, of de leverancier niet leesbaar), dan is een boekdatum gelijk aan
+  // de factuurdatum de uitweg — en dat moet de melding vertellen.
+  if (/due \/ reference date|due date cannot be/i.test(message)) return "due-date";
   if (status === 409 || /already exists/i.test(message)) return "series-stuck";
   if (status === 403 || /permissionerror|not permitted|no permission/i.test(message)) return "permission";
   return "generic";

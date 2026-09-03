@@ -94,6 +94,7 @@
   "nav.timesheets": "Zeiterfassung",
   "nav.contacts": "Kontakte",
   "nav.calendar": "Kalender",
+  "nav.weekplanning": "Wochenplanung",
   "nav.documents": "Dokumente",
   "nav.wiki": "Wissensdatenbank",
   "nav.section.organisation": "Organisation",
@@ -2626,6 +2627,7 @@
   "y_next.pinv_error_series_stuck": "ERPNext kann keine Rechnungsnummer vergeben: der Nummernkreis liegt hinter den vorhandenen Rechnungen zurück. Ein Administrator korrigiert das unter Einstellungen → Document Naming Settings → Serie ACC-PINV aktualisieren.",
   "y_next.pinv_error_permission": "Sie dürfen keine Eingangsrechnungen anlegen. Bitten Sie Ihren Administrator um die Rolle Accounts User.",
   "y_next.pinv_error_duplicate_bill": "Diese Rechnungsnummer wurde für diesen Lieferanten bereits gebucht.",
+  "y_next.pinv_error_due_date": "Die Zahlungsfrist dieses Lieferanten war am Buchungsdatum bereits abgelaufen. Setze das Buchungsdatum auf das Rechnungsdatum, oder entferne die Zahlungsfrist beim Lieferanten.",
   "y_next.pinv_error_generic": "Buchen fehlgeschlagen. Versuchen Sie es erneut oder legen Sie die Rechnung in ERPNext an.",
   "y_next.pinv_reason_supplier_contact_email": "Lieferant über die Absenderadresse erkannt",
   "y_next.pinv_reason_supplier_domain": "Lieferant über die Absenderdomain erkannt",
@@ -2981,5 +2983,9 @@
   "y_next.mail_quote_hide_original": "Ursprüngliche Nachricht ausblenden",
   "agenda.source_mailbox": "Kalender der Kollegen",
   "agenda.colleagues": "Kollegen",
-  "agenda.resize_panel": "Ziehen, um die Spalte zu verbreitern"
+  "agenda.resize_panel": "Ziehen, um die Spalte zu verbreitern",
+  "weekplanning.open_new_tab": "In neuem Tab öffnen",
+  "webmail.download_all": "Alle",
+  "webmail.download_all_hint": "Alle Anhänge als eine Zip-Datei herunterladen",
+  "webmail.attachments_zip_name": "anhaenge"
 }

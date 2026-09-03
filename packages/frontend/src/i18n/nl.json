@@ -94,6 +94,7 @@
   "nav.timesheets": "Urenregistratie",
   "nav.contacts": "Contacten",
   "nav.calendar": "Agenda",
+  "nav.weekplanning": "Weekplanning",
   "nav.documents": "Documenten",
   "nav.wiki": "Kennisbank",
   "nav.section.organisation": "Organisatie",
@@ -2626,6 +2627,7 @@
   "y_next.pinv_error_series_stuck": "ERPNext kan geen factuurnummer uitgeven: de nummerreeks loopt achter op de bestaande facturen. Een beheerder lost dit op via Instellingen → Document Naming Settings → reeks ACC-PINV bijwerken.",
   "y_next.pinv_error_permission": "Je hebt geen rechten om inkoopfacturen aan te maken. Vraag je beheerder om de rol Accounts User.",
   "y_next.pinv_error_duplicate_bill": "Dit factuurnummer is bij deze leverancier al geboekt.",
+  "y_next.pinv_error_due_date": "De betalingstermijn van deze leverancier was op de boekdatum al verstreken. Zet de boekdatum op de factuurdatum, of haal de betalingstermijn bij de leverancier weg.",
   "y_next.pinv_error_generic": "Inboeken mislukt. Probeer het opnieuw of maak de factuur in ERPNext aan.",
   "y_next.pinv_reason_supplier_contact_email": "Leverancier herkend aan het afzenderadres",
   "y_next.pinv_reason_supplier_domain": "Leverancier herkend aan het afzenderdomein",
@@ -2981,5 +2983,9 @@
   "y_next.mail_quote_hide_original": "Verberg origineel bericht",
   "agenda.source_mailbox": "Agenda collega’s",
   "agenda.colleagues": "Collega’s",
-  "agenda.resize_panel": "Sleep om de kolom breder te maken"
+  "agenda.resize_panel": "Sleep om de kolom breder te maken",
+  "weekplanning.open_new_tab": "In nieuw tabblad",
+  "webmail.download_all": "Alles",
+  "webmail.download_all_hint": "Alle bijlagen als één zip downloaden",
+  "webmail.attachments_zip_name": "bijlagen"
 }

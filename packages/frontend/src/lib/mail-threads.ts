@@ -285,3 +285,57 @@ export function missingParentNames(messages: ThreadableMessage[]): string[] {
   }
   return out;
 }
+
+/* ───────────────────── Zichtbare volgorde in de lijst ────────────────── */
+
+/**
+ * De namen van de mails zoals ze in de lijst ónder elkaar staan, in die
+ * volgorde: per gesprek de hoofdregel, en daaronder de overige leden zodra het
+ * gesprek uitgeklapt is.
+ *
+ * Waarvoor: de pijltjestoetsen. "Naar de volgende mail" moet de volgende mail
+ * pakken die je ook ziet — niet het volgende bericht in de ruwe lijst, want
+ * dat kan een ingeklapt gespreksdeel zijn dat helemaal niet op het scherm
+ * staat. Daarom spiegelt deze functie de lijst en niet de data.
+ *
+ * `selected` doet mee omdat een gesprek zichzelf uitklapt zodra je een lid
+ * ervan leest; dan zijn die leden zichtbaar, ook zonder dat je op het
+ * pijltje van de kop hebt geklikt.
+ */
+export function visibleThreadOrder<T extends ThreadableMessage>(
+  threads: MailThread<T>[],
+  expanded: ReadonlySet<string>,
+  selected?: string | null,
+): string[] {
+  const uit: string[] = [];
+  for (const thread of threads) {
+    uit.push(thread.head.name);
+    const openLid = Boolean(selected && selected !== thread.head.name
+      && thread.names.includes(selected));
+    if (!expanded.has(thread.id) && !openLid) continue;
+    for (const m of thread.messages) {
+      if (m.name !== thread.head.name) uit.push(m.name);
+    }
+  }
+  return uit;
+}
+
+/**
+ * De buur van `huidig` in een zichtbare volgorde: `-1` omhoog, `1` omlaag.
+ *
+ * Staat er nog niets open, dan is de eerste regel de eerste stap — met een
+ * pijltje in een verse lijst wil je bovenaan beginnen. Aan de uiteinden geeft
+ * dit `undefined`: doorlopen naar de andere kant van de lijst zou je met één
+ * toets van je nieuwste naar je oudste mail gooien.
+ */
+export function neighbourInOrder(
+  order: string[],
+  huidig: string | null | undefined,
+  richting: -1 | 1,
+): string | undefined {
+  if (order.length === 0) return undefined;
+  const i = huidig ? order.indexOf(huidig) : -1;
+  if (i < 0) return richting === 1 ? order[0] : order[order.length - 1];
+  const j = i + richting;
+  return j >= 0 && j < order.length ? order[j] : undefined;
+}

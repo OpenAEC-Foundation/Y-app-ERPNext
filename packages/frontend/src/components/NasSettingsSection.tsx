@@ -66,7 +66,9 @@ export function NasDeviceSection({ instanceId }: { instanceId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchList<{ name: string }>("Company", { fields: ["name"], limit_page_length: 0 })
+    fetchList<{ name: string }>("Company", {
+      fields: ["name"], filters: [["disabled", "=", 0]], limit_page_length: 0,
+    })
       .then(async (list) => {
         if (cancelled) return;
         const rows: CompanyRow[] = [];

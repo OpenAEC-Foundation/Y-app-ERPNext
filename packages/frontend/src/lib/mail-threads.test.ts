@@ -5,8 +5,10 @@ import {
   groupThreads,
   hasReplyMarker,
   missingParentNames,
+  neighbourInOrder,
   normalizeSubject,
   participantsOf,
+  visibleThreadOrder,
   type ThreadableMessage,
 } from "./mail-threads.ts";
 
@@ -267,4 +269,68 @@ test("missingParentNames: alleen ouders die niet in de lijst staan, ontdubbeld",
   ];
   assert.deepEqual(missingParentNames(rows), ["root"]);
   assert.deepEqual(missingParentNames([msg({ name: "x" })]), []);
+});
+
+/* ───────────────────── Zichtbare volgorde in de lijst ────────────────── */
+
+/** Twee gesprekken: het eerste met drie berichten, het tweede met één. */
+function tweeGesprekken() {
+  return groupThreads([
+    msg({ name: "a1", subject: "Offerte kozijnen", date: "2026-03-01 09:00:00" }),
+    msg({ name: "a2", subject: "Re: Offerte kozijnen", inReplyTo: "a1", date: "2026-03-02 09:00:00" }),
+    msg({ name: "a3", subject: "Re: Offerte kozijnen", inReplyTo: "a2", date: "2026-03-03 09:00:00" }),
+    msg({ name: "b1", subject: "Factuur maart", date: "2026-03-04 09:00:00" }),
+  ], []);
+}
+
+test("visibleThreadOrder toont ingeklapte gesprekken als één regel", () => {
+  const threads = tweeGesprekken();
+  const koppen = threads.map((th) => th.head.name);
+  assert.deepEqual(visibleThreadOrder(threads, new Set()), koppen);
+});
+
+test("visibleThreadOrder neemt de leden mee zodra het gesprek uitgeklapt is", () => {
+  const threads = tweeGesprekken();
+  const groot = threads.find((th) => th.count === 3);
+  assert.ok(groot, "gesprek met drie berichten hoort te bestaan");
+  const orde = visibleThreadOrder(threads, new Set([groot.id]));
+  assert.equal(orde.length, 4);
+  // De hoofdregel blijft vooropstaan, daarna de overige leden.
+  assert.equal(orde[0], groot.head.name);
+  assert.deepEqual([...orde].sort(), ["a1", "a2", "a3", "b1"]);
+});
+
+test("visibleThreadOrder klapt het gesprek uit waarvan je een lid leest", () => {
+  const threads = tweeGesprekken();
+  const groot = threads.find((th) => th.count === 3);
+  assert.ok(groot);
+  const lid = groot.names.find((n) => n !== groot.head.name);
+  assert.ok(lid);
+  // Zonder vinkje in `expanded`, puur omdat dit lid openstaat: anders zou de
+  // mail die je leest niet in de lijst staan waar de pijltjes langs lopen.
+  assert.equal(visibleThreadOrder(threads, new Set(), lid).length, 4);
+});
+
+test("neighbourInOrder loopt één stap op en neer", () => {
+  const orde = ["m1", "m2", "m3"];
+  assert.equal(neighbourInOrder(orde, "m2", 1), "m3");
+  assert.equal(neighbourInOrder(orde, "m2", -1), "m1");
+});
+
+test("neighbourInOrder blijft aan de uiteinden staan", () => {
+  const orde = ["m1", "m2", "m3"];
+  // Doorlopen naar de andere kant zou je met één toets van je nieuwste naar
+  // je oudste mail gooien.
+  assert.equal(neighbourInOrder(orde, "m3", 1), undefined);
+  assert.equal(neighbourInOrder(orde, "m1", -1), undefined);
+});
+
+test("neighbourInOrder begint bovenaan wanneer er nog niets openstaat", () => {
+  const orde = ["m1", "m2", "m3"];
+  assert.equal(neighbourInOrder(orde, null, 1), "m1");
+  assert.equal(neighbourInOrder(orde, null, -1), "m3");
+  assert.equal(neighbourInOrder([], null, 1), undefined);
+  // Een selectie die niet meer in de lijst staat (net verwijderd) mag geen
+  // dood punt opleveren.
+  assert.equal(neighbourInOrder(orde, "weg", 1), "m1");
 });

@@ -1298,6 +1298,28 @@ export default function Agenda() {
     window.addEventListener("mouseup", stop);
   }, [paneelBreedte]);
 
+  /**
+   * De kolomkoppen van de agenda staan buiten de scrollbak. Zodra die bak een
+   * scrollbalk krijgt, is hij smaller dan de koppen en staat elke kop een
+   * stukje naast zijn kolom. We meten de balk en reserveren die ruimte rechts
+   * van de koppen, zodat ze exact meelopen — ook wanneer het collegapaneel
+   * breder of smaller wordt gesleept.
+   */
+  const scrollBak = useRef<HTMLDivElement | null>(null);
+  const [balkBreedte, setBalkBreedte] = useState(0);
+  useEffect(() => {
+    const el = scrollBak.current;
+    if (!el) return;
+    const meet = () => setBalkBreedte(el.offsetWidth - el.clientWidth);
+    meet();
+    const ro = new ResizeObserver(meet);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewType, isMobile]);
+
+  /** Rechtermarge die de kolomkoppen boven hun kolom houdt. */
+  const kopMarge = { paddingRight: balkBreedte };
+
   const [showSettings, setShowSettings] = useState(() => {
     try {
       return localStorage.getItem("agenda_panel_dicht") !== "1";
@@ -1549,7 +1571,7 @@ export default function Agenda() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.start, dateRange.end, leaves, erpSources]);
+  }, [dateRange.start, dateRange.end, leaves, erpSources, gekozenCollegas, collegaKleuren]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
@@ -1747,13 +1769,13 @@ export default function Agenda() {
     const days = getMonthDays(currentDate.getFullYear(), currentDate.getMonth());
 
     return (
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
+        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50" style={kopMarge}>
           {WEEKDAY_KEYS.map((key) => (
             <div key={key} className="px-1 md:px-2 py-1.5 md:py-2 text-[10px] md:text-xs font-semibold text-slate-500 text-center">{t(key)}</div>
           ))}
         </div>
-        <div className="flex-1 grid grid-cols-7 auto-rows-fr overflow-y-auto">
+        <div ref={scrollBak} className="flex-1 grid grid-cols-7 auto-rows-fr overflow-y-auto">
           {days.map((day) => {
             const key = formatDateKey(day);
             const isToday = isSameDay(day, today);
@@ -1942,8 +1964,9 @@ export default function Agenda() {
     const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR);
 
     return (
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200 bg-slate-50 flex-shrink-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
+        <div className="grid grid-cols-[60px_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-50 flex-shrink-0"
+          style={kopMarge}>
           <div />
           {days.map((day, idx) => {
             const isToday = isSameDay(day, today);
@@ -1955,7 +1978,8 @@ export default function Agenda() {
             );
           })}
         </div>
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200 bg-white flex-shrink-0 min-h-[28px]">
+        <div className="grid grid-cols-[60px_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-white flex-shrink-0 min-h-[28px]"
+          style={kopMarge}>
           <div className="text-[10px] text-slate-400 px-2 py-1">{t("agenda.all_day")}</div>
           {days.map((day) => {
             const key = formatDateKey(day);
@@ -1973,8 +1997,8 @@ export default function Agenda() {
             );
           })}
         </div>
-        <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-[60px_repeat(7,1fr)]" style={{ height: GRID_HEIGHT }}>
+        <div ref={scrollBak} className="flex-1 overflow-y-auto">
+          <div className="grid grid-cols-[60px_repeat(7,minmax(0,1fr))]" style={{ height: GRID_HEIGHT }}>
             {/* Time labels column */}
             <div className="relative">
               {hours.map((hour) => (
@@ -2092,7 +2116,7 @@ export default function Agenda() {
     })();
 
     return (
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {allDayEvents.length > 0 && (
           <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex-shrink-0">
             <div className="text-[10px] text-slate-400 mb-1">{t("agenda.all_day")}</div>

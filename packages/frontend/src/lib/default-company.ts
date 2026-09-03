@@ -138,6 +138,7 @@ export async function fetchCompanyOptions(force = false): Promise<CompanyOption[
   try {
     rows = await fetchList<CompanyOption>("Company", {
       fields: ["name", "company_name"],
+      filters: [["disabled", "=", 0]],
       limit_page_length: 0,
       order_by: "name asc",
     });

@@ -23,6 +23,10 @@ export type MailShortcutAction =
   | "toggle-handled"
   /** Enter — de gemarkeerde mail openen. */
   | "open"
+  /** Pijl omhoog — de mail erboven in de lijst openen. */
+  | "prev"
+  /** Pijl omlaag — de mail eronder in de lijst openen. */
+  | "next"
   /** Escape — selectie wissen, anders het leespaneel sluiten. */
   | "dismiss";
 
@@ -78,10 +82,12 @@ export function resolveMailShortcut(
   e: MailShortcutEvent,
   ctx: MailShortcutContext,
 ): MailShortcutAction | null {
-  // Ingedrukt houden mag geen reeks acties afvuren.
-  if (e.repeat) return null;
   // Ctrl/Cmd/Alt zijn van de browser en van bestaande sneltoetsen (Ctrl+K).
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  // Ingedrukt houden mag geen reeks acties afvuren — behalve bij de pijltjes:
+  // door een lijst lopen doe je juist door de toets vast te houden.
+  const isPijl = e.key === "ArrowUp" || e.key === "ArrowDown";
+  if (e.repeat && !isPijl) return null;
   // Typen wint altijd; daarna dialogen (die hebben hun eigen Escape en Enter);
   // daarna het opstelvenster, waar elke letter tekst is.
   if (ctx.editing) return null;
@@ -92,6 +98,11 @@ export function resolveMailShortcut(
 
   // Escape werkt ook zonder doelen: hij sluit het leespaneel.
   if (key === "Escape") return e.shiftKey ? null : "dismiss";
+
+  // De pijltjes staan vóór de doelen-check: met een pijl in een lijst waar nog
+  // niets openstaat, wil je juist de eerste mail openen. Shift+pijl is
+  // tekstselectie en blijft van de browser.
+  if (isPijl && !e.shiftKey) return key === "ArrowUp" ? "prev" : "next";
 
   if (!ctx.hasTargets) return null;
 
@@ -121,5 +132,7 @@ export const MAIL_SHORTCUT_KEYS = {
   toggleRead: "U",
   toggleHandled: "E",
   open: "Enter",
+  prev: "↑",
+  next: "↓",
   dismiss: "Esc",
 } as const;

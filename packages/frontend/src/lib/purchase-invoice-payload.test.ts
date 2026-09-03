@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildPurchaseInvoicePayload,
+  dueDateFromTerms,
   todayIso,
   validatePurchaseInvoiceInput,
   type PurchaseInvoiceInput,
@@ -125,4 +126,61 @@ test("todayIso gebruikt de lokale datum, niet UTC", () => {
   // 23:30 lokale tijd op 31 december is in UTC al 1 januari; de boeking hoort
   // op 31 december te vallen.
   assert.equal(todayIso(new Date(2026, 11, 31, 23, 30, 0)), "2026-12-31");
+});
+
+/* ─────────────────────── Vervaldatum uit de termijn ──────────────────── */
+
+test("dueDateFromTerms rekent vanaf de factuurdatum, niet vanaf de boekdatum", () => {
+  // De echte factuur waarop dit stukliep: 30 juli, termijn 21 dagen, pas op
+  // 3 september geboekt. ERPNext mikte op 24 september en stond maximaal
+  // 20 augustus toe, en weigerde daarom de hele boeking.
+  assert.equal(
+    dueDateFromTerms("2026-07-30", [{ due_date_based_on: "Day(s) after invoice date", credit_days: 21 }]),
+    "2026-08-20",
+  );
+});
+
+test("dueDateFromTerms: dagen na het einde van de factuurmaand", () => {
+  assert.equal(
+    dueDateFromTerms("2026-07-30", [
+      { due_date_based_on: "Day(s) after the end of the invoice month", credit_days: 14 },
+    ]),
+    "2026-08-14",
+  );
+});
+
+test("dueDateFromTerms: maanden na het einde van de factuurmaand", () => {
+  assert.equal(
+    dueDateFromTerms("2026-07-30", [
+      { due_date_based_on: "Month(s) after the end of the invoice month", credit_months: 1 },
+    ]),
+    "2026-08-31",
+  );
+});
+
+test("dueDateFromTerms neemt de laatste termijn — zo haalt ERPNext hem ook uit het betaalschema", () => {
+  assert.equal(
+    dueDateFromTerms("2026-07-30", [
+      { due_date_based_on: "Day(s) after invoice date", credit_days: 14 },
+      { due_date_based_on: "Day(s) after invoice date", credit_days: 30 },
+    ]),
+    "2026-08-29",
+  );
+});
+
+test("dueDateFromTerms zwijgt wanneer er niets te rekenen is", () => {
+  const termijn = [{ due_date_based_on: "Day(s) after invoice date", credit_days: 21 }];
+  assert.equal(dueDateFromTerms(undefined, termijn), undefined);
+  assert.equal(dueDateFromTerms("30-07-2026", termijn), undefined);
+  assert.equal(dueDateFromTerms("2026-07-30", []), undefined);
+  assert.equal(dueDateFromTerms("2026-07-30", undefined), undefined);
+  // Onbekende grondslag: dan laten we ERPNext het bepalen in plaats van gokken.
+  assert.equal(dueDateFromTerms("2026-07-30", [{ due_date_based_on: "Iets nieuws", credit_days: 5 }]), undefined);
+});
+
+test("de vervaldatum gaat als due_date mee in de payload", () => {
+  const payload = buildPurchaseInvoicePayload(input({ dueDate: "2026-08-20" }), NOW);
+  assert.equal(payload.due_date, "2026-08-20");
+  // Zonder vervaldatum blijft het veld weg, zodat ERPNext hem zelf bepaalt.
+  assert.equal("due_date" in buildPurchaseInvoicePayload(input(), NOW), false);
 });

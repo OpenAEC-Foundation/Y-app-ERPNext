@@ -73,12 +73,29 @@ test("in het opstelvenster vuurt niets — elke letter is daar tekst", () => {
   assert.equal(resolveMailShortcut(key("Delete"), ctx), null);
 });
 
-test("zonder doelen doet alleen Escape iets", () => {
+test("zonder doelen doen alleen Escape en de pijltjes iets", () => {
   const ctx = { ...READY, hasTargets: false };
   assert.equal(resolveMailShortcut(key("Delete"), ctx), null);
   assert.equal(resolveMailShortcut(key("u"), ctx), null);
   assert.equal(resolveMailShortcut(key("Enter"), ctx), null);
   assert.equal(resolveMailShortcut(key("Escape"), ctx), "dismiss");
+  // De pijltjes doen het juist wél: met een lijst waar nog niets openstaat
+  // wil je met één toets de eerste mail openen.
+  assert.equal(resolveMailShortcut(key("ArrowDown"), ctx), "next");
+  assert.equal(resolveMailShortcut(key("ArrowUp"), ctx), "prev");
+});
+
+test("de pijltjes lopen door de lijst, ook ingedrukt gehouden", () => {
+  assert.equal(resolveMailShortcut(key("ArrowDown"), READY), "next");
+  assert.equal(resolveMailShortcut(key("ArrowUp"), READY), "prev");
+  // Vasthouden hoort te herhalen — anders tik je je hele inbox door.
+  assert.equal(resolveMailShortcut(key("ArrowDown", { repeat: true }), READY), "next");
+  // Shift+pijl is tekstselectie en blijft van de browser.
+  assert.equal(resolveMailShortcut(key("ArrowDown", { shiftKey: true }), READY), null);
+  // In een invoerveld of dialoog blijven ze uit, net als de rest.
+  assert.equal(resolveMailShortcut(key("ArrowDown"), { ...READY, editing: true }), null);
+  assert.equal(resolveMailShortcut(key("ArrowUp"), { ...READY, dialogOpen: true }), null);
+  assert.equal(resolveMailShortcut(key("ArrowUp"), { ...READY, composing: true }), null);
 });
 
 test("Ctrl/Cmd/Alt blijven van de browser en van Ctrl+K", () => {

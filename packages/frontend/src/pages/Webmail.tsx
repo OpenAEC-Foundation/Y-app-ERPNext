@@ -101,7 +101,9 @@ import {
   type ErpMailFolder, type ErpMailbox, MAIL_FOLDER_HANDLED,
   type BulkOutcome,
 } from "../lib/mail-erpnext";
-import { groupThreads, type MailThread } from "../lib/mail-threads";
+import {
+  groupThreads, neighbourInOrder, visibleThreadOrder, type MailThread,
+} from "../lib/mail-threads";
 import {
   deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
   newDraftKey, saveDraft, standaloneDrafts,
@@ -4965,6 +4967,23 @@ function ErpNextWebmail() {
 
   /* ─── Conversatie: serverzijdig over de in_reply_to-graaf ─── */
   const selectedName = selected?.name ?? "";
+
+  /**
+   * De namen van de mails in de volgorde waarin ze op het scherm staan. Dit is
+   * waar de pijltjestoetsen langs lopen; zie `visibleThreadOrder`.
+   */
+  const zichtbareOrde = useMemo(
+    () => visibleThreadOrder(threads, expandedThreads, selectedName),
+    [threads, expandedThreads, selectedName],
+  );
+
+  /** Eén mail omhoog of omlaag in de lijst, zoals de pijltjestoetsen doen. */
+  const stapNaarBuur = useCallback((richting: -1 | 1) => {
+    const buur = neighbourInOrder(zichtbareOrde, selectedName, richting);
+    if (!buur) return;
+    const doel = messagesRef.current.find((m) => m.name === buur);
+    if (doel) void openMessage(doel);
+  }, [zichtbareOrde, selectedName, openMessage]);
   useEffect(() => {
     // Leegmaken hoeft hier niet: elk pad dat de selectie loslaat
     // (`openMessage`, `switchFolder`, verwijderen) zet `thread` zelf al leeg.
@@ -5349,6 +5368,12 @@ function ErpNextWebmail() {
           if (target && target.name !== selectedName) void openMessage(target);
           break;
         }
+        case "prev":
+          stapNaarBuur(-1);
+          break;
+        case "next":
+          stapNaarBuur(1);
+          break;
         case "dismiss":
           // Eerst de selectie, dan het leespaneel: één Escape hoort niet
           // allebei weg te halen.
@@ -5362,7 +5387,7 @@ function ErpNextWebmail() {
   }, [
     actionTargets, allTargetsHandled, allTargetsSeen, applyHandled, checked.size,
     dialogOpen, draft, handleBulkSeen, handleDeleteAction, handleDeleteForever,
-    isTrashFolder, openMessage, selectedName,
+    isTrashFolder, openMessage, selectedName, stapNaarBuur,
   ]);
 
   /** "Verwijderen (Delete)" — het label met zijn toets erachter. */
@@ -6950,7 +6975,8 @@ function ErpNextWebmail() {
 
                 {/* Bijlagen */}
                 {body && body.attachments.length > 0 && (
-                  <ErpAttachmentList attachments={body.attachments} onError={setToast} />
+                  <ErpAttachmentList attachments={body.attachments} onError={setToast}
+                    subject={selected?.subject} />
                 )}
               </>
             )}
