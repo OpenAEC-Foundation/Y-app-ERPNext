@@ -9,7 +9,7 @@ import {
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
-import { haalAgendas, eindTijd, haalCollegas, type Collega } from "../lib/agenda-mailserver";
+import { haalAgendas, eindTijd, haalCollegas, kleurenVoorCollegas, type Collega } from "../lib/agenda-mailserver";
 import { resolveSessionUser } from "../lib/session";
 import { RecipientInput } from "../components/RecipientInput";
 import {
@@ -398,10 +398,12 @@ function AddCalendarModal({ onClose, onAdd }: {
 
 /* ─── Settings Panel ─── */
 
-function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
+function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, collegaKleuren, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
   erpSources: Record<ErpSourceKey, boolean>;
   collegas: Collega[];
   gekozenCollegas: string[];
+  /** Kleur per collega, zodat de stip in de lijst en de afspraak overeenkomen. */
+  collegaKleuren: Map<string, string>;
   onCollegaToggle: (email: string) => void;
   calendars: CustomCalendar[];
   o365Enabled: boolean;
@@ -464,6 +466,8 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCo
                 <label key={c.email} className="flex items-center gap-2.5 cursor-pointer group">
                   <input type="checkbox" checked={aan} onChange={() => onCollegaToggle(c.email)}
                     className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 cursor-pointer" />
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: collegaKleuren.get(c.email) || "#94a3b8" }} />
                   <span className="text-xs text-slate-700 group-hover:text-slate-900 truncate" title={c.email}>
                     {c.naam}
                   </span>
@@ -1267,6 +1271,8 @@ export default function Agenda() {
     return () => { gestopt = true; };
   }, []);
 
+  const collegaKleuren = useMemo(() => kleurenVoorCollegas(collegas), [collegas]);
+
   function handleCollegaToggle(email: string) {
     setGekozenCollegasState((vorige) => {
       const next = vorige.includes(email) ? vorige.filter((e) => e !== email) : [...vorige, email];
@@ -1446,7 +1452,7 @@ export default function Agenda() {
             end: eindTijd(a.start, a.duur),
             allDay: !!a.hele_dag,
             type: "mailbox",
-            color: TYPE_COLORS.mailbox,
+            color: collegaKleuren.get(a.gebruiker) || TYPE_COLORS.mailbox,
             owner: a.gebruiker.split("@")[0],
           });
         }
@@ -1636,7 +1642,7 @@ export default function Agenda() {
       if (cal.enabled) items.push({ label: cal.name, color: cal.color });
     }
     return items;
-  }, [erpSources, calendars, o365Enabled, gekozenCollegas, t]);
+  }, [erpSources, calendars, o365Enabled, gekozenCollegas, collegaKleuren, t]);
 
   /* ─── Click-to-create handler ─── */
 
@@ -2259,6 +2265,7 @@ export default function Agenda() {
                   erpSources={erpSources}
                   collegas={collegas}
                   gekozenCollegas={gekozenCollegas}
+                  collegaKleuren={collegaKleuren}
                   onCollegaToggle={handleCollegaToggle}
                   calendars={calendars}
                   o365Enabled={o365Enabled}
@@ -2281,6 +2288,7 @@ export default function Agenda() {
               erpSources={erpSources}
               collegas={collegas}
               gekozenCollegas={gekozenCollegas}
+              collegaKleuren={collegaKleuren}
               onCollegaToggle={handleCollegaToggle}
               calendars={calendars}
               o365Enabled={o365Enabled}

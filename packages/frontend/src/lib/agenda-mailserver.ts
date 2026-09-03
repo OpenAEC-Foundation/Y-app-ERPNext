@@ -137,3 +137,28 @@ export async function haalCollegas(): Promise<Collega[]> {
     return [];
   }
 }
+
+/**
+ * Kleurenreeks voor collega-agenda's. Bewust andere tinten dan de vaste
+ * bronkleuren van de agenda (blauw voor afspraken, oranje taken, rood verlof,
+ * groen urenstaten), anders lijkt de agenda van een collega op een taak.
+ */
+const COLLEGA_KLEUREN = [
+  "#0ea5e9", "#db2777", "#65a30d", "#c2410c", "#0d9488", "#9333ea",
+  "#0891b2", "#b45309", "#4f46e5", "#be123c", "#15803d", "#a16207",
+];
+
+/**
+ * Wijst elke collega een kleur toe, op volgorde van de lijst.
+ *
+ * Op index en niet op een hash van het adres: een hash geeft bij vijftien
+ * mensen en twaalf kleuren vrijwel zeker twee keer dezelfde kleur naast
+ * elkaar, en juist dat wil je hier niet. Nadeel is dat iemands kleur kan
+ * opschuiven als er een collega bijkomt — dat weegt niet op tegen twee
+ * mensen die niet uit elkaar te houden zijn.
+ */
+export function kleurenVoorCollegas(collegas: Collega[]): Map<string, string> {
+  const uit = new Map<string, string>();
+  collegas.forEach((c, i) => uit.set(c.email, COLLEGA_KLEUREN[i % COLLEGA_KLEUREN.length]));
+  return uit;
+}
