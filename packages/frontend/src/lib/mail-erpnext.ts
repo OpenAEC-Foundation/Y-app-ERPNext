@@ -921,12 +921,51 @@ export async function getMessageBody(
  * Gelezen-status. Anders dan bij IMAP is dit een gewone documentupdate —
  * geen `\Seen`-STORE-race, dus de UI heeft hier geen TTL-overlay nodig.
  */
+/**
+ * Zet statusvelden op een bericht via het Server Script `mail_bijwerken`.
+ *
+ * Waarom niet gewoon `updateDocument`: Frappe valideert bij elke keer opslaan
+ * de adresvelden van een Communication. Hij splitst `recipients`/`cc`/`bcc` op
+ * komma's en eist dat elk stuk een geldig adres is. Een geadresseerde als
+ * `"Veldhuijzen, F. (Friedhelm)" <f.veldhuijzen@hr.nl>` valt daardoor uiteen,
+ * en dan mislukt het afvinken van die mail op een veld dat je niet aanraakt.
+ * Zulke afzenders blijven komen, dus dit moest structureel.
+ *
+ * Het script schrijft alleen de velden die het kent (status, email_status,
+ * seen, en de koppeling) en controleert daarbij de rol van de gebruiker.
+ *
+ * De gewone route blijft de eerste keuze: die draait de hooks van ERPNext mee.
+ * Het script is de reparatieweg voor precies dit ene geval, en wordt dus alleen
+ * gebruikt bij een mail met zo'n kapot adresveld.
+ */
+async function zetStatus(name: string, velden: Record<string, string | number>): Promise<void> {
+  try {
+    await updateDocument("Communication", name, velden);
+  } catch (err) {
+    // Struikelt de gewone route op een adresveld dat wij niet aanraken, dan
+    // via het Server Script dat alleen deze velden schrijft. Andere fouten
+    // (geen rechten, netwerk) horen gewoon door te komen.
+    if (!isAddressValidationError(err)) throw err;
+    await callMethod("mail_bijwerken", { naam: name, ...velden });
+    invalidateCache("Communication");
+  }
+}
+
+/**
+ * Herkent de fout waarmee Frappe een opslag weigert om een adresveld waar de
+ * gebruiker niets aan deed. Zie zetStatus voor waarom dat gebeurt.
+ */
+function isAddressValidationError(err: unknown): boolean {
+  const tekst = err instanceof Error ? err.message : String(err ?? "");
+  return /not a valid Email Address|geen geldig e-?mailadres/i.test(tekst);
+}
+
 export async function markRead(name: string): Promise<void> {
-  await updateDocument("Communication", name, { seen: 1 });
+  await zetStatus(name, { seen: 1 });
 }
 
 export async function markUnread(name: string): Promise<void> {
-  await updateDocument("Communication", name, { seen: 0 });
+  await zetStatus(name, { seen: 0 });
 }
 
 /**
@@ -943,12 +982,12 @@ export async function markUnread(name: string): Promise<void> {
  * uitsluitend de ERPNext-kopie. De mappenkolom zegt dat met zoveel woorden.
  */
 export async function moveToTrash(name: string): Promise<void> {
-  await updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH });
+  await zetStatus(name, { email_status: EMAIL_STATUS_TRASH });
 }
 
 /** Haal een bericht weer uit de Prullenbak; het keert terug in zijn map. */
 export async function restoreFromTrash(name: string): Promise<void> {
-  await updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN });
+  await zetStatus(name, { email_status: EMAIL_STATUS_OPEN });
 }
 
 /**
@@ -993,12 +1032,12 @@ export async function deleteForever(name: string): Promise<void> {
  * geen tag, geen extra doctype — het veld dat ERPNext hiervoor al heeft.
  */
 export async function markHandled(name: string): Promise<void> {
-  await updateDocument("Communication", name, { status: COMM_STATUS_CLOSED });
+  await zetStatus(name, { status: COMM_STATUS_CLOSED });
 }
 
 /** Heropen een afgehandeld bericht (`status` terug naar `Open`). */
 export async function markUnhandled(name: string): Promise<void> {
-  await updateDocument("Communication", name, { status: COMM_STATUS_OPEN });
+  await zetStatus(name, { status: COMM_STATUS_OPEN });
 }
 
 /**
@@ -1048,23 +1087,19 @@ async function bulkApply(
 }
 
 export async function bulkMarkRead(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 1 }));
+  return bulkApply(names, (name) => markRead(name));
 }
 
 export async function bulkMarkUnread(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) => updateDocument("Communication", name, { seen: 0 }));
+  return bulkApply(names, (name) => markUnread(name));
 }
 
 export async function bulkMoveToTrash(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) =>
-    updateDocument("Communication", name, { email_status: EMAIL_STATUS_TRASH })
-  );
+  return bulkApply(names, (name) => moveToTrash(name));
 }
 
 export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) =>
-    updateDocument("Communication", name, { email_status: EMAIL_STATUS_OPEN })
-  );
+  return bulkApply(names, (name) => restoreFromTrash(name));
 }
 
 export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
@@ -1075,15 +1110,11 @@ export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
 }
 
 export async function bulkMarkHandled(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) =>
-    updateDocument("Communication", name, { status: COMM_STATUS_CLOSED })
-  );
+  return bulkApply(names, (name) => markHandled(name));
 }
 
 export async function bulkMarkUnhandled(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) =>
-    updateDocument("Communication", name, { status: COMM_STATUS_OPEN })
-  );
+  return bulkApply(names, (name) => markUnhandled(name));
 }
 
 /**
@@ -1369,10 +1400,7 @@ export async function getQueueStatusFor(
 
 /** Koppel een mail aan een ERPNext-document (de projectchip in de UI). */
 export async function linkToDocument(name: string, doctype: string, docname: string): Promise<void> {
-  await updateDocument("Communication", name, {
-    reference_doctype: doctype,
-    reference_name: docname,
-  });
+  await zetStatus(name, { reference_doctype: doctype, reference_name: docname });
 }
 
 /**
