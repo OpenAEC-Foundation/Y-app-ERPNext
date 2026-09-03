@@ -1242,7 +1242,24 @@ export default function Agenda() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [createModal, setCreateModal] = useState<Partial<CreateForm> | null>(null);
   const [detailEvent, setDetailEvent] = useState<EventItem | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  // Het bronnenpaneel staat standaard open: daar zitten de agenda’s van
+  // collega’s in, en die zijn onvindbaar als je eerst een tandwiel moet
+  // aanklikken. Wie het dichtklapt houdt het dicht.
+  const [showSettings, setShowSettings] = useState(() => {
+    try {
+      return localStorage.getItem("agenda_panel_dicht") !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("agenda_panel_dicht", showSettings ? "0" : "1");
+    } catch {
+      // Privémodus — de stand geldt dan alleen deze sessie.
+    }
+  }, [showSettings]);
   const [addCalendarModal, setAddCalendarModal] = useState(false);
   const [dragCreate, setDragCreate] = useState<DragCreateState | null>(null);
   const dragCreateRef = useRef<DragCreateState | null>(null);
