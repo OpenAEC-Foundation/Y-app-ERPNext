@@ -42,6 +42,10 @@ interface EventItem {
 
 type ViewType = "month" | "week" | "day";
 
+/** Grenzen aan de breedte van het bronnenpaneel: smaller wordt onleesbaar, breder eet de agenda op. */
+const PANEEL_MIN = 200;
+const PANEEL_MAX = 560;
+
 /** Actieve sleep-selectie in de week-/dagweergave om een nieuw item te maken. */
 interface DragCreateState {
   dateKey: string;
@@ -398,10 +402,12 @@ function AddCalendarModal({ onClose, onAdd }: {
 
 /* ─── Settings Panel ─── */
 
-function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, collegaKleuren, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
+function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, collegaKleuren, breedte, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
   erpSources: Record<ErpSourceKey, boolean>;
   collegas: Collega[];
   gekozenCollegas: string[];
+  /** Breedte in pixels; leeg = volle breedte (het mobiele volledig-schermpaneel). */
+  breedte?: number;
   /** Kleur per collega, zodat de stip in de lijst en de afspraak overeenkomen. */
   collegaKleuren: Map<string, string>;
   onCollegaToggle: (email: string) => void;
@@ -419,7 +425,12 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCo
   // getoond-maar-kapot zolang de "calendar-bridge"-capability uit staat.
   const bridgeEnabled = isFeatureEnabled("calendar-bridge");
   return (
-    <div className="w-64 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 overflow-y-auto">
+    <div
+      style={breedte ? { width: breedte } : undefined}
+      className={`bg-white flex flex-col flex-shrink-0 overflow-y-auto ${
+        breedte ? "order-first border-r border-slate-200" : "w-full"
+      }`}
+    >
       {/* Office 365 Calendar — alleen tonen als de calendar-bridge actief is */}
       {bridgeEnabled && (
         <div className="px-4 py-3 border-b border-slate-200">
@@ -1245,6 +1256,48 @@ export default function Agenda() {
   // Het bronnenpaneel staat standaard open: daar zitten de agenda’s van
   // collega’s in, en die zijn onvindbaar als je eerst een tandwiel moet
   // aanklikken. Wie het dichtklapt houdt het dicht.
+  /**
+   * Breedte van het bronnenpaneel, versleepbaar. Onthouden per browser: met
+   * vijftien collega's in de lijst is de oude 256 px krap, maar hoeveel ruimte
+   * je ervoor over hebt hangt van je scherm af.
+   */
+  const [paneelBreedte, setPaneelBreedte] = useState(() => {
+    try {
+      const bewaard = Number(localStorage.getItem("agenda_panel_breedte"));
+      if (bewaard >= PANEEL_MIN && bewaard <= PANEEL_MAX) return bewaard;
+    } catch { /* privémodus */ }
+    return 288;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("agenda_panel_breedte", String(paneelBreedte));
+    } catch { /* privémodus */ }
+  }, [paneelBreedte]);
+
+  /**
+   * Verslepen van de scheidingslijn. De luisteraars hangen aan `window` en
+   * niet aan de lijn zelf: sleep je sneller dan de browser hertekent, dan
+   * verlaat de muis dat smalle balkje en stopt het slepen halverwege.
+   */
+  const startVersleep = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const beginX = e.clientX;
+    const beginBreedte = paneelBreedte;
+    const beweeg = (ev: MouseEvent) => {
+      setPaneelBreedte(Math.min(PANEEL_MAX, Math.max(PANEEL_MIN, beginBreedte + (ev.clientX - beginX))));
+    };
+    const stop = () => {
+      window.removeEventListener("mousemove", beweeg);
+      window.removeEventListener("mouseup", stop);
+      document.body.style.userSelect = "";
+    };
+    // Zonder dit selecteert de browser tijdens het slepen de halve pagina.
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", beweeg);
+    window.addEventListener("mouseup", stop);
+  }, [paneelBreedte]);
+
   const [showSettings, setShowSettings] = useState(() => {
     try {
       return localStorage.getItem("agenda_panel_dicht") !== "1";
@@ -2301,7 +2354,9 @@ export default function Agenda() {
               </div>
             </div>
           ) : (
+            <>
             <SettingsPanel
+              breedte={paneelBreedte}
               erpSources={erpSources}
               collegas={collegas}
               gekozenCollegas={gekozenCollegas}
@@ -2321,6 +2376,14 @@ export default function Agenda() {
                 });
               }}
             />
+            <div
+              onMouseDown={startVersleep}
+              role="separator"
+              aria-orientation="vertical"
+              title={t("agenda.resize_panel")}
+              className="order-first w-1 flex-shrink-0 cursor-col-resize bg-slate-200 hover:bg-blue-400 transition-colors"
+            />
+            </>
           )
         )}
       </div>

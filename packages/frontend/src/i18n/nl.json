@@ -2980,5 +2980,6 @@
   "y_next.mail_quote_show_original": "Toon origineel bericht",
   "y_next.mail_quote_hide_original": "Verberg origineel bericht",
   "agenda.source_mailbox": "Agenda collega’s",
-  "agenda.colleagues": "Collega’s"
+  "agenda.colleagues": "Collega’s",
+  "agenda.resize_panel": "Sleep om de kolom breder te maken"
 }

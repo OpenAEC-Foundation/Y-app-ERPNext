@@ -2980,5 +2980,6 @@
   "y_next.mail_quote_show_original": "Ursprüngliche Nachricht anzeigen",
   "y_next.mail_quote_hide_original": "Ursprüngliche Nachricht ausblenden",
   "agenda.source_mailbox": "Kalender der Kollegen",
-  "agenda.colleagues": "Kollegen"
+  "agenda.colleagues": "Kollegen",
+  "agenda.resize_panel": "Ziehen, um die Spalte zu verbreitern"
 }

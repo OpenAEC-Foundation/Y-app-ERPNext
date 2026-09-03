@@ -2980,5 +2980,6 @@
   "y_next.mail_quote_show_original": "Show original message",
   "y_next.mail_quote_hide_original": "Hide original message",
   "agenda.source_mailbox": "Colleagues’ calendars",
-  "agenda.colleagues": "Colleagues"
+  "agenda.colleagues": "Colleagues",
+  "agenda.resize_panel": "Drag to resize the column"
 }
