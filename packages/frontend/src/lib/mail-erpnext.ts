@@ -959,7 +959,30 @@ export async function restoreFromTrash(name: string): Promise<void> {
  * zet `scripts/provision-y-next.mjs`; zonder die regel geeft dit een 403 en
  * blijft `moveToTrash` het enige werkende pad.
  */
+/**
+ * Gooit de mail ook op de mailserver weg.
+ *
+ * Volgorde is dragend: eerst de server, dan ERPNext. Het Server Script zoekt
+ * het bericht op via `Communication.message_id`, en dat veld is weg zodra de
+ * Communication verwijderd is.
+ *
+ * Mislukt het op de server, dan gaat het verwijderen in ERPNext gewoon door.
+ * Anders zou een onbereikbare mailserver betekenen dat je je prullenbak niet
+ * meer kunt legen. De twee lopen dan uiteen — hinderlijk, maar minder erg dan
+ * vastlopen.
+ */
+async function verwijderOpMailserver(names: string[]): Promise<void> {
+  if (names.length === 0) return;
+  try {
+    await callMethod("mail_verwijderen", { namen: names.join(",") });
+  } catch {
+    // Koppeling uit, geen wachtwoord, server onbereikbaar — het Server Script
+    // meldt dat zelf; hier is het geen reden om te stoppen.
+  }
+}
+
 export async function deleteForever(name: string): Promise<void> {
+  await verwijderOpMailserver([name]);
   await deleteDocument("Communication", name);
 }
 
@@ -1045,6 +1068,9 @@ export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome
 }
 
 export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
+  // Eén aanroep voor de hele selectie in plaats van één per bericht: het
+  // Server Script logt per keer in op de mailserver, en dat is het dure deel.
+  await verwijderOpMailserver(names);
   return bulkApply(names, (name) => deleteDocument("Communication", name));
 }
 
