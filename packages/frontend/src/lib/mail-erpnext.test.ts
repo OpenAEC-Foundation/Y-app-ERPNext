@@ -836,12 +836,15 @@ test("moveToTrash / restoreFromTrash: PUT op email_status, nooit een DELETE", as
   }
 });
 
-test("deleteForever: pas hier een echte DELETE op de Communication", async () => {
+test("deleteForever: eerst de mailserver, dan een echte DELETE op de Communication", async () => {
   const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
   try {
     await deleteForever("COMM-DEL-1");
-    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-DEL-1");
-    assert.equal(mock.calls[0].init?.method, "DELETE");
+    // Eerst het Server Script: dat zoekt het bericht via message_id, en dat
+    // veld verdwijnt zodra de Communication weg is.
+    assert.match(mock.calls[0].url, /mail_verwijderen/);
+    assert.equal(mock.calls[1].url, "/api/resource/Communication/COMM-DEL-1");
+    assert.equal(mock.calls[1].init?.method, "DELETE");
   } finally {
     mock.restore();
     invalidateCache("Communication");
@@ -925,14 +928,17 @@ test("bulkMoveToTrash / bulkRestoreFromTrash: één PUT per bericht met de juist
   }
 });
 
-test("bulkDeleteForever: DELETE per bericht", async () => {
+test("bulkDeleteForever: één aanroep naar de mailserver, daarna DELETE per bericht", async () => {
   const mock = installFetchMock(() => ({ status: 202, body: { message: "ok" } }));
   try {
     await bulkDeleteForever(["COMM-D1", "COMM-D2"]);
-    assert.equal(mock.calls.length, 2);
-    for (const c of mock.calls) assert.equal(c.init?.method, "DELETE");
+    // Eén keer inloggen op de mailserver voor de hele selectie, niet per bericht.
+    assert.equal(mock.calls.length, 3);
+    assert.match(mock.calls[0].url, /mail_verwijderen/);
+    const deletes = mock.calls.slice(1);
+    for (const c of deletes) assert.equal(c.init?.method, "DELETE");
     assert.deepEqual(
-      mock.calls.map((c) => c.url).sort(),
+      deletes.map((c) => c.url).sort(),
       ["/api/resource/Communication/COMM-D1", "/api/resource/Communication/COMM-D2"]
     );
   } finally {
