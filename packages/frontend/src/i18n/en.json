@@ -2979,5 +2979,6 @@
   "webmail.color_purple": "Purple",
   "y_next.mail_quote_show_original": "Show original message",
   "y_next.mail_quote_hide_original": "Hide original message",
-  "agenda.source_mailbox": "Colleagues’ calendars"
+  "agenda.source_mailbox": "Colleagues’ calendars",
+  "agenda.colleagues": "Colleagues"
 }

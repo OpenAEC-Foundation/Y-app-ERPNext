@@ -2979,5 +2979,6 @@
   "webmail.color_purple": "Paars",
   "y_next.mail_quote_show_original": "Toon origineel bericht",
   "y_next.mail_quote_hide_original": "Verberg origineel bericht",
-  "agenda.source_mailbox": "Agenda collega’s"
+  "agenda.source_mailbox": "Agenda collega’s",
+  "agenda.colleagues": "Collega’s"
 }

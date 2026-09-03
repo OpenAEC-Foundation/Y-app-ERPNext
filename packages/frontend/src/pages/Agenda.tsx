@@ -9,7 +9,8 @@ import {
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
-import { haalAgendas, eindTijd } from "../lib/agenda-mailserver";
+import { haalAgendas, eindTijd, haalCollegas, type Collega } from "../lib/agenda-mailserver";
+import { resolveSessionUser } from "../lib/session";
 import { RecipientInput } from "../components/RecipientInput";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
@@ -211,6 +212,33 @@ const ERP_SOURCE_DEFAULTS: Record<ErpSourceKey, boolean> = {
   mailbox: true,
 };
 
+const COLLEGA_SLEUTEL = "agenda_collegas";
+
+/**
+ * Welke collega-agenda's aan staan. Onthouden in de browser, want het is een
+ * kijkvoorkeur en geen instelling die voor iedereen hetzelfde hoort te zijn.
+ * Nog nooit iets gekozen (`null`) is iets anders dan bewust alles uitgezet
+ * (lege lijst): in het eerste geval vullen we hem met de gebruiker zelf.
+ */
+function getGekozenCollegas(): string[] | null {
+  try {
+    const rauw = localStorage.getItem(COLLEGA_SLEUTEL);
+    if (rauw === null) return null;
+    const lijst = JSON.parse(rauw);
+    return Array.isArray(lijst) ? lijst.filter((x) => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+function setGekozenCollegas(lijst: string[]): void {
+  try {
+    localStorage.setItem(COLLEGA_SLEUTEL, JSON.stringify(lijst));
+  } catch {
+    // Privémodus of vol geheugen — de keuze geldt dan alleen deze sessie.
+  }
+}
+
 function getErpSourceEnabled(key: ErpSourceKey): boolean {
   const stored = localStorage.getItem(getPrefKey(`show_${key}`));
   if (stored === null) return ERP_SOURCE_DEFAULTS[key];
@@ -370,8 +398,11 @@ function AddCalendarModal({ onClose, onAdd }: {
 
 /* ─── Settings Panel ─── */
 
-function SettingsPanel({ erpSources, calendars, o365Enabled, onErpToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
+function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
   erpSources: Record<ErpSourceKey, boolean>;
+  collegas: Collega[];
+  gekozenCollegas: string[];
+  onCollegaToggle: (email: string) => void;
   calendars: CustomCalendar[];
   o365Enabled: boolean;
   onErpToggle: (key: ErpSourceKey) => void;
@@ -418,6 +449,30 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, onErpToggle, onCale
           ))}
         </div>
       </div>
+
+      {/* Collega-agenda's. Alleen tonen als de bron aanstaat — een lijst met
+          namen die nergens toe leidt is verwarrender dan geen lijst. */}
+      {erpSources.mailbox && collegas.length > 0 && (
+        <div className="px-4 py-3 border-b border-slate-200">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+            {t("agenda.colleagues")}
+          </h3>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {collegas.map((c) => {
+              const aan = gekozenCollegas.includes(c.email);
+              return (
+                <label key={c.email} className="flex items-center gap-2.5 cursor-pointer group">
+                  <input type="checkbox" checked={aan} onChange={() => onCollegaToggle(c.email)}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 cursor-pointer" />
+                  <span className="text-xs text-slate-700 group-hover:text-slate-900 truncate" title={c.email}>
+                    {c.naam}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Custom Calendars — CalDAV/iCal-brug draait op Express, dus alleen
           tonen (en aanmaken toestaan) als de calendar-bridge actief is. */}
@@ -1190,6 +1245,36 @@ export default function Agenda() {
   useEffect(() => { dragCreateRef.current = dragCreate; }, [dragCreate]);
   const leaves = useLeaves();
 
+  // Collega-agenda's: de lijst om uit te kiezen, en wat er aan staat.
+  const [collegas, setCollegas] = useState<Collega[]>([]);
+  const [gekozenCollegas, setGekozenCollegasState] = useState<string[]>([]);
+
+  useEffect(() => {
+    let gestopt = false;
+    void (async () => {
+      const [lijst, ik] = await Promise.all([haalCollegas(), resolveSessionUser()]);
+      if (gestopt) return;
+      setCollegas(lijst);
+      const bewaard = getGekozenCollegas();
+      if (bewaard !== null) { setGekozenCollegasState(bewaard); return; }
+      // Eerste keer: alleen je eigen agenda. Meteen die van iedereen tonen
+      // maakt de agenda onleesbaar en kost vijftien keer zoveel ophaalwerk.
+      const eigen = String(ik || "").toLowerCase();
+      const start = lijst.some((c) => c.email === eigen) ? [eigen] : [];
+      setGekozenCollegasState(start);
+      setGekozenCollegas(start);
+    })();
+    return () => { gestopt = true; };
+  }, []);
+
+  function handleCollegaToggle(email: string) {
+    setGekozenCollegasState((vorige) => {
+      const next = vorige.includes(email) ? vorige.filter((e) => e !== email) : [...vorige, email];
+      setGekozenCollegas(next);
+      return next;
+    });
+  }
+
   // ERPNext source toggles
   const [erpSources, setErpSources] = useState<Record<ErpSourceKey, boolean>>({
     events: getErpSourceEnabled("events"),
@@ -1351,7 +1436,7 @@ export default function Agenda() {
       // resultaat een andere vorm heeft en de adapter zijn eigen fouten al
       // opvangt — een onbereikbare mailserver hoort de agenda niet leeg te maken.
       if (erpSources.mailbox) {
-        const { afspraken } = await haalAgendas(dateRange.start, dateRange.end);
+        const { afspraken } = await haalAgendas(dateRange.start, dateRange.end, gekozenCollegas);
         for (const a of afspraken) {
           if (!a.start) continue;
           items.push({
@@ -1551,7 +1636,7 @@ export default function Agenda() {
       if (cal.enabled) items.push({ label: cal.name, color: cal.color });
     }
     return items;
-  }, [erpSources, calendars, o365Enabled, t]);
+  }, [erpSources, calendars, o365Enabled, gekozenCollegas, t]);
 
   /* ─── Click-to-create handler ─── */
 
@@ -2172,6 +2257,9 @@ export default function Agenda() {
               <div className="flex-1 overflow-y-auto">
                 <SettingsPanel
                   erpSources={erpSources}
+                  collegas={collegas}
+                  gekozenCollegas={gekozenCollegas}
+                  onCollegaToggle={handleCollegaToggle}
                   calendars={calendars}
                   o365Enabled={o365Enabled}
                   onErpToggle={handleErpToggle}
@@ -2191,6 +2279,9 @@ export default function Agenda() {
           ) : (
             <SettingsPanel
               erpSources={erpSources}
+              collegas={collegas}
+              gekozenCollegas={gekozenCollegas}
+              onCollegaToggle={handleCollegaToggle}
               calendars={calendars}
               o365Enabled={o365Enabled}
               onErpToggle={handleErpToggle}

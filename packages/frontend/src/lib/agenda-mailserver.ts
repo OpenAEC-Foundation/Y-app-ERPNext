@@ -16,7 +16,7 @@
  * gebruiker uit de sessie komt en niet uit het verzoek — anders zou je via de
  * app in andermans agenda kunnen schrijven.
  */
-import { callMethod } from "./erpnext.ts";
+import { callMethod, fetchList } from "./erpnext.ts";
 
 /** Eén afspraak zoals het Server Script hem teruggeeft. */
 export interface MailserverAfspraak {
@@ -101,5 +101,39 @@ export async function haalAgendas(
     };
   } catch {
     return { afspraken: [], mislukt: 0 };
+  }
+}
+
+/** Eén collega wiens agenda opgevraagd kan worden. */
+export interface Collega {
+  /** E-mailadres; tevens de sleutel waarop het Server Script zoekt. */
+  email: string;
+  naam: string;
+}
+
+/**
+ * De medewerkers met een e-mailadres, als keuzelijst voor de agenda.
+ *
+ * Uit Employee en niet uit User: alleen wie in dienst is hoort in de lijst,
+ * en Employee is waar dat staat. Gebruikers zonder gekoppeld mailadres vallen
+ * af — daar valt geen agenda voor op te halen.
+ */
+export async function haalCollegas(): Promise<Collega[]> {
+  try {
+    const rijen = await fetchList<{ employee_name?: string; user_id?: string }>("Employee", {
+      fields: ["employee_name", "user_id"],
+      filters: [["status", "=", "Active"], ["user_id", "is", "set"]],
+      order_by: "employee_name asc",
+      limit_page_length: 0,
+    });
+    const uniek = new Map<string, Collega>();
+    for (const r of rijen) {
+      const email = String(r.user_id || "").trim().toLowerCase();
+      if (!email || uniek.has(email)) continue;
+      uniek.set(email, { email, naam: String(r.employee_name || email).trim() });
+    }
+    return [...uniek.values()];
+  } catch {
+    return [];
   }
 }
