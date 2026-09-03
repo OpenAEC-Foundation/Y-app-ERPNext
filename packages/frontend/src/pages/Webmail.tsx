@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback, useId, useMemo, useRef } from "react";
+import {
+  useState, useEffect, useCallback, useId, useMemo, useRef,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
@@ -137,6 +140,7 @@ import ComposeWindow from "../components/mail/ComposeWindow";
 import RichTextEditor from "../components/mail/RichTextEditor";
 import { toEmailHtml, ensureHtmlBody, htmlToPlainText } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import LinkAnythingDialog from "../components/mail/LinkAnythingDialog";
 import RecipientField from "../components/mail/RecipientField";
 import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
 import {
@@ -166,6 +170,7 @@ import {
 } from "../lib/mail-suggestions";
 import { suggestProject, type ProjectSuggestion } from "../lib/project-suggest";
 import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
+import { linkCommunicationTo } from "../lib/communication-link";
 
 /* ─── Types ─── */
 
@@ -3805,6 +3810,17 @@ const ERP_SEARCH_DEBOUNCE_MS = 330;
  */
 const DRAFT_SAVE_DEBOUNCE_MS = 500;
 
+/**
+ * De gesplitste weergave bij beantwoorden: je antwoord bovenin, de mail waar
+ * je op reageert eronder. Zo hoef je niet te wisselen om te lezen wat er
+ * eigenlijk stond — dezelfde indeling als Outlook.
+ *
+ * `OPSTEL_MIN` is de hoogte waaronder het typvak niets meer waard is: de
+ * adresregels en de knoppenbalk nemen al ruim honderd pixels.
+ */
+const OPSTEL_MIN = 220;
+const OPSTEL_START = 340;
+
 /** Bijlagetype dat `sendMail` accepteert. Afgeleid uit de adapter-signatuur,
  *  want het lucide-icoon `File` schaduwt de globale `File`-naam in dit
  *  bestand — `File[]` zou hier dus het verkeerde ding betekenen. */
@@ -3993,6 +4009,41 @@ function ErpNextWebmail() {
   const [drafts, setDrafts] = useState<MailDraftMap>(() => loadDrafts(getActiveInstanceId()));
 
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  /** De "koppel aan wat je maar wil"-dialoog; los van de snelle projectkiezer. */
+  const [koppelDialoog, setKoppelDialoog] = useState(false);
+
+  /**
+   * Hoogte van het opstelvenster in de gesplitste weergave, in pixels. Blijft
+   * bewaard: hoe je de verhouding zet is een voorkeur, geen instelling per
+   * mail.
+   */
+  const [opstelHoogte, setOpstelHoogte] = useState(() => {
+    const opgeslagen = Number(localStorage.getItem("mail_opsteller_hoogte"));
+    return Number.isFinite(opgeslagen) && opgeslagen >= OPSTEL_MIN ? opgeslagen : OPSTEL_START;
+  });
+  useEffect(() => {
+    try { localStorage.setItem("mail_opsteller_hoogte", String(opstelHoogte)); } catch { /* privémodus */ }
+  }, [opstelHoogte]);
+
+  /** Slepen aan de scheiding tussen antwoord en origineel. */
+  const startSplitSleep = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const beginY = e.clientY;
+    const beginHoogte = opstelHoogte;
+    function beweeg(ev: globalThis.MouseEvent) {
+      const ruimte = window.innerHeight - 160; // kop van de app en de lijstbalk
+      const hoogte = Math.min(Math.max(beginHoogte + (ev.clientY - beginY), OPSTEL_MIN), ruimte);
+      setOpstelHoogte(hoogte);
+    }
+    function stop() {
+      window.removeEventListener("mousemove", beweeg);
+      window.removeEventListener("mouseup", stop);
+      document.body.style.userSelect = "";
+    }
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", beweeg);
+    window.addEventListener("mouseup", stop);
+  }, [opstelHoogte]);
   const [projectSearch, setProjectSearch] = useState("");
 
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -4925,6 +4976,16 @@ function ErpNextWebmail() {
     setToast(t("y_next.mail_draft_discarded"));
   }, [instanceId, t]);
 
+  /**
+   * Splitsen we het paneel? Alleen wanneer het concept bij de mail hoort die
+   * openstaat: dan is er een origineel om onder te zetten. Een nieuw bericht
+   * of een concept van een andere mail krijgt gewoon het hele paneel — er valt
+   * dan niets naast te leggen. Op een telefoon nooit: daar past het niet.
+   */
+  const gesplitsteOpsteller = Boolean(
+    draft && selected && draft.draftMessageName === selected.name && !isMobile,
+  );
+
   /** Berichten met een onafgemaakt antwoord — voor het label in de lijst. */
   const draftNames = useMemo(() => draftMessageNames(drafts), [drafts]);
   /** Losstaande nieuwe berichten; die horen bij geen enkele regel. */
@@ -5335,7 +5396,8 @@ function ErpNextWebmail() {
    */
   const dialogOpen = Boolean(
     bookingFor || leadFor || relationFor || folderMenu
-    || assignOpen || showLinkPicker || projectPickerOpen || newFolderOpen,
+    || assignOpen || showLinkPicker || projectPickerOpen || newFolderOpen
+    || koppelDialoog,
   );
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -5717,6 +5779,29 @@ function ErpNextWebmail() {
       // anders wordt gekoppeld — zie `communication-link.ts`.
       await linkMailToProject(msg.name, projectName, msg.sender);
       setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
+      refreshFolders();
+      connectionsChanged();
+    } catch (err) {
+      setToast(t("webmail.link_create_error", { message: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  /**
+   * Koppel de mail aan een willekeurig document. Zelfde schrijfpad als de
+   * projectkoppeling — `reference_*` plus een tijdlijnrij — alleen kies je hier
+   * zelf het soort. Herkent de app een factuur niet als factuur, dan wijs je
+   * hem gewoon aan.
+   */
+  async function koppelAanDocument(doctype: string, docname: string) {
+    const msg = selected;
+    if (!msg) return;
+    setKoppelDialoog(false);
+    const reference = { doctype, name: docname };
+    setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
+    setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
+    try {
+      await linkCommunicationTo(msg.name, doctype, docname);
+      setToast(t("webmail.linked_to", { doctype, name: docname }));
       refreshFolders();
       connectionsChanged();
     } catch (err) {
@@ -6506,7 +6591,7 @@ function ErpNextWebmail() {
               </button>
             )}
 
-            {draft ? (
+            {draft && !gesplitsteOpsteller ? (
               <ErpComposePane
                 // Eén opsteller-instantie per concept: het openklappen van
                 // Cc/Bcc en de stand van het citaat horen bij dít bericht en
@@ -6530,6 +6615,32 @@ function ErpNextWebmail() {
               </div>
             ) : (
               <>
+                {/* Antwoord bovenin, de mail waarop je antwoordt eronder —
+                    zodat je tijdens het typen kunt blijven lezen. */}
+                {draft && gesplitsteOpsteller && (
+                  <>
+                    <div className="flex flex-col flex-shrink-0 min-h-0"
+                      style={{ height: opstelHoogte }}>
+                      <ErpComposePane
+                        key={draft.draftKey}
+                        draft={draft}
+                        sending={sending}
+                        mailboxes={mailboxes}
+                        signature={signature}
+                        embedded
+                        onChange={setDraft}
+                        onRestoreSignature={laadOndertekening}
+                        onSend={() => void handleSend()}
+                        onClose={closeDraft}
+                        onDiscard={() => discardDraft(draft.draftKey)}
+                      />
+                    </div>
+                    <div onMouseDown={startSplitSleep}
+                      role="separator" aria-orientation="horizontal"
+                      title={t("webmail.split_resize")}
+                      className="h-1.5 flex-shrink-0 cursor-row-resize bg-slate-100 hover:bg-blue-300 transition-colors" />
+                  </>
+                )}
                 {/* Kop */}
                 <div className="px-5 py-3 border-b border-slate-200 flex-shrink-0">
                   <div className="flex items-start gap-3">
@@ -6606,6 +6717,13 @@ function ErpNextWebmail() {
                     <button onClick={() => { setShowLinkPicker((v) => !v); setProjectSearch(""); }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
                       <FolderKanban size={11} /> {t("webmail.link_to_project")}
+                    </button>
+                    {/* Projecten zijn het dagelijkse geval en houden hun eigen
+                        knop; hiernaast staat de weg naar al het andere. */}
+                    <button onClick={() => setKoppelDialoog(true)}
+                      title={t("y_next.link_any_title")}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-50 cursor-pointer">
+                      <Link2 size={11} /> {t("y_next.link_any_button")}
                     </button>
                     {/* Is er geen bedoeling herkend, dan is dit de actiebalk
                         van deze mail en hoort de relatie-actie hier. Staat er
@@ -6984,6 +7102,14 @@ function ErpNextWebmail() {
         )}
       </div>
 
+      {koppelDialoog && selected && (
+        <LinkAnythingDialog
+          subject={selected.subject}
+          onPick={(doctype, docname) => void koppelAanDocument(doctype, docname)}
+          onClose={() => setKoppelDialoog(false)}
+        />
+      )}
+
       {bookingFor && (
         <BookPurchaseInvoiceDialog
           message={{
@@ -7117,7 +7243,7 @@ function ErpNextWebmail() {
 const RECIPIENT_INPUT_CLASS =
   "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
 
-function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend, onClose, onDiscard }: {
+function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend, onClose, onDiscard, embedded }: {
   draft: ErpDraft;
   sending: boolean;
   /** Postbussen waaruit verstuurd kan worden; bij één valt de keuze weg. */
@@ -7131,6 +7257,13 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
   onClose: () => void;
   /** Weggooien — de enige manier waarop een concept verdwijnt zonder verzenden. */
   onDiscard: () => void;
+  /**
+   * Staat de opsteller in de gesplitste weergave, met de oorspronkelijke mail
+   * eronder? Dan is hij geen dialoog meer maar een deel van het scherm: geen
+   * `aria-modal` (de mail eronder is juist bedoeld om te lezen) en geen
+   * focus-val (anders kom je er met Tab niet uit).
+   */
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const paneRef = useRef<HTMLDivElement>(null);
@@ -7187,6 +7320,9 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
     // bij `focusTrapAction`. Deze ene vergelijking staat hier zodat er niet bij
     // élke getikte letter door de DOM gelopen wordt.
     if (e.key !== "Tab") return;
+    // Ingebed is er niets om in vast te houden: de mail eronder hoort bij
+    // hetzelfde scherm en moet met Tab bereikbaar blijven.
+    if (embedded) return;
     const root = paneRef.current;
     if (!root) return;
     const items = focusableWithin(root);
@@ -7201,7 +7337,9 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
 
   return (
     <div ref={paneRef} onKeyDown={handlePaneKeyDown}
-      role="dialog" aria-modal="true" aria-labelledby={titleId}
+      role={embedded ? "region" : "dialog"}
+      {...(embedded ? {} : { "aria-modal": true as const })}
+      aria-labelledby={titleId}
       className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50 flex-shrink-0">
         <span id={titleId} className="text-sm font-semibold text-slate-700">

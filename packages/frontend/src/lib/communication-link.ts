@@ -15,6 +15,7 @@
  */
 
 import { createDocument, fetchDocument, updateDocument } from "./erpnext.ts";
+import { schrijfCommunicatieVelden } from "./communication-write.ts";
 
 export interface MailAttachmentRef {
   /** File-docname van de bijlage op de Communication (alleen ter herkenning). */
@@ -96,7 +97,10 @@ export async function linkCommunicationTo(
   doctype: string,
   docname: string,
 ): Promise<void> {
-  await updateDocument("Communication", communication, {
+  // Via `schrijfCommunicatieVelden`, want anders loopt het koppelen stuk op de
+  // adresvalidatie van een veld dat hier niet verandert — zie
+  // `communication-write.ts`.
+  await schrijfCommunicatieVelden(communication, {
     reference_doctype: doctype,
     reference_name: docname,
     // Frappe's eigen aanduiding voor "hangt aan een document"; hij kleurt de
@@ -117,7 +121,9 @@ export async function linkCommunicationTo(
       ],
     });
   } catch {
-    // De tijdlijn werkt al via `reference_*`; dit was de duurzame extra.
+    // De tijdlijn werkt al via `reference_*`; dit was de duurzame extra. Een
+    // child-tabel kan niet langs de adresvalidatie heen, dus juist hier kan
+    // die fout opduiken — en juist hier mag hij niets kosten.
   }
 }
 

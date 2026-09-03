@@ -2987,5 +2987,11 @@
   "weekplanning.open_new_tab": "Open in new tab",
   "webmail.download_all": "All",
   "webmail.download_all_hint": "Download all attachments as one zip",
-  "webmail.attachments_zip_name": "attachments"
+  "webmail.attachments_zip_name": "attachments",
+  "y_next.link_any_button": "Link to…",
+  "y_next.link_any_title": "Link this email to",
+  "y_next.link_any_type_search": "Document type…",
+  "y_next.link_any_search": "Search {{doctype}}…",
+  "y_next.link_any_failed": "Search failed: {{error}}",
+  "webmail.split_resize": "Drag to resize the reply pane"
 }

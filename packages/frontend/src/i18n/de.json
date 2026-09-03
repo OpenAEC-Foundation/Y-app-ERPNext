@@ -2987,5 +2987,11 @@
   "weekplanning.open_new_tab": "In neuem Tab öffnen",
   "webmail.download_all": "Alle",
   "webmail.download_all_hint": "Alle Anhänge als eine Zip-Datei herunterladen",
-  "webmail.attachments_zip_name": "anhaenge"
+  "webmail.attachments_zip_name": "anhaenge",
+  "y_next.link_any_button": "Verknüpfen mit…",
+  "y_next.link_any_title": "Diese E-Mail verknüpfen mit",
+  "y_next.link_any_type_search": "Dokumentart…",
+  "y_next.link_any_search": "In {{doctype}} suchen…",
+  "y_next.link_any_failed": "Suche fehlgeschlagen: {{error}}",
+  "webmail.split_resize": "Ziehen, um den Antwortbereich zu vergrößern oder zu verkleinern"
 }

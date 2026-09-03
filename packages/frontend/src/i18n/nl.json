@@ -2987,5 +2987,11 @@
   "weekplanning.open_new_tab": "In nieuw tabblad",
   "webmail.download_all": "Alles",
   "webmail.download_all_hint": "Alle bijlagen als één zip downloaden",
-  "webmail.attachments_zip_name": "bijlagen"
+  "webmail.attachments_zip_name": "bijlagen",
+  "y_next.link_any_button": "Koppelen aan…",
+  "y_next.link_any_title": "Deze mail koppelen aan",
+  "y_next.link_any_type_search": "Soort document…",
+  "y_next.link_any_search": "Zoek in {{doctype}}…",
+  "y_next.link_any_failed": "Zoeken mislukt: {{error}}",
+  "webmail.split_resize": "Sleep om het antwoordvenster hoger of lager te maken"
 }

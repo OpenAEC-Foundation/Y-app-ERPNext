@@ -47,6 +47,7 @@ import {
   type FileInfo,
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
+import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
   buildConnectionQueries,
   isConnectionFolder,
@@ -922,43 +923,11 @@ export async function getMessageBody(
  * geen `\Seen`-STORE-race, dus de UI heeft hier geen TTL-overlay nodig.
  */
 /**
- * Zet statusvelden op een bericht via het Server Script `mail_bijwerken`.
- *
- * Waarom niet gewoon `updateDocument`: Frappe valideert bij elke keer opslaan
- * de adresvelden van een Communication. Hij splitst `recipients`/`cc`/`bcc` op
- * komma's en eist dat elk stuk een geldig adres is. Een geadresseerde als
- * `"Veldhuijzen, F. (Friedhelm)" <f.veldhuijzen@hr.nl>` valt daardoor uiteen,
- * en dan mislukt het afvinken van die mail op een veld dat je niet aanraakt.
- * Zulke afzenders blijven komen, dus dit moest structureel.
- *
- * Het script schrijft alleen de velden die het kent (status, email_status,
- * seen, en de koppeling) en controleert daarbij de rol van de gebruiker.
- *
- * De gewone route blijft de eerste keuze: die draait de hooks van ERPNext mee.
- * Het script is de reparatieweg voor precies dit ene geval, en wordt dus alleen
- * gebruikt bij een mail met zo'n kapot adresveld.
+ * De statusvelden gaan via `schrijfCommunicatieVelden`: die valt terug op het
+ * Server Script wanneer Frappe struikelt over een adresveld dat wij niet eens
+ * aanraken. Zie `communication-write.ts` voor waarom dat nodig is.
  */
-async function zetStatus(name: string, velden: Record<string, string | number>): Promise<void> {
-  try {
-    await updateDocument("Communication", name, velden);
-  } catch (err) {
-    // Struikelt de gewone route op een adresveld dat wij niet aanraken, dan
-    // via het Server Script dat alleen deze velden schrijft. Andere fouten
-    // (geen rechten, netwerk) horen gewoon door te komen.
-    if (!isAddressValidationError(err)) throw err;
-    await callMethod("mail_bijwerken", { naam: name, ...velden });
-    invalidateCache("Communication");
-  }
-}
-
-/**
- * Herkent de fout waarmee Frappe een opslag weigert om een adresveld waar de
- * gebruiker niets aan deed. Zie zetStatus voor waarom dat gebeurt.
- */
-function isAddressValidationError(err: unknown): boolean {
-  const tekst = err instanceof Error ? err.message : String(err ?? "");
-  return /not a valid Email Address|geen geldig e-?mailadres/i.test(tekst);
-}
+const zetStatus = schrijfCommunicatieVelden;
 
 export async function markRead(name: string): Promise<void> {
   await zetStatus(name, { seen: 1 });
