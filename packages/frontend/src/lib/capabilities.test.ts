@@ -41,16 +41,22 @@ test("isPageEnabled: fase-2-routes zijn enabled", () => {
   }
 });
 
+test("isPageEnabled: /messenger draait op de ERPNext-berichtenadapter en is dus enabled", () => {
+  assert.equal(isPageEnabled("/messenger"), true);
+});
+
 test("isPageEnabled: serverloze-onmogelijke routes blijven disabled", () => {
-  for (const path of ["/messenger", "/nextcloud-files", "/nextcloud-talk", "/passwords"]) {
+  for (const path of ["/nextcloud-files", "/nextcloud-talk", "/passwords"]) {
     assert.equal(isPageEnabled(path), false, `${path} zou disabled moeten zijn`);
   }
 });
 
 test("isFeatureEnabled: alleen serverloze features zijn actief", () => {
-  const enabled: ServerFeature[] = ["erpnext-mail", "extensions"];
+  const enabled: ServerFeature[] = ["erpnext-mail", "erpnext-messages", "extensions"];
   const disabled: ServerFeature[] = [
     "webmail",
+    // De oude multi-platform brug blijft uit; `erpnext-messages` is een
+    // andere feature op dezelfde route.
     "messenger",
     "websocket",
     "terminal",

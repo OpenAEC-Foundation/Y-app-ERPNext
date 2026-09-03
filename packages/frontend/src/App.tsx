@@ -13,6 +13,8 @@ import { APP_VERSION } from "./lib/version";
 
 /** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
 const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
+/** Collega-berichten op ERPNext `Notification Log` (Y-next). */
+const ERPNEXT_MESSAGES: ServerFeature = "erpnext-messages";
 
 // Lazy-load all pages
 const Dashboard = lazy(() => import("./pages/dashboard"));
@@ -51,6 +53,13 @@ const Wiki = lazy(() => import("./pages/Wiki"));
 const Passwords = lazy(() => import("./pages/Passwords"));
 const Contacts = lazy(() => import("./pages/Contacts"));
 const Messenger = lazy(() => import("./pages/Messenger"));
+/**
+ * De ERPNext-variant van Berichten. Draait op `Notification Log` en heeft
+ * geen backend nodig; `Messenger` hierboven is de multi-platform brug uit de
+ * Y-app-build en werkt alleen mét Express-server. Welke van de twee op
+ * `/messenger` hangt, beslist `isFeatureEnabled` bij de route hieronder.
+ */
+const Messages = lazy(() => import("./pages/Messages"));
 const ErpNextOverview = lazy(() => import("./pages/ErpNextOverview"));
 const MeetingNotes = lazy(() => import("./pages/MeetingNotes"));
 const Leads = lazy(() => import("./pages/Leads"));
@@ -574,7 +583,10 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/wiki" element={gate("/wiki", <Wiki />)} />
                   <Route path="/passwords" element={gate("/passwords", <Passwords />)} />
                   <Route path="/contacts" element={gate("/contacts", <Contacts />)} />
-                  <Route path="/messenger" element={gate("/messenger", <Messenger />)} />
+                  <Route
+                    path="/messenger"
+                    element={gate("/messenger", isFeatureEnabled(ERPNEXT_MESSAGES) ? <Messages /> : <Messenger />)}
+                  />
                   <Route path="/meeting-notes" element={gate("/meeting-notes", <MeetingNotes />)} />
                   <Route path="/leads" element={gate("/leads", <Leads />)} />
                   <Route path="/liquidity-planning" element={gate("/liquidity-planning", <LiquidityPlanning />)} />
