@@ -770,6 +770,42 @@ export async function listVirtualFolders(mailbox?: string): Promise<ErpMailFolde
  */
 const SHARED_MAILBOXES = ["info@3bm.co.nl", "cooperatie@3bm.co.nl"];
 
+/**
+ * Postbussen die aan één persoon zijn toegewezen, uit `Y Next Setting` onder
+ * de sleutel `mailbox-toegang`: een JSON-object van gebruiker naar adressen.
+ *
+ * In ERPNext en niet hier hardgecodeerd, zodat er geen nieuwe versie van de
+ * app nodig is als er een postbus of een persoon bij komt. Kan de instelling
+ * niet gelezen worden, dan blijft het bij de eigen bus plus de gedeelde —
+ * precies het gedrag van vóór deze toevoeging.
+ */
+const TOEGANG_SLEUTEL = "mailbox-toegang";
+let toegangCache: { at: number; kaart: Record<string, string[]> } | null = null;
+const TOEGANG_TTL = 5 * 60 * 1000;
+
+async function extraPostbussenVoor(gebruiker: string): Promise<string[]> {
+  const wie = toStr(gebruiker).toLowerCase();
+  if (!wie) return [];
+  if (!toegangCache || Date.now() - toegangCache.at > TOEGANG_TTL) {
+    let kaart: Record<string, string[]> = {};
+    try {
+      const doc = await fetchDocument<{ setting_value?: string }>(
+        "Y Next Setting", TOEGANG_SLEUTEL,
+      );
+      const ruw = JSON.parse(toStr(doc?.setting_value) || "{}") as unknown;
+      if (ruw && typeof ruw === "object" && !Array.isArray(ruw)) {
+        for (const [k, v] of Object.entries(ruw as Record<string, unknown>)) {
+          if (Array.isArray(v)) kaart[k.toLowerCase()] = v.map((x) => toStr(x).toLowerCase());
+        }
+      }
+    } catch {
+      kaart = {};
+    }
+    toegangCache = { at: Date.now(), kaart };
+  }
+  return toegangCache.kaart[wie] ?? [];
+}
+
 /** Eén kiesbare postbus in de mailmodule. */
 export interface ErpMailbox {
   /** Docname van het Email Account; de waarde waarop gefilterd wordt. */
@@ -813,13 +849,14 @@ export async function listMailboxes(): Promise<ErpMailbox[]> {
       }),
     ]);
     const me = toStr(user).toLowerCase();
+    const extra = await extraPostbussenVoor(me);
     const out: ErpMailbox[] = [];
     for (const acc of accounts) {
       const emailId = toStr(acc.email_id).toLowerCase();
       if (!emailId) continue;
       if (!acc.enable_incoming && !acc.enable_outgoing) continue;
       const own = me !== "" && emailId === me;
-      if (!own && !SHARED_MAILBOXES.includes(emailId)) continue;
+      if (!own && !SHARED_MAILBOXES.includes(emailId) && !extra.includes(emailId)) continue;
       out.push({ name: acc.name, emailId: toStr(acc.email_id), own });
     }
     out.sort((a, b) => (a.own === b.own ? a.emailId.localeCompare(b.emailId) : a.own ? -1 : 1));
