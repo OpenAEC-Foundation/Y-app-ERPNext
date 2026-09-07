@@ -596,3 +596,46 @@ export function ensureHtmlBody(value: string): string {
   if (/<[a-z!/]/i.test(raw)) return sanitizeEditorHtml(raw);
   return plainTextToHtml(raw);
 }
+
+/* ─────────────────── Platte tekst die als HTML aankomt ───────────────── */
+
+/**
+ * Tags die structuur dragen. Staat er geen enkele in, dan is er ook niets dat
+ * een regelovergang maakt, en betekenen de newlines in de tekst nog iets.
+ */
+const STRUCTUUR_TAG =
+  /<\s*(?:p|div|br|table|tr|td|ul|ol|li|blockquote|pre|h[1-6]|section|article)\b/i;
+
+/**
+ * Is dit platte tekst die als "HTML" is opgeslagen?
+ *
+ * ERPNext bewaart de body van een mail in één veld, ook wanneer het bericht
+ * alleen een text/plain-deel had. De inhoud is dan gewone tekst met
+ * regelovergangen — en soms met `&lt;` voor de punthaken, want hij is wél
+ * ge-escaped. Rendert de app dat als HTML, dan vallen alle regelovergangen weg
+ * en krijg je één lange lap tekst. Precies wat Thunderbird wél goed toont,
+ * omdat die het als tekst behandelt.
+ *
+ * De toets is bewust streng: alleen wanneer er géén structuurtag in zit én er
+ * regelovergangen zijn. Een mail met echte opmaak blijft dus ongemoeid.
+ */
+export function lijktPlatteTekst(inhoud: string): boolean {
+  const tekst = String(inhoud ?? "");
+  if (!tekst.trim()) return false;
+  if (STRUCTUUR_TAG.test(tekst)) return false;
+  return /\r?\n/.test(tekst);
+}
+
+/**
+ * Maakt platte tekst weergeefbaar zonder hem te verbouwen.
+ *
+ * Met `white-space: pre-wrap` in plaats van newlines vervangen door `<br>`:
+ * zo blijft de inhoud letterlijk staan — inclusief inspringing en uitgelijnde
+ * blokken — en hoeven we niets te raden over wat een alinea is. Is het geen
+ * platte tekst, dan gaat de inhoud onveranderd terug.
+ */
+export function bewaarRegelovergangen(inhoud: string): string {
+  const tekst = String(inhoud ?? "");
+  if (!lijktPlatteTekst(tekst)) return tekst;
+  return `<div style="white-space:pre-wrap">${tekst}</div>`;
+}

@@ -46,6 +46,7 @@ import {
   ApiError,
   type FileInfo,
 } from "./erpnext.ts";
+import { bewaarRegelovergangen } from "./mail-html.ts";
 import { resolveSessionUser } from "./session.ts";
 import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
@@ -913,7 +914,9 @@ export async function getMessageBody(
     fetchAttachments("Communication", name).catch(() => [] as FileInfo[]),
   ]);
   return {
-    html: toStr(doc?.content),
+    // Platte tekst krijgt zijn regelovergangen terug; echte HTML blijft zoals
+    // hij is. Zie `bewaarRegelovergangen` voor waarom dat nodig is.
+    html: bewaarRegelovergangen(toStr(doc?.content)),
     attachments: files.map((f) => ({ file_url: f.file_url, file_name: f.file_name })),
   };
 }

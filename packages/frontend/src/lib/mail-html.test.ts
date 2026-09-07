@@ -25,6 +25,8 @@ import {
   isHtmlEmpty,
   ensureHtmlBody,
   escapeHtml,
+  bewaarRegelovergangen,
+  lijktPlatteTekst,
 } from "./mail-html.ts";
 
 /* ─── 1. Behoud van structuur ─── */
@@ -388,4 +390,39 @@ test("toEmailHtml: een ingesprongen alinea komt niet als grijs citaat aan", () =
 test("toEmailHtml: een echt citaat houdt zijn rand als signaal", () => {
   const out = toEmailHtml("<blockquote>citaat</blockquote>");
   assert.match(out, /border-left:2px solid #cbd5e1/);
+});
+
+/* ─────────────── Platte tekst die als HTML is opgeslagen ─────────────── */
+
+/** Regelovergang als waarde: leest prettiger dan hem overal te herhalen. */
+const NL = "\n";
+
+test("een mail zonder tags maar met regelovergangen is platte tekst", () => {
+  // Precies wat ERPNext bewaart voor een text/plain-bericht: geen tags, wel
+  // regelovergangen, en de punthaken al ge-escaped.
+  const inhoud = "Beste Maarten," + NL + NL + "Van: Piet Mol &lt;piet@3bm.co.nl&gt;" + NL + "Onderwerp: test";
+  assert.equal(lijktPlatteTekst(inhoud), true);
+  assert.match(bewaarRegelovergangen(inhoud), /white-space:pre-wrap/);
+});
+
+test("echte HTML blijft ongemoeid", () => {
+  const html = "<p>Beste Maarten,</p><p>Groet</p>";
+  assert.equal(lijktPlatteTekst(html), false);
+  assert.equal(bewaarRegelovergangen(html), html);
+});
+
+test("ook één br of div maakt het HTML", () => {
+  assert.equal(lijktPlatteTekst("regel een<br>regel twee" + NL), false);
+  assert.equal(lijktPlatteTekst("<div>a</div>" + NL + "<div>b</div>"), false);
+});
+
+test("tekst zonder regelovergangen valt er buiten", () => {
+  // Eén regel heeft niets te bewaren; hem inpakken verandert alleen de opmaak.
+  assert.equal(lijktPlatteTekst("Korte mededeling"), false);
+  assert.equal(bewaarRegelovergangen("Korte mededeling"), "Korte mededeling");
+});
+
+test("leeg blijft leeg", () => {
+  assert.equal(lijktPlatteTekst(""), false);
+  assert.equal(bewaarRegelovergangen(""), "");
 });
