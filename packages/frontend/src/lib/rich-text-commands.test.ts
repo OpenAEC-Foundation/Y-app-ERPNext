@@ -13,6 +13,8 @@ import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
   TOGGLE_STATE_COMMANDS, TEXT_COLORS,
   type EditorCommandName,
+  tabelHtml,
+  MAX_TABEL,
 } from "./rich-text-commands.ts";
 
 test("resolveCommand: de enkelvoudige opmaakknoppen leveren één stap", () => {
@@ -187,4 +189,40 @@ test("toolbarRovingIndex: Tab hoort hier niet — die verlaat de werkbalk", () =
 
 test("toolbarRovingIndex: een lege werkbalk levert niets op", () => {
   assert.equal(toolbarRovingIndex("ArrowRight", 0, 0), null);
+});
+
+/* ─────────────────────── Uitlijnen en tabellen ───────────────────────── */
+
+test("uitlijnen levert de justify-commando's op", () => {
+  assert.deepEqual(resolveCommand("alignLeft"), [{ command: "justifyLeft" }]);
+  assert.deepEqual(resolveCommand("alignCenter"), [{ command: "justifyCenter" }]);
+  assert.deepEqual(resolveCommand("alignRight"), [{ command: "justifyRight" }]);
+  assert.deepEqual(resolveCommand("alignJustify"), [{ command: "justifyFull" }]);
+});
+
+test("tabelHtml maakt een koprij plus de gevraagde datarijen", () => {
+  const html = tabelHtml(3, 2);
+  assert.equal((html.match(/<tr>/g) || []).length, 3);
+  assert.equal((html.match(/<th /g) || []).length, 2, "twee kopcellen");
+  assert.equal((html.match(/<td /g) || []).length, 4, "twee rijen van twee");
+});
+
+test("tabelHtml zet de opmaak inline, want een mail heeft geen stylesheet", () => {
+  const html = tabelHtml(2, 2);
+  assert.match(html, /border-collapse:collapse/);
+  assert.match(html, /border:1px solid/);
+  assert.equal(/class=/.test(html), false);
+});
+
+test("tabelHtml eindigt met een alinea, anders kun je er niet meer onder typen", () => {
+  assert.match(tabelHtml(2, 2), /<\/table><p><br><\/p>$/);
+});
+
+test("tabelHtml begrenst onzin in plaats van vast te lopen", () => {
+  // Eén rij en één kolom is het minimum; nul of negatief hoort niet te leiden
+  // tot een tabel zonder cellen.
+  assert.equal((tabelHtml(0, 0).match(/<tr>/g) || []).length, 1);
+  assert.equal((tabelHtml(-5, -5).match(/<th /g) || []).length, 1);
+  // En een typefout van duizend kolommen wordt afgekapt.
+  assert.equal((tabelHtml(1, 1000).match(/<th /g) || []).length, MAX_TABEL);
 });

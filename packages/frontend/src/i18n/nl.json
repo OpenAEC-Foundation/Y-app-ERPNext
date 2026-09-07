@@ -3010,5 +3010,10 @@
   "agenda.invite_you_tentative": "Je hebt misschien geantwoord",
   "agenda.invite_answer_failed": "Antwoorden mislukt: {{error}}",
   "agenda.invite_guests": "Genodigden",
-  "y_next.mail_drop_here": "Loslaten om als bijlage toe te voegen"
+  "y_next.mail_drop_here": "Loslaten om als bijlage toe te voegen",
+  "webmail.tt_align_left": "Links uitlijnen",
+  "webmail.tt_align_center": "Centreren",
+  "webmail.tt_align_right": "Rechts uitlijnen",
+  "webmail.tt_align_justify": "Uitvullen",
+  "webmail.tt_insert_table": "Tabel invoegen"
 }

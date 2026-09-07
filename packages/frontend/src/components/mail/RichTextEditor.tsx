@@ -30,11 +30,12 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Indent, Outdent, Link2, Link2Off, Quote, Minus, Palette, RemoveFormatting,
   Heading1, Heading2, Pilcrow,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
-  TOGGLE_STATE_COMMANDS, TEXT_COLORS,
+  tabelHtml, TOGGLE_STATE_COMMANDS, TEXT_COLORS,
   type EditorCommandName, type IndentContext,
 } from "../../lib/rich-text-commands";
 import {
@@ -69,10 +70,22 @@ const BLOCK_BUTTONS: ToolButton[] = [
   { name: "heading2", icon: Heading2, labelKey: "webmail.tt_heading2" },
 ];
 
+const ALIGN_BUTTONS: ToolButton[] = [
+  { name: "alignLeft", icon: AlignLeft, labelKey: "webmail.tt_align_left" },
+  { name: "alignCenter", icon: AlignCenter, labelKey: "webmail.tt_align_center" },
+  { name: "alignRight", icon: AlignRight, labelKey: "webmail.tt_align_right" },
+  { name: "alignJustify", icon: AlignJustify, labelKey: "webmail.tt_align_justify", hideOnMobile: true },
+];
+
 const EXTRA_BUTTONS: ToolButton[] = [
   { name: "quote", icon: Quote, labelKey: "webmail.tt_quote", hideOnMobile: true },
   { name: "horizontalRule", icon: Minus, labelKey: "webmail.tt_horizontal_rule", hideOnMobile: true },
 ];
+
+/** Het keuzerastertje is `TABEL_RASTER` bij `TABEL_RASTER` vakjes groot. Zes
+ *  is ruim genoeg voor wat je in een mail zet; grotere tabellen maak je beter
+ *  in een bijlage. `MAX_TABEL` in `rich-text-commands` is de harde bovengrens. */
+const TABEL_RASTER = 6;
 
 const BTN_BASE =
   "p-1.5 rounded text-slate-600 hover:bg-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-default";
@@ -114,6 +127,9 @@ export default function RichTextEditor({
   /** Welke werkbalkknop de tab-stop is; zie `toolbarRovingIndex`. */
   const rovingRef = useRef(0);
   const [showColors, setShowColors] = useState(false);
+  const [showTable, setShowTable] = useState(false);
+  /** Aangewezen tabelgrootte in het rastertje; 0 betekent: nog niets. */
+  const [tableHover, setTableHover] = useState({ rijen: 0, kolommen: 0 });
   const [active, setActive] = useState<Record<string, boolean>>({});
   const [block, setBlock] = useState<"paragraph" | "heading1" | "heading2" | "quote">("paragraph");
   const [empty, setEmpty] = useState(true);
@@ -391,7 +407,7 @@ export default function RichTextEditor({
     const idx = Math.min(Math.max(rovingRef.current, 0), btns.length - 1);
     rovingRef.current = idx;
     btns.forEach((b, i) => { b.tabIndex = i === idx ? 0 : -1; });
-  }, [showColors, toolbarButtons]);
+  }, [showColors, showTable, toolbarButtons]);
 
   const handleToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const btns = toolbarButtons();
@@ -437,6 +453,54 @@ export default function RichTextEditor({
         {LIST_BUTTONS.map(toolButton)}
         {divider("d2")}
         {BLOCK_BUTTONS.map(toolButton)}
+        {divider("d2b")}
+        {ALIGN_BUTTONS.map(toolButton)}
+
+        {/* Tabel invoegen. Een rastertje in plaats van twee invoervelden: je
+            wijst de grootte aan en ziet meteen wat je krijgt. */}
+        <span className="relative inline-flex">
+          <button type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setShowTable((v) => !v)}
+            title={t("webmail.tt_insert_table")}
+            aria-label={t("webmail.tt_insert_table")}
+            aria-expanded={showTable}
+            className={`${BTN_BASE} inline-flex ${showTable ? BTN_ACTIVE : ""}`}>
+            <TableIcon size={14} />
+          </button>
+          {showTable && (
+            <span className="absolute z-30 top-full left-0 mt-1 p-2 rounded border border-slate-200 bg-white shadow-lg">
+              <span className="grid gap-0.5 mb-1.5"
+                style={{ gridTemplateColumns: `repeat(${TABEL_RASTER}, 14px)` }}
+                onMouseLeave={() => setTableHover({ rijen: 0, kolommen: 0 })}>
+                {Array.from({ length: TABEL_RASTER * TABEL_RASTER }, (_, i) => {
+                  const rij = Math.floor(i / TABEL_RASTER) + 1;
+                  const kol = (i % TABEL_RASTER) + 1;
+                  const aan = rij <= tableHover.rijen && kol <= tableHover.kolommen;
+                  return (
+                    <button key={i} type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setTableHover({ rijen: rij, kolommen: kol })}
+                      onClick={() => {
+                        insertHtml(tabelHtml(rij, kol));
+                        setShowTable(false);
+                        setTableHover({ rijen: 0, kolommen: 0 });
+                      }}
+                      aria-label={`${rij} × ${kol}`}
+                      className={`w-3.5 h-3.5 rounded-[2px] border cursor-pointer ${
+                        aan ? "bg-blue-400 border-blue-500" : "bg-white border-slate-300"
+                      }`} />
+                  );
+                })}
+              </span>
+              <span className="block text-center text-[11px] text-slate-500 tabular-nums">
+                {tableHover.rijen > 0
+                  ? `${tableHover.rijen} × ${tableHover.kolommen}`
+                  : t("webmail.tt_insert_table")}
+              </span>
+            </span>
+          )}
+        </span>
 
         {/* Tekstkleur — een klein palet in plaats van een volledige kiezer. */}
         <span className="relative inline-flex">

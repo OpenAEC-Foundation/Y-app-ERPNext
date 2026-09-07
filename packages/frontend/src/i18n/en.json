@@ -3010,5 +3010,10 @@
   "agenda.invite_you_tentative": "You answered maybe",
   "agenda.invite_answer_failed": "Reply failed: {{error}}",
   "agenda.invite_guests": "Guests",
-  "y_next.mail_drop_here": "Drop to attach"
+  "y_next.mail_drop_here": "Drop to attach",
+  "webmail.tt_align_left": "Align left",
+  "webmail.tt_align_center": "Center",
+  "webmail.tt_align_right": "Align right",
+  "webmail.tt_align_justify": "Justify",
+  "webmail.tt_insert_table": "Insert table"
 }

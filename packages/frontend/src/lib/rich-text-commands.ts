@@ -26,6 +26,7 @@ export type EditorCommandName =
   | "bulletList" | "numberedList" | "indent" | "outdent"
   | "paragraph" | "heading1" | "heading2"
   | "quote" | "horizontalRule"
+  | "alignLeft" | "alignCenter" | "alignRight" | "alignJustify"
   | "clearFormatting" | "unlink" | "color";
 
 /** Eén `execCommand`-aanroep. Bewust datavorm, geen functie: zo is hij te testen. */
@@ -57,6 +58,13 @@ export function resolveCommand(name: EditorCommandName, arg?: string): ExecStep[
     case "heading2": return [{ command: "formatBlock", value: "<h2>" }];
     case "quote": return [{ command: "formatBlock", value: "<blockquote>" }];
     case "horizontalRule": return [{ command: "insertHorizontalRule" }];
+    // Uitlijnen levert met `styleWithCSS` een `text-align` op het blok op.
+    // Die eigenschap staat in de toegestane lijst van de sanitizer, dus hij
+    // overleeft het opslaan én het verzenden.
+    case "alignLeft": return [{ command: "justifyLeft" }];
+    case "alignCenter": return [{ command: "justifyCenter" }];
+    case "alignRight": return [{ command: "justifyRight" }];
+    case "alignJustify": return [{ command: "justifyFull" }];
     case "unlink": return [{ command: "unlink" }];
     case "clearFormatting":
       return [
@@ -87,6 +95,10 @@ export const TOGGLE_STATE_COMMANDS: Partial<Record<EditorCommandName, string>> =
   strikethrough: "strikeThrough",
   bulletList: "insertUnorderedList",
   numberedList: "insertOrderedList",
+  alignLeft: "justifyLeft",
+  alignCenter: "justifyCenter",
+  alignRight: "justifyRight",
+  alignJustify: "justifyFull",
 };
 
 /**
@@ -220,3 +232,42 @@ export function normalizeBlockValue(raw: string): "paragraph" | "heading1" | "he
   if (value === "blockquote") return "quote";
   return "paragraph";
 }
+
+/* ──────────────────────────────── Tabellen ───────────────────────────── */
+
+/**
+ * De HTML van een lege tabel, klaar om in te typen.
+ *
+ * Waarom inline stijl en geen class: een mail heeft geen stylesheet. Wat er
+ * bij de ontvanger uit moet zien zoals bedoeld, moet op het element zelf
+ * staan — dezelfde reden als bij `EMAIL_TAG_STYLES` in `mail-html.ts`. De
+ * randen staan er expliciet op omdat een tabel zonder randen in de meeste
+ * clients als een hoop losse tekst aankomt.
+ *
+ * De eerste rij is een koprij: dat is bij een tabel in een mail vrijwel
+ * altijd de bedoeling, en hem weghalen is minder werk dan hem maken.
+ */
+export function tabelHtml(rijen: number, kolommen: number): string {
+  const r = Math.min(Math.max(Math.trunc(rijen) || 0, 1), MAX_TABEL);
+  const k = Math.min(Math.max(Math.trunc(kolommen) || 0, 1), MAX_TABEL);
+  const cel = "border:1px solid #cbd5e1;padding:6px 8px;vertical-align:top";
+  const kop = `${cel};background:#f1f5f9;font-weight:600;text-align:left`;
+
+  const koprij = `<tr>${Array.from({ length: k }, () => `<th style="${kop}">&nbsp;</th>`).join("")}</tr>`;
+  const body = Array.from({ length: r - 1 }, () =>
+    `<tr>${Array.from({ length: k }, () => `<td style="${cel}">&nbsp;</td>`).join("")}</tr>`,
+  ).join("");
+
+  // Een afsluitende alinea, anders staat de cursor na het invoegen klem
+  // achter de tabel en kun je er in de meeste browsers niet meer onder typen.
+  return `<table style="border-collapse:collapse;width:100%">`
+    + `<tbody>${koprij}${body}</tbody></table><p><br></p>`;
+}
+
+/**
+ * Bovengrens per richting. Niet uit zuinigheid: een tabel van honderd
+ * kolommen is in een mailvenster onbruikbaar en in de mail van de ontvanger
+ * onleesbaar, en een typefout in het invoerveld hoort de editor niet te laten
+ * vastlopen.
+ */
+export const MAX_TABEL = 20;
