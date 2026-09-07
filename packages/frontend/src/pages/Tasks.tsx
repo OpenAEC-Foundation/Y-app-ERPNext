@@ -1545,9 +1545,13 @@ export function TaskDetail({
           <div className="min-w-0 flex-1">
             {isCreate ? (
               <>
-                <p className="text-xs text-slate-400 font-mono mb-1">{t("tasks.create.title")}</p>
+                <p className="text-xs text-slate-400 font-mono mb-1">
+                  {t("tasks.create.title")}
+                  <span className="ml-1 text-rose-400" aria-hidden="true">*</span>
+                </p>
                 <input
                   type="text"
+                  aria-required="true"
                   value={createSubject}
                   onChange={(e) => setCreateSubject(e.target.value)}
                   onKeyDown={(e) => {
@@ -1635,13 +1639,21 @@ export function TaskDetail({
 
           {/* Create button */}
           {isCreate && (
-            <button
-              onClick={handleCreate}
-              disabled={!createSubject.trim() || creating}
-              className="w-full mt-4 px-4 py-2.5 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer"
-            >
-              {creating ? t("tasks.create.creating") : t("tasks.create.submit")}
-            </button>
+            <>
+              <button
+                onClick={handleCreate}
+                disabled={!createSubject.trim() || creating}
+                title={!createSubject.trim() ? t("tasks.create.need_subject") : undefined}
+                className="w-full mt-4 px-4 py-2.5 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer"
+              >
+                {creating ? t("tasks.create.creating") : t("tasks.create.submit")}
+              </button>
+              {!createSubject.trim() && !creating && (
+                <p className="mt-1.5 text-center text-xs text-slate-400">
+                  {t("tasks.create.need_subject")}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

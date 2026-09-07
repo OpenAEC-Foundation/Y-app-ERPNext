@@ -3020,5 +3020,6 @@
   "y_next.mail_forwarded": "Weitergeleitet",
   "y_next.mail_project_label": "Projekt",
   "y_next.mail_project_pick": "Projekt wählen…",
-  "y_next.mail_project_clear": "Verknüpfung entfernen"
+  "y_next.mail_project_clear": "Verknüpfung entfernen",
+  "tasks.create.need_subject": "Zuerst einen Betreff eingeben — das ist der Name der Aufgabe."
 }

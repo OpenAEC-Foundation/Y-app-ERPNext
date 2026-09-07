@@ -3020,5 +3020,6 @@
   "y_next.mail_forwarded": "Doorgestuurd",
   "y_next.mail_project_label": "Project",
   "y_next.mail_project_pick": "Kies een project…",
-  "y_next.mail_project_clear": "Koppeling weghalen"
+  "y_next.mail_project_clear": "Koppeling weghalen",
+  "tasks.create.need_subject": "Vul eerst een onderwerp in — dat is de naam van de taak."
 }
