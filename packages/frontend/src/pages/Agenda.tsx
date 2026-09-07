@@ -38,6 +38,12 @@ interface EventItem {
   description?: string;
   location?: string;
   owner?: string;
+  /**
+   * Deze afspraak is van een collega, niet van jou. De agenda toont hem dan
+   * gedempt: je eigen dag hoort er als eerste uit te springen, die van de
+   * anderen staat erbij als achtergrond.
+   */
+  vanAnder?: boolean;
   calendarId?: string;
   webLink?: string;
   /** Voor CalDAV (type "ical"): de VEVENT-UID + huidige deelnemers, zodat het
@@ -187,6 +193,15 @@ function getWeekDays(date: Date): Date[] {
   const days: Date[] = [];
   for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); days.push(d); }
   return days;
+}
+
+/**
+ * Halftoon voor de agenda van een ander. Eén doorzichtigheid op het blok
+ * houdt de kleur per collega intact — die is juist het middel om te zien van
+ * wie een afspraak is.
+ */
+function demping(e: EventItem): { opacity?: number } {
+  return e.vanAnder ? { opacity: 0.55 } : {};
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -1737,6 +1752,10 @@ export default function Agenda() {
             allDay: !!a.hele_dag,
             type: "mailbox",
             color: collegaKleuren.get(a.gebruiker) || TYPE_COLORS.mailbox,
+            // Zolang het eigen adres nog niet binnen is, dempt niets: anders
+            // is de hele agenda even grijs voordat hij zichzelf herstelt. Lukt
+            // het ophalen helemaal niet, dan blijft alles gewoon vol.
+            vanAnder: ikZelf !== "" && a.gebruiker.toLowerCase() !== ikZelf,
             owner: a.gebruiker.split("@")[0],
             uitnodiging: a.uid
               ? {
@@ -1771,7 +1790,7 @@ export default function Agenda() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.start, dateRange.end, leaves, erpSources, gekozenCollegas, collegaKleuren]);
+  }, [dateRange.start, dateRange.end, leaves, erpSources, gekozenCollegas, collegaKleuren, ikZelf]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
@@ -2003,7 +2022,7 @@ export default function Agenda() {
                     dayEvents.length > 0 && (
                       <div className="flex flex-wrap gap-0.5 px-0.5">
                         {dayEvents.slice(0, 4).map((e) => (
-                          <span key={e.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: e.color }} />
+                          <span key={e.id} className="w-1.5 h-1.5 rounded-full" style={{ ...demping(e), backgroundColor: e.color }} />
                         ))}
                         {dayEvents.length > 4 && <span className="text-[8px] text-slate-400">+{dayEvents.length - 4}</span>}
                       </div>
@@ -2014,7 +2033,7 @@ export default function Agenda() {
                       {dayEvents.slice(0, 3).map((e) => (
                         <div key={e.id} className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate hover:brightness-90 transition-all"
                           onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
-                          style={{ backgroundColor: e.color + "20", color: e.color }}>
+                          style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
                           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: e.color }} />
                           <span className="truncate font-medium">{e.title}</span>
                         </div>
@@ -2189,7 +2208,7 @@ export default function Agenda() {
                 onDoubleClick={() => handleSlotClick(key)}>
                 {allDayEvents.slice(0, 2).map((e) => (
                   <div key={e.id} className="text-[10px] px-1 py-0.5 rounded truncate font-medium"
-                    style={{ backgroundColor: e.color + "20", color: e.color }}>
+                    style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
                     {e.title}
                   </div>
                 ))}
@@ -2236,6 +2255,7 @@ export default function Agenda() {
                         onMouseDown={(ev) => ev.stopPropagation()}
                         onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
                         style={{
+                          ...demping(e),
                           top: pos.top,
                           height: pos.height,
                           left: `calc(${e.left * 100}% + 2px)`,
@@ -2323,7 +2343,7 @@ export default function Agenda() {
             <div className="flex flex-wrap gap-1">
               {allDayEvents.map((e) => (
                 <span key={e.id} className="text-xs px-2 py-1 rounded font-medium"
-                  style={{ backgroundColor: e.color + "20", color: e.color }}>
+                  style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
                   {e.title}
                 </span>
               ))}
@@ -2364,6 +2384,7 @@ export default function Agenda() {
                     onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
                     className="absolute rounded overflow-hidden cursor-pointer z-10 px-3 py-1.5 hover:brightness-95 transition-all"
                     style={{
+                      ...demping(e),
                       top: pos.top,
                       height: pos.height,
                       left: `calc(${e.left * 100}% + 4px)`,
@@ -2431,9 +2452,9 @@ export default function Agenda() {
           {dayEvents.map((e) => (
             <div key={e.id} className="p-3 rounded-lg border border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors"
               onClick={() => setDetailEvent(e)}
-              style={{ borderLeftColor: e.color, borderLeftWidth: 3 }}>
+              style={{ ...demping(e), borderLeftColor: e.color, borderLeftWidth: 3 }}>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: e.color + "20", color: e.color }}>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
                   {e.type === "ical" ? (calendars.find(c => c.id === e.calendarId)?.name || t("nav.calendar")) : t(TYPE_LABEL_KEYS[e.type])}
                 </span>
                 {!e.allDay && <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Clock size={9} />{formatTime(e.start)}</span>}
