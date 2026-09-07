@@ -3006,5 +3006,6 @@
   "agenda.invite_you_declined": "You declined",
   "agenda.invite_you_tentative": "You answered maybe",
   "agenda.invite_answer_failed": "Reply failed: {{error}}",
-  "agenda.invite_guests": "Guests"
+  "agenda.invite_guests": "Guests",
+  "y_next.mail_drop_here": "Drop to attach"
 }

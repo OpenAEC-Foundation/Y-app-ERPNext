@@ -1,6 +1,6 @@
 import {
   useState, useEffect, useCallback, useId, useMemo, useRef,
-  type MouseEvent as ReactMouseEvent,
+  type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -97,7 +97,7 @@ import {
   searchMessages, bulkMoveToTrash,
   bulkRestoreFromTrash, bulkDeleteForever,
   bulkMarkRead, bulkMarkUnread, getConversation, listMailboxes, bulkMarkHandled,
-  bulkMarkUnhandled, filterUnhandled, getSignature, getQueueStatusFor,
+  bulkMarkUnhandled, filterUnhandled, getQueueStatusFor,
   createCustomFolder, deleteCustomFolder, tagMessage, unseenCount,
   fetchThreadCompanions, MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT,
   MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH, type ErpMailMessage,
@@ -4186,11 +4186,6 @@ function ErpNextWebmail() {
         if (rows.length > 0) setMailbox((prev) => prev || rows[0].name);
       })
       .catch(() => { /* de tabbladen zijn optioneel */ });
-    // Eén keer per paginabezoek: de handtekening verandert niet tijdens een
-    // sessie, en zonder leesrecht op `Email Account` levert dit gewoon "".
-    getSignature()
-      .then((sig) => { if (!cancelled) setSignature(sig); })
-      .catch(() => { /* mail zonder handtekening is geen fout */ });
     // Leveranciers, klanten en eigen maildomeinen voor de mailherkenning. Eén
     // keer per paginabezoek (de modules cachen nog eens 10 minuten). Zonder
     // leesrecht blijven de lijsten leeg en verschijnt er simpelweg geen
@@ -4265,6 +4260,38 @@ function ErpNextWebmail() {
       .then(setSignature)
       .catch(() => { /* zonder handtekening kun je nog steeds mailen */ });
   }, [adresVan, mailbox, selfEmail]);
+
+  /**
+   * De enige plek die de handtekening zet. Dat is met opzet: eerder schreef
+   * ook een tweede lader naar dit veld, en wie van de twee als laatste
+   * binnenkwam bepaalde wat eronder je mail stond. Dat leverde de
+   * handtekening van het standaard uitgaande account op — logo en adres, maar
+   * zonder naam. Eén bron, en hij draait ook opnieuw bij het wisselen van
+   * postbus, want de afzender verandert dan mee.
+   */
+  useEffect(() => { laadOndertekening(); }, [laadOndertekening]);
+
+  /**
+   * Vangnet voor bestanden die naast het opstelvenster landen.
+   *
+   * Laat je een bestand ergens anders op de pagina los, dan navigeert de
+   * browser ernaartoe en opent hij het — je mailpagina is dan weg. Hier vangen
+   * we dat af zodat er simpelweg niets gebeurt. Het toevoegen zelf zit op het
+   * opstelvenster; dat roept `stopPropagation` niet aan maar wel
+   * `preventDefault`, dus deze luisteraar zit hem niet in de weg.
+   */
+  useEffect(() => {
+    function tegenhouden(e: globalThis.DragEvent) {
+      if (!Array.from(e.dataTransfer?.types || []).includes("Files")) return;
+      e.preventDefault();
+    }
+    window.addEventListener("dragover", tegenhouden);
+    window.addEventListener("drop", tegenhouden);
+    return () => {
+      window.removeEventListener("dragover", tegenhouden);
+      window.removeEventListener("drop", tegenhouden);
+    };
+  }, []);
 
   const switchFolder = useCallback((id: string) => {
     setActiveFolder(id);
@@ -5537,7 +5564,7 @@ function ErpNextWebmail() {
 
   /* ─── Slepen ─── */
 
-  const handleDragStart = useCallback((msg: ErpMailMessage, e: React.DragEvent, threadNames?: string[]) => {
+  const handleDragStart = useCallback((msg: ErpMailMessage, e: ReactDragEvent, threadNames?: string[]) => {
     // Sleep je een aangevinkt bericht, dan gaat de hele selectie mee; sleep je
     // een andere regel, dan gaat dat hele gesprek mee — dezelfde regel als het
     // vinkje en de rij-acties, zodat "deze regel" overal hetzelfde betekent.
@@ -5547,7 +5574,7 @@ function ErpNextWebmail() {
     e.dataTransfer.effectAllowed = "copyMove";
   }, [checked]);
 
-  const handleDrop = useCallback((folder: ErpMailFolder, e: React.DragEvent) => {
+  const handleDrop = useCallback((folder: ErpMailFolder, e: ReactDragEvent) => {
     e.preventDefault();
     setDragOver(null);
     const fromRef = dragNamesRef.current;
@@ -5568,7 +5595,7 @@ function ErpNextWebmail() {
    * e-mailadres en een factuur uit het boeken — die "toewijzen" zou een
    * onwaarheid vastleggen.
    */
-  const handleDropOnConnection = useCallback((obj: ConnectionObject, e: React.DragEvent) => {
+  const handleDropOnConnection = useCallback((obj: ConnectionObject, e: ReactDragEvent) => {
     e.preventDefault();
     const fromRef = dragNamesRef.current;
     const names = fromRef.length > 0
@@ -7335,12 +7362,63 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
     (action === "first" ? items[0] : items[items.length - 1]).focus();
   };
 
+  /**
+   * Bestanden vanuit Verkenner of de Finder toevoegen als bijlage.
+   *
+   * Zonder deze afhandeling doet de browser wat hij standaard doet met een
+   * losgelaten bestand: hij navigeert ernaartoe en opent het. Je opstelvenster
+   * is dan weg en je bestand staat in een nieuw tabblad. `preventDefault` op
+   * zowel `dragover` als `drop` is daarvoor allebei nodig — alleen op `drop`
+   * is niet genoeg.
+   *
+   * Alleen echte bestanden tellen. Binnen de app worden ook mails gesleept
+   * (naar een map of een projectkoppeling); die dragen geen `files` en mogen
+   * hier niets doen.
+   */
+  const [sleepActief, setSleepActief] = useState(false);
+
+  function heeftBestanden(e: ReactDragEvent): boolean {
+    return Array.from(e.dataTransfer.types || []).includes("Files");
+  }
+
+  function bestandenSlepen(e: ReactDragEvent) {
+    if (!heeftBestanden(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setSleepActief(true);
+  }
+
+  function sleepVerlaat(e: ReactDragEvent) {
+    // Alleen loslaten wanneer de cursor het venster écht verlaat, niet bij elk
+    // kind waar hij overheen glijdt.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setSleepActief(false);
+  }
+
+  function bestandenLoslaten(e: ReactDragEvent) {
+    if (!heeftBestanden(e)) return;
+    e.preventDefault();
+    setSleepActief(false);
+    const gekozen = Array.from(e.dataTransfer.files);
+    if (gekozen.length > 0) onChange({ ...draft, files: [...draft.files, ...gekozen] });
+  }
+
   return (
     <div ref={paneRef} onKeyDown={handlePaneKeyDown}
       role={embedded ? "region" : "dialog"}
       {...(embedded ? {} : { "aria-modal": true as const })}
       aria-labelledby={titleId}
-      className="flex flex-col flex-1 min-h-0">
+      onDragOver={bestandenSlepen}
+      onDragLeave={sleepVerlaat}
+      onDrop={bestandenLoslaten}
+      className="relative flex flex-col flex-1 min-h-0">
+      {sleepActief && (
+        <div className="absolute inset-2 z-30 pointer-events-none rounded-lg border-2 border-dashed border-blue-400 bg-blue-50/80 flex items-center justify-center">
+          <span className="flex items-center gap-2 text-sm font-medium text-blue-700">
+            <Paperclip size={16} /> {t("y_next.mail_drop_here")}
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50 flex-shrink-0">
         <span id={titleId} className="text-sm font-semibold text-slate-700">
           {draft.mode === "forward" ? t("webmail.forward")

@@ -3006,5 +3006,6 @@
   "agenda.invite_you_declined": "Je hebt afgewezen",
   "agenda.invite_you_tentative": "Je hebt misschien geantwoord",
   "agenda.invite_answer_failed": "Antwoorden mislukt: {{error}}",
-  "agenda.invite_guests": "Genodigden"
+  "agenda.invite_guests": "Genodigden",
+  "y_next.mail_drop_here": "Loslaten om als bijlage toe te voegen"
 }

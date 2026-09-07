@@ -142,3 +142,28 @@ test("isEditableTarget laat gewone elementen en niets met rust", () => {
     false,
   );
 });
+
+/* ───────────────────────── Door de lijst lopen ───────────────────────── */
+
+test("pijltjes lopen door de lijst, ook zonder aangevinkte rijen", () => {
+  const leeg = { ...READY, hasTargets: false };
+  assert.equal(resolveMailShortcut(key("ArrowDown"), leeg), "next");
+  assert.equal(resolveMailShortcut(key("ArrowUp"), leeg), "prev");
+});
+
+test("pijltjes mogen herhalen — ingedrukt houden is hoe je door een lijst loopt", () => {
+  assert.equal(resolveMailShortcut(key("ArrowDown", { repeat: true }), READY), "next");
+  // De overige toetsen niet: één Delete per druk.
+  assert.equal(resolveMailShortcut(key("Delete", { repeat: true }), READY), null);
+});
+
+test("Shift+pijl is tekstselectie en blijft van de browser", () => {
+  assert.equal(resolveMailShortcut(key("ArrowDown", { shiftKey: true }), READY), null);
+  assert.equal(resolveMailShortcut(key("ArrowUp", { shiftKey: true }), READY), null);
+});
+
+test("pijltjes zwijgen tijdens typen, in een dialoog en in het opstelvenster", () => {
+  assert.equal(resolveMailShortcut(key("ArrowDown"), { ...READY, editing: true }), null);
+  assert.equal(resolveMailShortcut(key("ArrowDown"), { ...READY, dialogOpen: true }), null);
+  assert.equal(resolveMailShortcut(key("ArrowDown"), { ...READY, composing: true }), null);
+});

@@ -3006,5 +3006,6 @@
   "agenda.invite_you_declined": "Du hast abgelehnt",
   "agenda.invite_you_tentative": "Du hast mit vielleicht geantwortet",
   "agenda.invite_answer_failed": "Antwort fehlgeschlagen: {{error}}",
-  "agenda.invite_guests": "Gäste"
+  "agenda.invite_guests": "Gäste",
+  "y_next.mail_drop_here": "Loslassen, um anzuhängen"
 }

@@ -334,3 +334,61 @@ test("neighbourInOrder begint bovenaan wanneer er nog niets openstaat", () => {
   // dood punt opleveren.
   assert.equal(neighbourInOrder(orde, "weg", 1), "m1");
 });
+
+/* ────────────────────── Zichtbare volgorde en buren ──────────────────── */
+
+/** Twee gesprekken: A met drie berichten, B met één. */
+function ordeVoorbeeld() {
+  return groupThreads([
+    msg({ name: "a1", subject: "Offerte", sender: "klant@x.nl", recipients: "info@3bm.co.nl", date: "2026-01-01 09:00:00" }),
+    msg({ name: "a2", subject: "Re: Offerte", sender: "info@3bm.co.nl", recipients: "klant@x.nl", date: "2026-01-02 09:00:00", inReplyTo: "a1" }),
+    msg({ name: "a3", subject: "Re: Offerte", sender: "klant@x.nl", recipients: "info@3bm.co.nl", date: "2026-01-03 09:00:00", inReplyTo: "a2" }),
+    msg({ name: "b1", subject: "Factuur", sender: "leverancier@y.nl", recipients: "info@3bm.co.nl", date: "2026-01-04 09:00:00" }),
+  ], []);
+}
+
+test("ingeklapt telt alleen de hoofdregels mee", () => {
+  const threads = ordeVoorbeeld();
+  const orde = visibleThreadOrder(threads, new Set());
+  assert.deepEqual(orde, threads.map((t) => t.head.name));
+  assert.equal(orde.length, 2);
+});
+
+test("uitgeklapt komen de overige leden erachteraan", () => {
+  const threads = ordeVoorbeeld();
+  const gesprekA = threads.find((t) => t.count === 3);
+  assert.ok(gesprekA);
+  const orde = visibleThreadOrder(threads, new Set([gesprekA.id]));
+  assert.equal(orde.length, 4);
+  // De hoofdregel blijft vooraan staan, de rest volgt eronder.
+  assert.equal(orde[0], gesprekA.head.name);
+  assert.deepEqual([...orde].sort(), ["a1", "a2", "a3", "b1"]);
+});
+
+test("een geopend lid klapt zijn gesprek open, ook zonder klik op het pijltje", () => {
+  const threads = ordeVoorbeeld();
+  const gesprekA = threads.find((t) => t.count === 3);
+  assert.ok(gesprekA);
+  const lid = gesprekA.names.find((n) => n !== gesprekA.head.name);
+  assert.ok(lid);
+  assert.equal(visibleThreadOrder(threads, new Set(), lid).length, 4);
+});
+
+test("neighbourInOrder stapt één op en neer en stopt aan de uiteinden", () => {
+  const orde = ["m1", "m2", "m3"];
+  assert.equal(neighbourInOrder(orde, "m2", 1), "m3");
+  assert.equal(neighbourInOrder(orde, "m2", -1), "m1");
+  // Niet doorlopen naar de andere kant: één toets mag je niet van je nieuwste
+  // naar je oudste mail gooien.
+  assert.equal(neighbourInOrder(orde, "m3", 1), undefined);
+  assert.equal(neighbourInOrder(orde, "m1", -1), undefined);
+});
+
+test("neighbourInOrder begint bovenaan wanneer er nog niets openstaat", () => {
+  const orde = ["m1", "m2", "m3"];
+  assert.equal(neighbourInOrder(orde, null, 1), "m1");
+  assert.equal(neighbourInOrder(orde, null, -1), "m3");
+  // Een mail die niet meer in de lijst staat (net verplaatst) telt als niets.
+  assert.equal(neighbourInOrder(orde, "weg", 1), "m1");
+  assert.equal(neighbourInOrder([], "m1", 1), undefined);
+});
