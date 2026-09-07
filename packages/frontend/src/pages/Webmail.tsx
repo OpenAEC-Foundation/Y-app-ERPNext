@@ -3819,7 +3819,14 @@ const DRAFT_SAVE_DEBOUNCE_MS = 500;
  * adresregels en de knoppenbalk nemen al ruim honderd pixels.
  */
 const OPSTEL_MIN = 220;
-const OPSTEL_START = 340;
+/**
+ * Startshoogte van het typvak. Ruim, want schrijven is waar je hier bent: bij
+ * 340 zag je nog geen vier regels tekst boven je handtekening. Wat de
+ * gebruiker zelf versleept wint en blijft bewaard.
+ */
+const OPSTEL_START = 480;
+/** Meeverhuisd met de ruimere standaard; zie waar hij uitgelezen wordt. */
+const OPSTEL_HOOGTE_SLEUTEL = "mail_opsteller_hoogte_v2";
 
 /** Bijlagetype dat `sendMail` accepteert. Afgeleid uit de adapter-signatuur,
  *  want het lucide-icoon `File` schaduwt de globale `File`-naam in dit
@@ -4018,11 +4025,17 @@ function ErpNextWebmail() {
    * mail.
    */
   const [opstelHoogte, setOpstelHoogte] = useState(() => {
-    const opgeslagen = Number(localStorage.getItem("mail_opsteller_hoogte"));
-    return Number.isFinite(opgeslagen) && opgeslagen >= OPSTEL_MIN ? opgeslagen : OPSTEL_START;
+    // Nieuwe sleutel bij een nieuwe standaardhoogte. De oude werd bij elke
+    // montage weggeschreven, ook zonder dat iemand ooit gesleept had, dus
+    // iedereen droeg de vorige waarde mee en zou de ruimere start nooit zien.
+    try {
+      const opgeslagen = Number(localStorage.getItem(OPSTEL_HOOGTE_SLEUTEL));
+      if (Number.isFinite(opgeslagen) && opgeslagen >= OPSTEL_MIN) return opgeslagen;
+    } catch { /* privémodus */ }
+    return OPSTEL_START;
   });
   useEffect(() => {
-    try { localStorage.setItem("mail_opsteller_hoogte", String(opstelHoogte)); } catch { /* privémodus */ }
+    try { localStorage.setItem(OPSTEL_HOOGTE_SLEUTEL, String(opstelHoogte)); } catch { /* privémodus */ }
   }, [opstelHoogte]);
 
   /** Slepen aan de scheiding tussen antwoord en origineel. */
@@ -6662,10 +6675,15 @@ function ErpNextWebmail() {
                         onDiscard={() => discardDraft(draft.draftKey)}
                       />
                     </div>
+                    {/* De greep tussen je antwoord en het origineel. Met een
+                        zichtbaar streepje erin: een kale balk van zes pixels
+                        ziet niemand als iets waaraan je kunt trekken. */}
                     <div onMouseDown={startSplitSleep}
                       role="separator" aria-orientation="horizontal"
                       title={t("webmail.split_resize")}
-                      className="h-1.5 flex-shrink-0 cursor-row-resize bg-slate-100 hover:bg-blue-300 transition-colors" />
+                      className="group h-2.5 flex-shrink-0 cursor-row-resize bg-slate-100 hover:bg-blue-100 transition-colors flex items-center justify-center">
+                      <span className="w-10 h-0.5 rounded-full bg-slate-300 group-hover:bg-blue-400 transition-colors" />
+                    </div>
                   </>
                 )}
                 {/* Kop */}
