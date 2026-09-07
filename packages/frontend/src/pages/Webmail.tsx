@@ -6684,6 +6684,7 @@ function ErpNextWebmail() {
                 sending={sending}
                 mailboxes={mailboxes}
                 signature={signature}
+                projecten={projects}
                 onChange={setDraft}
                 onRestoreSignature={laadOndertekening}
                 onSend={() => void handleSend()}
@@ -6709,6 +6710,7 @@ function ErpNextWebmail() {
                         sending={sending}
                         mailboxes={mailboxes}
                         signature={signature}
+                        projecten={projects}
                         embedded
                         onChange={setDraft}
                         onRestoreSignature={laadOndertekening}
@@ -7331,7 +7333,7 @@ function ErpNextWebmail() {
 const RECIPIENT_INPUT_CLASS =
   "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
 
-function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend, onClose, onDiscard, embedded }: {
+function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onChange, onSend, onClose, onDiscard, embedded }: {
   draft: ErpDraft;
   sending: boolean;
   /** Postbussen waaruit verstuurd kan worden; bij één valt de keuze weg. */
@@ -7352,10 +7354,36 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
    * focus-val (anders kom je er met Tab niet uit).
    */
   embedded?: boolean;
+  /** Projecten om de mail aan te hangen; leeg = geen kiezer tonen. */
+  projecten?: { name: string; project_name?: string }[];
 }) {
   const { t } = useTranslation();
   const paneRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+
+  /* ─── Project kiezen ─── */
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectZoek, setProjectZoek] = useState("");
+  const gekozenProject = draft.reference?.doctype === "Project" ? draft.reference.name : "";
+  const projectTreffers = useMemo(() => {
+    const q = projectZoek.trim().toLowerCase();
+    const alles = projecten ?? [];
+    const gefilterd = q
+      ? alles.filter((p) => p.name.toLowerCase().includes(q)
+          || String(p.project_name || "").toLowerCase().includes(q))
+      : alles;
+    return gefilterd.slice(0, 40);
+  }, [projecten, projectZoek]);
+
+  function kiesProject(naam: string) {
+    setProjectOpen(false);
+    setProjectZoek("");
+    // Leegmaken haalt de koppeling weg; `sendMail` stuurt dan geen verwijzing
+    // mee en de mail komt los in ERPNext binnen, zoals voorheen.
+    onChange(naam
+      ? { ...draft, reference: { doctype: "Project", name: naam } }
+      : { ...draft, reference: undefined });
+  }
   // Cc/Bcc staan standaard dicht, maar een concept dat er al inhoud in heeft
   // (allen beantwoorden) mag ze niet verbergen.
   const [showCcBcc, setShowCcBcc] = useState(Boolean(draft.cc || draft.bcc));
@@ -7557,6 +7585,55 @@ function ErpComposePane({ draft, sending, signature, mailboxes, onChange, onSend
           <input value={draft.subject} onChange={(e) => set("subject", e.target.value)}
             className="flex-1 px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400" />
         </label>
+
+        {/* Project kiezen vóór het versturen. De verwijzing gaat mee naar
+            ERPNext, dus de verzonden mail hangt meteen aan het project — je
+            hoeft hem achteraf niet in Verzonden op te zoeken om te koppelen. */}
+        {(projecten?.length ?? 0) > 0 && (
+          <div className="relative flex items-center gap-2">
+            <span className="w-16 text-[11px] text-slate-400">{t("y_next.mail_project_label")}</span>
+            {gekozenProject ? (
+              <span className="flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-800">
+                <FolderKanban size={11} />
+                {gekozenProject}
+                <button type="button" onClick={() => kiesProject("")}
+                  title={t("y_next.mail_project_clear")}
+                  aria-label={t("y_next.mail_project_clear")}
+                  className="ml-0.5 rounded p-0.5 hover:bg-emerald-100 cursor-pointer">
+                  <X size={10} />
+                </button>
+              </span>
+            ) : (
+              <button type="button"
+                onClick={() => { setProjectOpen((v) => !v); setProjectZoek(""); }}
+                aria-expanded={projectOpen}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100 cursor-pointer">
+                <FolderKanban size={11} /> {t("y_next.mail_project_pick")}
+              </button>
+            )}
+            {projectOpen && (
+              <div className="absolute left-16 top-full z-50 mt-1 flex max-h-72 w-80 flex-col rounded-lg border border-slate-200 bg-white shadow-lg">
+                <div className="border-b border-slate-100 p-2">
+                  <input type="search" autoFocus value={projectZoek}
+                    onChange={(e) => setProjectZoek(e.target.value)}
+                    placeholder={t("webmail.search_project")}
+                    className="w-full rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                </div>
+                <div className="flex-1 overflow-y-auto py-1">
+                  {projectTreffers.length === 0 ? (
+                    <p className="px-3 py-2 text-xs italic text-slate-400">{t("webmail.no_results")}</p>
+                  ) : projectTreffers.map((p) => (
+                    <button key={p.name} type="button"
+                      onClick={() => kiesProject(p.name)}
+                      className="w-full cursor-pointer truncate px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700">
+                      {p.name}{p.project_name ? ` — ${p.project_name}` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Opmaak-editor in plaats van een kaal tekstvak: vet/cursief, lijsten,

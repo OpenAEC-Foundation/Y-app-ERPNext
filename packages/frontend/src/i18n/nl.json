@@ -3017,5 +3017,8 @@
   "webmail.tt_align_justify": "Uitvullen",
   "webmail.tt_insert_table": "Tabel invoegen",
   "y_next.mail_replied": "Beantwoord",
-  "y_next.mail_forwarded": "Doorgestuurd"
+  "y_next.mail_forwarded": "Doorgestuurd",
+  "y_next.mail_project_label": "Project",
+  "y_next.mail_project_pick": "Kies een project…",
+  "y_next.mail_project_clear": "Koppeling weghalen"
 }

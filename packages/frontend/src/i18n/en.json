@@ -3017,5 +3017,8 @@
   "webmail.tt_align_justify": "Justify",
   "webmail.tt_insert_table": "Insert table",
   "y_next.mail_replied": "Replied",
-  "y_next.mail_forwarded": "Forwarded"
+  "y_next.mail_forwarded": "Forwarded",
+  "y_next.mail_project_label": "Project",
+  "y_next.mail_project_pick": "Pick a project…",
+  "y_next.mail_project_clear": "Remove link"
 }

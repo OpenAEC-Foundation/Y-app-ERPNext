@@ -3017,5 +3017,8 @@
   "webmail.tt_align_justify": "Blocksatz",
   "webmail.tt_insert_table": "Tabelle einfügen",
   "y_next.mail_replied": "Beantwortet",
-  "y_next.mail_forwarded": "Weitergeleitet"
+  "y_next.mail_forwarded": "Weitergeleitet",
+  "y_next.mail_project_label": "Projekt",
+  "y_next.mail_project_pick": "Projekt wählen…",
+  "y_next.mail_project_clear": "Verknüpfung entfernen"
 }
