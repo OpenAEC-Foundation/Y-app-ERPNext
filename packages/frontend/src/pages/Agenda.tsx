@@ -91,13 +91,13 @@ interface CreateForm {
   jitsiRoom: string;
   withJitsi: boolean;
   /**
-   * Alleen voor jezelf. Stuurt `event_type` op de ERPNext-Event: `Private`
-   * in plaats van `Public`.
+   * Deze afspraak in ieders eigen agenda zetten (`event_type: "Public"`).
    *
-   * Standaard uit, want de agenda's zijn hier bewust van elkaar in te zien.
-   * Maar zonder deze schakelaar is élke afspraak voor iedereen zichtbaar, en
-   * niet alles hoort dat te zijn — een tandartsbezoek of een gesprek over
-   * iemands functioneren staat anders gewoon open.
+   * Standaard uit. Elkaars agenda inzien loopt al via de collega-lijst — de
+   * agenda's van de mailserver, waar je per persoon aan- en uitzet wat je
+   * ziet. Een publieke ERPNext-afspraak komt dáárbovenop in ieders eigen
+   * "Afspraken"-bron terecht, en die kun je niet wegklikken. Alleen voor iets
+   * wat het hele bureau aangaat.
    */
   prive: boolean;
   calendarTarget: string; // "erpnext" | "mailserver" | "caldav:<calendarId>"
@@ -442,7 +442,7 @@ function AddCalendarModal({ onClose, onAdd }: {
 
 /* ─── Settings Panel ─── */
 
-function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, collegaKleuren, breedte, onErpToggle, onCollegaToggle, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
+function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCollegas, collegaKleuren, breedte, onErpToggle, onCollegaToggle, onCollegasAllemaal, onCollegasGeen, onCalendarToggle, onCalendarRemove, onAddCalendar, onO365Toggle }: {
   erpSources: Record<ErpSourceKey, boolean>;
   collegas: Collega[];
   gekozenCollegas: string[];
@@ -451,6 +451,10 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCo
   /** Kleur per collega, zodat de stip in de lijst en de afspraak overeenkomen. */
   collegaKleuren: Map<string, string>;
   onCollegaToggle: (email: string) => void;
+  /** Alle collega-agenda's aanzetten. */
+  onCollegasAllemaal: () => void;
+  /** Alle collega-agenda's uitzetten — ook je eigen. */
+  onCollegasGeen: () => void;
   calendars: CustomCalendar[];
   o365Enabled: boolean;
   onErpToggle: (key: ErpSourceKey) => void;
@@ -507,9 +511,21 @@ function SettingsPanel({ erpSources, calendars, o365Enabled, collegas, gekozenCo
           namen die nergens toe leidt is verwarrender dan geen lijst. */}
       {erpSources.mailbox && collegas.length > 0 && (
         <div className="px-4 py-3 border-b border-slate-200">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-            {t("agenda.colleagues")}
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              {t("agenda.colleagues")}
+            </h3>
+            <span className="flex items-center gap-1">
+              <button type="button" onClick={onCollegasAllemaal}
+                className="px-1.5 py-0.5 rounded text-[10px] text-slate-500 hover:bg-slate-100 cursor-pointer">
+                {t("agenda.colleagues_all")}
+              </button>
+              <button type="button" onClick={onCollegasGeen}
+                className="px-1.5 py-0.5 rounded text-[10px] text-slate-500 hover:bg-slate-100 cursor-pointer">
+                {t("agenda.colleagues_none")}
+              </button>
+            </span>
+          </div>
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {collegas.map((c) => {
               const aan = gekozenCollegas.includes(c.email);
@@ -691,7 +707,11 @@ function CreateModal({ initial, onClose, onCreated }: {
           all_day: form.allDay ? 1 : 0,
           // `Private` beperkt de afspraak in ERPNext tot de eigenaar; `Public`
           // is leesbaar voor iedere gebruiker met leesrecht op Event.
-          event_type: form.prive ? "Private" : "Public",
+          // Standaard privé. Elkaars agenda inzien loopt via de collega-lijst
+          // (de mailserver-agenda's); een publieke ERPNext-afspraak komt daar
+          // bovenop in ieders eigen "Afspraken"-bron terecht, en dat is niet
+          // de bedoeling.
+          event_type: form.prive ? "Public" : "Private",
           description,
           location: form.location,
           status: "Open",
@@ -844,8 +864,8 @@ function CreateModal({ initial, onClose, onCreated }: {
                 onChange={e => setForm(f => ({ ...f, privé: e.target.checked }))}
                 className="rounded border-slate-300" />
               <span className="flex items-center gap-1.5">
-                {t("agenda.private")}
-                <span className="text-xs text-slate-400">{t("agenda.private_hint")}</span>
+                {t("agenda.shared")}
+                <span className="text-xs text-slate-400">{t("agenda.shared_hint")}</span>
               </span>
             </label>
           )}
@@ -1572,6 +1592,17 @@ export default function Agenda() {
 
   const collegaKleuren = useMemo(() => kleurenVoorCollegas(collegas), [collegas]);
 
+  function handleCollegasAllemaal() {
+    const alles = collegas.map((c) => c.email);
+    setGekozenCollegasState(alles);
+    setGekozenCollegas(alles);
+  }
+
+  function handleCollegasGeen() {
+    setGekozenCollegasState([]);
+    setGekozenCollegas([]);
+  }
+
   function handleCollegaToggle(email: string) {
     setGekozenCollegasState((vorige) => {
       const next = vorige.includes(email) ? vorige.filter((e) => e !== email) : [...vorige, email];
@@ -1746,7 +1777,11 @@ export default function Agenda() {
       // Agenda's van de mailserver. Los van `fetches` hierboven omdat het
       // resultaat een andere vorm heeft en de adapter zijn eigen fouten al
       // opvangt — een onbereikbare mailserver hoort de agenda niet leeg te maken.
-      if (erpSources.mailbox) {
+      // Niemand aangevinkt betekent hier ook echt niemand. De adapter laat
+      // het filter weg bij een lege lijst en krijgt dan álle medewerkers
+      // terug; door hier niet eens op te halen blijft "iedereen uit" ook
+      // werkelijk iedereen uit.
+      if (erpSources.mailbox && gekozenCollegas.length > 0) {
         const { afspraken } = await haalAgendas(dateRange.start, dateRange.end, gekozenCollegas);
         for (const a of afspraken) {
           if (!a.start) continue;
@@ -2588,6 +2623,8 @@ export default function Agenda() {
                   gekozenCollegas={gekozenCollegas}
                   collegaKleuren={collegaKleuren}
                   onCollegaToggle={handleCollegaToggle}
+                  onCollegasAllemaal={handleCollegasAllemaal}
+                  onCollegasGeen={handleCollegasGeen}
                   calendars={calendars}
                   o365Enabled={o365Enabled}
                   onErpToggle={handleErpToggle}
@@ -2613,6 +2650,8 @@ export default function Agenda() {
               gekozenCollegas={gekozenCollegas}
               collegaKleuren={collegaKleuren}
               onCollegaToggle={handleCollegaToggle}
+              onCollegasAllemaal={handleCollegasAllemaal}
+              onCollegasGeen={handleCollegasGeen}
               calendars={calendars}
               o365Enabled={o365Enabled}
               onErpToggle={handleErpToggle}

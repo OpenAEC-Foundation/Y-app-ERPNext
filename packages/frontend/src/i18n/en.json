@@ -3021,5 +3021,9 @@
   "y_next.mail_project_label": "Project",
   "y_next.mail_project_pick": "Pick a project…",
   "y_next.mail_project_clear": "Remove link",
-  "tasks.create.need_subject": "Enter a subject first — that is the name of the task."
+  "tasks.create.need_subject": "Enter a subject first — that is the name of the task.",
+  "agenda.shared": "Everyone",
+  "agenda.shared_hint": "put it in everyone’s calendar",
+  "agenda.colleagues_all": "all on",
+  "agenda.colleagues_none": "all off"
 }

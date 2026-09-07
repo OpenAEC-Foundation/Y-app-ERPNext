@@ -3021,5 +3021,9 @@
   "y_next.mail_project_label": "Projekt",
   "y_next.mail_project_pick": "Projekt wählen…",
   "y_next.mail_project_clear": "Verknüpfung entfernen",
-  "tasks.create.need_subject": "Zuerst einen Betreff eingeben — das ist der Name der Aufgabe."
+  "tasks.create.need_subject": "Zuerst einen Betreff eingeben — das ist der Name der Aufgabe.",
+  "agenda.shared": "Für alle",
+  "agenda.shared_hint": "in den Kalender aller eintragen",
+  "agenda.colleagues_all": "alle an",
+  "agenda.colleagues_none": "alle aus"
 }
