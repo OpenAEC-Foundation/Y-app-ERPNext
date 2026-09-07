@@ -6,6 +6,8 @@ import {
   hasReplyMarker,
   missingParentNames,
   neighbourInOrder,
+  reactieOpBericht,
+  reactieUitOnderwerp,
   normalizeSubject,
   participantsOf,
   visibleThreadOrder,
@@ -391,4 +393,56 @@ test("neighbourInOrder begint bovenaan wanneer er nog niets openstaat", () => {
   // Een mail die niet meer in de lijst staat (net verplaatst) telt als niets.
   assert.equal(neighbourInOrder(orde, "weg", 1), "m1");
   assert.equal(neighbourInOrder([], "m1", 1), undefined);
+});
+
+/* ─────────────── Beantwoord of doorgestuurd ─────────────── */
+
+test("de buitenste prefix bepaalt wat er gebeurd is", () => {
+  assert.equal(reactieUitOnderwerp("Re: Offerte"), "beantwoord");
+  assert.equal(reactieUitOnderwerp("Fwd: Offerte"), "doorgestuurd");
+  assert.equal(reactieUitOnderwerp("FW: Offerte"), "doorgestuurd");
+  assert.equal(reactieUitOnderwerp("AW: Offerte"), "beantwoord");
+  // "Fwd: Re: …" is als laatste doorgestuurd, "Re: Fwd: …" als laatste
+  // beantwoord — de buitenste telt, niet de diepste.
+  assert.equal(reactieUitOnderwerp("Fwd: Re: Offerte"), "doorgestuurd");
+  assert.equal(reactieUitOnderwerp("Re: Fwd: Offerte"), "beantwoord");
+  assert.equal(reactieUitOnderwerp("Offerte"), null);
+  assert.equal(reactieUitOnderwerp(""), null);
+});
+
+test("alleen verzonden leden tellen als reactie", () => {
+  const leden = [
+    { name: "orig", subject: "WBSO aanvullende vraag", verzonden: false },
+    // Het antwoord van iemand ánders zegt niets over wat jij gedaan hebt.
+    { name: "hun", subject: "Re: WBSO aanvullende vraag", inReplyTo: "orig", verzonden: false },
+  ];
+  assert.equal(reactieOpBericht("orig", leden), null);
+});
+
+test("een verzonden doorsturing merkt het origineel", () => {
+  const leden = [
+    { name: "orig", subject: "WBSO aanvullende vraag", verzonden: false },
+    { name: "mijn", subject: "Fwd: WBSO aanvullende vraag", inReplyTo: "orig", verzonden: true },
+  ];
+  assert.equal(reactieOpBericht("orig", leden), "doorgestuurd");
+  // Het doorgestuurde bericht zelf heeft geen merk.
+  assert.equal(reactieOpBericht("mijn", leden), null);
+});
+
+test("doorsturen weegt zwaarder dan beantwoorden als beide bestaan", () => {
+  const leden = [
+    { name: "orig", subject: "Offerte", verzonden: false },
+    { name: "a", subject: "Re: Offerte", inReplyTo: "orig", verzonden: true },
+    { name: "b", subject: "Fwd: Offerte", inReplyTo: "orig", verzonden: true },
+  ];
+  assert.equal(reactieOpBericht("orig", leden), "doorgestuurd");
+});
+
+test("een verzonden lid dat nergens aan hangt merkt niets", () => {
+  const leden = [
+    { name: "orig", subject: "Offerte", verzonden: false },
+    { name: "los", subject: "Fwd: Offerte", verzonden: true },
+  ];
+  assert.equal(reactieOpBericht("orig", leden), null);
+  assert.equal(reactieOpBericht("", leden), null);
 });

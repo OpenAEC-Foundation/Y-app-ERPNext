@@ -3015,5 +3015,7 @@
   "webmail.tt_align_center": "Centreren",
   "webmail.tt_align_right": "Rechts uitlijnen",
   "webmail.tt_align_justify": "Uitvullen",
-  "webmail.tt_insert_table": "Tabel invoegen"
+  "webmail.tt_insert_table": "Tabel invoegen",
+  "y_next.mail_replied": "Beantwoord",
+  "y_next.mail_forwarded": "Doorgestuurd"
 }

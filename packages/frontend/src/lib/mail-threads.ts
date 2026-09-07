@@ -339,3 +339,59 @@ export function neighbourInOrder(
   const j = i + richting;
   return j >= 0 && j < order.length ? order[j] : undefined;
 }
+
+/* ──────────────── Is er al gereageerd op dit bericht? ────────────────── */
+
+/** Wat er met een bericht gebeurd is, voor het pictogram in de lijst. */
+export type Reactiesoort = "beantwoord" | "doorgestuurd";
+
+/**
+ * Doorstuur-prefixen, los van de antwoord-prefixen. `REPLY_PREFIX_RE` gooit ze
+ * op één hoop omdat het voor het gróéperen niet uitmaakt of iets een antwoord
+ * of een doorsturing is; voor het pictogram maakt het dat wel.
+ */
+const FORWARD_PREFIX_RE = /^\s*(?:(?:fw|fwd|wg|vs|doorgestuurd|doorst)\s*(?:\[\d+\])?\s*:\s*)/i;
+const REPLY_ONLY_PREFIX_RE = /^\s*(?:(?:re|aw|antw|antwoord|sv)\s*(?:\[\d+\])?\s*:\s*)/i;
+
+/**
+ * Wat de buitenste prefix van een onderwerp aankondigt.
+ *
+ * De buitenste telt, niet de diepste: "Fwd: Re: Offerte" is doorgestuurd — dat
+ * was de laatste handeling. Andersom is "Re: Fwd: Offerte" een antwoord op
+ * iets wat ooit doorgestuurd is.
+ */
+export function reactieUitOnderwerp(subject: string): Reactiesoort | null {
+  const tekst = String(subject || "");
+  if (FORWARD_PREFIX_RE.test(tekst)) return "doorgestuurd";
+  if (REPLY_ONLY_PREFIX_RE.test(tekst)) return "beantwoord";
+  return null;
+}
+
+/** Eén lid van een gesprek, zover deze vraag ernaar kijkt. */
+export interface ReactieLid {
+  name: string;
+  subject: string;
+  inReplyTo?: string;
+  /** Staat dit bericht in Verzonden — is het dus door ons de deur uit gegaan? */
+  verzonden: boolean;
+}
+
+/**
+ * Of er op `naam` een verzonden reactie bestaat, en wat voor.
+ *
+ * Alleen verzonden leden tellen: dat iemand ánders in de keten antwoordde
+ * zegt niets over wat jij met deze mail gedaan hebt. Een doorsturing weegt
+ * zwaarder dan een antwoord wanneer beide bestaan — dat is de zeldzame
+ * combinatie, en dus het vermeldenswaardige.
+ */
+export function reactieOpBericht(naam: string, leden: ReactieLid[]): Reactiesoort | null {
+  if (!naam) return null;
+  let gevonden: Reactiesoort | null = null;
+  for (const lid of leden) {
+    if (!lid.verzonden || lid.inReplyTo !== naam) continue;
+    const soort = reactieUitOnderwerp(lid.subject);
+    if (soort === "doorgestuurd") return "doorgestuurd";
+    if (soort === "beantwoord") gevonden = "beantwoord";
+  }
+  return gevonden;
+}

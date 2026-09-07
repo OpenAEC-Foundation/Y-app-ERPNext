@@ -105,7 +105,8 @@ import {
   type BulkOutcome,
 } from "../lib/mail-erpnext";
 import {
-  groupThreads, neighbourInOrder, visibleThreadOrder, type MailThread,
+  groupThreads, neighbourInOrder, reactieOpBericht, visibleThreadOrder,
+  type MailThread, type ReactieLid, type Reactiesoort,
 } from "../lib/mail-threads";
 import {
   deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
@@ -4529,6 +4530,42 @@ function ErpNextWebmail() {
     [filteredMessages, threadExtras],
   );
 
+  /**
+   * Welke berichten je beantwoord of doorgestuurd hebt. Uit de gesprekken zelf
+   * afgeleid, dus zonder extra query: de verzonden leden zitten er al in via
+   * `fetchThreadCompanions`.
+   */
+  const reactiePerBericht = useMemo(() => {
+    const leden: ReactieLid[] = [];
+    for (const thread of threads) {
+      for (const m of thread.messages) {
+        leden.push({
+          name: m.name, subject: m.subject,
+          ...(m.inReplyTo ? { inReplyTo: m.inReplyTo } : {}),
+          verzonden: m.folder === MAIL_FOLDER_SENT,
+        });
+      }
+    }
+    const uit = new Map<string, Reactiesoort>();
+    for (const lid of leden) {
+      const soort = reactieOpBericht(lid.name, leden);
+      if (soort) uit.set(lid.name, soort);
+    }
+    return uit;
+  }, [threads]);
+
+  /** Het pictogram bij een beantwoorde of doorgestuurde mail. */
+  function ReactieMerk({ naam, size = 11 }: { naam: string; size?: number }) {
+    const soort = reactiePerBericht.get(naam);
+    if (!soort) return null;
+    const Icoon = soort === "doorgestuurd" ? Forward : Reply;
+    const label = soort === "doorgestuurd"
+      ? t("y_next.mail_forwarded") : t("y_next.mail_replied");
+    return <Icoon size={size} className="text-blue-500 flex-shrink-0" aria-label={label}>
+      <title>{label}</title>
+    </Icoon>;
+  }
+
   const toggleThread = useCallback((id: string) => {
     setExpandedThreads((prev) => {
       const next = new Set(prev);
@@ -5745,6 +5782,10 @@ function ErpNextWebmail() {
         label, bodyHtml: body?.html || "", noticeHtml: attachLine,
       })),
       includeSignature: true,
+      // Ook een doorsturing hoort aan het origineel te hangen. Zonder deze
+      // verwijzing staat hij los in Verzonden: hij valt buiten de conversatie
+      // én je ziet aan de oorspronkelijke mail niet dat je hem doorstuurde.
+      inReplyTo: msg.name,
       reference: msg.reference,
       files: [],
     });
@@ -6432,6 +6473,7 @@ function ErpNextWebmail() {
                                 <span className="truncate">{who || t("webmail.no_subject")}</span>
                               </span>
                               <div className="flex items-center gap-1 shrink-0">
+                                <ReactieMerk naam={msg.name} />
                                 {msg.hasAttachments && <Paperclip size={11} className="text-slate-400" />}
                                 <span className="text-[11px] text-slate-400">{formatDate(msg.date)}</span>
                               </div>
@@ -6693,8 +6735,9 @@ function ErpNextWebmail() {
                       {getInitials(selected.senderName || selected.sender)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-semibold text-slate-900 break-words">
-                        {selected.subject || t("webmail.no_subject")}
+                      <h2 className="text-base font-semibold text-slate-900 break-words flex items-start gap-1.5">
+                        <span>{selected.subject || t("webmail.no_subject")}</span>
+                        <span className="mt-1"><ReactieMerk naam={selected.name} size={14} /></span>
                       </h2>
                       <p className="text-xs text-slate-500 mt-0.5 break-words">
                         <span className="font-medium text-slate-700">{selected.senderName || selected.sender}</span>

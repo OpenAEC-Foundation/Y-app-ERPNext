@@ -3015,5 +3015,7 @@
   "webmail.tt_align_center": "Zentriert",
   "webmail.tt_align_right": "Rechtsbündig",
   "webmail.tt_align_justify": "Blocksatz",
-  "webmail.tt_insert_table": "Tabelle einfügen"
+  "webmail.tt_insert_table": "Tabelle einfügen",
+  "y_next.mail_replied": "Beantwortet",
+  "y_next.mail_forwarded": "Weitergeleitet"
 }
