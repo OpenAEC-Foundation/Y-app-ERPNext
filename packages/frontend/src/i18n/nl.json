@@ -2041,6 +2041,8 @@
   "agenda.fill_title": "Vul een titel in",
   "agenda.jitsi_meeting_label": "🎥 Jitsi Meeting: {{url}}",
   "agenda.all_day": "Hele dag",
+  "agenda.private": "Privé",
+  "agenda.private_hint": "alleen jij ziet deze afspraak",
   "agenda.time_label": "Tijd",
   "agenda.location": "Locatie",
   "agenda.description_label": "Omschrijving",

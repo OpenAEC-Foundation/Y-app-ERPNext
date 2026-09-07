@@ -84,6 +84,16 @@ interface CreateForm {
   inviteEmails: string;
   jitsiRoom: string;
   withJitsi: boolean;
+  /**
+   * Alleen voor jezelf. Stuurt `event_type` op de ERPNext-Event: `Private`
+   * in plaats van `Public`.
+   *
+   * Standaard uit, want de agenda's zijn hier bewust van elkaar in te zien.
+   * Maar zonder deze schakelaar is élke afspraak voor iedereen zichtbaar, en
+   * niet alles hoort dat te zijn — een tandartsbezoek of een gesprek over
+   * iemands functioneren staat anders gewoon open.
+   */
+  prive: boolean;
   calendarTarget: string; // "erpnext" | "mailserver" | "caldav:<calendarId>"
 }
 
@@ -559,6 +569,7 @@ function CreateModal({ initial, onClose, onCreated }: {
     inviteEmails: "",
     jitsiRoom: "",
     withJitsi: false,
+    prive: false,
     calendarTarget: getDefaultCalendarTarget(),
   });
   const [saving, setSaving] = useState(false);
@@ -663,7 +674,9 @@ function CreateModal({ initial, onClose, onCreated }: {
           starts_on: startDt,
           ends_on: endDt,
           all_day: form.allDay ? 1 : 0,
-          event_type: "Public",
+          // `Private` beperkt de afspraak in ERPNext tot de eigenaar; `Public`
+          // is leesbaar voor iedere gebruiker met leesrecht op Event.
+          event_type: form.prive ? "Private" : "Public",
           description,
           location: form.location,
           status: "Open",
@@ -809,6 +822,18 @@ function CreateModal({ initial, onClose, onCreated }: {
             <input type="checkbox" checked={form.allDay} onChange={e => setForm(f => ({ ...f, allDay: e.target.checked }))} className="rounded border-slate-300" />
             {t("agenda.all_day")}
           </label>
+
+          {form.type === "event" && (
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={form.prive}
+                onChange={e => setForm(f => ({ ...f, privé: e.target.checked }))}
+                className="rounded border-slate-300" />
+              <span className="flex items-center gap-1.5">
+                {t("agenda.private")}
+                <span className="text-xs text-slate-400">{t("agenda.private_hint")}</span>
+              </span>
+            </label>
+          )}
 
           {/* Location (events only) */}
           {form.type === "event" && (

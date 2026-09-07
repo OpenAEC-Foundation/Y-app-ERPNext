@@ -1892,6 +1892,8 @@
   "agenda.fill_title": "Geben Sie einen Titel ein",
   "agenda.jitsi_meeting_label": "🎥 Jitsi Meeting: {{url}}",
   "agenda.all_day": "Ganztägig",
+  "agenda.private": "Privat",
+  "agenda.private_hint": "nur du siehst diesen Termin",
   "agenda.time_label": "Zeit",
   "agenda.location": "Ort",
   "agenda.description_label": "Beschreibung",
