@@ -132,6 +132,19 @@ export interface Collega {
  * af — daar valt geen agenda voor op te halen.
  */
 export async function haalCollegas(): Promise<Collega[]> {
+  // Eerst het Server Script. Reden: op vrijwel iedere medewerker staat een
+  // User Permission "Employee = <eigen record>", en dan levert de lijstquery
+  // hieronder precies één naam op — je eigen. De kiezer bleef daardoor leeg.
+  // Het script gaat buiten die beperking om en geeft alleen naam en werkadres
+  // terug; de rest van het Employee-record blijft dicht.
+  try {
+    const res = (await callMethod("agenda_collegas", {})) as { collegas?: Collega[] } | undefined;
+    const rijen = res?.collegas ?? [];
+    if (rijen.length > 0) return normaliseerCollegas(rijen);
+  } catch {
+    // Geen script op deze installatie (of uitgeschakeld) — dan de gewone weg.
+  }
+
   try {
     const rijen = await fetchList<{ employee_name?: string; user_id?: string }>("Employee", {
       fields: ["employee_name", "user_id"],
@@ -139,16 +152,24 @@ export async function haalCollegas(): Promise<Collega[]> {
       order_by: "employee_name asc",
       limit_page_length: 0,
     });
-    const uniek = new Map<string, Collega>();
-    for (const r of rijen) {
-      const email = String(r.user_id || "").trim().toLowerCase();
-      if (!email || uniek.has(email)) continue;
-      uniek.set(email, { email, naam: String(r.employee_name || email).trim() });
-    }
-    return [...uniek.values()];
+    return normaliseerCollegas(rijen.map((r) => ({
+      email: String(r.user_id || ""),
+      naam: String(r.employee_name || r.user_id || ""),
+    })));
   } catch {
     return [];
   }
+}
+
+/** Adressen kleingeletterd, dubbelen eruit, lege overgeslagen. */
+function normaliseerCollegas(rijen: { email: string; naam: string }[]): Collega[] {
+  const uniek = new Map<string, Collega>();
+  for (const r of rijen) {
+    const email = String(r.email || "").trim().toLowerCase();
+    if (!email || uniek.has(email)) continue;
+    uniek.set(email, { email, naam: String(r.naam || email).trim() });
+  }
+  return [...uniek.values()];
 }
 
 /**

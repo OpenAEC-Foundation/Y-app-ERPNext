@@ -1653,8 +1653,9 @@ export default function Agenda() {
         fetches.push(fetchList<{
           name: string; subject: string; starts_on: string; ends_on: string;
           all_day: number; event_type: string; description: string; location: string;
+          owner: string;
         }>("Event", {
-          fields: ["name", "subject", "starts_on", "ends_on", "all_day", "event_type", "description", "location"],
+          fields: ["name", "subject", "starts_on", "ends_on", "all_day", "event_type", "description", "location", "owner"],
           filters: [
             ["starts_on", ">=", dateRange.start],
             ["starts_on", "<=", dateRange.end + " 23:59:59"],
@@ -1711,6 +1712,11 @@ export default function Agenda() {
               id: `event-${e.name}`, title: e.subject || t("agenda.no_title"),
               start: e.starts_on, end: e.ends_on || undefined,
               allDay: !!e.all_day, type: "event", color: TYPE_COLORS.event,
+              // Een publieke afspraak van een ander staat óók in jouw agenda.
+              // Gedempt, net als de agenda's van collega's, zodat je eigen
+              // afspraken eruit blijven springen.
+              vanAnder: ikZelf !== "" && String(e.owner || "").toLowerCase() !== ikZelf,
+              owner: e.owner,
               description: e.description, location: e.location,
             });
           }
