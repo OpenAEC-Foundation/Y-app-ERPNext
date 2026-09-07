@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo, useRef, useCallback, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchList, fetchAll, fetchDocument, createDocument, updateDocument, callMethod, invalidateCache, getErpNextLinkUrl, ApiError } from "../lib/erpnext";
+import { formatUren } from "../lib/taak-uren";
 import {
   CheckSquare, RefreshCw, Search, LayoutGrid, List, User, Filter,
   GripVertical, ChevronDown, Plus, X, ExternalLink, Calendar, Flag,
-  FileText, Briefcase, Receipt,
+  FileText, Briefcase, Receipt, Clock,
   Bold, Italic, Underline, Heading1, Heading2,
   ListOrdered, Link, Table, Undo, Redo, RemoveFormatting, ListChecks,
 } from "lucide-react";
@@ -42,6 +43,8 @@ export interface Task {
   description: string;
   company: string;
   workflow_state: string;
+  /** Begrote uren (`expected_time`). 0 of leeg betekent: niet begroot. */
+  expected_time?: number;
 }
 
 const workflowColors: Record<string, string> = {
@@ -307,7 +310,7 @@ export default function Tasks() {
       const BASE_FIELDS = [
         "name", "subject", "status", "priority",
         "_assign as assigned_to", "project", "exp_end_date",
-        "description", "company",
+        "description", "company", "expected_time",
       ];
       // Try with workflow_state first. Frappe only exposes that field when
       // the Task doctype has a Workflow configured; on instances without
@@ -851,6 +854,14 @@ export default function Tasks() {
               prev.map((t) => (t.name === name ? { ...t, [field]: value } : t))
             );
           }}
+          onNumberUpdate={(name, field, value) => {
+            setSelectedTask((prev) =>
+              prev && prev.name === name ? { ...prev, [field]: value } : prev
+            );
+            setTasks((prev) =>
+              prev.map((t) => (t.name === name ? { ...t, [field]: value } : t))
+            );
+          }}
         />
       )}
     </div>
@@ -1059,6 +1070,7 @@ export function TaskDetail({
   onAssigneeChange,
   onDescriptionChange,
   onFieldUpdate,
+  onNumberUpdate,
 }: {
   task: Task;
   mode?: "edit" | "create";
@@ -1072,6 +1084,12 @@ export function TaskDetail({
   onAssigneeChange?: (taskName: string, oldEmails: string[], newEmail: string) => void;
   onDescriptionChange?: (taskName: string, newHtml: string) => void;
   onFieldUpdate?: (taskName: string, field: string, value: string) => void;
+  /**
+   * Los van `onFieldUpdate` omdat die met de todo-lijst gedeeld wordt, en daar
+   * is elk veld tekst. Een getal er doorheen duwen zou dáár het model laten
+   * liegen; dit houdt beide kanten eerlijk.
+   */
+  onNumberUpdate?: (taskName: string, field: string, value: number) => void;
 }) {
   const { t } = useTranslation();
   const isCreate = mode === "create";
@@ -1483,6 +1501,32 @@ export function TaskDetail({
       ),
     },
     {
+      label: t("tasks.detail.expected_time"),
+      icon: Clock,
+      value: isCreate ? null : (
+        <input
+          type="number"
+          min="0"
+          step="0.5"
+          value={task.expected_time ?? ""}
+          placeholder="0"
+          onChange={async (e) => {
+            const ruw = e.target.value;
+            const nieuw = ruw === "" ? 0 : Number(ruw);
+            if (!Number.isFinite(nieuw) || nieuw < 0) return;
+            const oud = task.expected_time ?? 0;
+            onNumberUpdate?.(task.name, "expected_time", nieuw);
+            try {
+              await updateDocument("Task", task.name, { expected_time: nieuw });
+            } catch {
+              onNumberUpdate?.(task.name, "expected_time", oud);
+            }
+          }}
+          className="w-24 px-2 py-1 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-y-teal"
+        />
+      ),
+    },
+    {
       label: t("tasks.detail.company"),
       icon: Briefcase,
       value: <span className="text-sm text-slate-700">{task.company || "-"}</span>,
@@ -1754,11 +1798,19 @@ export function KanbanView({
                       </span>
                     )}
                   </div>
-                  {task.exp_end_date && (
-                    <span className={`text-xs ${isOverdue(task.exp_end_date) ? "text-red-500 font-semibold" : "text-slate-400"}`}>
-                      {task.exp_end_date}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-2">
+                    {formatUren(task.expected_time) && (
+                      <span className="text-xs text-slate-500 font-medium tabular-nums"
+                        title={t("tasks.detail.expected_time")}>
+                        {formatUren(task.expected_time)}
+                      </span>
+                    )}
+                    {task.exp_end_date && (
+                      <span className={`text-xs ${isOverdue(task.exp_end_date) ? "text-red-500 font-semibold" : "text-slate-400"}`}>
+                        {task.exp_end_date}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             ))}

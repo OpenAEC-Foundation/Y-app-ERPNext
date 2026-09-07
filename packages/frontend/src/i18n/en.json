@@ -421,6 +421,7 @@
   "tasks.detail.project": "Project",
   "tasks.detail.assigned_to": "Assigned to",
   "tasks.detail.deadline": "Deadline",
+  "tasks.detail.expected_time": "Expected hours",
   "tasks.detail.billing_type": "Billing type",
   "tasks.detail.company": "Company",
   "tasks.detail.description": "Description",

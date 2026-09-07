@@ -352,6 +352,7 @@
   "tasks.detail.project": "Projekt",
   "tasks.detail.assigned_to": "Zugewiesen an",
   "tasks.detail.deadline": "Frist",
+  "tasks.detail.expected_time": "Geplante Stunden",
   "tasks.detail.billing_type": "Abrechnungsart",
   "tasks.detail.company": "Unternehmen",
   "tasks.detail.description": "Beschreibung",

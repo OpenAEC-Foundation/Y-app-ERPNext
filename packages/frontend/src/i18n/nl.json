@@ -421,6 +421,7 @@
   "tasks.detail.project": "Project",
   "tasks.detail.assigned_to": "Toegewezen aan",
   "tasks.detail.deadline": "Deadline",
+  "tasks.detail.expected_time": "Begrote uren",
   "tasks.detail.billing_type": "Facturatie",
   "tasks.detail.company": "Bedrijf",
   "tasks.detail.description": "Beschrijving",
