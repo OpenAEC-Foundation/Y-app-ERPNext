@@ -127,6 +127,53 @@ export async function linkCommunicationTo(
   }
 }
 
+/** Uitkomst van het koppelen van een reeks berichten. */
+export interface KoppelUitkomst {
+  gelukt: string[];
+  mislukt: { naam: string; reden: string }[];
+}
+
+/**
+ * Hoeveel berichten er tegelijk gekoppeld worden. Elke koppeling is twee
+ * schrijfacties (`reference_*` en de tijdlijnrij); vier tegelijk houdt een
+ * lang gesprek vlot zonder de server te overvragen.
+ */
+const KOPPEL_GELIJKTIJDIG = 4;
+
+/**
+ * Koppel een hele reeks berichten aan hetzelfde document.
+ *
+ * Waarom niet één bericht: wie een mail aan een project hangt, bedoelt het
+ * gesprek. De rest van de reeks los laten hangen betekent dat je hem later
+ * alsnog stuk voor stuk moet koppelen, en dat de projectmap maar een deel van
+ * de correspondentie toont.
+ *
+ * Elk bericht apart, want een Communication kan maar aan één document hangen
+ * en er is geen bulkroute in Frappe. Faalt er één, dan gaan de andere door —
+ * half gekoppeld is beter dan niet gekoppeld, en de aanroeper krijgt te horen
+ * welke het niet haalden.
+ */
+export async function linkConversationTo(
+  namen: string[],
+  doctype: string,
+  docname: string,
+): Promise<KoppelUitkomst> {
+  const uniek = [...new Set(namen.filter(Boolean))];
+  const uit: KoppelUitkomst = { gelukt: [], mislukt: [] };
+  for (let i = 0; i < uniek.length; i += KOPPEL_GELIJKTIJDIG) {
+    const groep = uniek.slice(i, i + KOPPEL_GELIJKTIJDIG);
+    await Promise.all(groep.map(async (naam) => {
+      try {
+        await linkCommunicationTo(naam, doctype, docname);
+        uit.gelukt.push(naam);
+      } catch (err) {
+        uit.mislukt.push({ naam, reden: err instanceof Error ? err.message : String(err) });
+      }
+    }));
+  }
+  return uit;
+}
+
 /**
  * Maak een document vanuit een mail: aanmaken, bijlagen koppelen, mail
  * koppelen. Gooit alleen wanneer het aanmaken zelf mislukt.

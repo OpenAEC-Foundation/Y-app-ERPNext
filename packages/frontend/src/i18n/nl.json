@@ -3025,5 +3025,7 @@
   "agenda.shared": "Voor iedereen",
   "agenda.shared_hint": "zet hem in ieders agenda",
   "agenda.colleagues_all": "alles aan",
-  "agenda.colleagues_none": "alles uit"
+  "agenda.colleagues_none": "alles uit",
+  "y_next.mail_thread_linked": "{{count}} berichten gekoppeld aan {{name}}",
+  "y_next.mail_thread_linked_partly": "{{count}} berichten gekoppeld aan {{name}}, {{failed}} niet gelukt"
 }

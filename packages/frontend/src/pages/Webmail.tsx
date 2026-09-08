@@ -170,8 +170,10 @@ import {
   dismissMailSuggestion, isMailSuggestionDismissed, readDismissedMailSuggestions,
 } from "../lib/mail-suggestions";
 import { suggestProject, type ProjectSuggestion } from "../lib/project-suggest";
-import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
-import { linkCommunicationTo } from "../lib/communication-link";
+import {
+  fetchProjectHints, fetchSenderProjectHistory, forgetSenderProjectHistory,
+} from "../lib/project-link";
+import { linkConversationTo } from "../lib/communication-link";
 
 /* ─── Types ─── */
 
@@ -5156,6 +5158,17 @@ function ErpNextWebmail() {
     });
   }, [thread, threads, selected]);
 
+  /**
+   * De hele reeks rond de geopende mail — dat is waar een koppeling op slaat.
+   * `conversationRows` verenigt de conversatie uit de server met het gesprek
+   * uit de lijst, dus dit is de volledigste verzameling die we hebben.
+   */
+  const gesprekNamen = useMemo(() => {
+    if (!selected) return [] as string[];
+    const namen = conversationRows.map((m) => m.name);
+    return namen.includes(selected.name) ? namen : [selected.name, ...namen];
+  }, [conversationRows, selected]);
+
   /* ─── Selectie ─── */
 
   /**
@@ -5852,14 +5865,24 @@ function ErpNextWebmail() {
     setShowLinkPicker(false);
     setProjectPickerOpen(false);
     const reference = { doctype: "Project", name: projectName };
-    setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
-    setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
+    // Het hele gesprek, niet alleen de geopende mail: wie een mail aan een
+    // project hangt bedoelt de correspondentie, en anders staat de projectmap
+    // straks half gevuld.
+    const namen = gesprekNamen.length > 0 ? gesprekNamen : [msg.name];
+    const raakt = new Set(namen);
+    setSelected((prev) => (prev && raakt.has(prev.name) ? { ...prev, reference } : prev));
+    setMessages((prev) => prev.map((m) => (raakt.has(m.name) ? { ...m, reference } : m)));
     try {
-      // `linkMailToProject` zet `reference_*` én een `timeline_links`-rij, zodat
-      // de mail in de projecttijdlijn blijft staan ook als hij later aan iets
-      // anders wordt gekoppeld — zie `communication-link.ts`.
-      await linkMailToProject(msg.name, projectName, msg.sender);
-      setToast(t("webmail.linked_to", { doctype: "Project", name: projectName }));
+      // Zet `reference_*` én een `timeline_links`-rij, zodat de mail in de
+      // projecttijdlijn blijft staan ook als hij later aan iets anders wordt
+      // gekoppeld — zie `communication-link.ts`.
+      const uit = await linkConversationTo(namen, "Project", projectName);
+      forgetSenderProjectHistory(msg.sender);
+      setToast(uit.mislukt.length === 0
+        ? t("y_next.mail_thread_linked", { count: uit.gelukt.length, name: projectName })
+        : t("y_next.mail_thread_linked_partly", {
+            count: uit.gelukt.length, failed: uit.mislukt.length, name: projectName,
+          }));
       refreshFolders();
       connectionsChanged();
     } catch (err) {
@@ -5878,11 +5901,17 @@ function ErpNextWebmail() {
     if (!msg) return;
     setKoppelDialoog(false);
     const reference = { doctype, name: docname };
-    setSelected((prev) => (prev && prev.name === msg.name ? { ...prev, reference } : prev));
-    setMessages((prev) => prev.map((m) => (m.name === msg.name ? { ...m, reference } : m)));
+    const namen = gesprekNamen.length > 0 ? gesprekNamen : [msg.name];
+    const raakt = new Set(namen);
+    setSelected((prev) => (prev && raakt.has(prev.name) ? { ...prev, reference } : prev));
+    setMessages((prev) => prev.map((m) => (raakt.has(m.name) ? { ...m, reference } : m)));
     try {
-      await linkCommunicationTo(msg.name, doctype, docname);
-      setToast(t("webmail.linked_to", { doctype, name: docname }));
+      const uit = await linkConversationTo(namen, doctype, docname);
+      setToast(uit.mislukt.length === 0
+        ? t("y_next.mail_thread_linked", { count: uit.gelukt.length, name: docname })
+        : t("y_next.mail_thread_linked_partly", {
+            count: uit.gelukt.length, failed: uit.mislukt.length, name: docname,
+          }));
       refreshFolders();
       connectionsChanged();
     } catch (err) {

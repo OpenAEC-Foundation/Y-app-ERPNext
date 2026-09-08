@@ -3025,5 +3025,7 @@
   "agenda.shared": "Everyone",
   "agenda.shared_hint": "put it in everyone’s calendar",
   "agenda.colleagues_all": "all on",
-  "agenda.colleagues_none": "all off"
+  "agenda.colleagues_none": "all off",
+  "y_next.mail_thread_linked": "{{count}} messages linked to {{name}}",
+  "y_next.mail_thread_linked_partly": "{{count}} messages linked to {{name}}, {{failed}} failed"
 }

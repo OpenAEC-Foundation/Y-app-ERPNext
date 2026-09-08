@@ -3025,5 +3025,7 @@
   "agenda.shared": "Für alle",
   "agenda.shared_hint": "in den Kalender aller eintragen",
   "agenda.colleagues_all": "alle an",
-  "agenda.colleagues_none": "alle aus"
+  "agenda.colleagues_none": "alle aus",
+  "y_next.mail_thread_linked": "{{count}} Nachrichten mit {{name}} verknüpft",
+  "y_next.mail_thread_linked_partly": "{{count}} Nachrichten mit {{name}} verknüpft, {{failed}} fehlgeschlagen"
 }
