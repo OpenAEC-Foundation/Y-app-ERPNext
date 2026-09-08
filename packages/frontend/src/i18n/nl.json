@@ -3033,5 +3033,6 @@
   "y_next.mail_print": "Afdrukken",
   "y_next.mail_print_date": "Datum",
   "y_next.mail_print_attachments": "Bijlagen",
-  "y_next.mail_print_failed": "Afdrukken lukt niet in deze weergave."
+  "y_next.mail_print_failed": "Afdrukken lukt niet in deze weergave.",
+  "agenda.drag_resize": "Slepen om langer of korter te maken"
 }

@@ -3033,5 +3033,6 @@
   "y_next.mail_print": "Drucken",
   "y_next.mail_print_date": "Datum",
   "y_next.mail_print_attachments": "Anhänge",
-  "y_next.mail_print_failed": "Drucken ist in dieser Ansicht nicht möglich."
+  "y_next.mail_print_failed": "Drucken ist in dieser Ansicht nicht möglich.",
+  "agenda.drag_resize": "Ziehen, um zu verlängern oder zu verkürzen"
 }

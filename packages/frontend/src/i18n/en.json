@@ -3033,5 +3033,6 @@
   "y_next.mail_print": "Print",
   "y_next.mail_print_date": "Date",
   "y_next.mail_print_attachments": "Attachments",
-  "y_next.mail_print_failed": "Printing is not available in this view."
+  "y_next.mail_print_failed": "Printing is not available in this view.",
+  "agenda.drag_resize": "Drag to make longer or shorter"
 }

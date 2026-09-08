@@ -1,5 +1,8 @@
 import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useIsMobile } from "../lib/useIsMobile";
+import {
+  berekenSleep, minutenNaarTijd, sleepbaar, tijdNaarMinuten, verschuifDatum,
+} from "../lib/agenda-slepen";
 import { fetchList, fetchChildTable, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
 import {
   aggregateHoursByEmployeeDay,
@@ -101,6 +104,24 @@ interface CreateForm {
    */
   prive: boolean;
   calendarTarget: string; // "erpnext" | "mailserver" | "caldav:<calendarId>"
+}
+
+/** Wat er tijdens het slepen van een bestaande afspraak bijgehouden wordt. */
+interface SleepState {
+  id: string;
+  soort: "verplaatsen" | "verlengen";
+  /** De dag waarop de afspraak stond toen het slepen begon. */
+  dagSleutel: string;
+  startMin: number;
+  eindMin: number;
+  hoogtePerUur: number;
+  /** Breedte van één dagkolom, om zijwaartse beweging in dagen te vertalen. */
+  kolomBreedte: number;
+  beginX: number;
+  beginY: number;
+  huidigX: number;
+  huidigY: number;
+  bewogen: boolean;
 }
 
 interface CustomCalendar {
@@ -1561,6 +1582,22 @@ export default function Agenda() {
   }, [showSettings]);
   const [addCalendarModal, setAddCalendarModal] = useState(false);
   const [dragCreate, setDragCreate] = useState<DragCreateState | null>(null);
+
+  /**
+   * Een bestaande afspraak die versleept wordt: verplaatsen of langer/korter
+   * maken. Los van `dragCreate`, dat over het tekenen van een níeuwe afspraak
+   * op lege ruimte gaat — die twee mogen elkaar niet in de weg zitten.
+   */
+  const [sleep, setSleep] = useState<SleepState | null>(null);
+  /** Laatste mislukte verplaatsing; verdwijnt vanzelf weer. */
+  const [sleepFout, setSleepFout] = useState("");
+  useEffect(() => {
+    if (!sleepFout) return;
+    const t = setTimeout(() => setSleepFout(""), 6000);
+    return () => clearTimeout(t);
+  }, [sleepFout]);
+  const sleepRef = useRef<SleepState | null>(null);
+  useEffect(() => { sleepRef.current = sleep; }, [sleep]);
   const dragCreateRef = useRef<DragCreateState | null>(null);
   useEffect(() => { dragCreateRef.current = dragCreate; }, [dragCreate]);
   const leaves = useLeaves();
@@ -2172,6 +2209,120 @@ export default function Agenda() {
     };
   }, [isDragging]);
 
+  /**
+   * Begin met slepen van een bestaande afspraak.
+   *
+   * `stopPropagation` is hier wezenlijk: de dagkolom eronder luistert ook op
+   * mousedown, en dat is het tekenen van een níeuwe afspraak. Zonder dit zou
+   * je bij het verslepen van een blok tegelijk een nieuwe afspraak trekken.
+   */
+  function startSleep(
+    ev: ReactMouseEvent<HTMLDivElement>,
+    afspraak: EventItem,
+    dagSleutel: string,
+    hoogtePerUur: number,
+    soort: "verplaatsen" | "verlengen",
+  ) {
+    if (ev.button !== 0 || isMobile || !sleepbaar(afspraak)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const kolom = (ev.currentTarget.closest("[data-dagkolom]") as HTMLElement | null)
+      ?.getBoundingClientRect();
+    setSleep({
+      id: afspraak.id,
+      soort,
+      dagSleutel,
+      startMin: tijdNaarMinuten(afspraak.start),
+      eindMin: afspraak.end ? tijdNaarMinuten(afspraak.end) : tijdNaarMinuten(afspraak.start) + 60,
+      hoogtePerUur,
+      kolomBreedte: kolom?.width || 0,
+      beginX: ev.clientX,
+      beginY: ev.clientY,
+      huidigX: ev.clientX,
+      huidigY: ev.clientY,
+      bewogen: false,
+    });
+  }
+
+  /** De nieuwe tijden zoals ze nu onder de muis liggen. */
+  const sleepUitkomst = useCallback((st: SleepState) => {
+    const verschuivingMin = ((st.huidigY - st.beginY) / st.hoogtePerUur) * 60;
+    const dagVerschuiving = st.kolomBreedte > 0 && st.soort === "verplaatsen"
+      ? Math.round((st.huidigX - st.beginX) / st.kolomBreedte)
+      : 0;
+    return berekenSleep({
+      startMin: st.startMin,
+      eindMin: st.eindMin,
+      verschuivingMin,
+      dagVerschuiving,
+      soort: st.soort,
+    }, { eersteUur: START_HOUR, aantalUren: TOTAL_HOURS, stap: 15, minimumDuur: 15 });
+  }, []);
+
+  const sleeptNu = sleep !== null;
+  useEffect(() => {
+    if (!sleeptNu) return;
+    function beweeg(ev: globalThis.MouseEvent) {
+      setSleep((vorig) => vorig && ({
+        ...vorig,
+        huidigX: ev.clientX,
+        huidigY: ev.clientY,
+        // Drempel van vier pixels, zodat een gewone klik nog gewoon het
+        // detailvenster opent.
+        bewogen: vorig.bewogen
+          || Math.abs(ev.clientY - vorig.beginY) > 4
+          || Math.abs(ev.clientX - vorig.beginX) > 4,
+      }));
+    }
+    function los() {
+      const st = sleepRef.current;
+      setSleep(null);
+      if (st?.bewogen) void bewaarSleep(st);
+    }
+    window.addEventListener("mousemove", beweeg);
+    window.addEventListener("mouseup", los);
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("mousemove", beweeg);
+      window.removeEventListener("mouseup", los);
+      document.body.style.userSelect = "";
+    };
+  }, [sleeptNu]);
+
+  /**
+   * De verschoven afspraak opslaan.
+   *
+   * Eerst in beeld bijwerken en dan pas schrijven: slepen hoort direct te
+   * voelen. Mislukt het schrijven, dan komt de afspraak terug op zijn oude
+   * plek bij de eerstvolgende verversing — en zegt de melding waarom.
+   */
+  async function bewaarSleep(st: SleepState) {
+    const afspraak = allEvents.find((e) => e.id === st.id);
+    if (!afspraak) return;
+    const uit = sleepUitkomst(st);
+    const nieuweDag = verschuifDatum(st.dagSleutel, uit.dagVerschuiving);
+    const nieuweStart = `${nieuweDag} ${minutenNaarTijd(uit.startMin)}:00`;
+    const nieuwEind = `${nieuweDag} ${minutenNaarTijd(uit.eindMin)}:00`;
+    if (nieuweStart === afspraak.start && nieuwEind === (afspraak.end || "")) return;
+
+    setEvents((vorige) => vorige.map((e) =>
+      e.id === st.id ? { ...e, start: nieuweStart, end: nieuwEind } : e));
+
+    try {
+      // Alleen ERPNext-afspraken; `sleepbaar` heeft de rest al geweerd.
+      const naam = st.id.replace(/^event-/, "");
+      await updateDocument("Event", naam, { starts_on: nieuweStart, ends_on: nieuwEind });
+      loadEvents();
+    } catch (err) {
+      // Terugdraaien doet de verversing: die haalt de werkelijke tijden op.
+      // De melding erbij, want een afspraak die stilletjes terugspringt is
+      // verwarrender dan een foutmelding.
+      console.error("Agenda: verplaatsen mislukt", err);
+      setSleepFout(err instanceof Error ? err.message : String(err));
+      loadEvents();
+    }
+  }
+
   function renderDragOverlay(dateKey: string, hourHeight: number) {
     if (!dragCreate || !dragCreate.moved || dragCreate.dateKey !== dateKey) return null;
     const { startMin, endMin } = getDragSelection(dragCreate);
@@ -2274,7 +2425,7 @@ export default function Agenda() {
               const timedEvents = (eventsByDate.get(key) || []).filter(e => !e.allDay);
               const laid = layoutOverlaps(timedEvents);
               return (
-                <div key={key} className="relative border-l border-slate-100"
+                <div key={key} data-dagkolom className="relative border-l border-slate-100"
                   onMouseDown={(ev) => handleDragStart(ev, key, HOUR_HEIGHT)}
                   onDoubleClick={(ev) => {
                     const rect = ev.currentTarget.getBoundingClientRect();
@@ -2292,9 +2443,19 @@ export default function Agenda() {
                     const pos = getEventPosition(e);
                     return (
                       <div key={e.id}
-                        className="absolute text-[10px] px-1.5 py-0.5 rounded font-medium overflow-hidden cursor-pointer z-10 hover:brightness-95 transition-all"
-                        onMouseDown={(ev) => ev.stopPropagation()}
-                        onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
+                        className={`group absolute text-[10px] px-1.5 py-0.5 rounded font-medium overflow-hidden z-10 hover:brightness-95 transition-all ${
+                          sleepbaar(e) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                        } ${sleep?.id === e.id && sleep.bewogen ? "opacity-60 ring-2 ring-current" : ""}`}
+                        onMouseDown={(ev) => sleepbaar(e)
+                          ? startSleep(ev, e, key, HOUR_HEIGHT, "verplaatsen")
+                          : ev.stopPropagation()}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          // Na een sleepbeweging niet ook nog het detailvenster
+                          // openen; een klik is iets anders dan een verplaatsing.
+                          if (sleep?.bewogen) return;
+                          setDetailEvent(e);
+                        }}
                         style={{
                           ...demping(e),
                           top: pos.top,
@@ -2306,7 +2467,20 @@ export default function Agenda() {
                           borderLeft: `3px solid ${e.color}`,
                         }}>
                         <div className="truncate leading-tight">{e.title}</div>
-                        <div className="text-[9px] opacity-70">{formatTime(e.start)}</div>
+                        <div className="text-[9px] opacity-70">
+                          {sleep?.id === e.id && sleep.bewogen
+                            ? `${minutenNaarTijd(sleepUitkomst(sleep).startMin)} – ${minutenNaarTijd(sleepUitkomst(sleep).eindMin)}`
+                            : formatTime(e.start)}
+                        </div>
+                        {/* Greep om langer of korter te maken. Alleen zichtbaar
+                            bij aanwijzen: hij mag de tekst niet in de weg zitten. */}
+                        {sleepbaar(e) && (
+                          <div
+                            onMouseDown={(ev) => startSleep(ev, e, key, HOUR_HEIGHT, "verlengen")}
+                            title={t("agenda.drag_resize")}
+                            className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize opacity-0 group-hover:opacity-100"
+                            style={{ backgroundColor: e.color }} />
+                        )}
                       </div>
                     );
                   })}
@@ -2403,7 +2577,7 @@ export default function Agenda() {
               ))}
             </div>
             {/* Event column */}
-            <div className="flex-1 relative border-l border-slate-200"
+            <div data-dagkolom className="flex-1 relative border-l border-slate-200"
               onMouseDown={(ev) => handleDragStart(ev, key, DAY_HOUR_HEIGHT)}
               onDoubleClick={(ev) => {
                 const rect = ev.currentTarget.getBoundingClientRect();
@@ -2421,9 +2595,17 @@ export default function Agenda() {
                 const pos = getDayEventPosition(e);
                 return (
                   <div key={e.id}
-                    onMouseDown={(ev) => ev.stopPropagation()}
-                    onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
-                    className="absolute rounded overflow-hidden cursor-pointer z-10 px-3 py-1.5 hover:brightness-95 transition-all"
+                    onMouseDown={(ev) => sleepbaar(e)
+                      ? startSleep(ev, e, key, DAY_HOUR_HEIGHT, "verplaatsen")
+                      : ev.stopPropagation()}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (sleep?.bewogen) return;
+                      setDetailEvent(e);
+                    }}
+                    className={`group absolute rounded overflow-hidden z-10 px-3 py-1.5 hover:brightness-95 transition-all ${
+                      sleepbaar(e) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+                    } ${sleep?.id === e.id && sleep.bewogen ? "opacity-60 ring-2 ring-current" : ""}`}
                     style={{
                       ...demping(e),
                       top: pos.top,
@@ -2435,10 +2617,21 @@ export default function Agenda() {
                     }}>
                     <div className="text-sm font-medium truncate" style={{ color: e.color }}>{e.title}</div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      <span>{formatTime(e.start)}{e.end ? ` - ${formatTime(e.end)}` : ""}</span>
+                      <span>
+                        {sleep?.id === e.id && sleep.bewogen
+                          ? `${minutenNaarTijd(sleepUitkomst(sleep).startMin)} - ${minutenNaarTijd(sleepUitkomst(sleep).eindMin)}`
+                          : `${formatTime(e.start)}${e.end ? ` - ${formatTime(e.end)}` : ""}`}
+                      </span>
                       {e.location && <span className="ml-3"><MapPin size={10} className="inline mr-0.5" />{e.location}</span>}
                     </div>
                     {pos.height >= 56 && e.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{e.description}</p>}
+                    {sleepbaar(e) && (
+                      <div
+                        onMouseDown={(ev) => startSleep(ev, e, key, DAY_HOUR_HEIGHT, "verlengen")}
+                        title={t("agenda.drag_resize")}
+                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100"
+                        style={{ backgroundColor: e.color }} />
+                    )}
                   </div>
                 );
               })}
