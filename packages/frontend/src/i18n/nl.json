@@ -3027,5 +3027,7 @@
   "agenda.colleagues_all": "alles aan",
   "agenda.colleagues_none": "alles uit",
   "y_next.mail_thread_linked": "{{count}} berichten gekoppeld aan {{name}}",
-  "y_next.mail_thread_linked_partly": "{{count}} berichten gekoppeld aan {{name}}, {{failed}} niet gelukt"
+  "y_next.mail_thread_linked_partly": "{{count}} berichten gekoppeld aan {{name}}, {{failed}} niet gelukt",
+  "y_next.pinv_open_attachment": "Openen in nieuw tabblad",
+  "y_next.pinv_show_attachment": "Hiernaast tonen"
 }

@@ -23,8 +23,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ExternalLink, Loader2, Search, Sparkles, X } from "lucide-react";
-import { fetchAttachments, getErpNextLinkUrl, type FileInfo } from "../lib/erpnext";
+import { AlertTriangle, Check, ExternalLink, FileText, Loader2, Search, Sparkles, X } from "lucide-react";
+import { fetchAttachments, getErpNextLinkUrl, getFileUrl, type FileInfo } from "../lib/erpnext";
 import { useDefaultCompany } from "../lib/default-company";
 import type { InvoiceGuess, SupplierHint } from "../lib/invoice-detect";
 import {
@@ -96,6 +96,15 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
   const [expenseOptions, setExpenseOptions] = useState<AccountOption[]>([]);
   const [payableOptions, setPayableOptions] = useState<AccountOption[]>([]);
   const [attachments, setAttachments] = useState<FileInfo[]>([]);
+  /**
+   * Welke bijlage er naast de dialoog getoond wordt.
+   *
+   * Het bedrag staat zelden in de mailtekst en bijna altijd in de pdf. Zonder
+   * dit venster moest je de bijlage eerst apart openen, het bedrag onthouden
+   * en terugkomen — met een dialoog die intussen dicht was.
+   */
+  const [voorbeeld, setVoorbeeld] = useState<string>("");
+
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
 
   const [saving, setSaving] = useState(false);
@@ -130,6 +139,15 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
     }).catch(() => { /* zonder bijlagen boeken mag gewoon */ });
     return () => { cancelled = true; };
   }, [message.name]);
+
+  // De eerste pdf is vrijwel altijd de factuur; is er geen pdf, dan de eerste
+  // bijlage die een browser sowieso kan tonen.
+  useEffect(() => {
+    if (voorbeeld) return;
+    const eerste = attachments.find((f) => isToonbaar(f.file_name))
+      ?? attachments.find((f) => isPdf(f.file_name));
+    if (eerste) setVoorbeeld(eerste.name);
+  }, [attachments, voorbeeld]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -234,13 +252,17 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
     ? (suppliers.find((s) => s.name === supplier)?.supplierName ?? supplier)
     : "";
 
+  /** De bijlage die naast het formulier staat. */
+  const getoond = attachments.find((f) => f.name === voorbeeld && isToonbaar(f.file_name));
+
   return (
     // Bewust een lichte sluier (10%) in plaats van de gebruikelijke 40%: de
     // mailtekst eronder moet leesbaar blijven terwijl dit venster open staat —
     // je opent het juist om iets uit die mail over te nemen. De schaduw en de
     // rand van het paneel doen het scheiden, niet het verduisteren.
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/10 p-4 sm:p-8">
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+      <div className="flex w-full max-w-6xl items-start gap-4">
+      <div className="w-full max-w-2xl flex-shrink-0 rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-800">{t("y_next.pinv_dialog_title")}</h2>
@@ -384,15 +406,30 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
             ) : (
               <div className="space-y-1">
                 {attachments.map((f) => (
-                  <label key={f.name} className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
-                    <input type="checkbox" checked={picked.has(f.name)} className="cursor-pointer"
+                  <div key={f.name} className="flex items-center gap-2 text-xs text-slate-700">
+                    <input type="checkbox" id={`bijlage-${f.name}`} checked={picked.has(f.name)}
+                      className="cursor-pointer"
                       onChange={() => setPicked((prev) => {
                         const next = new Set(prev);
                         if (next.has(f.name)) next.delete(f.name); else next.add(f.name);
                         return next;
                       })} />
-                    <span className="truncate">{f.file_name}</span>
-                  </label>
+                    {/* De naam is een knop, geen label: klikken toont hem
+                        ernaast in plaats van het vinkje om te zetten. */}
+                    {isToonbaar(f.file_name) ? (
+                      <button type="button" onClick={() => setVoorbeeld(f.name)}
+                        title={t("y_next.pinv_show_attachment")}
+                        className={`min-w-0 flex-1 truncate text-left hover:text-blue-600 cursor-pointer ${
+                          f.name === voorbeeld ? "font-medium text-blue-700" : ""
+                        }`}>
+                        {f.file_name}
+                      </button>
+                    ) : (
+                      <label htmlFor={`bijlage-${f.name}`} className="min-w-0 flex-1 cursor-pointer truncate">
+                        {f.file_name}
+                      </label>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -430,8 +467,44 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
           </div>
         </div>
       </div>
+
+      {/* De bijlage ernaast. Alleen op een breed scherm: op een smal scherm
+          zou hij het formulier wegdrukken, en dan is de knop "openen in een
+          nieuw tabblad" bij de bijlagenlijst de betere weg. */}
+      {getoond && (
+        <div className="hidden min-w-0 flex-1 flex-col rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10 lg:flex">
+          <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2">
+            <FileText size={13} className="flex-shrink-0 text-slate-400" />
+            <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600" title={getoond.file_name}>
+              {getoond.file_name}
+            </span>
+            <a href={getFileUrl(getoond.file_url)} target="_blank" rel="noopener noreferrer"
+              title={t("y_next.pinv_open_attachment")}
+              className="flex-shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <ExternalLink size={13} />
+            </a>
+          </div>
+          <iframe
+            // `#view=FitH` laat de pdf op breedte passen; anders opent hij op
+            // ware grootte en zie je een hoek van de factuur.
+            src={`${getFileUrl(getoond.file_url)}${isPdf(getoond.file_name) ? "#view=FitH" : ""}`}
+            title={getoond.file_name}
+            className="h-[70vh] w-full rounded-b-xl border-0 bg-slate-50"
+          />
+        </div>
+      )}
+      </div>
     </div>
   );
+}
+
+/** Bijlagen die een browser rechtstreeks kan tonen. */
+function isPdf(naam: string): boolean {
+  return /\.pdf$/i.test(naam || "");
+}
+
+function isToonbaar(naam: string): boolean {
+  return isPdf(naam) || /\.(png|jpe?g|gif|webp|svg)$/i.test(naam || "");
 }
 
 /** `creditTo` → `credit_to`: de validatiecodes gebruiken camelCase, de

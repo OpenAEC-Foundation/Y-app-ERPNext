@@ -3027,5 +3027,7 @@
   "agenda.colleagues_all": "all on",
   "agenda.colleagues_none": "all off",
   "y_next.mail_thread_linked": "{{count}} messages linked to {{name}}",
-  "y_next.mail_thread_linked_partly": "{{count}} messages linked to {{name}}, {{failed}} failed"
+  "y_next.mail_thread_linked_partly": "{{count}} messages linked to {{name}}, {{failed}} failed",
+  "y_next.pinv_open_attachment": "Open in new tab",
+  "y_next.pinv_show_attachment": "Show alongside"
 }
