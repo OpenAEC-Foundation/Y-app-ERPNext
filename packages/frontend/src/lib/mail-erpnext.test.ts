@@ -39,6 +39,7 @@ import {
   bulkMarkUnhandled,
   isHandledStatus,
   filterUnhandled,
+  fetchThreadCompanions,
 } from "./mail-erpnext.ts";
 
 interface RecordedCall {
@@ -1417,5 +1418,43 @@ test("invalidateCache: laat ook de get_count-tellingen van dat doctype vallen", 
   } finally {
     mock.restore();
     invalidateCache("Communication");
+  }
+});
+
+/* ────────────── Verzonden post als lid van een gesprek ───────────────── */
+
+test("fetchThreadCompanions haalt ook recent verzonden post op", async () => {
+  // Een eigen antwoord zonder `in_reply_to` valt buiten de twee queries op de
+  // ketting; zonder deze derde blijft het gesprek in de lijst incompleet.
+  const mock = installFetchMock((url) => {
+    const filters = JSON.stringify(queryJson(url, "filters") ?? "");
+    if (filters.includes("sent_or_received")) {
+      return { status: 200, body: { data: [{
+        name: "COMM-SENT-1", subject: "Re: Sollicitatie", sender: "maarten@3bm.co.nl",
+        recipients: "jv.beek@telfort.nl", communication_date: "2026-09-07 10:00:00", seen: 1,
+      }] } };
+    }
+    return { status: 200, body: { data: [] } };
+  });
+  try {
+    const uit = await fetchThreadCompanions([{ name: "COMM-IN-1" }]);
+    const soorten = mock.calls.map((c) => JSON.stringify(queryJson(c.url, "filters") ?? ""));
+    assert.equal(soorten.some((f) => f.includes("sent_or_received")), true,
+      "er hoort een query op verzonden post te zijn");
+    assert.deepEqual(uit.map((m) => m.name), ["COMM-SENT-1"]);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("fetchThreadCompanions levert niets zonder zichtbare berichten", async () => {
+  // Geen namen betekent geen gesprek om aan te vullen: dan hoort er ook geen
+  // enkele query uit te gaan.
+  const mock = installFetchMock(() => ({ status: 200, body: { data: [] } }));
+  try {
+    assert.deepEqual(await fetchThreadCompanions([]), []);
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
   }
 });

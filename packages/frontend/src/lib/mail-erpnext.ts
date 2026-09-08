@@ -1221,6 +1221,12 @@ export async function getConversation(name: string): Promise<ErpMailMessage[]> {
 const MAX_COMPANION_SEEDS = 120;
 
 /**
+ * Hoeveel recent verzonden berichten er als gespreksleden meegaan. Ruim genoeg
+ * voor de lopende correspondentie, en klein genoeg om één query te blijven.
+ */
+const MAX_SENT_COMPANIONS = 300;
+
+/**
  * De berichten die de zichtbare gesprekken compleet maken, maar zelf niet in
  * de huidige map staan — in de praktijk je eigen verzonden antwoorden, die
  * alleen in "Verzonden" staan en dus in Postvak IN ontbreken.
@@ -1257,22 +1263,34 @@ export async function fetchThreadCompanions(
     parents.push(parent);
   }
 
-  const query = (filters: unknown[][]) =>
+  const query = (filters: unknown[][], limiet = MAX_COMPANION_SEEDS) =>
     fetchList<Record<string, unknown>>("Communication", {
       fields: SEARCH_FIELDS,
       filters: [["communication_type", "=", "Communication"], NOT_TRASHED, ...filters],
       order_by: "communication_date desc",
-      limit_page_length: MAX_COMPANION_SEEDS,
+      limit_page_length: limiet,
     }).catch(() => [] as Record<string, unknown>[]);
 
-  const [replies, ancestors] = await Promise.all([
+  // 3. Recent verzonden post. Een eigen antwoord hoort bij het gesprek, maar
+  //    valt buiten de twee queries hierboven zodra `in_reply_to` leeg is - en
+  //    dat is het bij alles van vóór de reparatie van de doorstuurroute, en bij
+  //    mail die buiten deze app verstuurd is. `groupThreads` legt het verband
+  //    dan alsnog op onderwerp plus gedeelde deelnemers.
+  //
+  //    Begrensd op de laatste `MAX_SENT_COMPANIONS`: een gesprek van jaren
+  //    geleden krijgt zijn verzonden leden hier niet uit, en dat is de prijs
+  //    voor één extra query in plaats van één per zichtbare regel. Extra's
+  //    kunnen nooit een eigen regel in de lijst maken (zie `groupThreads`),
+  //    dus meesturen wat niet past kost hoogstens wat geheugen.
+  const [replies, ancestors, sent] = await Promise.all([
     query([["in_reply_to", "in", names]]),
     parents.length > 0 ? query([["name", "in", parents]]) : Promise.resolve([]),
+    query([["sent_or_received", "=", "Sent"]], MAX_SENT_COMPANIONS),
   ]);
 
   const out: ErpMailMessage[] = [];
   const seen = new Set(known);
-  for (const row of [...replies, ...ancestors]) {
+  for (const row of [...replies, ...ancestors, ...sent]) {
     const name = toStr(row.name);
     if (!name || seen.has(name)) continue;
     seen.add(name);
