@@ -10,6 +10,7 @@ import {
   messageMatchesSelection,
   parseConnectionFolder,
   type ConnectionRawInput,
+  toonLabel,
 } from "./mail-connections.ts";
 
 /* ─────────────────────────────── Map-id's ─────────────────────────────── */
@@ -271,4 +272,31 @@ test("messageMatchesSelection: onbekende mail wordt doorgelaten, geen index bete
   // ruim tonen dan een verse mail onzichtbaar maken.
   assert.ok(messageMatchesSelection(index, "m-nieuw", { category: "project" }));
   assert.ok(messageMatchesSelection(null, "wat-dan-ook", { category: "unlinked" }));
+});
+
+/* ───────────────────── Nummer voor de projectnaam ────────────────────── */
+
+test("een project toont zijn nummer voor de naam", () => {
+  // Het projectnummer is waar hier op gezocht wordt en waar in mails naar
+  // verwezen wordt; alleen de naam is niet genoeg om het terug te vinden.
+  assert.equal(
+    toonLabel("Project", "3245", "Woning Nieuwdorperweg Reeuwijk"),
+    "3245 · Woning Nieuwdorperweg Reeuwijk",
+  );
+});
+
+test("bij een klant blijft de naam alleen staan", () => {
+  // Daar is de docname de naam zelf; hem ervoor zetten verdubbelt hem.
+  assert.equal(toonLabel("Customer", "Domera B.V.", "Domera B.V."), "Domera B.V.");
+  assert.equal(toonLabel("Lead", "CRM-LEAD-0001", "Jan de Vries"), "Jan de Vries");
+});
+
+test("een naam die al met het nummer begint krijgt het er niet nog eens bij", () => {
+  assert.equal(toonLabel("Project", "1985", "1985 GIS2EGG"), "1985 GIS2EGG");
+});
+
+test("zonder naam blijft het nummer over", () => {
+  assert.equal(toonLabel("Project", "3245", ""), "3245");
+  assert.equal(toonLabel("Project", "3245", "   "), "3245");
+  assert.equal(toonLabel("Project", "3245", "3245"), "3245");
 });

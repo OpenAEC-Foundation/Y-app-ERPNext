@@ -551,6 +551,29 @@ const LABEL_FIELDS: Record<string, string> = {
   Opportunity: "party_name",
 };
 
+/**
+ * Doctypes waarbij de docname zelf ook informatie draagt en dus vóór de naam
+ * hoort te staan.
+ *
+ * Bij een project is dat het projectnummer: daar wordt hier op gezocht, naar
+ * verwezen in mails en over gepraat. "3245 - Woning Nieuwdorperweg Reeuwijk"
+ * is bruikbaar, alleen de naam niet.
+ *
+ * Bij een klant of lead is de docname juist de naam zelf; die ervoor zetten
+ * zou hem verdubbelen.
+ */
+const NUMMER_VOOR_NAAM = new Set(["Project"]);
+
+/** Het label zoals het op een chip komt te staan. */
+export function toonLabel(doctype: string, docname: string, naam: string): string {
+  const schoon = (naam || "").trim();
+  if (!schoon || schoon === docname) return docname;
+  if (!NUMMER_VOOR_NAAM.has(doctype)) return schoon;
+  // Staat het nummer al vooraan in de naam, dan niet nog een keer.
+  if (schoon.startsWith(docname)) return schoon;
+  return `${docname} · ${schoon}`;
+}
+
 let cached: Promise<ConnectionIndex> | null = null;
 
 /** Gooi de momentopname weg (na koppelen, taggen, verwijderen). */
@@ -646,8 +669,10 @@ async function fetchLabels(index: ConnectionIndex): Promise<Record<string, strin
         });
         for (const row of rows) {
           const name = typeof row.name === "string" ? row.name : "";
-          const label = typeof row[field] === "string" ? (row[field] as string) : "";
-          if (name && label && label !== name) out[labelKey(doctype, name)] = label;
+          const naam = typeof row[field] === "string" ? (row[field] as string) : "";
+          if (!name || !naam) continue;
+          const label = toonLabel(doctype, name, naam);
+          if (label !== name) out[labelKey(doctype, name)] = label;
         }
       } catch {
         // Geen leesrecht op dit doctype — de docname blijft het label.
