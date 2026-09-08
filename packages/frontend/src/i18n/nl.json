@@ -3029,5 +3029,9 @@
   "y_next.mail_thread_linked": "{{count}} berichten gekoppeld aan {{name}}",
   "y_next.mail_thread_linked_partly": "{{count}} berichten gekoppeld aan {{name}}, {{failed}} niet gelukt",
   "y_next.pinv_open_attachment": "Openen in nieuw tabblad",
-  "y_next.pinv_show_attachment": "Hiernaast tonen"
+  "y_next.pinv_show_attachment": "Hiernaast tonen",
+  "y_next.mail_print": "Afdrukken",
+  "y_next.mail_print_date": "Datum",
+  "y_next.mail_print_attachments": "Bijlagen",
+  "y_next.mail_print_failed": "Afdrukken lukt niet in deze weergave."
 }

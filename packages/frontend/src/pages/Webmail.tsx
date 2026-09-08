@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
   Mail, Trash2, Star, Archive, FolderOpen, RefreshCw, Settings, Eye, EyeOff,
-  User, PenSquare, Reply, ReplyAll, Forward, ChevronLeft, ChevronRight,
+  User, PenSquare, Reply, ReplyAll, Forward, ChevronLeft, ChevronRight, Printer,
   ChevronDown, X, Paperclip, FileText, FileImage, File, FolderInput, Plus,
   ExternalLink, Check, Search, Loader2, FolderKanban, ChevronsLeft,
   ChevronsRight, Users, Users2, AlertTriangle, Send, Inbox, Info, Tag,
@@ -108,6 +108,7 @@ import {
   groupThreads, neighbourInOrder, reactieOpBericht, visibleThreadOrder,
   type MailThread, type ReactieLid, type Reactiesoort,
 } from "../lib/mail-threads";
+import { buildPrintHtml, printDocument } from "../lib/mail-print";
 import {
   deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
   newDraftKey, saveDraft, standaloneDrafts,
@@ -5956,6 +5957,35 @@ function ErpNextWebmail() {
     return () => frame.removeEventListener("load", handler);
   }, [body, openExternal]);
 
+  /**
+   * De geopende mail afdrukken: kop plus inhoud, zonder de app eromheen.
+   *
+   * De inhoud zit in een iframe, dus `window.print()` op de pagina zou de
+   * mappenlijst en de knoppenbalk meenemen en juist de kop (van, aan, datum)
+   * missen — die staat buiten dat frame. Zie `lib/mail-print`.
+   */
+  const printMail = useCallback(() => {
+    if (!selected) return;
+    const html = buildPrintHtml({
+      subject: selected.subject,
+      sender: selected.sender,
+      senderName: selected.senderName,
+      recipients: selected.recipients,
+      cc: selected.cc,
+      datum: formatFullDate(selected.date),
+      bodyHtml: body?.html ?? "",
+      bijlagen: (body?.attachments ?? []).map((a) => a.file_name),
+    }, {
+      van: t("webmail.from_prefix"),
+      aan: t("webmail.to_prefix"),
+      cc: "Cc",
+      datum: t("y_next.mail_print_date"),
+      bijlagen: t("y_next.mail_print_attachments"),
+      zonderOnderwerp: t("webmail.no_subject"),
+    });
+    if (!printDocument(html)) setToast(t("y_next.mail_print_failed"));
+  }, [selected, body, t]);
+
   const bodySrcDoc = useMemo(() => {
     if (!body) return "";
     const html = body.html || `<p style="color:#94a3b8">${t("webmail.no_content")}</p>`;
@@ -6787,6 +6817,10 @@ function ErpNextWebmail() {
                         title={withKeys(selected.seen ? t("webmail.mark_unread") : t("webmail.mark_read"), MAIL_SHORTCUT_KEYS.toggleRead)}
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
                         {selected.seen ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button onClick={printMail} title={t("y_next.mail_print")}
+                        className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
+                        <Printer size={14} />
                       </button>
                       <button onClick={() => popoutMessage(selected.name)} title={t("webmail.open_in_new_tab")}
                         className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer">
