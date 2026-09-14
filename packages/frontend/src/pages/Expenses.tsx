@@ -68,6 +68,8 @@ export default function Expenses() {
   const tabFromUrl = searchParams.get("tab");
   const initialTab: ExpensesTab = (VALID_TABS.includes(tabFromUrl as ExpensesTab) ? tabFromUrl : "boeken") as ExpensesTab;
   const [activeTab, setActiveTab] = useState<ExpensesTab>(initialTab);
+  /** Telt op bij elke boeking; de lijsten ernaast laden erop opnieuw. */
+  const [geboekt, setGeboekt] = useState(0);
   const viewMode = (localStorage.getItem("view_mode") || "employer");
 
   // Sync state when URL changes (e.g. user re-clicks the dashboard card).
@@ -109,17 +111,22 @@ export default function Expenses() {
         ))}
       </div>
 
+      {/* Het formulier en de lijst zijn twee componenten naast elkaar. Zonder
+          dit signaal ververst de lijst niet als je net iets geboekt hebt, en
+          lijkt de boeking verdwenen — waarna hij een tweede keer geboekt
+          wordt. Dat is echt gebeurd: 10 september staat twee keer in de
+          registratie. */}
       {activeTab === "boeken" && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <QuickKmBooking hideRecentTrips />
-          <MijnKilometers />
+          <QuickKmBooking hideRecentTrips onGeboekt={() => setGeboekt((n) => n + 1)} />
+          <MijnKilometers signaal={geboekt} />
         </div>
       )}
 
       {activeTab === "onkosten" && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <OnkostenBoeken />
-          <MijnOnkosten />
+          <OnkostenBoeken onGeboekt={() => setGeboekt((n) => n + 1)} />
+          <MijnOnkosten signaal={geboekt} />
         </div>
       )}
 
@@ -149,7 +156,7 @@ function ModuleNotice({ show }: { show: boolean }) {
  * keer in te dienen — dat is wat een medewerker aan het eind van de maand
  * daadwerkelijk doet.
  */
-function MijnKilometers() {
+function MijnKilometers({ signaal = 0 }: { signaal?: number }) {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
   const employee = useSessionEmployeeId(allEmployees);
@@ -176,7 +183,9 @@ function MijnKilometers() {
       setLoading(false);
       setDoctypeMissing(isDoctypeMissing(KM_DOCTYPE));
     }
-  }, [employee, range.from, range.to, describeError]);
+    // `signaal` doet in de berekening niets en staat er alleen om opnieuw te
+    // laden zodra het formulier ernaast iets geboekt heeft.
+  }, [employee, range.from, range.to, describeError, signaal]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -285,7 +294,7 @@ function MijnKilometers() {
  * dan blijft de post staan met een waarschuwing — beter dan de hele boeking
  * weggooien omdat een foto niet doorkwam.
  */
-function OnkostenBoeken() {
+function OnkostenBoeken({ onGeboekt }: { onGeboekt?: () => void }) {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
   const projects = useProjects();
@@ -354,6 +363,8 @@ function OnkostenBoeken() {
       setOmschrijving("");
       setLeverancier("");
       setBon(null);
+      // De lijst ernaast is een andere component; die weet dit anders niet.
+      onGeboekt?.();
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) setError(t("declaraties.create_forbidden"));
@@ -454,7 +465,7 @@ function OnkostenBoeken() {
 
 /* ────────────────────── Onkosten: eigen overzicht ────────────────────── */
 
-function MijnOnkosten() {
+function MijnOnkosten({ signaal = 0 }: { signaal?: number }) {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
   const employee = useSessionEmployeeId(allEmployees);
@@ -480,7 +491,7 @@ function MijnOnkosten() {
       setLoading(false);
       setDoctypeMissing(isDoctypeMissing(ONKOSTEN_DOCTYPE));
     }
-  }, [employee, range.from, range.to, describeError]);
+  }, [employee, range.from, range.to, describeError, signaal]);
 
   useEffect(() => { load(); }, [load]);
 

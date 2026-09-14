@@ -9,7 +9,8 @@ import { ToastProvider } from "./components/Toast";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
-import { APP_VERSION } from "./lib/version";
+import { APP_NAME, APP_VERSION } from "./lib/version";
+import { YLogo } from "./components/YLogo";
 
 /** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
 const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
@@ -176,25 +177,8 @@ function App() {
       >
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
-            <div
-              className="inline-flex items-center justify-center w-20 h-20 rounded-2xl"
-              style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6, #2dd4bf)" }}
-            >
-              <svg viewBox="0 0 32 32" className="w-11 h-11">
-                <text
-                  x="16"
-                  y="23"
-                  textAnchor="middle"
-                  fontFamily="system-ui, sans-serif"
-                  fontWeight="800"
-                  fontSize="20"
-                  fill="white"
-                >
-                  Y
-                </text>
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-white mt-5 tracking-tight">Y-next</h1>
+            <YLogo size={80} className="inline-block" />
+            <h1 className="text-3xl font-bold text-white mt-5 tracking-tight">{APP_NAME}</h1>
           </div>
 
           <div className="bg-white/[0.08] backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/30 border border-white/[0.12] p-8 text-center space-y-5">
@@ -461,6 +445,16 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
     }
     if (isFeatureEnabled("messenger")) {
       void import("./lib/messenger-prefetch").then((m) => m.prefetchConversations()).catch(() => {});
+    }
+    /*
+     * Y-next heeft geen Express-server, dus de meldingen van
+     * BackgroundSyncProvider (die op `/api/mail/*` hangen) kwamen hier nooit
+     * aan: geen melding bij nieuwe post of een nieuw bericht, en een teller in
+     * de zijbalk die alleen klopte zolang je het scherm zelf openhad. Deze
+     * poller telt hetzelfde rechtstreeks uit ERPNext.
+     */
+    if (isFeatureEnabled(ERPNEXT_MAIL)) {
+      void import("./lib/meldingen-poller").then((m) => m.startMeldingen()).catch(() => {});
     }
   }, []);
 

@@ -112,6 +112,35 @@ export function computeKmBedrag(kilometers: number, retour: boolean, tariefPerKm
   return Math.round(km * (retour ? 2 : 1) * tarief * 100) / 100;
 }
 
+/**
+ * Staat deze rit er al?
+ *
+ * Dezelfde medewerker, dezelfde dag, dezelfde route: dan is het bijna zeker
+ * dezelfde rit die nog een keer geboekt wordt. Dat is geen bedacht geval — op
+ * deze installatie staat 10 september twee keer in de registratie, een dag na
+ * elkaar ingevoerd, omdat het scherm de eerste boeking niet terugtoonde. Twee
+ * keer dezelfde rit is twee keer vergoeding.
+ *
+ * Alleen waarschuwen, niet blokkeren: twee losse ritten over dezelfde route op
+ * één dag komen voor (heen, terug, en nog eens heen). De gebruiker beslist.
+ *
+ * Omgedraaid (van ⇄ naar) telt niet als dubbel; dat is de terugrit.
+ */
+export function vindDubbeleRit(
+  bestaande: Pick<KmRegistratie, "name" | "employee" | "datum" | "van" | "naar">[],
+  nieuwe: { employee: string; datum: string; van: string; naar: string },
+): Pick<KmRegistratie, "name" | "employee" | "datum" | "van" | "naar"> | undefined {
+  const sleutel = (waarde?: string) => String(waarde || "").trim().toLowerCase();
+  const van = sleutel(nieuwe.van);
+  const naar = sleutel(nieuwe.naar);
+  if (!van || !naar || !nieuwe.employee || !nieuwe.datum) return undefined;
+  return (bestaande || []).find((r) =>
+    r.employee === nieuwe.employee
+    && String(r.datum || "").slice(0, 10) === String(nieuwe.datum).slice(0, 10)
+    && sleutel(r.van) === van
+    && sleutel(r.naar) === naar);
+}
+
 /** De werkelijk gereden afstand van een rit (retour = dubbel). */
 export function totaleKilometers(rit: Pick<KmRegistratie, "kilometers" | "retour">): number {
   const km = Number(rit.kilometers) || 0;

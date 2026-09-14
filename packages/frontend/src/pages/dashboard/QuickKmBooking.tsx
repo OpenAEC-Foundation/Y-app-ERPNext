@@ -10,6 +10,7 @@ import {
   fetchKmRegistraties,
   formatErpDate,
   totaleKilometers,
+  vindDubbeleRit,
   type KmRegistratie,
 } from "../../lib/declaraties";
 import { fetchKmTarief } from "../../lib/kmTarief";
@@ -115,7 +116,17 @@ export function StatusBadge({ status }: { status: string }) {
  * kilometertarief komt uit de gedeelde instelling en wordt op het document
  * vastgelegd, zodat een latere tariefwijziging bestaande ritten niet herrekent.
  */
-export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hideRecentTrips?: boolean; onHeaderClick?: () => void } = {}) {
+export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboekt }: {
+  hideRecentTrips?: boolean;
+  onHeaderClick?: () => void;
+  /**
+   * Er is een rit geboekt. Nodig omdat het lijstje met ritten op de
+   * declaratiepagina een eigen component náást dit formulier is: zonder dit
+   * signaal blijft die lijst staan zoals hij stond, lijkt een geboekte rit
+   * niet bewaard, en wordt hij een tweede keer geboekt.
+   */
+  onGeboekt?: () => void;
+} = {}) {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
   const projects = useProjects();
@@ -142,6 +153,8 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
   const [formError, setFormError] = useState("");
+  /** Staat er al zo'n rit? Dan eerst waarschuwen; nog een keer drukken boekt hem alsnog. */
+  const [dubbel, setDubbel] = useState("");
   const [tarief, setTarief] = useState<number | null>(null);
   const [recentTrips, setRecentTrips] = useState<KmRegistratie[]>([]);
   const [, setLoadingRecent] = useState(false);
@@ -304,7 +317,22 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employee || !km || !departure || !destination) return;
+    // Niet stil teruggeven: een knop die niets doet en niets zegt is precies
+    // waarom iemand denkt dat de app zijn invoer weggooit.
+    if (!employee) { setFormError(t("y_next.no_employee_link")); return; }
+    if (!km || !departure || !destination) { setFormError(t("declaraties.km_incomplete")); return; }
+
+    /*
+     * Dezelfde rit op dezelfde dag: waarschuwen, niet blokkeren. Twee ritten
+     * over dezelfde route op één dag bestaan; dubbel boeken omdat je de eerste
+     * niet zag staan ook — en dat kost twee keer vergoeding.
+     */
+    const bestaat = vindDubbeleRit(recentTrips, { employee, datum: date, van: departure, naar: destination });
+    if (bestaat && !dubbel) {
+      setDubbel(t("declaraties.km_duplicate_warning", { name: bestaat.name, date: bestaat.datum }));
+      return;
+    }
+    setDubbel("");
     setSubmitting(true);
     setFormError("");
     setSuccess("");
@@ -328,6 +356,8 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
       if (destination) localStorage.setItem(`pref_${instanceId}_last_destination_${employee}`, destination);
       if (project) localStorage.setItem(`pref_${instanceId}_km_project`, project);
       setKm("");
+      // Het lijstje ernaast is een andere component; die weet dit anders niet.
+      onGeboekt?.();
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       // Een 403 betekent hier dat deze ERPNext-gebruiker geen `create` heeft op
@@ -373,6 +403,12 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
       )}
       {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
       {formError && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{formError}</div>}
+      {dubbel && (
+        <div className="mb-3 flex items-start gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <span>{dubbel}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-3 min-w-0">
         <div className="grid grid-cols-2 gap-3 min-w-0">
@@ -388,7 +424,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick }: { hid
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("common.date_required")}</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required
+            <input type="date" value={date} onChange={(e) => { setDate(e.target.value); setDubbel(""); }} required
               className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
           </div>
         </div>

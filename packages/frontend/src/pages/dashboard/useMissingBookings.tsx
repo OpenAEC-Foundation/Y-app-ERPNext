@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import { fetchList, fetchDocument, fetchChildTable } from "../../lib/erpnext";
 import { fetchKmRegistraties } from "../../lib/declaraties";
-import { useDataLoading } from "../../lib/DataContext";
+import { useDataLoading, useEmployees } from "../../lib/DataContext";
 import { isHoliday } from "../../lib/holidays";
-import { getActiveEmployee } from "../../lib/instances";
+import { useSessionEmployeeId } from "../../lib/useSessionEmployee";
 
 const DAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -15,7 +15,14 @@ export function useMissingBookings(): { missingHours: string | null; missingKm: 
   const dataLoading = useDataLoading();
   const [missingHours, setMissingHours] = useState<string | null>(null);
   const [missingKm, setMissingKm] = useState<string | null>(null);
-  const myEmployeeId = getActiveEmployee();
+  /*
+   * Via dezelfde weg als de rest van de app: eerst de ingestelde "standaard
+   * medewerker", anders de ingelogde ERPNext-gebruiker. Hier stond alleen die
+   * instelling, en die is bij verreweg de meeste mensen leeg — dan viel de
+   * hook stil en kreeg juist de medewerker die zijn kilometers vergeet nooit
+   * te horen dat er een dag ontbreekt.
+   */
+  const myEmployeeId = useSessionEmployeeId(useEmployees());
 
   useEffect(() => {
     if (dataLoading || !myEmployeeId) return;

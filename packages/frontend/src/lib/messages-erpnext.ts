@@ -119,6 +119,7 @@
 import {
   callMethod,
   createDocument,
+  fetchCount,
   fetchList,
   invalidateCache,
   updateDocument,
@@ -833,4 +834,25 @@ export function contactNameMap(contacts: ErpMessageContact[]): Record<string, st
   const map: Record<string, string> = {};
   for (const contact of contacts) map[contact.user] = contact.fullName;
   return map;
+}
+
+/**
+ * Hoeveel berichten heb je nog niet gelezen?
+ *
+ * Eén telling in plaats van de hele lijst: dit draait elke minuut op de
+ * achtergrond om de teller in de zijbalk en de melding te voeden, ook wanneer
+ * het berichtenscherm dicht is. De lijst ophalen zou honderden rijen kosten
+ * voor één getal.
+ */
+export async function ongelezenBerichten(): Promise<number> {
+  const ik = await resolveSessionUser();
+  if (!ik) return 0;
+  return fetchCount(MESSAGE_DOCTYPE, [
+    ["for_user", "=", ik],
+    ["type", "=", MESSAGE_TYPE],
+    ["document_type", "=", MESSAGE_DOCUMENT_TYPE],
+    ["read", "=", 0],
+    // Je eigen kopie van een verstuurd bericht telt niet als ongelezen post.
+    ["owner", "!=", ik],
+  ]);
 }

@@ -1,5 +1,5 @@
 import {
-  useState, useEffect, useCallback, useId, useMemo, useRef,
+  useState, useEffect, useCallback, useId, useMemo, useRef, lazy, Suspense,
   type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -11,7 +11,7 @@ import {
   ExternalLink, Check, Search, Loader2, FolderKanban, ChevronsLeft,
   ChevronsRight, Users, Users2, AlertTriangle, Send, Inbox, Info, Tag,
   FolderPlus, Clock, CircleAlert, MailOpen, RotateCcw, AtSign,
-  ReceiptText, UserPlus, Link2, CheckCheck, Undo2,
+  ReceiptText, UserPlus, Link2, CheckCheck, Undo2, Box,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { SaveToNasDialog } from "../components/SaveToNasDialog";
@@ -100,7 +100,7 @@ import {
   bulkMarkUnhandled, filterUnhandled, getQueueStatusFor,
   createCustomFolder, deleteCustomFolder, tagMessage, unseenCount,
   fetchThreadCompanions, MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT,
-  MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH, type ErpMailMessage,
+  MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH, type ErpMailMessage, type BerichtBijlage,
   type ErpMailFolder, type ErpMailbox, MAIL_FOLDER_HANDLED,
   type BulkOutcome,
 } from "../lib/mail-erpnext";
@@ -110,8 +110,8 @@ import {
 } from "../lib/mail-threads";
 import { buildPrintHtml, printDocument } from "../lib/mail-print";
 import {
-  deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, loadDrafts,
-  newDraftKey, saveDraft, standaloneDrafts,
+  deleteDraft, draftForMessage, draftKeyFor, draftMessageNames, draftsForThread,
+  loadDrafts, newDraftKey, saveDraft, standaloneDrafts,
   type MailDraftMap, type StoredMailDraft,
 } from "../lib/mail-drafts";
 import {
@@ -123,8 +123,14 @@ import ConnectionNav from "../components/mail/ConnectionNav";
 import MailConnectionChips from "../components/mail/MailConnectionChips";
 import {
   buildOutgoingHtml, buildReplyRecipients, effectiveSignature,
-  formatAttachmentNames, isValidFolderLabel, prefixSubject,
+  isIfcName, isValidFolderLabel, prefixSubject,
 } from "../lib/mail-erpnext-compose";
+/*
+ * De IFC-viewer sleept three.js en een WebAssembly-module mee — samen groter
+ * dan de rest van de mailpagina. Lazy, zodat dat pas over de lijn komt als er
+ * werkelijk op een bouwmodel geklikt wordt.
+ */
+const IfcVoorbeeld = lazy(() => import("../components/mail/IfcVoorbeeld"));
 import { ondertekeningVoor } from "../lib/mail-signature-erpnext";
 import {
   buildComposeBodyWithQuote, buildQuoteBlock, hasQuote,
@@ -142,6 +148,15 @@ import ComposeWindow from "../components/mail/ComposeWindow";
 import RichTextEditor from "../components/mail/RichTextEditor";
 import { toEmailHtml, ensureHtmlBody, htmlToPlainText } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
+import { kiesDoorstuurBijlagen, type Doorstuurbijlage } from "../lib/mail-doorsturen";
+import { htmlNaarMarkdown, markdownNaarHtml } from "../lib/mail-markdown";
+import {
+  fetchMailOpmaak, opmaakStijl, STANDAARD_MAIL_OPMAAK, type MailOpmaak,
+} from "../lib/mailOpmaak";
+import UitnodigingAgenda from "../components/mail/UitnodigingAgenda";
+import UitnodigingBalk from "../components/mail/UitnodigingBalk";
+import { useUitnodiging } from "../lib/useUitnodiging";
+import GesprekStapel from "../components/mail/GesprekStapel";
 import LinkAnythingDialog from "../components/mail/LinkAnythingDialog";
 import RecipientField from "../components/mail/RecipientField";
 import { bumpFrequency, parseRecipientEmails } from "../lib/contact-suggestions";
@@ -3873,7 +3888,13 @@ interface ErpDraft {
   includeSignature: boolean;
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
+  /** Zelf gekozen bestanden; die worden bij het versturen geüpload. */
   files: MailAttachmentFile[];
+  /**
+   * Bijlagen die met een doorsturing meegaan. Die staan al op de server, dus
+   * ze reizen als docnaam mee in plaats van als bestand.
+   */
+  bestaandeBijlagen?: Doorstuurbijlage[];
 }
 
 /**
@@ -3990,7 +4011,63 @@ function ErpNextWebmail() {
   }, [unhandledOnly]);
 
   const [selected, setSelected] = useState<ErpMailMessage | null>(null);
-  const [body, setBody] = useState<{ html: string; attachments: { file_url: string; file_name: string }[] } | null>(null);
+  const [body, setBody] = useState<{ html: string; attachments: BerichtBijlage[] } | null>(null);
+
+  /**
+   * De pdf die naast de mail staat.
+   *
+   * Naast de mail en niet in een nieuw tabblad: bij een factuur of tekening
+   * wil je de bijlage lezen mét de mail ernaast, niet in plaats daarvan.
+   */
+  /**
+   * Wat er naast de mail staat. Eén kolom, dus één bijlage tegelijk; het soort
+   * bepaalt wie hem tekent — een pdf de browser zelf, een bouwmodel de
+   * IFC-viewer.
+   */
+  const [voorbeeld, setVoorbeeld] = useState<
+    { url: string; naam: string; soort: "pdf" | "ifc" } | null>(null);
+
+  /**
+   * De uitnodiging die bij de geopende mail hoort.
+   *
+   * Eén keer hier, en van hieruit naar de balk boven het bericht én de kolom
+   * ernaast. Zouden die het allebei zelf ophalen, dan gaat er per mail twee
+   * keer een verzoek naar de mailserver en kunnen ze een andere stand tonen.
+   */
+  /*
+   * Antwoord je op een uitnodiging, dan is die mail daarmee afgehandeld. Het
+   * afvinken zelf gebeurt met `applyHandled`, verderop in dit bestand — via
+   * deze ref, zodat de volgorde van het bestand niet om hoeft.
+   */
+  const afhandelenRef = useRef<(naam: string) => void>(() => {});
+  const uitnodiging = useUitnodiging(
+    body?.attachments ?? [], selected?.name,
+    useCallback((naam: string) => afhandelenRef.current(naam), []),
+  );
+
+  /**
+   * Het gesprek als stapel lezen in plaats van één bericht tegelijk.
+   *
+   * Een keuze en geen vervanging: bij een lange draad wil je doorlezen, bij
+   * één losse mail is de stapel alleen maar een extra regel eromheen. De
+   * stand blijft staan terwijl je door de lijst loopt, zodat je hem niet bij
+   * elk bericht opnieuw aanzet.
+   */
+  const [gesprekStapel, setGesprekStapel] = useState(false);
+
+  /**
+   * De huisstijl voor uitgaande post — één instelling voor de hele
+   * organisatie (`lib/mailOpmaak`). Eén keer ophalen per keer dat de
+   * mailpagina opent; hij verandert zelden en een mislukte ophaalpoging valt
+   * stil terug op de standaard.
+   */
+  const [mailOpmaak, setMailOpmaak] = useState<MailOpmaak>(STANDAARD_MAIL_OPMAAK);
+  useEffect(() => {
+    let afgebroken = false;
+    void fetchMailOpmaak().then((o) => { if (!afgebroken) setMailOpmaak(o); });
+    return () => { afgebroken = true; };
+  }, []);
+  const huisstijl = useMemo(() => opmaakStijl(mailOpmaak), [mailOpmaak]);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [thread, setThread] = useState<ErpMailMessage[]>([]);
 
@@ -4990,6 +5067,7 @@ function ErpNextWebmail() {
       quoteHtml: "", quoteLabel: "",
       ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
       ...(d.reference ? { reference: d.reference } : {}),
+      ...(d.bestaandeBijlagen?.length ? { bestaandeBijlagen: d.bestaandeBijlagen } : {}),
     }));
   }, [instanceId]);
 
@@ -5033,8 +5111,11 @@ function ErpNextWebmail() {
       includeSignature: d.includeSignature,
       ...(d.inReplyTo ? { inReplyTo: d.inReplyTo } : {}),
       ...(d.reference ? { reference: d.reference } : {}),
-      // Bijlagen zijn niet serialiseerbaar — zie `lib/mail-drafts`.
+      // Zelf gekozen bestanden zijn niet serialiseerbaar — zie
+      // `lib/mail-drafts`. De bijlagen van een doorsturing staan al op de
+      // server en reizen als docnaam wél mee.
       files: [],
+      ...(d.bestaandeBijlagen?.length ? { bestaandeBijlagen: d.bestaandeBijlagen } : {}),
     };
   }, []);
 
@@ -5089,6 +5170,9 @@ function ErpNextWebmail() {
     // factuurnummer van mail A boven mail B tonen.
     setBookedNotice(null);
     setBody(null);
+    // De bijlage hoort bij de vórige mail; naast een ander bericht laten
+    // staan zou de factuur van A naast mail B zetten.
+    setVoorbeeld(null);
     setThread([]);
     setBodyLoading(true);
     if (isMobile) setMobilePane("message");
@@ -5153,9 +5237,12 @@ function ErpNextWebmail() {
     const listThread = threads.find((th) => th.names.includes(selected.name));
     if (listThread) for (const m of listThread.messages) if (!byName.has(m.name)) byName.set(m.name, m);
     byName.set(selected.name, byName.get(selected.name) ?? selected);
+    // Nieuwste bovenaan, zoals de berichtenlijst zelf. Het laatste bericht is
+    // waar het gesprek staat; dat onderaan zetten betekent scrollen om te
+    // zien waar je gebleven was.
     return [...byName.values()].sort((a, b) => {
-      if (a.date === b.date) return a.name.localeCompare(b.name);
-      return a.date < b.date ? -1 : 1;
+      if (a.date === b.date) return b.name.localeCompare(a.name);
+      return a.date < b.date ? 1 : -1;
     });
   }, [thread, threads, selected]);
 
@@ -5169,6 +5256,25 @@ function ErpNextWebmail() {
     const namen = conversationRows.map((m) => m.name);
     return namen.includes(selected.name) ? namen : [selected.name, ...namen];
   }, [conversationRows, selected]);
+
+  /**
+   * De onafgemaakte antwoorden in dit gesprek, klaar om als bericht te tonen.
+   *
+   * Een concept is onderdeel van de conversatie — het staat er alleen nog niet
+   * in. Zonder dit zie je het alleen als label op één regel in de lijst, en in
+   * de stapel eronder ontbreekt precies het bericht waar je zelf mee bezig was.
+   * Het citaat gaat eraf: dat is het origineel dat er al staat.
+   */
+  const gesprekConcepten = useMemo(
+    () => draftsForThread(drafts, gesprekNamen).map((d) => ({
+      key: d.key,
+      html: splitQuoteFromBody(d.body).typed,
+      subject: d.subject,
+      to: d.to,
+      updatedAt: d.updatedAt,
+    })),
+    [drafts, gesprekNamen],
+  );
 
   /* ─── Selectie ─── */
 
@@ -5427,6 +5533,11 @@ function ErpNextWebmail() {
       silentReload();
     }
   }, [refreshFolders, silentReload, t]);
+
+  // De uitnodigingsbalk hierboven vinkt de mail af zodra je ja of nee zegt.
+  useEffect(() => {
+    afhandelenRef.current = (naam: string) => { void applyHandled([naam], true); };
+  }, [applyHandled]);
 
   /* ─── Bulk: gelezen / ongelezen ─── */
 
@@ -5777,12 +5888,11 @@ function ErpNextWebmail() {
       email: msg.sender,
       date: formatFullDate(msg.date),
     });
-    // De originele bestanden gaan niet automatisch mee (zie
-    // `formatAttachmentNames`), dus noem ze in het citaat.
-    const attachNames = formatAttachmentNames((body?.attachments ?? []).map((a) => a.file_name));
-    const attachLine = attachNames
-      ? `<p style="color:#64748b">${textBodyToHtml(t("y_next.mail_forward_attachments", { names: attachNames }))}</p>`
-      : "";
+    // De bijlagen van het origineel gaan mee. Ze staan al als `File` op de
+    // server, dus het versturen krijgt hun docnaam en hoeft niets opnieuw te
+    // uploaden. Plaatjes uit de opmaak vallen af — die zitten al in de
+    // doorgestuurde tekst; zie `kiesDoorstuurBijlagen`.
+    const meeBijlagen = kiesDoorstuurBijlagen(body?.attachments ?? [], body?.html ?? "");
     persistDraft(draftRef.current);
     setDraft({
       mode: "forward",
@@ -5793,7 +5903,7 @@ function ErpNextWebmail() {
       bcc: "",
       subject: prefixSubject(msg.subject, "Fwd"),
       body: buildComposeBodyWithQuote(buildQuoteBlock({
-        label, bodyHtml: body?.html || "", noticeHtml: attachLine,
+        label, bodyHtml: body?.html || "",
       })),
       includeSignature: true,
       // Ook een doorsturing hoort aan het origineel te hangen. Zonder deze
@@ -5802,6 +5912,7 @@ function ErpNextWebmail() {
       inReplyTo: msg.name,
       reference: msg.reference,
       files: [],
+      ...(meeBijlagen.length > 0 ? { bestaandeBijlagen: meeBijlagen } : {}),
     });
     if (isMobile) setMobilePane("message");
   }
@@ -5825,6 +5936,7 @@ function ErpNextWebmail() {
       signature,
       includeSignature: draft.includeSignature,
       quoteHtml: quote,
+      opmaakStijl: huisstijl,
     });
     try {
       await sendMail({
@@ -5834,6 +5946,9 @@ function ErpNextWebmail() {
         subject: draft.subject,
         html,
         attachments: draft.files.length > 0 ? draft.files : undefined,
+        ...(draft.bestaandeBijlagen?.length
+          ? { bestaandeBijlagen: draft.bestaandeBijlagen.map((b) => b.name) }
+          : {}),
         inReplyTo: draft.inReplyTo,
         reference: draft.reference,
         sender: adresVan(draft.from || "") || undefined,
@@ -6695,6 +6810,13 @@ function ErpNextWebmail() {
                                     </span>
                                   )}
                                   <div className="flex-1" />
+                                  {/* Waar dit bericht staat. Een gesprek loopt door
+                                      Postvak IN, Verzonden en Concepten heen; zonder
+                                      dat etiket weet je van een regel niet waar hij
+                                      vandaan komt. */}
+                                  <span className="hidden flex-shrink-0 rounded bg-slate-200/70 px-1.5 text-[10px] text-slate-500 sm:inline">
+                                    {folderLabel(m.folder)}
+                                  </span>
                                   {m.hasAttachments && <Paperclip size={10} className="flex-shrink-0 text-slate-400" />}
                                   <span className="flex-shrink-0 text-[11px] text-slate-400">{formatDate(m.date)}</span>
                                 </div>
@@ -6744,6 +6866,7 @@ function ErpNextWebmail() {
                 mailboxes={mailboxes}
                 signature={signature}
                 projecten={projects}
+                huisstijl={huisstijl}
                 onChange={setDraft}
                 onRestoreSignature={laadOndertekening}
                 onSend={() => void handleSend()}
@@ -6770,6 +6893,7 @@ function ErpNextWebmail() {
                         mailboxes={mailboxes}
                         signature={signature}
                         projecten={projects}
+                        huisstijl={huisstijl}
                         embedded
                         onChange={setDraft}
                         onRestoreSignature={laadOndertekening}
@@ -7205,14 +7329,40 @@ function ErpNextWebmail() {
                   </div>
                 )}
 
+                {/* Uitnodiging: de vraag "kom ik?" hoort bovenaan het bericht,
+                    waar elk mailprogramma hem ook zet. De kolom ernaast laat
+                    zien of je dan kúnt. */}
+                <UitnodigingBalk uitnodiging={uitnodiging} />
+
                 {/* Conversatie — de in_reply_to-graaf van de server, verenigd
                     met de gespreksgroepering uit de lijst (zie conversationRows). */}
                 {conversationRows.length > 1 && (
                   <div className="px-5 py-2 border-b border-slate-100 bg-slate-50 flex-shrink-0">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
-                      {t("webmail.thread_all_messages", { count: conversationRows.length })}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="mb-1 flex items-center gap-2">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">
+                        {t("webmail.thread_all_messages", { count: conversationRows.length })}
+                      </p>
+                      <div className="flex-1" />
+                      <button type="button" onClick={() => setGesprekStapel((v) => !v)}
+                        aria-pressed={gesprekStapel}
+                        className={`cursor-pointer rounded px-2 py-0.5 text-[11px] transition-colors ${
+                          gesprekStapel
+                            ? "bg-violet-100 font-medium text-violet-700"
+                            : "text-slate-500 hover:bg-slate-100"
+                        }`}>
+                        {t("webmail.thread_stacked")}
+                      </button>
+                    </div>
+                    <div className={`flex flex-wrap gap-1.5 ${gesprekStapel ? "hidden" : ""}`}>
+                      {/* Een concept hoort ook hier tussen: het is een bericht
+                          in dit gesprek dat alleen nog niet verstuurd is. */}
+                      {gesprekConcepten.map((c) => (
+                        <button key={c.key} type="button"
+                          onClick={() => { const d = drafts[c.key]; if (d) resumeDraft(d); }}
+                          className="cursor-pointer rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 hover:border-amber-400">
+                          {t("y_next.mail_draft_badge")} · {c.to || c.subject}
+                        </button>
+                      ))}
                       {conversationRows.map((m) => {
                         const current = m.name === selected.name;
                         return (
@@ -7231,23 +7381,87 @@ function ErpNextWebmail() {
                   </div>
                 )}
 
-                {/* Body */}
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  {bodyLoading ? (
-                    <div className="p-8 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
-                      <Loader2 size={16} className="animate-spin" /> {t("webmail.loading_message")}
-                    </div>
-                  ) : (
-                    <iframe ref={bodyFrameRef} title="mail-body" srcDoc={bodySrcDoc}
-                      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                      className="w-full h-full border-0" />
+                {/* Body — met, bij een uitnodiging, je eigen agenda ernaast.
+                    De vraag bij een uitnodiging is bijna altijd "kan ik dan?";
+                    daarvoor hoef je de mail nu niet meer te verlaten. Het
+                    paneel toont zichzelf alleen als er een .ics bij zit. */}
+                <div className="flex flex-1 min-h-0 overflow-hidden">
+                  <div className="flex flex-1 min-w-0 flex-col">
+                    {bodyLoading ? (
+                      <div className="p-8 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+                        <Loader2 size={16} className="animate-spin" /> {t("webmail.loading_message")}
+                      </div>
+                    ) : gesprekStapel && conversationRows.length > 1 ? (
+                      <GesprekStapel
+                        berichten={conversationRows}
+                        geopend={selected.name}
+                        folderLabel={folderLabel}
+                        formatDate={formatDate}
+                        onKiesBericht={(naam) => {
+                          const m = conversationRows.find((x) => x.name === naam);
+                          if (m) void openMessage(m);
+                        }}
+                        concepten={gesprekConcepten}
+                        onOpenConcept={(key) => {
+                          const stored = drafts[key];
+                          if (stored) resumeDraft(stored);
+                        }}
+                      />
+                    ) : (
+                      <iframe ref={bodyFrameRef} title="mail-body" srcDoc={bodySrcDoc}
+                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                        className="w-full h-full border-0" />
+                    )}
+                  </div>
+                  {/* Eén kolom naast de mail, twee mogelijke bewoners. Een
+                      bijlage die je zelf openklikt gaat vóór het
+                      uitnodigingspaneel: dat laatste verschijnt vanzelf, de
+                      bijlage vroeg je om. */}
+                  {voorbeeld ? (
+                    <aside className="hidden w-[46%] min-w-[320px] flex-shrink-0 flex-col border-l border-slate-200 bg-slate-100 lg:flex">
+                      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
+                        {voorbeeld.soort === "ifc"
+                          ? <Box size={13} className="flex-shrink-0 text-slate-400" />
+                          : <FileText size={13} className="flex-shrink-0 text-slate-400" />}
+                        <span className="truncate text-xs text-slate-600">{voorbeeld.naam}</span>
+                        <div className="flex-1" />
+                        <a href={voorbeeld.url} target="_blank" rel="noopener noreferrer"
+                          title={t("y_next.pinv_open_attachment")}
+                          className="cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                          <ExternalLink size={13} />
+                        </a>
+                        <button onClick={() => setVoorbeeld(null)} title={t("common.close")}
+                          className="cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                          <X size={13} />
+                        </button>
+                      </div>
+                      {voorbeeld.soort === "ifc" ? (
+                        <Suspense fallback={<div className="flex-1" />}>
+                          <IfcVoorbeeld url={voorbeeld.url} naam={voorbeeld.naam} />
+                        </Suspense>
+                      ) : (
+                        <iframe src={`${voorbeeld.url}#view=FitH`} title={voorbeeld.naam}
+                          className="flex-1 w-full border-0" />
+                      )}
+                    </aside>
+                  ) : body && !bodyLoading && (
+                    <UitnodigingAgenda uitnodiging={uitnodiging} className="hidden lg:block" />
                   )}
                 </div>
 
                 {/* Bijlagen */}
                 {body && body.attachments.length > 0 && (
                   <ErpAttachmentList attachments={body.attachments} onError={setToast}
-                    subject={selected?.subject} />
+                    subject={selected?.subject}
+                    voorbeeldVan={voorbeeld?.url}
+                    onVoorbeeld={(att) => setVoorbeeld((huidig) =>
+                      huidig?.url === att.file_url
+                        ? null
+                        : {
+                            url: att.file_url,
+                            naam: att.file_name,
+                            soort: isIfcName(att.file_name) ? "ifc" : "pdf",
+                          })} />
                 )}
               </>
             )}
@@ -7396,7 +7610,7 @@ function ErpNextWebmail() {
 const RECIPIENT_INPUT_CLASS =
   "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
 
-function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onChange, onSend, onClose, onDiscard, embedded }: {
+function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onChange, onSend, onClose, onDiscard, embedded, huisstijl }: {
   draft: ErpDraft;
   sending: boolean;
   /** Postbussen waaruit verstuurd kan worden; bij één valt de keuze weg. */
@@ -7419,6 +7633,8 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
   embedded?: boolean;
   /** Projecten om de mail aan te hangen; leeg = geen kiezer tonen. */
   projecten?: { name: string; project_name?: string }[];
+  /** Huisstijl als inline CSS; het tekstvak schrijft erin. */
+  huisstijl?: string;
 }) {
   const { t } = useTranslation();
   const paneRef = useRef<HTMLDivElement>(null);
@@ -7460,6 +7676,37 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
    * daarna is het de knop die bepaalt (de opsteller wordt per concept opnieuw
    * gemonteerd, zie de `key` op `ErpComposePane`).
    */
+  /*
+   * In welke vorm je dit bericht schrijft.
+   *
+   * "opmaak" is het gewone tekstvak. In "markdown" en "html" typ je de bron in
+   * een kaal vak; wat je typt wordt bij elke aanslag omgezet naar de HTML van
+   * het bericht, zodat versturen, het bewaren van het concept en de
+   * handtekening ongewijzigd blijven werken — die kijken allemaal naar
+   * `draft.body`.
+   *
+   * Het citaat blijft er buiten. Dat is de HTML van de oorspronkelijke mail;
+   * die door een Markdown-omzetting halen zou hem verminken. Hij wordt
+   * afgesplitst, apart gehouden en er bij elke wijziging weer achter gezet.
+   */
+  const [modus, setModus] = useState<"opmaak" | "markdown" | "html">("opmaak");
+  const [bron, setBron] = useState("");
+
+  const wisselModus = (naar: "opmaak" | "markdown" | "html") => {
+    if (naar === modus) return;
+    const { typed } = splitQuoteFromBody(draft.body);
+    if (naar === "markdown") setBron(htmlNaarMarkdown(typed));
+    else if (naar === "html") setBron(typed.trim());
+    setModus(naar);
+  };
+
+  const zetBron = (tekst: string) => {
+    setBron(tekst);
+    const { quote } = splitQuoteFromBody(draft.body);
+    const html = modus === "markdown" ? markdownNaarHtml(tekst) : tekst;
+    set("body", quote ? `${html}${buildComposeBodyWithQuote(quote)}` : html);
+  };
+
   const [showQuote, setShowQuote] = useState(() => !shouldCollapseQuote(draft.body));
   /** Alleen tonen wat er is: geen uitklapper bij een nieuw bericht. */
   const quoteInBody = hasQuote(draft.body);
@@ -7473,12 +7720,19 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
   const hasSignature = Boolean((signature || "").trim());
 
   /**
-   * Waar de cursor staat zodra het venster opengaat. Bij een nieuw bericht is
-   * dat het adresveld (dat moet je nog invullen); bij beantwoorden en
-   * doorsturen het tekstvak, want de adressen staan er al in. Eén keer, bij
-   * het monteren — `mode` wisselt niet terwijl je typt.
+   * Waar de cursor staat zodra het venster opengaat: in het tekstvak als er
+   * al een geadresseerde is, anders in het adresveld.
+   *
+   * Niet op de soort bericht, zoals het eerst deed. Bij beantwoorden klopte
+   * dat — het adres staat er al in — maar bij dóórsturen is het Aan-veld leeg,
+   * en dan begon je te typen in de tekst terwijl het eerste wat je moet doen
+   * de ontvanger kiezen is. Hetzelfde geldt voor een hervat concept dat nog
+   * geen geadresseerde had.
+   *
+   * Eén keer, bij het monteren: dit hoort de cursor niet te verspringen
+   * zodra je het adresveld leegmaakt.
    */
-  const startInBody = draft.mode !== "new";
+  const startInBody = draft.to.trim() !== "";
 
   /**
    * De focus-val. Escape eerst (de uitweg), daarna de omloop.
@@ -7704,15 +7958,48 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
           De inhoud is HTML; `toEmailHtml` maakt hem bij verzenden mailveilig.
           Bij beantwoorden staat het geciteerde origineel er onderin ín: te
           lezen, te scrollen en te bewerken zoals de rest van de tekst. */}
-      <RichTextEditor
-        value={draft.body}
-        onChange={(html) => set("body", html)}
-        placeholder={t("webmail.editor_placeholder")}
-        ariaLabel={t("webmail.editor_placeholder")}
-        className="flex-1 min-h-0"
-        autoFocus={startInBody}
-        collapseQuote={quoteInBody && !showQuote}
-      />
+      {/* Schrijfvorm. Markdown is er voor wie liever met sterretjes en
+          streepjes werkt dan met knoppen; HTML voor wie precies weet wat er
+          moet staan. Beide schrijven naar dezelfde `draft.body`, dus alles
+          eromheen — verzenden, concept bewaren, handtekening — merkt er
+          niets van. */}
+      <div className="mx-4 mb-1 flex items-center gap-1 flex-shrink-0">
+        {(["opmaak", "markdown", "html"] as const).map((m) => (
+          <button key={m} type="button" onClick={() => wisselModus(m)}
+            aria-pressed={modus === m}
+            className={`rounded px-2 py-0.5 text-[11px] cursor-pointer transition-colors ${
+              modus === m
+                ? "bg-slate-200 text-slate-800 font-medium"
+                : "text-slate-500 hover:bg-slate-100"
+            }`}>
+            {t(`webmail.mode_${m}`)}
+          </button>
+        ))}
+        {modus !== "opmaak" && (
+          <span className="ml-1 text-[10px] text-slate-400">{t(`webmail.mode_${modus}_hint`)}</span>
+        )}
+      </div>
+
+      {modus === "opmaak" ? (
+        <RichTextEditor
+          value={draft.body}
+          onChange={(html) => set("body", html)}
+          placeholder={t("webmail.editor_placeholder")}
+          ariaLabel={t("webmail.editor_placeholder")}
+          className="flex-1 min-h-0"
+          autoFocus={startInBody}
+          collapseQuote={quoteInBody && !showQuote}
+          basisStijl={huisstijl}
+        />
+      ) : (
+        <textarea
+          value={bron}
+          onChange={(e) => zetBron(e.target.value)}
+          spellCheck={modus === "markdown"}
+          aria-label={t(`webmail.mode_${modus}`)}
+          className="flex-1 min-h-0 w-full resize-none px-4 py-3 font-mono text-xs text-slate-800 focus:outline-none"
+        />
+      )}
 
       {/* Uitklapper voor het citaat. Staat los van het tekstvak (een knop ín
           een `contentEditable` is geen betrouwbaar bedieningselement), maar
@@ -7781,6 +8068,22 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
               e.target.value = "";
             }} />
         </label>
+        {/* Bijlagen van het doorgestuurde bericht. Ze staan er apart in — ze
+            hoeven niet geüpload te worden — maar wel zichtbaar en weg te
+            halen: anders stuur je ongemerkt een bijlage van 20 MB door. */}
+        {(draft.bestaandeBijlagen ?? []).map((b) => (
+          <span key={b.name} title={t("y_next.mail_forward_attachment_hint")}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-[11px] text-blue-700">
+            <Paperclip size={10} /> {b.fileName}
+            <button onClick={() => onChange({
+              ...draft,
+              bestaandeBijlagen: (draft.bestaandeBijlagen ?? []).filter((x) => x.name !== b.name),
+            })}
+              title={t("common.delete_tooltip")} className="text-blue-400 hover:text-red-600 cursor-pointer">
+              <X size={10} />
+            </button>
+          </span>
+        ))}
         {draft.files.map((f, i) => (
           <span key={`${f.name}:${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[11px] text-slate-600">
             {f.name}

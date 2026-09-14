@@ -1,6 +1,6 @@
 {
-  "name": "Y-app",
-  "short_name": "Y-app",
+  "name": "Y-Next",
+  "short_name": "Y-Next",
   "description": "Multi-tenant ERPNext workspace — manage multiple ERPNext deployments from one account.",
   "start_url": "/",
   "scope": "/",

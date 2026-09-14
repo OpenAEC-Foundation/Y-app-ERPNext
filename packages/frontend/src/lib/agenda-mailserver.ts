@@ -13,12 +13,18 @@
  *
  * Schrijven loopt over een tweede script (`agenda_schrijven`), waar de
  * handelende gebruiker uit de sessie komt en niet uit het verzoek — anders zou
- * je via de app in andermans agenda kunnen schrijven. Dat script gebruikt
- * CalDAV in plaats van JMAP: de mailserver laat bij een JMAP-create de
- * genodigden stilzwijgend vallen, en een uitnodiging zonder genodigden is geen
- * uitnodiging. Lezen blijft JMAP — dáár komen ze wél netjes uit.
+ * je via de app in andermans agenda kunnen schrijven.
+ *
+ * Dat script kent twee wegen. Een afspraak *neerleggen* gaat over CalDAV: bij
+ * een JMAP-create laat de mailserver de genodigden stilzwijgend vallen, en een
+ * uitnodiging zonder genodigden is geen uitnodiging. Een bestaande afspraak
+ * *bijwerken* gaat juist over JMAP, want dat is een patch — alleen wat je
+ * meestuurt verandert, de rest van de afspraak blijft staan. Daarom kan het
+ * ook bij een afspraak die met een ander agendaprogramma is gemaakt, waarvan
+ * wij de helft van de velden niet kennen.
  */
 import { callMethod, fetchList } from "./erpnext.ts";
+import { isUitnodigingAanJou } from "./agenda-uitnodigingen.ts";
 import { bouwAfspraakIcs, zetDeelname, type AfspraakInvoer, type Deelnamestatus } from "./ical.ts";
 
 /** Eén afspraak zoals het Server Script hem teruggeeft. */
@@ -33,6 +39,8 @@ export interface MailserverAfspraak {
   duur?: string;
   tijdzone?: string;
   hele_dag?: boolean;
+  /** Onderdeel van een herhalende reeks; die verzet je niet met de muis. */
+  herhaalt?: boolean;
   status?: string;
   privacy?: string;
   /** Blijft gelijk in alle agenda's waar deze afspraak in staat. */
@@ -203,6 +211,13 @@ export function kleurenVoorCollegas(collegas: Collega[]): Map<string, string> {
 export interface SchrijfUitslag {
   geschreven: string[];
   mislukt: Array<{ agenda: string; reden: string }>;
+  /**
+   * Genodigden buiten ons eigen mailserverdomein. Daar valt geen agenda te
+   * schrijven, en dat hoeft ook niet: de mailserver stuurt hun een
+   * uitnodiging per e-mail. Ze staan hier apart en niet bij `mislukt`, want
+   * een geslaagde uitnodiging als fout melden maakt de melding waardeloos.
+   */
+  extern: string[];
 }
 
 /**
@@ -219,6 +234,53 @@ export async function verstuurAfspraak(afspraak: AfspraakInvoer): Promise<Schrij
     ...(afspraak.genodigden ?? []).map((g) => g.email),
   ];
   return schrijf("opslaan", afspraak.uid, bouwAfspraakIcs(afspraak), agendas);
+}
+
+/** Wat er aan een bestaande afspraak veranderd kan worden. */
+export interface AfspraakWijziging {
+  titel?: string;
+  /** Lokale tijd zonder zone-achtervoegsel: `2026-09-10T10:00:00`. */
+  start?: string;
+  /** ISO 8601-duur: `PT1H30M`. Zie `duurUitMinuten`. */
+  duur?: string;
+  locatie?: string;
+  omschrijving?: string;
+}
+
+/**
+ * Werkt een bestaande afspraak bij: verplaatsen, langer maken, hernoemen.
+ *
+ * Alleen de meegegeven velden gaan mee. Dat is geen zuinigheid maar het punt:
+ * de mailserver werkt de afspraak bij als patch, dus herhalingen,
+ * herinneringen, bijlagen en velden van andere agendaprogramma's blijven
+ * staan. Opnieuw opbouwen uit wat wij toevallig weten zou de rest wissen.
+ *
+ * `agendas` is voor de organisator: die verzet de afspraak ook in de agenda
+ * van de genodigden, anders staat de vergadering bij de een om tien uur en bij
+ * de ander om negen. Ben je niet de organisator, dan laat het Server Script
+ * die adressen vallen en verandert alleen je eigen kopie.
+ */
+export async function werkAfspraakBij(
+  uid: string,
+  wijziging: AfspraakWijziging,
+  agendas: string[] = [],
+): Promise<SchrijfUitslag> {
+  const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
+  const res = (await callMethod("agenda_schrijven", {
+    actie: "bijwerken",
+    uid,
+    ...(uniek.length ? { agendas: uniek.join(",") } : {}),
+    ...(wijziging.titel !== undefined ? { titel: wijziging.titel } : {}),
+    ...(wijziging.start !== undefined ? { start: wijziging.start } : {}),
+    ...(wijziging.duur !== undefined ? { duur: wijziging.duur } : {}),
+    ...(wijziging.locatie !== undefined ? { locatie: wijziging.locatie } : {}),
+    ...(wijziging.omschrijving !== undefined ? { omschrijving: wijziging.omschrijving } : {}),
+  })) as Partial<SchrijfUitslag> | null;
+  return {
+    geschreven: Array.isArray(res?.geschreven) ? res.geschreven : [],
+    mislukt: Array.isArray(res?.mislukt) ? res.mislukt : [],
+    extern: Array.isArray(res?.extern) ? res.extern : [],
+  };
 }
 
 /**
@@ -255,15 +317,106 @@ export async function antwoordOpUitnodiging(args: {
 }
 
 /**
- * Wat een genodigde met deze afspraak kan: alleen wanneer hij nog niet
- * geantwoord heeft én Y-Next hem zelf heeft neergelegd. Bij een afspraak uit
- * een ander agendaprogramma kennen we het bestandspad niet en kunnen we er
- * dus niets in wijzigen — dan tonen we alleen de stand.
+ * Het agendadeel van een uitnodiging, opgehaald bij de mailserver.
+ *
+ * Nodig omdat ERPNext het `text/calendar`-deel bij het binnenhalen van post
+ * laat vallen: een uitnodiging uit Outlook of Teams komt hier aan als gewone
+ * tekst met een deelnamelink, zonder de begintijd, de organisator of de
+ * genodigden in machineleesbare vorm. Op de mailserver staat het origineel
+ * nog compleet.
+ *
+ * Geeft `undefined` als er niets te vinden is — dan is het gewoon geen
+ * uitnodiging, en dat is geen fout.
+ */
+export async function haalUitnodigingIcs(communication: string): Promise<string | undefined> {
+  try {
+    const res = (await callMethod("mail_uitnodiging", { communication })) as
+      { ics?: unknown } | null;
+    return typeof res?.ics === "string" && res.ics.includes("BEGIN:VCALENDAR")
+      ? res.ics
+      : undefined;
+  } catch {
+    // Geen script op deze installatie, geen postbus, of het bericht staat er
+    // niet meer. In alle gevallen: geen uitnodiging om te tonen.
+    return undefined;
+  }
+}
+
+/**
+ * Zet een ontvangen uitnodiging in je eigen agenda.
+ *
+ * Voor een uitnodiging die nog niet in je agenda staat — typisch er een van
+ * buiten, die de mailserver niet zelf heeft ingepland. `zetEigenDeelname`
+ * werkt alleen op een afspraak die er al is; dit legt hem er neer, met jouw
+ * antwoord er al in.
+ *
+ * Alleen in je eigen agenda: je verstuurt hier niets, je legt iets bij jezelf
+ * neer. Het Server Script dwingt dat af.
+ */
+export async function planUitnodigingIn(uid: string, ics: string): Promise<SchrijfUitslag> {
+  const res = (await callMethod("agenda_schrijven", {
+    actie: "inplannen", uid, ics,
+  })) as Partial<SchrijfUitslag> | null;
+  return {
+    geschreven: Array.isArray(res?.geschreven) ? res.geschreven : [],
+    mislukt: Array.isArray(res?.mislukt) ? res.mislukt : [],
+    extern: Array.isArray(res?.extern) ? res.extern : [],
+  };
+}
+
+/** Wat het antwoorden op een uitnodiging opleverde. */
+export interface DeelnameUitslag {
+  gelukt: boolean;
+  /** Waarom het niet lukte; leeg als het wel lukte. */
+  reden?: string;
+  titel?: string;
+}
+
+/**
+ * Je eigen antwoord op een uitnodiging zetten.
+ *
+ * Gaat over JMAP en niet over CalDAV, anders dan `antwoordOpUitnodiging`. Dat
+ * pad legt een `.ics` neer op een bestandspad dat uit de UID wordt afgeleid,
+ * en dat klopt alleen voor afspraken die Y-Next zelf heeft neergelegd. Een
+ * uitnodiging van een collega of van buiten is door de mailserver in je agenda
+ * gezet onder een naam die wij niet kennen; een bestand op ons eigen verzonnen
+ * pad zou daar een tweede afspraak naast zetten in plaats van de bestaande bij
+ * te werken.
+ *
+ * Het Server Script raakt alleen jouw deelnemersregel, en alleen in jouw
+ * agenda. Of de organisator je antwoord ook te zien krijgt, bepaalt de
+ * mailserver: die verzorgt de uitwisseling tussen agenda's.
+ */
+export async function zetEigenDeelname(
+  uid: string, stand: Deelnamestatus,
+): Promise<DeelnameUitslag> {
+  const res = (await callMethod("agenda_schrijven", {
+    actie: "deelname", uid, stand,
+  })) as Partial<DeelnameUitslag> | null;
+  return {
+    gelukt: !!res?.gelukt,
+    reden: typeof res?.reden === "string" ? res.reden : undefined,
+    titel: typeof res?.titel === "string" ? res.titel : undefined,
+  };
+}
+
+/**
+ * Wat een genodigde met deze afspraak kan: alleen wanneer het een uitnodiging
+ * aan hém is én Y-Next hem zelf heeft neergelegd. Bij een afspraak uit een
+ * ander agendaprogramma kennen we het bestandspad niet en kunnen we er dus
+ * niets in wijzigen — dan tonen we alleen de stand.
+ *
+ * `isUitnodigingAanJou` en niet "sta ik in de lijst": een afspraak die je zelf
+ * aanmaakt komt van de mailserver terug met jou als enige deelnemer, zonder
+ * rol en zonder stand. Dat las als een uitnodiging aan jezelf, met een
+ * antwoordknop die niets kán doen — in het .ics staat geen ATTENDEE om te
+ * beantwoorden, dus het antwoord eindigde op "Je staat niet als genodigde bij
+ * deze afspraak".
  */
 export function kanAntwoorden(afspraak: MailserverAfspraak, ik: string): boolean {
   if (!isEigenAfspraak(afspraak.uid)) return false;
-  const mij = ik.trim().toLowerCase();
-  return (afspraak.genodigden ?? []).some((g) => g.email === mij && !g.organisator);
+  const organisator = (afspraak.genodigden ?? []).find((g) => g.organisator)?.email;
+  return isUitnodigingAanJou(afspraak.genodigden, ik, organisator);
 }
 
 /** De stand van deze persoon bij deze afspraak, als hij genodigd is. */
@@ -292,6 +445,7 @@ async function schrijf(
   return {
     geschreven: Array.isArray(res?.geschreven) ? res.geschreven : [],
     mislukt: Array.isArray(res?.mislukt) ? res.mislukt : [],
+    extern: Array.isArray(res?.extern) ? res.extern : [],
   };
 }
 

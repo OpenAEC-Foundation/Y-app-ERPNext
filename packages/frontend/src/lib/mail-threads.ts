@@ -65,7 +65,16 @@ export interface MailThread<T extends ThreadableMessage> {
   id: string;
   /** Het nieuwste bericht uit de primaire lijst — dit is de zichtbare regel. */
   head: T;
-  /** Alle leden, chronologisch oplopend (oudste eerst), inclusief `head`. */
+  /**
+   * Alle leden, nieuwste eerst, inclusief `head`.
+   *
+   * Dezelfde richting als de berichtenlijst eromheen. Stond hier eerder
+   * oudste-eerst, waardoor de volgorde halverwege omdraaide zodra je een
+   * gesprek uitklapte. De toetsenbordvolgorde leest deze lijst ook
+   * (`visibleThreadOrder`), dus de richting hoort hier te liggen en niet in
+   * het scherm — anders springt een pijltje omlaag naar een andere regel dan
+   * de regel die eronder staat.
+   */
   messages: T[];
   /** `messages.length` — de "3 berichten"-teller. */
   count: number;
@@ -150,9 +159,6 @@ function newerFirst(a: ThreadableMessage, b: ThreadableMessage): number {
   return a.date < b.date ? 1 : -1;
 }
 
-function olderFirst(a: ThreadableMessage, b: ThreadableMessage): number {
-  return -newerFirst(a, b);
-}
 
 /** Union-find met padcompressie — klein genoeg om hier te wonen. */
 function makeUnionFind() {
@@ -249,7 +255,7 @@ export function groupThreads<T extends ThreadableMessage>(
     const heads = members.filter((m) => isPrimary.has(m.name)).sort(newerFirst);
     const head = heads[0];
     if (!head) continue;
-    const sorted = [...members].sort(olderFirst);
+    const sorted = [...members].sort(newerFirst);
     threads.push({
       id: head.name,
       head,

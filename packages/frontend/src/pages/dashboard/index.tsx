@@ -10,6 +10,7 @@ import type { Page, ViewMode } from "../../components/Sidebar";
 import UrenBoekenWidget from "../../components/UrenBoekenWidget";
 import { type WidgetPlacement, type WidgetVisibility } from "./types";
 import { SortableWidget } from "./SortableWidget";
+import { WerkvoorraadWidget } from "./WerkvoorraadWidget";
 import { BookingWarning, useMissingBookings } from "./useMissingBookings";
 import { EmailWidget } from "./EmailWidget";
 import { LeaveWidget } from "./LeaveWidget";
@@ -29,6 +30,7 @@ const ALL_WIDGET_DEFS: { id: string; labelKey: string; visibility: WidgetVisibil
   { id: "time-booking", labelKey: "widget.time_booking", visibility: "all" },
   { id: "km-booking", labelKey: "widget.km_booking", visibility: "all" },
   { id: "tasks", labelKey: "widget.tasks_all", visibility: "employer" },
+  { id: "werkvoorraad", labelKey: "werkvoorraad.title", visibility: "employer" },
   { id: "projects", labelKey: "widget.project_search", visibility: "all" },
   { id: "my-tasks", labelKey: "widget.my_tasks", visibility: "all" },
   { id: "todos", labelKey: "widget.my_todos", visibility: "all" },
@@ -62,6 +64,7 @@ const DEFAULT_EMPLOYER_LAYOUT: WidgetPlacement[] = [
   { id: "time-booking", col: 0 },
   { id: "km-booking", col: 0 },
   { id: "tasks", col: 0 },
+  { id: "werkvoorraad", col: 0 },
   { id: "today-agenda", col: 0 },
   { id: "projects", col: 1 },
   { id: "my-tasks", col: 1 },
@@ -153,6 +156,9 @@ function WidgetColumn({
         break;
       case "tasks":
         content = <TaskList onNavigate={onNavigate} />;
+        break;
+      case "werkvoorraad":
+        content = <WerkvoorraadWidget onNavigate={onNavigate} />;
         break;
       case "projects":
         content = <ProjectSearch onNavigate={onNavigate} />;

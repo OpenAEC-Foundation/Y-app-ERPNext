@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, FileArchive, FileText, Loader2, Paperclip } from "lucide-react";
+import { Box, Download, FileArchive, FileText, Loader2, Paperclip } from "lucide-react";
 import { getFileUrl } from "../../lib/erpnext";
-import { isPdfName } from "../../lib/mail-erpnext-compose";
+import { isIfcName, isPdfName } from "../../lib/mail-erpnext-compose";
 import { isPermissionError } from "../../lib/permission-error";
 import {
   checkAttachmentAccess,
@@ -36,7 +36,9 @@ import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
  */
 export type ErpAttachment = MailAttachmentRef;
 
-export default function ErpAttachmentList({ attachments, onError, className, subject }: {
+export default function ErpAttachmentList({
+  attachments, onError, className, subject, onVoorbeeld, voorbeeldVan,
+}: {
   attachments: ErpAttachment[];
   /** Meldkanaal richting de gebruiker (toast of foutregel). */
   onError: (message: string) => void;
@@ -44,6 +46,16 @@ export default function ErpAttachmentList({ attachments, onError, className, sub
   className?: string;
   /** Onderwerp van de mail; wordt de naam van het zip-bestand. */
   subject?: string;
+  /**
+   * Toon een pdf naast de mail in plaats van in een nieuw tabblad.
+   *
+   * Optioneel: waar geen kolom naast de mail is - het losse mailvenster, de
+   * popout - blijft een klik gewoon een nieuw tabblad openen. Een aanroeper
+   * zonder zo'n kolom hoeft er dus niets voor te doen.
+   */
+  onVoorbeeld?: (att: ErpAttachment) => void;
+  /** De bijlage die nu naast de mail staat; die krijgt een actieve rand. */
+  voorbeeldVan?: string;
 }) {
   const { t } = useTranslation();
   const [zipBezig, setZipBezig] = useState(false);
@@ -145,11 +157,17 @@ export default function ErpAttachmentList({ attachments, onError, className, sub
           return (
             <span key={att.file_url}
               className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-slate-200 text-xs text-slate-600">
-              {isPdfName(att.file_name) ? (
-                <button onClick={() => void handleOpenPdf(att)}
+              {isPdfName(att.file_name) || (onVoorbeeld && isIfcName(att.file_name)) ? (
+                /* Een bouwmodel opent alleen naast de mail wanneer daar plek
+                   voor is; zonder `onVoorbeeld` (de popout-lezer) blijft het
+                   een gewone download in plaats van een knop die niets doet. */
+                <button onClick={() => { if (onVoorbeeld) onVoorbeeld(att); else void handleOpenPdf(att); }}
+                  aria-pressed={onVoorbeeld ? voorbeeldVan === att.file_url : undefined}
                   title={t("y_next.mail_open_attachment")}
                   className="inline-flex items-center gap-1.5 hover:text-blue-700 cursor-pointer">
-                  <FileText size={12} className="text-red-400" />
+                  {isIfcName(att.file_name)
+                    ? <Box size={12} className="text-sky-500" />
+                    : <FileText size={12} className="text-red-400" />}
                   <span className="truncate max-w-[180px]">{att.file_name}</span>
                 </button>
               ) : (

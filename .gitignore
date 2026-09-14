@@ -82,3 +82,6 @@ Desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Kopie uit node_modules (zie `npm run wasm`), geen bronbestand.
+packages/frontend/public/web-ifc.wasm

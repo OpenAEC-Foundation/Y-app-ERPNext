@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, UserPlus, XCircle, Loader2 } from "lucide-react";
 import { APP_NAME, APP_VERSION } from "../lib/version";
+import { YLogo } from "./YLogo";
 import { useTranslation } from "react-i18next";
 
 interface SignupPageProps {
@@ -37,20 +38,6 @@ const Background = ({ children }: { children: React.ReactNode }) => (
     <div className="fixed inset-0 opacity-[0.03]" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg viewBox=%220 0 256 256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noise%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%224%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noise)%22/%3E%3C/svg%3E')" }} />
     <style>{glowKeyframes}</style>
     {children}
-  </div>
-);
-
-const YLogo = () => (
-  <div
-    className="inline-flex items-center justify-center w-20 h-20 rounded-2xl"
-    style={{
-      background: "linear-gradient(135deg, #0d9488, #14b8a6, #2dd4bf)",
-      animation: "logo-pulse 3s ease-in-out infinite",
-    }}
-  >
-    <svg viewBox="0 0 32 32" className="w-11 h-11">
-      <text x="16" y="23" textAnchor="middle" fontFamily="system-ui, sans-serif" fontWeight="800" fontSize="20" fill="white" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.2))" }}>Y</text>
-    </svg>
   </div>
 );
 
@@ -112,7 +99,7 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: SignupPageProp
     <Background>
       <div className="relative w-full max-w-md mx-4" style={{ animation: "fade-in-up 0.6s ease-out" }}>
         <div className="text-center mb-8">
-          <YLogo />
+          <YLogo size={80} className="inline-block" />
           <h1 className="text-3xl font-bold text-white mt-4">{t("signup.title", { defaultValue: "Create your Y-app account" })}</h1>
           <p className="text-sm text-slate-400 mt-1">{t("signup.subtitle", { defaultValue: "One account, many ERPNext instances" })}</p>
         </div>

@@ -8,7 +8,30 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
-## v0.32.0 — 2026-07-11
+## v0.33.0 — 2026-09-09
+
+### Toegevoegd
+- **agenda**: afspraken verslepen en aan de onderkant langer/korter maken, in de week- en de dagweergave
+- **agenda**: een afspraak uit de mailserver bijwerken via een JMAP-patch (`agenda_schrijven`, actie `bijwerken`) — alleen de meegestuurde velden veranderen, de rest van de afspraak blijft staan
+- **agenda**: de organisator verzet een gezamenlijke afspraak ook in de agenda van de genodigden
+- **agenda**: met genodigden in het formulier ligt de doel-agenda vast op de mailserver — de enige route waarlangs de uitnodiging aankomt
+- **mail**: je eigen agenda naast een uitnodiging, met de voorgestelde tijd en de conflicten erin
+
+### Verbeterd
+- **merk**: de app heet overal Y-Next; één gedeeld beeldmerk (`components/YLogo.tsx`) in plaats van drie losse tekeningen
+
+### Opgelost
+- **agenda**: een herhalende afspraak is niet te verslepen (dat verzette de hele reeks)
+
+## v0.32.0 — 2026-07-11 t/m 2026-09-08
+
+Het versienummer is van de eerste Y-Next-commit (2026-07-31) tot en met
+2026-09-08 onafgebroken 0.32.0 gebleven. Alles wat er in die periode is
+opgeleverd — de overgang naar ERPNext-only, webmail op Communication, de
+agenda met de mailserver-agenda's, taken/uren/onkosten, Berichten — staat dus
+onder dit ene nummer. De gecondenseerde lijst voor gebruikers staat op de
+release-notes-pagina (`packages/frontend/src/pages/ReleaseNotes.tsx`); de
+losse commits staan in `git log --since=2026-07-31`.
 
 ### Toegevoegd
 - **agenda**: sleep in week-/dagweergave om een nieuw item aan te maken

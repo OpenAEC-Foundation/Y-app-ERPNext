@@ -4,6 +4,7 @@ import {
   adresVanRegel,
   bouwAfspraakIcs,
   leesAfspraakIcs,
+  leesTijdstip,
   ontvouw,
   vouw,
   zetDeelname,
@@ -59,8 +60,9 @@ test("bouwAfspraakIcs zet METHOD:REQUEST alleen als er genodigden zijn", () => {
   assert.ok(regels(bouwAfspraakIcs(afspraak(), NU)).includes("METHOD:REQUEST"));
   const zonder = regels(bouwAfspraakIcs(afspraak({ genodigden: [] }), NU));
   assert.equal(zonder.some((r) => r.startsWith("METHOD")), false);
-  // Zonder genodigden blijft de organisator er wel in staan.
-  assert.ok(zonder.some((r) => r.startsWith("ORGANIZER")));
+  // En de organisator ook niet: zonder genodigden is het geen groepsafspraak.
+  // Zie de test hieronder voor wat die regel daar aanrichtte.
+  assert.equal(zonder.some((r) => r.startsWith("ORGANIZER")), false);
 });
 
 test("bouwAfspraakIcs vraagt om een reactie zolang die er niet is", () => {
@@ -165,6 +167,48 @@ test("leesAfspraakIcs haalt eruit wat een uitnodiging nodig heeft", () => {
   assert.equal(gelezen.genodigden[0].naam, "Martin");
 });
 
+test("leesTijdstip kent de drie vormen waarin een tijd in een .ics staat", () => {
+  // Met tijdzone: nemen zoals hij er staat - dat is de bedoelde wandkloktijd.
+  assert.deepEqual(leesTijdstip("DTSTART;TZID=Europe/Amsterdam:20260910T160000"),
+    { waarde: "2026-09-10T16:00:00", heleDag: false });
+  // Zonder achtervoegsel: ook wandkloktijd.
+  assert.deepEqual(leesTijdstip("DTEND:20260910T173000"),
+    { waarde: "2026-09-10T17:30:00", heleDag: false });
+  // Hele dag.
+  assert.deepEqual(leesTijdstip("DTSTART;VALUE=DATE:20260910"),
+    { waarde: "2026-09-10", heleDag: true });
+  // Onleesbaar hoort leeg terug te komen, niet half.
+  assert.equal(leesTijdstip("DTSTART:").waarde, undefined);
+  assert.equal(leesTijdstip("DTSTART:onzin").waarde, undefined);
+});
+
+test("een tijd in UTC komt in de tijd van dit apparaat terug", () => {
+  // Anders staat een uitnodiging uit een ander programma een uur mis.
+  const uit = leesTijdstip("DTSTART:20260910T140000Z");
+  const verwacht = new Date(Date.UTC(2026, 8, 10, 14, 0, 0));
+  const p = (n: number) => String(n).padStart(2, "0");
+  assert.equal(uit.waarde, `${verwacht.getFullYear()}-${p(verwacht.getMonth() + 1)}-`
+    + `${p(verwacht.getDate())}T${p(verwacht.getHours())}:${p(verwacht.getMinutes())}:00`);
+});
+
+test("leesAfspraakIcs geeft ook de tijden, de plaats en de toelichting terug", () => {
+  const gelezen = leesAfspraakIcs(bouwAfspraakIcs(afspraak({
+    locatie: "Burgemeester de Raadtsingel 31, Dordrecht",
+    omschrijving: "Even de planning doorlopen",
+  }), NU));
+  assert.equal(gelezen.start, "2026-09-10T10:00:00");
+  assert.equal(gelezen.eind, "2026-09-10T11:00:00");
+  assert.equal(gelezen.heleDag, false);
+  assert.equal(gelezen.locatie, "Burgemeester de Raadtsingel 31, Dordrecht");
+  assert.equal(gelezen.omschrijving, "Even de planning doorlopen");
+});
+
+test("bij een afspraak van een hele dag komt dat er ook uit", () => {
+  const gelezen = leesAfspraakIcs(bouwAfspraakIcs(afspraak({ heleDag: true }), NU));
+  assert.equal(gelezen.heleDag, true);
+  assert.equal(gelezen.start, "2026-09-10");
+});
+
 test("vouw knipt op 75 octetten, niet op 75 tekens", () => {
   const kort = "SUMMARY:kort";
   assert.deepEqual(vouw(kort), [kort]);
@@ -194,4 +238,26 @@ test("een gebouwd bestand overleeft ontvouwen ongeschonden", () => {
   assert.ok(r.some((x) => x.startsWith("SUMMARY:Een behoorlijk lange titel")));
   assert.ok(r.some((x) => x.endsWith(":mailto:iemand.met.een.lang.adres@een-lange-domeinnaam.example.com")));
   assert.equal(leesAfspraakIcs(ics).genodigden[0].email, "iemand.met.een.lang.adres@een-lange-domeinnaam.example.com");
+});
+
+test("zonder genodigden komt er geen ORGANIZER in het bestand", () => {
+  /*
+   * Een afspraak die alleen van jou is, is geen groepsafspraak: iCalendar
+   * schrijft ORGANIZER voor bij afspraken mét genodigden. Gemeten op de
+   * mailserver: van zo'n ORGANIZER-regel zonder ATTENDEE maakt Stalwart een
+   * deelnemer zonder rol en zonder stand — waarna de app je eigen afspraak las
+   * als "je bent uitgenodigd en moet nog antwoorden".
+   */
+  const ics = bouwAfspraakIcs(afspraak({ genodigden: [] }), NU);
+  assert.equal(/^ORGANIZER/m.test(ics), false);
+  assert.equal(/^ATTENDEE/m.test(ics), false);
+});
+
+test("met genodigden staat de organisator er gewoon in", () => {
+  // Ontvouwen: een ATTENDEE-regel is langer dan 75 tekens en wordt afgebroken.
+  const regels = ontvouw(bouwAfspraakIcs(afspraak({
+    genodigden: [{ email: "lance@3bm.co.nl" }],
+  }), NU));
+  assert.equal(regels.some((r) => r.startsWith("ORGANIZER") && r.endsWith("mailto:maarten@3bm.co.nl")), true);
+  assert.equal(regels.some((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:lance@3bm.co.nl")), true);
 });

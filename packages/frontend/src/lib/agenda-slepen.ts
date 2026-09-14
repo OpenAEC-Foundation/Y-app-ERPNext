@@ -41,8 +41,10 @@ export interface SleepUitkomst {
 }
 
 export const STANDAARD_GRENZEN: SleepGrenzen = {
-  eersteUur: 7,
-  aantalUren: 14,
+  // De hele dag, gelijk aan wat de agenda toont. Stond eerder op 07:00-21:00;
+  // een afspraak om half zeven 's ochtends viel daarmee buiten de grenzen.
+  eersteUur: 0,
+  aantalUren: 24,
   stap: 15,
   minimumDuur: 15,
 };
@@ -113,19 +115,41 @@ export function verschuifDatum(datum: string, dagen: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
 
+/** `90` -> `"PT1H30M"`. De tegenhanger van `duurInMinuten` in agenda-mailserver. */
+export function duurUitMinuten(minuten: number): string {
+  const heel = Math.max(1, Math.round(minuten));
+  const uren = Math.floor(heel / 60);
+  const rest = heel % 60;
+  return `PT${uren ? `${uren}H` : ""}${rest || !uren ? `${rest}M` : ""}`;
+}
+
 /**
  * Is deze afspraak te verslepen?
  *
- * Alleen een ERPNext-afspraak. Twee redenen om de rest te weren:
+ * Ja voor een afspraak uit ERPNext en voor een afspraak uit de mailserver.
+ * Die laatste gaat als patch over JMAP: alleen de begintijd en de duur gaan
+ * mee, al het andere in de afspraak blijft onaangeroerd staan. Daarom kan het
+ * ook bij een afspraak die met een ander agendaprogramma is gemaakt.
+ *
+ * Vier soorten blijven staan waar ze staan:
  *
  * - Een taak, verlofaanvraag of urenstaat staat wél in de agenda maar is daar
  *   een afgeleide van. Die verplaats je in zijn eigen scherm; hier zou het
  *   betekenen dat slepen een taakdeadline verzet zonder dat je dat vraagt.
- * - Een afspraak uit de mailserver wordt als compleet `.ics` opgeslagen. Wij
- *   kennen maar een handvol velden van dat bestand; opnieuw wegschrijven zou
- *   de rest wissen. Zolang de schrijfkant naar de mailserver niet af is,
- *   blijft die dus staan waar hij staat.
+ * - Een herhalende afspraak is één document met een herhaalregel erin. Wie er
+ *   één blok van versleept, verzet de hele reeks - meestal niet wat je
+ *   bedoelt en niet terug te draaien.
+ * - De agenda van een collega is om te kijken. Je ziet daar de kopie die in
+ *   zijn agenda staat; die verzet hij zelf. Verplaatst de organisator een
+ *   gezamenlijke afspraak, dan schuift die kopie vanzelf mee.
+ * - Een uitnodiging waarop je nog niet hebt geantwoord is nog niet van jou. Hij
+ *   staat er om te laten zien dat de tijd bezet is; verzetten is aan de
+ *   organisator, en de uitnodiging die nog in de post staat bestaat als
+ *   afspraak nog helemaal nergens.
  */
-export function sleepbaar(afspraak: { type: string }): boolean {
-  return afspraak.type === "event";
+export function sleepbaar(
+  afspraak: { type: string; herhaalt?: boolean; vanAnder?: boolean; onbeantwoord?: boolean },
+): boolean {
+  if (afspraak.herhaalt || afspraak.vanAnder || afspraak.onbeantwoord) return false;
+  return afspraak.type === "event" || afspraak.type === "mailbox";
 }

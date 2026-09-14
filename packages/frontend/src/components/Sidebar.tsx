@@ -18,6 +18,7 @@ import { useRemoteExtensions } from "../extensions/remote";
 import { useLeaves } from "../lib/DataContext";
 import { getAllBadgeCounts, setBadgeCount } from "../lib/badges";
 import { APP_VERSION, APP_NAME } from "../lib/version";
+import { YLogo } from "./YLogo";
 import { useTranslation } from "react-i18next";
 import InlineSearch from "./InlineSearch";
 
@@ -467,7 +468,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
             title="Home"
             aria-label="Home"
           >
-            <img src={`${import.meta.env.BASE_URL}y-logo.svg`} alt="Y-App" className="w-full h-full object-cover" />
+            <YLogo size={40} className="w-full h-full" />
           </button>
           {isExpanded && (
             <div className="min-w-0 flex-1">

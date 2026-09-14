@@ -158,6 +158,11 @@ export interface OutgoingHtmlInput {
   includeSignature: boolean;
   /** Geciteerde originele mail (HTML); leeg bij een nieuw bericht. */
   quoteHtml?: string;
+  /**
+   * De huisstijl als inline CSS (`lib/mailOpmaak`). Leeg laten betekent: geen
+   * eigen opmaak meegeven, dan kiest het mailprogramma van de ontvanger zelf.
+   */
+  opmaakStijl?: string;
 }
 
 /**
@@ -175,18 +180,38 @@ export function buildOutgoingHtml(input: OutgoingHtmlInput): string {
     effectiveSignature(input.signature, input.includeSignature)
   );
   const quote = (input.quoteHtml || "").trim();
-  if (!quote) return typed;
-  return `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${quote}</blockquote>`;
+  const body = quote
+    ? `${typed}<br><br><blockquote style="border-left:2px solid #cbd5e1;margin:0;padding-left:12px;color:#475569">${quote}</blockquote>`
+    : typed;
+  return omhulMetHuisstijl(body, input.opmaakStijl);
 }
 
 /**
- * De bijlagen van een doorgestuurd bericht als leesbare opsomming.
+ * De huisstijl als één omhullende `div`.
  *
- * Doorsturen hangt de originele bestanden **niet** opnieuw aan: die staan als
- * `File` aan de oorspronkelijke Communication en `communication.email.make`
- * accepteert alleen File-docnames van bestanden die je zelf uploadt. In plaats
- * van ze stil te laten verdwijnen noemt de doorstuurtekst ze bij naam, zodat
- * de ontvanger weet wat er ontbreekt en de afzender ze bewust kan bijvoegen.
+ * Inline en niet als stylesheet: een mailprogramma gooit een `<style>`-blok
+ * weg, maar een `style`-attribuut overleeft. Eromheen en niet per alinea,
+ * zodat wat de gebruiker zelf aan opmaak koos (een kleur, een grootte) er
+ * bovenop blijft staan in plaats van overschreven te worden.
+ *
+ * Het citaat zit er bewust ín: een antwoord dat in een ander lettertype staat
+ * dan de mail eronder leest als twee losse berichten.
+ */
+function omhulMetHuisstijl(html: string, stijl?: string): string {
+  const schoon = (stijl || "").trim();
+  if (!schoon) return html;
+  return `<div style="${schoon}">${html}</div>`;
+}
+
+/**
+ * Bijlagenamen als leesbare opsomming, voor een melding of een printkop.
+ *
+ * Hier stond ooit bij dat doorsturen de originele bestanden niet mee kón
+ * nemen, omdat `communication.email.make` alleen File-docnames van zelf
+ * geüploade bestanden zou aannemen. Dat klopt niet — die aanroep neemt de
+ * docnaam van elk `File` aan — en die aanname was de reden dat een
+ * doorgestuurde mail zonder bijlage aankwam. Het meenemen zelf staat nu in
+ * `lib/mail-doorsturen.ts`.
  */
 export function formatAttachmentNames(names: string[]): string {
   return (names || []).map((n) => (n || "").trim()).filter(Boolean).join(", ");
@@ -195,6 +220,17 @@ export function formatAttachmentNames(names: string[]): string {
 /** Of een bijlage in de PDF-viewer van de browser hoort te openen. */
 export function isPdfName(name: string): boolean {
   return /\.pdf$/i.test((name || "").trim());
+}
+
+/**
+ * Of een bijlage een bouwmodel is dat naast de mail te bekijken valt.
+ *
+ * Alleen IFC zelf. `.ifczip` is een gecomprimeerd model dat eerst uitgepakt
+ * moet worden en dat kan de viewer hier niet; die bijlage blijft dus een
+ * gewone download in plaats van een knop die niets doet.
+ */
+export function isIfcName(name: string): boolean {
+  return /\.ifc$/i.test((name || "").trim());
 }
 
 /**

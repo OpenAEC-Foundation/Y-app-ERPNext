@@ -72,8 +72,18 @@ export function bouwAfspraakIcs(afspraak: AfspraakInvoer, nu: Date = new Date())
   );
   if (afspraak.omschrijving) regels.push(`DESCRIPTION:${ontsnap(afspraak.omschrijving)}`);
   if (afspraak.locatie) regels.push(`LOCATION:${ontsnap(afspraak.locatie)}`);
-  regels.push(persoonRegel("ORGANIZER", afspraak.organisator, "CHAIR"));
-  for (const g of genodigden) regels.push(persoonRegel("ATTENDEE", g, "REQ-PARTICIPANT"));
+  /*
+   * ORGANIZER alleen bij een afspraak met genodigden. iCalendar schrijft die
+   * regel voor bij een groepsafspraak; bij een afspraak die alleen van jou is
+   * hoort hij er niet, en hij richt daar schade aan: van een ORGANIZER zonder
+   * ATTENDEE maakt de mailserver een deelnemer zonder rol en zonder stand,
+   * waarna de app je eigen afspraak las als een uitnodiging aan jezelf waarop
+   * je nog moest antwoorden - met een knop die niets kon doen.
+   */
+  if (genodigden.length > 0) {
+    regels.push(persoonRegel("ORGANIZER", afspraak.organisator, "CHAIR"));
+    for (const g of genodigden) regels.push(persoonRegel("ATTENDEE", g, "REQ-PARTICIPANT"));
+  }
   regels.push("END:VEVENT", "END:VCALENDAR");
 
   // CRLF is voorgeschreven, en de afsluitende regeleinde hoort erbij.
@@ -150,6 +160,12 @@ export interface GelezenAfspraak {
   genodigden: Genodigde[];
   methode?: string;
   volgnummer: number;
+  /** Lokale start als `2026-09-10T16:00:00`; bij een hele dag `2026-09-10`. */
+  start?: string;
+  eind?: string;
+  heleDag?: boolean;
+  locatie?: string;
+  omschrijving?: string;
 }
 
 /**
@@ -165,6 +181,15 @@ export function leesAfspraakIcs(ics: string): GelezenAfspraak {
     else if (boven.startsWith("SUMMARY")) uit.titel = ontsnapTerug(waardeVan(regel));
     else if (boven.startsWith("METHOD:")) uit.methode = regel.slice(7).trim().toUpperCase();
     else if (boven.startsWith("SEQUENCE:")) uit.volgnummer = Number(regel.slice(9).trim()) || 0;
+    else if (boven.startsWith("LOCATION")) uit.locatie = ontsnapTerug(waardeVan(regel));
+    else if (boven.startsWith("DESCRIPTION")) uit.omschrijving = ontsnapTerug(waardeVan(regel));
+    else if (boven.startsWith("DTSTART")) {
+      const gelezen = leesTijdstip(regel);
+      uit.start = gelezen.waarde;
+      uit.heleDag = gelezen.heleDag;
+    } else if (boven.startsWith("DTEND")) {
+      uit.eind = leesTijdstip(regel).waarde;
+    }
     else if (boven.startsWith("ORGANIZER")) uit.organisator = adresVanRegel(regel);
     else if (boven.startsWith("ATTENDEE")) {
       uit.genodigden.push({
@@ -175,6 +200,37 @@ export function leesAfspraakIcs(ics: string): GelezenAfspraak {
     }
   }
   return uit;
+}
+
+/**
+ * Een DTSTART- of DTEND-regel naar een leesbare lokale tijd.
+ *
+ * Drie vormen komen voor. `VALUE=DATE` is een hele dag. Een tijd met een `Z`
+ * staat in UTC en wordt naar de tijd van dit apparaat gehaald — anders zou een
+ * uitnodiging uit een ander programma een uur mis staan. Een tijd met een
+ * `TZID` of zonder achtervoegsel nemen we zoals hij er staat: dat is de
+ * bedoelde wandkloktijd, en die klopt zolang uitnodiging en agenda in dezelfde
+ * zone leven. Een echte zone-omrekening zou een tijdzonedatabase vragen.
+ */
+export function leesTijdstip(regel: string): { waarde?: string; heleDag: boolean } {
+  const rauw = waardeVan(regel).trim();
+  if (!rauw) return { heleDag: false };
+  if (/VALUE=DATE(?![-A-Z])/i.test(regel) || /^\d{8}$/.test(rauw)) {
+    return { waarde: `${rauw.slice(0, 4)}-${rauw.slice(4, 6)}-${rauw.slice(6, 8)}`, heleDag: true };
+  }
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(rauw);
+  if (!m) return { heleDag: false };
+  const [, j, mnd, d, u, min, sec, zulu] = m;
+  if (zulu) {
+    const t = new Date(Date.UTC(+j, +mnd - 1, +d, +u, +min, +sec));
+    const p = (n: number) => String(n).padStart(2, "0");
+    return {
+      waarde: `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`
+        + `T${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`,
+      heleDag: false,
+    };
+  }
+  return { waarde: `${j}-${mnd}-${d}T${u}:${min}:${sec}`, heleDag: false };
 }
 
 function statusVanParam(waarde?: string): Deelnamestatus {

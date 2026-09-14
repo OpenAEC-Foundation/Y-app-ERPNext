@@ -63,6 +63,15 @@ export interface StoredMailDraft {
   quoteLabel: string;
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
+  /**
+   * Bijlagen van het doorgestuurde bericht, als docnamen van `File`.
+   *
+   * Zelf gekozen bestanden gaan niet mee in een concept — die zitten in het
+   * geheugen van de browser. Deze staan al op de server, dus die kunnen wél
+   * bewaard worden. Zonder dat zou een hervat doorstuur-concept zijn bijlagen
+   * alsnog verliezen, en dat is precies de fout die dit moest oplossen.
+   */
+  bestaandeBijlagen?: { name: string; fileName: string }[];
   /** Epoch-ms van de laatste wijziging — sorteersleutel voor cap en opruiming. */
   updatedAt: number;
 }
@@ -242,4 +251,27 @@ export function standaloneDrafts(map: MailDraftMap): StoredMailDraft[] {
  */
 export function draftForMessage(map: MailDraftMap, messageName: string): StoredMailDraft | undefined {
   return map[`msg:${messageName}`] ?? map[`fwd:${messageName}`];
+}
+
+/**
+ * De concepten die bij dit gesprek horen, nieuwste eerst.
+ *
+ * Een half getypt antwoord is onderdeel van het gesprek — het staat er alleen
+ * nog niet in. Wie de conversatie openslaat hoort te zien dát hij nog iets
+ * open heeft staan, op de plek waar hij het gesprek leest, en niet alleen als
+ * label op één regel in de lijst.
+ *
+ * Een gesprek is meer dan één bericht, en het concept kan aan elk van die
+ * berichten hangen: je antwoordde op de eerste mail en klapte hem daarna dicht.
+ * Daarom alle namen van het gesprek, niet alleen de geopende mail.
+ */
+export function draftsForThread(
+  map: MailDraftMap, namen: Iterable<string>,
+): StoredMailDraft[] {
+  const doel = new Set<string>();
+  for (const naam of namen) if (naam) doel.add(naam);
+  if (doel.size === 0) return [];
+  return Object.values(map)
+    .filter((d) => d.messageName && doel.has(d.messageName))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }

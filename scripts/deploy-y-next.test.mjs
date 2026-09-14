@@ -102,6 +102,8 @@ test("mimeTypeFor: geeft het juiste MIME-type per extensie", () => {
   assert.equal(mimeTypeFor("chunk-def456.mjs"), "application/javascript");
   assert.equal(mimeTypeFor("index-abc123.css"), "text/css");
   assert.equal(mimeTypeFor("y-logo.svg"), "image/svg+xml");
+  // De browser weigert WebAssembly met een ander type te starten.
+  assert.equal(mimeTypeFor("web-ifc.wasm"), "application/wasm");
   assert.equal(mimeTypeFor("manifest.json"), "application/json");
   assert.equal(mimeTypeFor("index-abc123.js.map"), "application/json");
 });

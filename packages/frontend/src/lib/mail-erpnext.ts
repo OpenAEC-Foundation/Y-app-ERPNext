@@ -47,7 +47,8 @@ import {
   type FileInfo,
 } from "./erpnext.ts";
 import { bewaarRegelovergangen } from "./mail-html.ts";
-import { resolveSessionUser } from "./session.ts";
+import { resolvePostbustoegang, resolveSessionUser } from "./session.ts";
+import { kiesPostbussen, type Postbus } from "./mail-postbussen.ts";
 import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
   buildConnectionQueries,
@@ -764,57 +765,28 @@ export async function listVirtualFolders(mailbox?: string): Promise<ErpMailFolde
 /* ─── Postbussen (Email Accounts) ─── */
 
 /**
- * Gedeelde postbussen die iedere medewerker in de kiezer mag zien, naast zijn
- * eigen postbus. ERPNext kent geen rechten per mailbox — `Communication` is
- * alles-of-niets — dus dit is een weergavekeuze, geen beveiliging.
+ * Gedeelde postbussen: de bussen die een eigen tab waard zijn naast je eigen.
+ *
+ * Puur een weergavekeuze, en alleen van belang voor wie toch alles mag lezen
+ * (System Manager) — anders zou die alle accounts van het bedrijf als tab
+ * krijgen. Wie geen System Manager is krijgt een postbus pas te zien als hij
+ * hem ook mag lezen; zie `kiesPostbussen`.
+ *
+ * ERPNext kent namelijk wél rechten per mailbox, anders dan hier eerder stond:
+ * het lezen van `Communication` is beperkt tot de Email Accounts in de User
+ * Email-tabel van de gebruiker. Een bus tonen zonder die rij levert een tab
+ * op die altijd leeg blijft.
  */
 const SHARED_MAILBOXES = ["info@3bm.co.nl", "cooperatie@3bm.co.nl"];
 
 /**
- * Postbussen die aan één persoon zijn toegewezen, uit `Y Next Setting` onder
- * de sleutel `mailbox-toegang`: een JSON-object van gebruiker naar adressen.
+ * Eén kiesbare postbus in de mailmodule.
  *
- * In ERPNext en niet hier hardgecodeerd, zodat er geen nieuwe versie van de
- * app nodig is als er een postbus of een persoon bij komt. Kan de instelling
- * niet gelezen worden, dan blijft het bij de eigen bus plus de gedeelde —
- * precies het gedrag van vóór deze toevoeging.
+ * Een postbus toewijzen doe je in ERPNext bij de gebruiker (User → Email), en
+ * nergens anders. Die tabel is namelijk óók waar ERPNext het lezen van de post
+ * op beperkt; een tweede lijst ernaast zou weer uit elkaar lopen.
  */
-const TOEGANG_SLEUTEL = "mailbox-toegang";
-let toegangCache: { at: number; kaart: Record<string, string[]> } | null = null;
-const TOEGANG_TTL = 5 * 60 * 1000;
-
-async function extraPostbussenVoor(gebruiker: string): Promise<string[]> {
-  const wie = toStr(gebruiker).toLowerCase();
-  if (!wie) return [];
-  if (!toegangCache || Date.now() - toegangCache.at > TOEGANG_TTL) {
-    let kaart: Record<string, string[]> = {};
-    try {
-      const doc = await fetchDocument<{ setting_value?: string }>(
-        "Y Next Setting", TOEGANG_SLEUTEL,
-      );
-      const ruw = JSON.parse(toStr(doc?.setting_value) || "{}") as unknown;
-      if (ruw && typeof ruw === "object" && !Array.isArray(ruw)) {
-        for (const [k, v] of Object.entries(ruw as Record<string, unknown>)) {
-          if (Array.isArray(v)) kaart[k.toLowerCase()] = v.map((x) => toStr(x).toLowerCase());
-        }
-      }
-    } catch {
-      kaart = {};
-    }
-    toegangCache = { at: Date.now(), kaart };
-  }
-  return toegangCache.kaart[wie] ?? [];
-}
-
-/** Eén kiesbare postbus in de mailmodule. */
-export interface ErpMailbox {
-  /** Docname van het Email Account; de waarde waarop gefilterd wordt. */
-  name: string;
-  /** Het e-mailadres, voor de labeltekst. */
-  emailId: string;
-  /** Eigen postbus van de ingelogde gebruiker (staat bovenaan). */
-  own: boolean;
-}
+export type ErpMailbox = Postbus;
 
 /**
  * De postbussen die de ingelogde gebruiker mag kiezen: zijn eigen account
@@ -824,43 +796,52 @@ export interface ErpMailbox {
  * (in tegenstelling tot `imap_folder`, dat altijd leeg blijft — zie
  * `listImapFolders`). Daarmee is per postbus filteren wél mogelijk.
  *
- * `Email Account` vereist de rol Inbox User of System Manager; bij een 403
- * komt er een lege lijst terug en valt de UI terug op één gecombineerde
- * stroom, precies zoals vóór deze functie.
+ * `Email Account` vereist de rol Inbox User of System Manager. Een gewone
+ * medewerker krijgt daar dus een 403 — en dat mag hem zijn postbussen niet
+ * kosten. De lijst komt daarom uit zijn eigen User Email-tabel; de accounts
+ * zijn alleen nog nodig om een System Manager de gedeelde bussen te kunnen
+ * tonen. Lukt dat ophalen niet, dan gaat het gewoon door met wat er wél is.
  */
 export async function listMailboxes(): Promise<ErpMailbox[]> {
   try {
-    const [user, accounts] = await Promise.all([
+    const [user, toegang, accounts] = await Promise.all([
       resolveSessionUser(),
-      // Geen serverfilter op enable_incoming: het eigen adres van iemand kan
-      // wél verzenden en (nog) niet ontvangen. Zo'n bus hoort zichtbaar te
-      // zijn — de map Verzonden staat er vol mee, en zodra de beheerder de
-      // inkomende sync aanzet vult Postvak IN zich vanzelf. Frappe combineert
-      // filters met AND, dus de of-vraag doen we hier.
-      fetchList<{
-        name: string;
-        email_id?: string;
-        enable_incoming?: number;
-        enable_outgoing?: number;
-      }>("Email Account", {
-        fields: ["name", "email_id", "enable_incoming", "enable_outgoing"],
-        order_by: "name asc",
-        limit_page_length: MAX_MAILBOXES,
-      }),
+      resolvePostbustoegang(),
+      // Bewust met een eigen vangnet: zonder de rol Inbox User geeft dit een
+      // 403, en dan hoort de rest van de kiezer gewoon te blijven werken.
+      (async () => {
+        // Geen serverfilter op enable_incoming: het eigen adres van iemand
+        // kan wél verzenden en (nog) niet ontvangen. Zo'n bus hoort zichtbaar
+        // te zijn — de map Verzonden staat er vol mee, en zodra de beheerder
+        // de inkomende sync aanzet vult Postvak IN zich vanzelf. Frappe
+        // combineert filters met AND, dus de of-vraag doen we hier.
+        try {
+          return await fetchList<{
+            name: string;
+            email_id?: string;
+            enable_incoming?: number;
+            enable_outgoing?: number;
+          }>("Email Account", {
+            fields: ["name", "email_id", "enable_incoming", "enable_outgoing"],
+            order_by: "name asc",
+            limit_page_length: MAX_MAILBOXES,
+          });
+        } catch {
+          return [];
+        }
+      })(),
     ]);
-    const me = toStr(user).toLowerCase();
-    const extra = await extraPostbussenVoor(me);
-    const out: ErpMailbox[] = [];
-    for (const acc of accounts) {
-      const emailId = toStr(acc.email_id).toLowerCase();
-      if (!emailId) continue;
-      if (!acc.enable_incoming && !acc.enable_outgoing) continue;
-      const own = me !== "" && emailId === me;
-      if (!own && !SHARED_MAILBOXES.includes(emailId) && !extra.includes(emailId)) continue;
-      out.push({ name: acc.name, emailId: toStr(acc.email_id), own });
-    }
-    out.sort((a, b) => (a.own === b.own ? a.emailId.localeCompare(b.emailId) : a.own ? -1 : 1));
-    return out;
+    return kiesPostbussen(
+      accounts.map((acc) => ({
+        name: acc.name,
+        emailId: toStr(acc.email_id),
+        enableIncoming: !!acc.enable_incoming,
+        enableOutgoing: !!acc.enable_outgoing,
+      })),
+      toStr(user),
+      toegang,
+      SHARED_MAILBOXES,
+    );
   } catch {
     return [];
   }
@@ -945,7 +926,7 @@ export async function listImapFolders(): Promise<ErpImapFolder[]> {
 /** Volledige mailinhoud (HTML) plus de op de Communication gehangen Files. */
 export async function getMessageBody(
   name: string
-): Promise<{ html: string; attachments: { file_url: string; file_name: string }[] }> {
+): Promise<{ html: string; attachments: BerichtBijlage[] }> {
   const [doc, files] = await Promise.all([
     fetchDocument<{ content?: string }>("Communication", name),
     fetchAttachments("Communication", name).catch(() => [] as FileInfo[]),
@@ -954,8 +935,23 @@ export async function getMessageBody(
     // Platte tekst krijgt zijn regelovergangen terug; echte HTML blijft zoals
     // hij is. Zie `bewaarRegelovergangen` voor waarom dat nodig is.
     html: bewaarRegelovergangen(toStr(doc?.content)),
-    attachments: files.map((f) => ({ file_url: f.file_url, file_name: f.file_name })),
+    attachments: files.map((f) => ({
+      name: f.name, file_url: f.file_url, file_name: f.file_name,
+    })),
   };
+}
+
+/**
+ * Een bijlage bij een bericht.
+ *
+ * `name` is de docnaam van het `File`. Die is niet cosmetisch: het versturen
+ * heeft hem nodig om dezelfde bijlage aan een doorsturing te hangen. Hij werd
+ * hier eerder weggegooid, en dáárom ging bij doorsturen de bijlage niet mee.
+ */
+export interface BerichtBijlage {
+  name: string;
+  file_url: string;
+  file_name: string;
 }
 
 /**
@@ -990,8 +986,12 @@ export async function markUnread(name: string): Promise<void> {
  * synchroniseert `email_status` niet terug naar IMAP, dus dit raakt
  * uitsluitend de ERPNext-kopie. De mappenkolom zegt dat met zoveel woorden.
  */
-export async function moveToTrash(name: string): Promise<void> {
+export async function moveToTrash(name: string): Promise<MailserverUitslag> {
+  // Ook op de mailserver naar de prullenbak, zoals elk mailprogramma doet.
+  // Omkeerbaar aan beide kanten, dus hier hoeft geen bevestiging voor.
+  const uitslag = await verwijderOpMailserver([name], "prullenbak");
   await zetStatus(name, { email_status: EMAIL_STATUS_TRASH });
+  return uitslag;
 }
 
 /** Haal een bericht weer uit de Prullenbak; het keert terug in zijn map. */
@@ -1019,19 +1019,70 @@ export async function restoreFromTrash(name: string): Promise<void> {
  * meer kunt legen. De twee lopen dan uiteen — hinderlijk, maar minder erg dan
  * vastlopen.
  */
-async function verwijderOpMailserver(names: string[]): Promise<void> {
-  if (names.length === 0) return;
+/** Wat het Server Script per opdracht terugmeldt. */
+export interface MailserverUitslag {
+  /** Hoeveel berichten er op de mailserver zijn verplaatst of weggegooid. */
+  verwerkt: number;
+  /** Hoeveel er aangeboden waren. */
+  aangeboden: number;
+  /** Berichten die op de mailserver niet teruggevonden werden. */
+  nietgevonden: string[];
+  /** Berichten die niet in een postbus van deze gebruiker zitten. */
+  overgeslagen: { bericht: string; reden: string }[];
+  fouten: string[];
+}
+
+const GEEN_UITSLAG: MailserverUitslag = {
+  verwerkt: 0, aangeboden: 0, nietgevonden: [], overgeslagen: [], fouten: [],
+};
+
+/**
+ * Laat het verwijderen doorwerken op de mailserver.
+ *
+ * Mislukt het daar, dan gaat het verwijderen in ERPNext gewoon door: een
+ * onbereikbare mailserver hoort niet te betekenen dat je je prullenbak niet
+ * meer kunt legen. Maar de uitslag komt wél terug, zodat de app kan zeggen
+ * dat de twee uit elkaar zijn gelopen — dat stilzwijgend laten gebeuren is
+ * precies waarom "verwijderen" jarenlang niets deed op de server.
+ */
+async function verwijderOpMailserver(
+  names: string[], actie: "prullenbak" | "definitief",
+): Promise<MailserverUitslag> {
+  if (names.length === 0) return GEEN_UITSLAG;
   try {
-    await callMethod("mail_verwijderen", { namen: names.join(",") });
-  } catch {
-    // Koppeling uit, geen wachtwoord, server onbereikbaar — het Server Script
-    // meldt dat zelf; hier is het geen reden om te stoppen.
+    const res = (await callMethod("mail_verwijderen", {
+      namen: names.join(","), actie,
+    })) as Partial<MailserverUitslag> | null;
+    return {
+      verwerkt: Number(res?.verwerkt) || 0,
+      aangeboden: Number(res?.aangeboden) || 0,
+      nietgevonden: Array.isArray(res?.nietgevonden) ? res.nietgevonden : [],
+      overgeslagen: Array.isArray(res?.overgeslagen) ? res.overgeslagen : [],
+      fouten: Array.isArray(res?.fouten) ? res.fouten : [],
+    };
+  } catch (err) {
+    return { ...GEEN_UITSLAG, aangeboden: names.length, fouten: [foutTekst(err)] };
   }
 }
 
-export async function deleteForever(name: string): Promise<void> {
-  await verwijderOpMailserver([name]);
+function foutTekst(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Is er op de mailserver iets níet gelukt? */
+export function mailserverLiepMis(uitslag: MailserverUitslag): boolean {
+  return uitslag.fouten.length > 0
+    || uitslag.nietgevonden.length > 0
+    || uitslag.overgeslagen.length > 0;
+}
+
+export async function deleteForever(name: string): Promise<MailserverUitslag> {
+  // Eerst de mailserver: `mail_verwijderen` zoekt het bericht op via
+  // `Communication.message_id`, en dat veld is weg zodra de Communication
+  // verwijderd is.
+  const uitslag = await verwijderOpMailserver([name], "definitief");
   await deleteDocument("Communication", name);
+  return uitslag;
 }
 
 /**
@@ -1104,7 +1155,11 @@ export async function bulkMarkUnread(names: string[]): Promise<BulkOutcome> {
 }
 
 export async function bulkMoveToTrash(names: string[]): Promise<BulkOutcome> {
-  return bulkApply(names, (name) => moveToTrash(name));
+  // Eén opdracht naar de mailserver voor de hele stapel, daarna pas de
+  // statusupdates: per bericht een aparte aanroep zou bij vijftig berichten
+  // vijftig keer opnieuw inloggen betekenen.
+  await verwijderOpMailserver(names, "prullenbak");
+  return bulkApply(names, (name) => zetStatus(name, { email_status: EMAIL_STATUS_TRASH }));
 }
 
 export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome> {
@@ -1114,7 +1169,7 @@ export async function bulkRestoreFromTrash(names: string[]): Promise<BulkOutcome
 export async function bulkDeleteForever(names: string[]): Promise<BulkOutcome> {
   // Eén aanroep voor de hele selectie in plaats van één per bericht: het
   // Server Script logt per keer in op de mailserver, en dat is het dure deel.
-  await verwijderOpMailserver(names);
+  await verwijderOpMailserver(names, "definitief");
   return bulkApply(names, (name) => deleteDocument("Communication", name));
 }
 
@@ -1451,6 +1506,12 @@ export async function sendMail(input: {
   subject: string;
   html: string;
   attachments?: File[];
+  /**
+   * Docnamen van `File`-records die al op de server staan — de bijlagen van
+   * een doorgestuurd bericht. ERPNext hangt dat bestand aan het nieuwe
+   * bericht; er wordt niets opnieuw geüpload.
+   */
+  bestaandeBijlagen?: string[];
   inReplyTo?: string;
   reference?: { doctype: string; name: string };
   /**
@@ -1464,10 +1525,13 @@ export async function sendMail(input: {
   const refDoctype = input.reference?.doctype ?? "";
   const refName = input.reference?.name ?? "";
 
-  const fileNames: string[] = [];
+  // Eerst wat er al staat (doorgestuurde bijlagen), dan wat de gebruiker er
+  // zelf bij deed. Dubbelen eruit: dezelfde docnaam twee keer meesturen zou
+  // het bestand twee keer aanhangen.
+  const fileNames: string[] = [...new Set(input.bestaandeBijlagen ?? [])];
   for (const file of input.attachments ?? []) {
     const uploaded = await uploadFile(file, refDoctype, refName, true);
-    if (uploaded?.name) fileNames.push(uploaded.name);
+    if (uploaded?.name && !fileNames.includes(uploaded.name)) fileNames.push(uploaded.name);
   }
 
   const result = (await callMethod("frappe.core.doctype.communication.email.make", {

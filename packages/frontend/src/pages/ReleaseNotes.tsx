@@ -6,6 +6,199 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.35.0",
+    date: "2026-09-14",
+    url: "",
+    sections: [
+      {
+        title: "Kilometers — een boeking die je terugziet",
+        items: [
+          "Boek je een rit op de declaratiepagina, dan ververst de lijst ernaast meteen. Dat deed hij niet: het formulier en de lijst zijn twee aparte onderdelen, en de lijst bleef staan zoals hij stond. Je zag je zojuist geboekte rit dus niet staan en boekte hem nog een keer — 10 september staat daardoor twee keer in de registratie. Er is niets kwijtgeraakt; het scherm liet het alleen niet zien. Hetzelfde is gedaan voor de onkosten.",
+          "Staat er al een rit op dezelfde dag met dezelfde route, dan zegt de app dat vóór het boeken. Nog een keer op Boeken drukken voegt hem alsnog toe — twee ritten over dezelfde route op één dag bestaan tenslotte.",
+          "De knop \"Boeken\" doet niet langer stilletjes niets als er een veld ontbreekt: er staat nu bij wat er mist. Een knop die niets doet en niets zegt is precies waarom je denkt dat de app je invoer weggooit.",
+          "De herinnering \"je hebt op … nog geen kilometers geboekt\" werkte alleen voor wie een standaard medewerker had ingesteld — dat is bijna niemand. Nu volgt hij gewoon de ingelogde gebruiker, dus juist wie het vergeet krijgt het te horen.",
+        ],
+      },
+      {
+        title: "Meldingen bij nieuwe post en nieuwe berichten",
+        items: [
+          "Y-Next meldt het nu zelf wanneer er nieuwe e-mail of een nieuw bericht van een collega binnenkomt, ook als je op een ander tabblad bezig bent. De teller in de zijbalk loopt mee, ook wanneer het mailscherm dicht is — dat werkte voorheen alleen zolang je het scherm openhad.",
+          "De post wordt geteld over de postbussen die bij jou horen, niet over alles wat je zou mogen inzien. Anders zou een beheerder een melding krijgen bij elke mail aan wie dan ook in het bedrijf.",
+        ],
+      },
+      {
+        title: "Uitnodigingen",
+        items: [
+          "De knoppen heten wat ze doen, met dezelfde woorden als in Thunderbird: Accepteren, Voorlopig en Weigeren. De mededeling dat het bericht een afspraak bevat staat erboven, de afspraak met de knoppen eronder.",
+          "Een uitnodiging van buiten aannemen gaf \"Deze uitnodiging staat niet in je agenda\". Dat is precies het geval waarvoor de tweede weg bestaat — de afspraak met je antwoord erin in je eigen agenda leggen — maar die werd overgeslagen, omdat de mailserver dit als fout meldt en niet als uitslag. Nu wordt hij gewoon ingepland.",
+          "Je antwoord gaat nu ook naar de organisator, als \"Geaccepteerd: …\" met het agendabestand eraan — en het staat daarmee ook bij je verzonden post. Dat ging tot nu toe nergens heen: de agendaserver hier heeft geen scheduling-outbox (nagemeten: 404), dus wie in Y-Next accepteerde liet de organisator in het ongewisse, terwijl hetzelfde antwoord vanuit Outlook wél verstuurd werd.",
+          "Na een ja of een nee wordt de mail met de uitnodiging meteen op Afgehandeld gezet. Bij \"voorlopig\" niet — dat is juist het antwoord waarop je nog terugkomt.",
+          "Een afspraak die je zelf aanmaakt is geen uitnodiging aan jezelf meer. De mailserver maakte van de organisatorregel een deelnemer zonder rol, waardoor je eigen afspraak gestippeld in de agenda kwam te staan met knoppen Accepteren en Weigeren die alleen maar een foutmelding gaven. Nieuwe afspraken zonder genodigden krijgen die regel niet meer, en een afspraak waar jij de enige deelnemer van bent telt niet langer als uitnodiging.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.34.0",
+    date: "2026-09-14",
+    url: "",
+    sections: [
+      {
+        title: "E-mail — je postbussen",
+        items: [
+          "Wie een gedeelde postbus mocht inzien, zag het tabblad wel maar de berichten niet. Dat zat op drie plekken tegelijk vast: het leesrecht op de mail zelf, het recht om de postbus te mogen opvragen, en het veld waarin staat welke postbussen bij je horen. Alle drie zijn losgemaakt; een toegevoegde postbus laat nu ook echt zijn post zien.",
+          "Info, Water-lijn en de postbussen van collega's staan als extra tabblad naast je eigen mail voor wie ze toegewezen heeft gekregen.",
+        ],
+      },
+      {
+        title: "E-mail — uitnodigingen",
+        items: [
+          "Een uitnodiging is als uitnodiging herkenbaar: bovenaan het bericht staat dat er een afspraak in zit waarop je nog niet hebt gereageerd, met Ja, Misschien en Nee ernaast — zoals je het van Thunderbird kent. Je antwoord gaat naar de agenda op de mailserver; staat de afspraak daar nog niet, dan wordt hij er met je antwoord in neergelegd.",
+          "Uitnodigingen van Outlook en Teams komen hier als gewone tekst binnen, omdat ERPNext het agendadeel bij het ophalen laat vallen. Dat deel wordt nu alsnog bij de mailserver opgehaald, zodat ook die uitnodigingen te beantwoorden zijn.",
+          "Zolang je nog niet geantwoord hebt, staat de afspraak gestippeld in je agenda. Hij houdt tijd bezet zolang je niet hebt geweigerd, dus je plant er niets meer overheen zonder het te zien. Een afzegging haalt hem weer weg.",
+        ],
+      },
+      {
+        title: "E-mail — lezen",
+        items: [
+          "De conversatie staat op de goede volgorde: het nieuwste bericht bovenaan, net als in de lijst.",
+          "Een gesprek is nu ook onder elkaar te lezen en door te scrollen. Alleen het geopende bericht staat open; de rest is één regel die je openklikt. De tekst wordt pas opgehaald als je hem opent.",
+          "Een onafgemaakt antwoord staat als extra bericht in het gesprek, met de tekst die je al had. Zo zie je op de plek waar je het gesprek leest dat je nog iets open hebt staan, en niet alleen als merkje in de lijst.",
+          "Klik je op een pdf, dan verschijnt hij als voorbeeld naast de mail. Openen in een ander programma hoeft niet meer om te zien wat je is gestuurd.",
+          "De groepering van gesprekken werkt zoals in Outlook: doorgestuurde en losgeraakte berichten horen bij hetzelfde gesprek, en de lijst en het leespaneel noemen hetzelfde aantal.",
+        ],
+      },
+      {
+        title: "E-mail — schrijven",
+        items: [
+          "Schrijven in Markdown of HTML: typ je tekst met sterretjes en streepjes en hij komt als opmaak aan.",
+          "Plakken met keuze: met opmaak, als platte tekst, of als Markdown. Wat je uit Word of van een website plakt sleept niet langer vreemde lettertypen en kaders mee.",
+          "Eén lettertype-instelling voor heel 3BM. De beheerder zet lettertype, grootte en kleur; iedereen schrijft daarna in dezelfde huisstijl.",
+          "Bij doorsturen gaan de bijlagen mee — dat ging stil mis. De cursor staat meteen in het Aan-veld, zodat je kunt beginnen met typen.",
+        ],
+      },
+      {
+        title: "E-mail — verwijderen",
+        items: [
+          "Definitief verwijderen haalt de mail nu ook echt van de mailserver. Het zoeken naar het juiste bericht ging langs een filter die de server niet ondersteunt, waardoor er niets gevonden werd en er dus ook niets verdween. Er wordt alleen verwijderd bij een sluitende overeenkomst op het bericht-ID; wordt die niet gevonden, dan blijft het bericht staan en hoor je dat.",
+        ],
+      },
+      {
+        title: "Agenda",
+        items: [
+          "In de week- en dagweergave kun je verticaal scrollen: de dag loopt van middernacht tot middernacht en opent op de werkdag.",
+          "Een nieuwe afspraak komt standaard in je eigen agenda op de mailserver, dus hij staat ook op je telefoon en in Thunderbird.",
+        ],
+      },
+      {
+        title: "Dashboard",
+        items: [
+          "Nieuwe statistiek Werkvoorraad: hoeveel uur werk er openstaat, met onderscheid tussen werk dat opgepakt kan worden en werk dat wacht op een beoordeling of op informatie. Taken zonder begrote uren tellen als taak maar niet als uren, en dat staat erbij — anders geeft het urentotaal een te rooskleurig beeld.",
+          "De beschikbare uren volgen de dagen dat iemand er is. Was iemand een dag vrij of ziek, dan zakt zijn beschikbaarheid met die dag mee in plaats van dat zijn contracturen over minder dagen werden uitgesmeerd.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.33.0",
+    date: "2026-09-09",
+    url: "",
+    sections: [
+      {
+        title: "Agenda — verplaatsen en bijwerken",
+        items: [
+          "Afspraken zijn te verslepen: pak een blok op om hem te verplaatsen, in de weekweergave ook naar een andere dag. Met de greep aan de onderkant maak je hem langer of korter. Tijdens het slepen staat de nieuwe tijd in het blok, dus je ziet waar je uitkomt vóór je loslaat. Alles snapt op kwartieren.",
+          "Verslepen werkt nu ook voor afspraken uit de mailserver — dus ook voor afspraken die in Thunderbird of op je telefoon zijn gemaakt. Alleen de tijd gaat er naartoe; herhalingen, herinneringen en alles wat de app niet kent blijven staan zoals ze stonden.",
+          "Ben je de organisator, dan schuift een gezamenlijke afspraak ook op in de agenda van de genodigden. Lukt dat bij iemand niet, dan zegt de melding bij wie.",
+          "Een afspraak uit de mailserver is nu ook in het detailvenster te wijzigen: titel, tijd, plaats en toelichting.",
+          "Een herhalende afspraak blijft met opzet staan waar hij staat — één blok verslepen zou de hele reeks verzetten. De agenda van een collega is om te kijken; die verzet hij zelf.",
+        ],
+      },
+      {
+        title: "Uitnodigen",
+        items: [
+          "Zodra er iemand in het genodigdenveld staat, gaat de afspraak via de mailserver. Dat is de enige weg waarlangs de uitnodiging aankomt; stond de agenda op ERPNext, dan ging er stil niets uit en merkte je het pas als er niemand kwam opdagen.",
+          "Een genodigde van buiten 3BM leverde de waarschuwing op dat het bij hem niet gelukt was, terwijl de uitnodiging gewoon verstuurd was. Buitenstaanders hebben hier geen agenda om in te schrijven — ze krijgen hun uitnodiging per e-mail en tellen niet langer als mislukking.",
+        ],
+      },
+      {
+        title: "E-mail",
+        items: [
+          "Bij een uitnodiging staat je eigen agenda ernaast. De voorgestelde tijd staat als gestreept blok in je dag, en botst hij met iets, dan staat er meteen bij waarmee. Aansluitende afspraken tellen niet als conflict; een vrije dag botst met alles op die dag.",
+        ],
+      },
+      {
+        title: "Naam en beeldmerk",
+        items: [
+          "De app heet overal Y-Next — in de zijbalk, op het tabblad, op het inlogscherm en in de paginatitel stond nog drie keer iets anders.",
+          "Nieuw beeldmerk. De Y is getekend in plaats van gezet in een systeemletter, dus hij ziet er op elk apparaat hetzelfde uit en blijft leesbaar tot in het favicon van 16 pixels.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.32.0",
+    date: "2026-09-08",
+    url: "",
+    sections: [
+      {
+        title: "Y-Next draait rechtstreeks op ERPNext",
+        items: [
+          "De app is een pagina op ERPNext zelf geworden en gebruikt je ERPNext-sessie. Geen aparte server meer die kan uitvallen, geen tweede wachtwoord, en wat je mag zien volgt één-op-één je rechten in ERPNext.",
+          "Overgezet naar ERPNext v15. De eigen gegevenssoorten (km-registratie, onkosten, instellingen) worden bij het uitrollen automatisch aangemaakt, inclusief het herstellen van nummerreeksen die achterlopen.",
+        ],
+      },
+      {
+        title: "E-mail — postbussen en opstellen",
+        items: [
+          "Webmail draait op de e-mail die al in ERPNext staat: mappen, zoeken, bulkacties, een prullenbak, en definitief verwijderen dat de mail ook echt van de server haalt.",
+          "Meerdere postbussen naast elkaar, elk op een eigen tabblad, met een eigen afzenderadres en een eigen handtekening. Per persoon is in te stellen welke postbussen hij erbij ziet.",
+          "Handtekeningen komen uit ERPNext en zijn overal gelijk. Ze staan zichtbaar in het opstelvenster, zodat je vóór verzenden ziet wat eronder komt.",
+          "Opstellen: tekstopmaak met uitlijnen en tabellen, een ruimer venster met een greep om de hoogte te zetten, sneltoetsen, Tab die binnen het venster blijft, en adresaanvulling uit alle contactadressen die ERPNext kent.",
+          "Gesprekken en concepten: het origineel staat naast je antwoord, een merkje laat zien wat je al beantwoord of doorgestuurd hebt, en je eigen verzonden antwoorden staan in de rij.",
+        ],
+      },
+      {
+        title: "E-mail — ordenen en herkennen",
+        items: [
+          "De inbox is geordend op connecties in plaats van op mappen: een mail hangt aan een project, een klant of een factuur. Koppelen kan aan elk document, en één mail koppelen koppelt het hele gesprek. Op de koppeling staat het projectnummer vóór de naam.",
+          "De app herkent inkoopfacturen in de mail en boekt ze in, met de pdf ernaast in beeld zodat je hem naast het formulier kunt lezen.",
+          "Leads en offerteaanvragen worden herkend, net als het project waar een mail bij hoort. Een onbekende afzender leg je vanuit de inbox vast als relatie en contactpersoon.",
+          "Platte tekst houdt zijn regelovergangen, PDF-bijlagen openen betrouwbaar, alle bijlagen zijn in één keer te downloaden en een bericht is af te drukken.",
+        ],
+      },
+      {
+        title: "Agenda",
+        items: [
+          "De agenda's van collega's komen uit de mailserver, elk met een eigen kleur. Je kiest zelf wie je ziet, of zet iedereen in één klik uit; hun afspraken staan halftoon zodat je eigen dag eruit springt.",
+          "Uitnodigingen versturen, zien en beantwoorden.",
+          "Nieuwe afspraken staan standaard op privé. Iedereen mag elkaars agenda inzien, maar je afspraken komen niet bij iedereen in de lijst.",
+          "Zaterdag en zondag staan weer in de weekweergave en de kolomkoppen staan weer boven hun eigen dag. Het bronnenpaneel staat standaard open en is breder te slepen; slepen in de week- of dagweergave maakt een nieuwe afspraak.",
+          "De collegalijst bleef leeg voor gewone medewerkers — die haalde alleen je eigen naam op.",
+        ],
+      },
+      {
+        title: "Taken, uren en onkosten",
+        items: [
+          "Taken zijn in bulk te selecteren en te bewerken. Begrote uren staan op de kaart en zijn in het detail in te vullen, en staat \"Taak aanmaken\" uit, dan zegt de app waarom.",
+          "Een jaarurenstaat per medewerker, waarbij bestaande concepten worden opgepakt in plaats van dat er een tweede naast komt.",
+          "Km-registratie en onkosten kunnen medewerkers zelf indienen.",
+        ],
+      },
+      {
+        title: "Berichten, facturen en cijfers",
+        items: [
+          "Berichten draait op ERPNext in plaats van op de verdwenen tussenlaag; afbeeldingen zijn te plakken en te slepen.",
+          "Vergadernotities, extensies en deze release notes werken zonder aparte server.",
+          "Inkoopfactuur inboeken lukt weer: de vervaldatum wordt uit de factuurdatum en de betalingstermijn van de leverancier berekend, niet vanaf de boekdatum.",
+          "Concept-verkoopfacturen tellen mee in de statistieken, het standaardbedrijf komt uit ERPNext, en vanuit een mail maak je meteen een offerte.",
+          "Het wanddashboard past weer op één pagina: planning per persoon in blokken van vier breed met alleen wie er is, aanwezigheid als vinkje ernaast, en facturabele uren in vier tegels plus een maandoverzicht van het afgelopen jaar.",
+          "Niet-actieve bedrijven staan niet meer in de keuzelijsten.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.31.0",
     date: "2026-07-06",
     url: "",

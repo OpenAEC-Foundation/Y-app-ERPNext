@@ -1,7 +1,10 @@
 import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { kiesUitnodigingen, wachtOpAntwoord } from "../lib/agenda-uitnodigingen";
+import { haalOpenUitnodigingen } from "../lib/uitnodigingen-uit-mail";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
-  berekenSleep, minutenNaarTijd, sleepbaar, tijdNaarMinuten, verschuifDatum,
+  berekenSleep, duurUitMinuten, minutenNaarTijd, sleepbaar, tijdNaarMinuten,
+  verschuifDatum,
 } from "../lib/agenda-slepen";
 import { fetchList, fetchChildTable, createDocument, updateDocument, deleteDocument } from "../lib/erpnext";
 import {
@@ -16,7 +19,7 @@ import { haalAgendas, eindTijd, haalCollegas, kleurenVoorCollegas, type Collega 
 import { resolveSessionUser } from "../lib/session";
 import {
   antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, kanAntwoorden,
-  nieuweAfspraakUid, verstuurAfspraak,
+  nieuweAfspraakUid, verstuurAfspraak, werkAfspraakBij,
   type MailserverAfspraak, type MailserverGenodigde,
 } from "../lib/agenda-mailserver";
 import type { Deelnamestatus } from "../lib/ical";
@@ -24,7 +27,7 @@ import { RecipientInput } from "../components/RecipientInput";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
   Plus, RefreshCw, X, Send, Video, CheckSquare, CalendarDays,
-  Settings, Trash2, ExternalLink, Pencil, Save,
+  Settings, Trash2, ExternalLink, Pencil, Save, Mail,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -53,6 +56,19 @@ interface EventItem {
    *  detail/edit-scherm dezelfde afspraak kan bijwerken en mensen kan her-notificeren. */
   icalUid?: string;
   attendees?: string[];
+  /**
+   * Onderdeel van een herhalende reeks. Zo'n afspraak is niet te verslepen:
+   * één blok verplaatsen zou de hele reeks verzetten.
+   */
+  herhaalt?: boolean;
+  /**
+   * Een uitnodiging waarop jouw antwoord nog ontbreekt. De agenda tekent hem
+   * gestippeld: de tijd is bezet zolang je niet hebt geweigerd, maar het is nog
+   * geen afspraak.
+   */
+  onbeantwoord?: boolean;
+  /** De mail waar de uitnodiging in zat, als hij daar nog staat. */
+  communication?: string;
   /** Voor type "mailbox": de gegevens die het beantwoorden mogelijk maken. */
   uitnodiging?: {
     /** De UID uit de mailserver-agenda; hier hangt het .ics-bestand aan. */
@@ -65,6 +81,15 @@ interface EventItem {
 }
 
 type ViewType = "month" | "week" | "day";
+
+/** Hoogte van één uur in het raster, in pixels. */
+const UUR_HOOGTE = 48;
+/**
+ * Waar de week- en dagweergave op openen. De dag zelf loopt van middernacht
+ * tot middernacht — zie de toelichting bij `START_HOUR` — maar beginnen bij
+ * 00:00 zou betekenen dat je elke keer eerst zeven uur naar beneden scrolt.
+ */
+const WERKDAG_START = 7;
 
 /** Grenzen aan de breedte van het bronnenpaneel: smaller wordt onleesbaar, breder eet de agenda op. */
 const PANEEL_MIN = 200;
@@ -225,6 +250,21 @@ function demping(e: EventItem): { opacity?: number } {
   return e.vanAnder ? { opacity: 0.55 } : {};
 }
 
+/**
+ * Stippellijn voor een uitnodiging waarop nog geen antwoord staat. Bewust niet
+ * dichtgekleurd zoals een gewone afspraak: de tijd is bezet, maar onder
+ * voorbehoud — je hebt nog niet gezegd dat je komt.
+ */
+function stippel(e: EventItem): Record<string, string | number> {
+  if (!e.onbeantwoord) return {};
+  return {
+    borderStyle: "dashed",
+    borderWidth: 1.5,
+    borderColor: e.color,
+    backgroundColor: "transparent",
+  };
+}
+
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -326,11 +366,16 @@ function saveCustomCalendars(calendars: CustomCalendar[]): void {
   localStorage.setItem(getPrefKey("calendars"), JSON.stringify(calendars));
 }
 
-// Default-doelagenda voor nieuwe items. "erpnext" of "caldav:<calendarId>".
-// Per-device (zoals de overige agenda-prefs); de laatst gekozen waarde in de
-// aanmaak-modal wordt de nieuwe default.
+// Default-doelagenda voor nieuwe items. "mailserver", "erpnext" of
+// "caldav:<calendarId>". Per-device (zoals de overige agenda-prefs); de laatst
+// gekozen waarde in de aanmaak-modal wordt de nieuwe default.
+//
+// De mailserver is de standaard, en dat is geen willekeurige keuze: dat is de
+// agenda die ook op je telefoon en in Thunderbird staat, en die collega's
+// kunnen zien. Een afspraak die alleen in ERPNext staat bestaat nergens
+// anders — dat merk je pas als je hem op je telefoon zoekt.
 function getDefaultCalendarTarget(): string {
-  return localStorage.getItem(getPrefKey("default_calendar")) || "erpnext";
+  return localStorage.getItem(getPrefKey("default_calendar")) || "mailserver";
 }
 
 function setDefaultCalendarTarget(target: string): void {
@@ -640,6 +685,14 @@ function CreateModal({ initial, onClose, onCreated }: {
 
   const jitsiUrl = form.jitsiRoom ? `https://meet.jit.si/${form.jitsiRoom}` : "";
 
+  /*
+   * Uitnodigen kan alleen via de mailserver: die zet de afspraak in de agenda
+   * van de genodigde en stuurt de uitnodiging. Staat er dus iemand in het
+   * veld, dan is de doel-agenda geen keuze meer.
+   */
+  const heeftGenodigden = form.inviteEmails.trim() !== "";
+  const doelAgenda = heeftGenodigden ? "mailserver" : form.calendarTarget;
+
   async function handleSave() {
     if (!form.title.trim()) { setError(t("agenda.fill_title")); return; }
     setSaving(true); setError("");
@@ -659,7 +712,7 @@ function CreateModal({ initial, onClose, onCreated }: {
       let inviteIcs: string | undefined;
       let inviteAccount: string | undefined;
 
-      if (form.type === "event" && form.calendarTarget === "mailserver") {
+      if (form.type === "event" && doelAgenda === "mailserver") {
         /*
          * De mailserver-agenda: dit is de enige route waarlangs een afspraak
          * bij een collega in de agenda belandt. Hij schrijft dezelfde afspraak
@@ -695,9 +748,9 @@ function CreateModal({ initial, onClose, onCreated }: {
             agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
           }));
         }
-      } else if (form.type === "event" && form.calendarTarget.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
+      } else if (form.type === "event" && doelAgenda.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
         // Doel = privé CalDAV-agenda: schrijf een VEVENT via de server (PUT .ics).
-        const calId = form.calendarTarget.slice("caldav:".length);
+        const calId = doelAgenda.slice("caldav:".length);
         const cal = writableCalDav.find(c => c.id === calId);
         if (!cal) throw new Error(t("agenda.calendar_not_found", { defaultValue: "Gekozen agenda niet gevonden" }));
         const res = await fetch("/api/calendar/event", {
@@ -828,19 +881,28 @@ function CreateModal({ initial, onClose, onCreated }: {
           {/* Doel-agenda (alleen voor afspraken). Laatst gekozen wordt de
               default. De mailserver staat er altijd bij: dat is de agenda die
               collega's ook zien, en de enige route waarlangs een uitnodiging
-              bij hen aankomt. */}
+              bij hen aankomt.
+
+              Staat er iemand in het genodigdenveld, dan ligt de keuze vast op
+              de mailserver. Een afspraak die alleen in ERPNext staat komt bij
+              niemand aan; dat je dat pas merkt als er niemand op komt dagen is
+              precies het soort stilte dat we hier niet willen. */}
           {form.type === "event" && (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.target_calendar_label", { defaultValue: "Agenda" })}</label>
-              <select value={form.calendarTarget}
+              <select value={heeftGenodigden ? "mailserver" : form.calendarTarget}
+                disabled={heeftGenodigden}
                 onChange={e => { const v = e.target.value; setForm(f => ({ ...f, calendarTarget: v })); setDefaultCalendarTarget(v); }}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-slate-50 disabled:text-slate-500">
                 <option value="erpnext">{t("agenda.target_erpnext", { defaultValue: "ERPNext" })}</option>
                 <option value="mailserver">{t("agenda.target_mailserver")}</option>
                 {writableCalDav.map(c => (
                   <option key={c.id} value={`caldav:${c.id}`}>{c.name}</option>
                 ))}
               </select>
+              {heeftGenodigden && (
+                <p className="text-[10px] text-slate-500 mt-1">{t("agenda.invite_needs_mailserver")}</p>
+              )}
             </div>
           )}
 
@@ -1095,7 +1157,16 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
     ? calendars.find(c => c.id === event.calendarId && !!c.accountId)
     : undefined;
   const isCalDav = !!calDavSource;
-  const canEdit = isErpEvent || isErpTask || isO365 || isCalDav;
+  /*
+   * Een afspraak uit de mailserver is te wijzigen zolang het jouw eigen kopie
+   * is. Wat je in de agenda van een collega ziet staan is de zijne; die
+   * verzet hij zelf, of de organisator doet het en dan schuift zijn kopie
+   * vanzelf mee. Een herhalende reeks blijft hier buiten: één afspraak
+   * aanpassen zou de hele reeks verzetten.
+   */
+  const isMailserver = event.type === "mailbox" && !!event.uitnodiging
+    && !event.vanAnder && !event.herhaalt;
+  const canEdit = isErpEvent || isErpTask || isO365 || isCalDav || isMailserver;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1182,6 +1253,34 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
           throw new Error((err as any).error || `O365 update failed: ${res.status}`);
+        }
+      } else if (isMailserver && event.uitnodiging) {
+        /*
+         * De mailserver werkt bij als patch: alleen de velden hieronder gaan
+         * mee, al het andere in de afspraak blijft staan. Daarom kan dit ook
+         * bij een afspraak die in Thunderbird of op een telefoon is gemaakt,
+         * waarvan wij de helft van de velden niet kennen.
+         *
+         * Ben je de organisator, dan gaat de wijziging ook naar de agenda van
+         * de genodigden. Ben je dat niet, dan laat het Server Script die
+         * adressen vallen en verandert alleen je eigen kopie.
+         */
+        const startMin = allDay ? 0 : Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5));
+        const eindMin = allDay ? 24 * 60 : Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5));
+        const uitslag = await werkAfspraakBij(event.uitnodiging.uid, {
+          titel: title,
+          start: `${date}T${allDay ? "00:00" : startTime}:00`,
+          duur: duurUitMinuten(Math.max(eindMin - startMin, 15)),
+          locatie: location,
+          omschrijving: description,
+        }, event.uitnodiging.genodigden.map((g) => g.email));
+        if (uitslag.geschreven.length === 0) {
+          throw new Error(uitslag.mislukt[0]?.reden || t("agenda.move_failed"));
+        }
+        if (uitslag.mislukt.length > 0) {
+          setError(t("agenda.move_partial", {
+            agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
+          }));
         }
       } else if (isCalDav && calDavSource) {
         // CalDAV-event bijwerken: zelfde UID (overschrijft <uid>.ics) + hogere
@@ -1307,6 +1406,15 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
 
           <Uitnodiging event={event} ik={ik} onGeantwoord={onUpdated} />
 
+          {/* Een uitnodiging die alleen nog in de post staat: er is hier niets
+              te beantwoorden, want als afspraak bestaat hij nog nergens. */}
+          {event.onbeantwoord && !event.uitnodiging && (
+            <p className="flex items-start gap-2 rounded-lg border border-dashed border-violet-300 bg-violet-50/60 px-3 py-2 text-xs text-violet-900">
+              <Mail size={14} className="mt-0.5 flex-shrink-0 text-violet-500" />
+              {t("agenda.invite_in_mail")}
+            </p>
+          )}
+
           {/* Title */}
           {editing ? (
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -1359,7 +1467,7 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
           )}
 
           {/* Location */}
-          {editing && (isErpEvent || isO365) ? (
+          {editing && (isErpEvent || isO365 || isMailserver) ? (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.location")}</label>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
@@ -1551,6 +1659,20 @@ export default function Agenda() {
    * breder of smaller wordt gesleept.
    */
   const scrollBak = useRef<HTMLDivElement | null>(null);
+  const dagBak = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Bij het openen meteen naar het begin van de werkdag.
+   *
+   * De dag loopt van middernacht tot middernacht zodat een vroege of late
+   * afspraak bereikbaar is, maar beginnen bij 00:00 zou betekenen dat je elke
+   * keer eerst zeven uur naar beneden moet scrollen.
+   */
+  useEffect(() => {
+    const top = WERKDAG_START * UUR_HOOGTE;
+    if (scrollBak.current) scrollBak.current.scrollTop = top;
+    if (dagBak.current) dagBak.current.scrollTop = top;
+  }, [viewType]);
   const [balkBreedte, setBalkBreedte] = useState(0);
   useEffect(() => {
     const el = scrollBak.current;
@@ -1834,6 +1956,11 @@ export default function Agenda() {
             // is de hele agenda even grijs voordat hij zichzelf herstelt. Lukt
             // het ophalen helemaal niet, dan blijft alles gewoon vol.
             vanAnder: ikZelf !== "" && a.gebruiker.toLowerCase() !== ikZelf,
+            herhaalt: !!a.herhaalt,
+            // Een uitnodiging die de mailserver zelf al in je agenda zette,
+            // maar waar jouw antwoord nog op ontbreekt.
+            onbeantwoord: a.gebruiker.toLowerCase() === ikZelf
+              && wachtOpAntwoord(a.genodigden, ikZelf),
             owner: a.gebruiker.split("@")[0],
             uitnodiging: a.uid
               ? {
@@ -1859,6 +1986,37 @@ export default function Agenda() {
               owner: lv.employee_name,
             });
           }
+        }
+      }
+
+      /*
+       * Uitnodigingen die nog in de post staan. Ze horen in de agenda vóórdat
+       * je antwoordt: wie ze pas ziet nadat hij ze heeft aangenomen, plant er
+       * ondertussen iets overheen. Gestippeld, want ze staan er onder
+       * voorbehoud — zie `stippel`.
+       */
+      if (ikZelf) {
+        const bestaand = items.map((i) => i.uitnodiging?.uid || i.icalUid || "");
+        const open = kiesUitnodigingen(await haalOpenUitnodigingen(), bestaand, ikZelf);
+        for (const { communication, afspraak } of open) {
+          const start = String(afspraak.start);
+          const eind = afspraak.eind || start;
+          // Buiten de getoonde periode heeft tekenen geen zin.
+          if (start.slice(0, 10) > dateRange.end || eind.slice(0, 10) < dateRange.start) continue;
+          items.push({
+            id: `uitnodiging-${afspraak.uid}`,
+            title: afspraak.titel || t("agenda.no_title"),
+            start: start.replace("T", " "),
+            end: eind.replace("T", " "),
+            allDay: !!afspraak.heleDag,
+            type: "mailbox",
+            color: TYPE_COLORS.mailbox,
+            location: afspraak.locatie,
+            description: afspraak.omschrijving,
+            icalUid: afspraak.uid,
+            communication,
+            onbeantwoord: true,
+          });
         }
       }
 
@@ -2111,7 +2269,7 @@ export default function Agenda() {
                       {dayEvents.slice(0, 3).map((e) => (
                         <div key={e.id} className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] truncate hover:brightness-90 transition-all"
                           onClick={(ev) => { ev.stopPropagation(); setDetailEvent(e); }}
-                          style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
+                          style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color, ...stippel(e) }}>
                           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: e.color }} />
                           <span className="truncate font-medium">{e.title}</span>
                         </div>
@@ -2132,9 +2290,18 @@ export default function Agenda() {
 
   /* ─── Helpers for time-based positioning ─── */
 
-  const HOUR_HEIGHT = 48;
-  const START_HOUR = 7;
-  const TOTAL_HOURS = 14;
+  const HOUR_HEIGHT = UUR_HOOGTE;
+  /*
+   * De dag loopt van middernacht tot middernacht.
+   *
+   * Stond eerder op 07:00-21:00. Dat oogt rustig, maar wat daarbuiten valt is
+   * dan niet alleen onzichtbaar — het is ook onbereikbaar: er valt niet naar
+   * toe te scrollen, en een afspraak om half zeven 's ochtends bestaat voor
+   * dit scherm niet. Nu staat de hele dag er, en begint de weergave bij
+   * `WERKDAG_START` zodat je niet elke keer bij middernacht opent.
+   */
+  const START_HOUR = 0;
+  const TOTAL_HOURS = 24;
   const GRID_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
 
   function getEventPosition(e: EventItem) {
@@ -2309,9 +2476,30 @@ export default function Agenda() {
       e.id === st.id ? { ...e, start: nieuweStart, end: nieuwEind } : e));
 
     try {
-      // Alleen ERPNext-afspraken; `sleepbaar` heeft de rest al geweerd.
-      const naam = st.id.replace(/^event-/, "");
-      await updateDocument("Event", naam, { starts_on: nieuweStart, ends_on: nieuwEind });
+      if (afspraak.type === "mailbox") {
+        const uitn = afspraak.uitnodiging;
+        if (!uitn) throw new Error(t("agenda.mailserver_no_uid"));
+        // De mailserver werkt de afspraak bij als patch: alleen begintijd en
+        // duur gaan mee, de rest van de afspraak blijft ongemoeid staan.
+        const uitslag = await werkAfspraakBij(uitn.uid, {
+          start: `${nieuweDag}T${minutenNaarTijd(uit.startMin)}:00`,
+          duur: duurUitMinuten(uit.eindMin - uit.startMin),
+        }, uitn.genodigden.map((g) => g.email));
+        if (uitslag.geschreven.length === 0) {
+          throw new Error(uitslag.mislukt[0]?.reden || t("agenda.move_failed"));
+        }
+        // Bij een gezamenlijke afspraak schuift de kopie van elke genodigde
+        // mee. Lukt dat bij iemand niet, dan hoor je dat te weten: anders
+        // staat de vergadering bij hem nog op de oude tijd.
+        if (uitslag.mislukt.length > 0) {
+          setSleepFout(t("agenda.move_partial", {
+            agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
+          }));
+        }
+      } else {
+        const naam = st.id.replace(/^event-/, "");
+        await updateDocument("Event", naam, { starts_on: nieuweStart, ends_on: nieuwEind });
+      }
       loadEvents();
     } catch (err) {
       // Terugdraaien doet de verversing: die haalt de werkelijke tijden op.
@@ -2400,7 +2588,7 @@ export default function Agenda() {
                 onDoubleClick={() => handleSlotClick(key)}>
                 {allDayEvents.slice(0, 2).map((e) => (
                   <div key={e.id} className="text-[10px] px-1 py-0.5 rounded truncate font-medium"
-                    style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
+                    style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color, ...stippel(e) }}>
                     {e.title}
                   </div>
                 ))}
@@ -2465,6 +2653,7 @@ export default function Agenda() {
                           backgroundColor: e.color + "20",
                           color: e.color,
                           borderLeft: `3px solid ${e.color}`,
+                          ...stippel(e),
                         }}>
                         <div className="truncate leading-tight">{e.title}</div>
                         <div className="text-[9px] opacity-70">
@@ -2558,14 +2747,14 @@ export default function Agenda() {
             <div className="flex flex-wrap gap-1">
               {allDayEvents.map((e) => (
                 <span key={e.id} className="text-xs px-2 py-1 rounded font-medium"
-                  style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
+                  style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color, ...stippel(e) }}>
                   {e.title}
                 </span>
               ))}
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={dagBak} className="flex-1 overflow-y-auto">
           <div className="flex" style={{ height: DAY_GRID_HEIGHT }}>
             {/* Time labels */}
             <div className="w-16 shrink-0 relative">
@@ -2614,6 +2803,7 @@ export default function Agenda() {
                       width: `calc(${e.width * 100}% - 8px)`,
                       backgroundColor: e.color + "15",
                       borderLeft: `4px solid ${e.color}`,
+                      ...stippel(e),
                     }}>
                     <div className="text-sm font-medium truncate" style={{ color: e.color }}>{e.title}</div>
                     <div className="text-xs text-slate-500 mt-0.5">
@@ -2686,7 +2876,7 @@ export default function Agenda() {
           {dayEvents.map((e) => (
             <div key={e.id} className="p-3 rounded-lg border border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors"
               onClick={() => setDetailEvent(e)}
-              style={{ ...demping(e), borderLeftColor: e.color, borderLeftWidth: 3 }}>
+              style={{ ...demping(e), borderLeftColor: e.color, borderLeftWidth: 3, ...stippel(e) }}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ ...demping(e), backgroundColor: e.color + "20", color: e.color }}>
                   {e.type === "ical" ? (calendars.find(c => c.id === e.calendarId)?.name || t("nav.calendar")) : t(TYPE_LABEL_KEYS[e.type])}

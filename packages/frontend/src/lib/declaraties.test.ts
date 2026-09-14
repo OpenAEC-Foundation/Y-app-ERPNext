@@ -8,6 +8,7 @@ import {
   formatErpDate,
   formatErpDatetime,
   totaleKilometers,
+  vindDubbeleRit,
 } from "./declaraties.ts";
 import { DEFAULT_KM_TARIEF } from "./kmTarief.ts";
 
@@ -138,4 +139,62 @@ test("formatErpDate: lokale datum, niet UTC", () => {
 
 test("formatErpDatetime: het formaat dat Frappe verwacht", () => {
   assert.equal(formatErpDatetime(new Date(2026, 11, 31, 23, 59, 59)), "2026-12-31 23:59:59");
+});
+
+/* ─────────────────────── Dubbel boeken ─────────────────────── */
+
+/**
+ * Waarom dit bestaat: op deze installatie staat 10 september twee keer in de
+ * kilometerregistratie — dezelfde medewerker, dezelfde dag, dezelfde route.
+ * De boeking wás bewaard, maar het scherm ernaast ververste niet, dus de
+ * gebruiker boekte hem nog een keer. Dat kost twee keer vergoeding.
+ */
+
+const RIT = {
+  name: "YKM-2026-00002",
+  employee: "HR-EMP-00019",
+  datum: "2026-09-10",
+  van: "Leerambachtstraat 22, 3295 XR 's-Gravendeel",
+  naar: "Burgemeester de Raadtsingel 31, 3311 JG Dordrecht",
+  kilometers: 12,
+  status: "Concept" as const,
+};
+
+test("vindDubbeleRit: dezelfde dag en dezelfde route is een dubbele", () => {
+  const gevonden = vindDubbeleRit([RIT], {
+    employee: RIT.employee, datum: RIT.datum, van: RIT.van, naar: RIT.naar,
+  });
+  assert.equal(gevonden?.name, "YKM-2026-00002");
+});
+
+test("vindDubbeleRit: hoofdletters en spaties in een adres maken geen nieuwe rit", () => {
+  const gevonden = vindDubbeleRit([RIT], {
+    employee: RIT.employee, datum: RIT.datum,
+    van: "  leerambachtstraat 22, 3295 XR 's-Gravendeel ",
+    naar: RIT.naar.toUpperCase(),
+  });
+  assert.equal(gevonden?.name, "YKM-2026-00002");
+});
+
+test("vindDubbeleRit: een andere dag, route of medewerker is geen dubbele", () => {
+  const basis = { employee: RIT.employee, datum: RIT.datum, van: RIT.van, naar: RIT.naar };
+  assert.equal(vindDubbeleRit([RIT], { ...basis, datum: "2026-09-11" }), undefined);
+  assert.equal(vindDubbeleRit([RIT], { ...basis, naar: "Rotterdam Centraal" }), undefined);
+  assert.equal(vindDubbeleRit([RIT], { ...basis, employee: "HR-EMP-00061" }), undefined);
+});
+
+test("vindDubbeleRit: de heenweg van een ander is geen dubbele van de jouwe", () => {
+  // Omgedraaide route: dat is de terugrit, een eigen boeking.
+  const gevonden = vindDubbeleRit([RIT], {
+    employee: RIT.employee, datum: RIT.datum, van: RIT.naar, naar: RIT.van,
+  });
+  assert.equal(gevonden, undefined);
+});
+
+test("vindDubbeleRit: zonder ingevulde route wordt er niet gewaarschuwd", () => {
+  // Half ingevuld formulier: dan is er nog niets om mee te vergelijken.
+  assert.equal(vindDubbeleRit([RIT], {
+    employee: RIT.employee, datum: RIT.datum, van: "", naar: "" }), undefined);
+  assert.equal(vindDubbeleRit([], {
+    employee: RIT.employee, datum: RIT.datum, van: RIT.van, naar: RIT.naar }), undefined);
 });

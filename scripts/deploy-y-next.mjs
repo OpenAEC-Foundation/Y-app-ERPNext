@@ -107,7 +107,7 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
   ].join("\n");
 
   return {
-    title: "Y-next",
+    title: "Y-Next",
     route: WEB_PAGE_ROUTE,
     published: 1,
     content_type: "HTML",
@@ -169,6 +169,10 @@ const MIME_TYPES_BY_EXT = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".txt": "text/plain",
+  // WebAssembly moet met dit type aankomen: de browser weigert
+  // `instantiateStreaming` op application/octet-stream, en dan valt de
+  // IFC-viewer terug op een trager pad of laadt hij helemaal niet.
+  ".wasm": "application/wasm",
   ".map": "application/json",
 };
 

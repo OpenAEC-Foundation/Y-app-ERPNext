@@ -30,7 +30,7 @@ import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Indent, Outdent, Link2, Link2Off, Quote, Minus, Palette, RemoveFormatting,
   Heading1, Heading2, Pilcrow,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon, X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -41,6 +41,9 @@ import {
 import {
   sanitizeEditorHtml, plainTextToHtml, normalizeLinkUrl, isHtmlEmpty,
 } from "../../lib/mail-html";
+import {
+  PLAK_ATTRIBUUT, plakHtml, plakvormen, verwijderPlakMarkering, type Plakvorm,
+} from "../../lib/mail-plakken";
 
 /** Eén werkbalkknop; `hideOnMobile` houdt de balk op een telefoon één regel. */
 interface ToolButton {
@@ -87,12 +90,32 @@ const EXTRA_BUTTONS: ToolButton[] = [
  *  in een bijlage. `MAX_TABEL` in `rich-text-commands` is de harde bovengrens. */
 const TABEL_RASTER = 6;
 
+/**
+ * `font-family:Arial;font-size:11pt` naar wat React als `style` aanneemt.
+ *
+ * De huisstijl wordt als CSS-tekst bewaard omdat hij ook letterlijk in de
+ * verstuurde mail terechtkomt; React wil hier een object. Onbekende brokken
+ * worden overgeslagen in plaats van de hele stijl te laten vallen.
+ */
+function cssNaarStijl(css: string): Record<string, string> {
+  const uit: Record<string, string> = {};
+  for (const deel of css.split(";")) {
+    const i = deel.indexOf(":");
+    if (i <= 0) continue;
+    const naam = deel.slice(0, i).trim().replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+    const waarde = deel.slice(i + 1).trim();
+    if (naam && waarde) uit[naam] = waarde;
+  }
+  return uit;
+}
+
 const BTN_BASE =
   "p-1.5 rounded text-slate-600 hover:bg-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-default";
 const BTN_ACTIVE = "bg-slate-300 text-slate-900";
 
 export default function RichTextEditor({
   value, onChange, placeholder, className, ariaLabel, autoFocus, collapseQuote,
+  basisStijl,
 }: {
   /** De HTML van het bericht. Verandert deze van buitenaf, dan herlaadt het vak. */
   value: string;
@@ -107,6 +130,13 @@ export default function RichTextEditor({
    * helemaal in en gaat ook helemaal mee. De regel staat in `index.css`.
    */
   collapseQuote?: boolean;
+  /**
+   * Inline CSS voor de schrijfruimte: het lettertype waarin de mail straks
+   * vertrekt (`lib/mailOpmaak`). Hier en in de verstuurde mail dezelfde
+   * string, zodat wat je tijdens het typen ziet ook is wat de ontvanger
+   * krijgt. Leeg laten geeft de opmaak van de app zelf.
+   */
+  basisStijl?: string;
 }) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -115,6 +145,17 @@ export default function RichTextEditor({
   const lastEmitted = useRef<string>("");
   /** Staat er een Ctrl+Shift+V klaar? Gezet op keydown, gelezen bij het plakken. */
   const plainPaste = useRef(false);
+
+  /**
+   * Wat er net geplakt is, zolang de keuze nog openstaat.
+   *
+   * Ctrl+Shift+V bestond al, maar dat moet je vóóraf bedenken. Dit is de
+   * keuze achteraf: je plakt, je ziet wat er staat, en pas dan beslis je of
+   * de opmaak mee mag.
+   */
+  const [plak, setPlak] = useState<
+    { id: string; html: string; tekst: string; vormen: Plakvorm[]; gekozen: Plakvorm } | null
+  >(null);
   /**
    * De laatste cursorpositie ín het tekstvak.
    *
@@ -182,7 +223,10 @@ export default function RichTextEditor({
   const emit = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
-    const html = el.innerHTML;
+    // De plakmarkering hoort bij het tekstvak, niet bij het bericht. Hier
+    // gaat hij eruit, dus wat de rest van de app ziet is altijd schoon —
+    // ook als het keuzeblokje nog openstaat.
+    const html = verwijderPlakMarkering(el.innerHTML);
     // Leeg is écht leeg: een achtergebleven `<br>` of `<p><br></p>` mag geen
     // concept opleveren en geen mail met een lege regel.
     const next = isHtmlEmpty(html) ? "" : html;
@@ -340,9 +384,56 @@ export default function RichTextEditor({
   const pasteFromClipboard = useCallback((data: DataTransfer, plainOnly: boolean) => {
     const html = plainOnly ? "" : data.getData("text/html");
     const text = data.getData("text/plain");
-    if (html) insertHtml(html);
-    else if (text) insertHtml(plainTextToHtml(text));
+    const vormen = plainOnly ? [] : plakvormen(html, text);
+
+    // Zonder echte keuze geen markering en geen blokje: een knop die niets
+    // verandert maakt de andere knoppen ongeloofwaardig.
+    if (vormen.length === 0) {
+      if (html) insertHtml(html);
+      else if (text) insertHtml(plainTextToHtml(text));
+      return;
+    }
+
+    const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    insertHtml(`<span ${PLAK_ATTRIBUUT}="${id}">${plakHtml(vormen[0], html, text)}</span>`);
+    setPlak({ id, html, tekst: text, vormen, gekozen: vormen[0] });
   }, [insertHtml]);
+
+  /** Het geplakte stuk opnieuw neerzetten, in de gekozen vorm. */
+  const kiesPlakvorm = useCallback((vorm: Plakvorm) => {
+    setPlak((huidig) => {
+      if (!huidig) return null;
+      const el = editorRef.current?.querySelector(`[${PLAK_ATTRIBUUT}="${huidig.id}"]`);
+      if (el) {
+        el.innerHTML = sanitizeEditorHtml(plakHtml(vorm, huidig.html, huidig.tekst));
+        emit();
+      }
+      return { ...huidig, gekozen: vorm };
+    });
+  }, [emit]);
+
+  /**
+   * De keuze sluiten en de markering opruimen.
+   *
+   * Het opruimen gebeurt in het tekstvak zelf; `emit` haalt hem sowieso al uit
+   * de waarde, maar een markering die in de DOM blijft staan zou een volgende
+   * plakactie in de war kunnen sturen.
+   */
+  const sluitPlak = useCallback(() => {
+    setPlak((huidig) => {
+      const el = huidig && editorRef.current?.querySelector(`[${PLAK_ATTRIBUUT}="${huidig.id}"]`);
+      if (el && el.parentNode) {
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.parentNode.removeChild(el);
+      }
+      return null;
+    });
+  }, []);
+
+  // Voor de toetsafhandeling, die niet bij elke wijziging opnieuw gemaakt
+  // hoort te worden.
+  const plakRef = useRef<typeof plak>(null);
+  useEffect(() => { plakRef.current = plak; }, [plak]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
     if (!e.clipboardData) return;
@@ -353,6 +444,9 @@ export default function RichTextEditor({
   }, [pasteFromClipboard]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Zodra je verder typt is de keuze voorbij. Escape sluit hem meteen.
+    if (e.key === "Escape" && plakRef.current) { e.preventDefault(); sluitPlak(); return; }
+    if (plakRef.current && e.key.length === 1) sluitPlak();
     // Tab eerst: die is hier een inspringing, geen sprong naar het volgende
     // veld. `preventDefault` houdt de focus in het tekstvak — de focus-val van
     // het opstelvenster ziet aan `defaultPrevented` dat hij er vanaf moet
@@ -551,6 +645,32 @@ export default function RichTextEditor({
       </div>
 
       <div className="relative flex-1 min-h-0">
+        {/* De keuze na het plakken. Blijft staan tot je verder typt, Escape
+            drukt of een vorm kiest — lang genoeg om te zien wat er geplakt is,
+            kort genoeg om niet in de weg te zitten. */}
+        {plak && (
+          <div role="group" aria-label={t("webmail.paste_as")}
+            className="absolute bottom-2 right-3 z-20 flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1 shadow-md">
+            <span className="px-1 text-[10px] uppercase tracking-wide text-slate-400">
+              {t("webmail.paste_as")}
+            </span>
+            {plak.vormen.map((v) => (
+              <button key={v} type="button" onClick={() => kiesPlakvorm(v)}
+                aria-pressed={plak.gekozen === v}
+                className={`cursor-pointer rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  plak.gekozen === v
+                    ? "bg-slate-200 font-medium text-slate-800"
+                    : "text-slate-500 hover:bg-slate-100"
+                }`}>
+                {t(`webmail.paste_${v}`)}
+              </button>
+            ))}
+            <button type="button" onClick={sluitPlak} aria-label={t("common.close")}
+              className="cursor-pointer rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <X size={11} />
+            </button>
+          </div>
+        )}
         {empty && placeholder && (
           <span aria-hidden="true"
             className="absolute left-4 top-3 text-sm text-slate-400 pointer-events-none select-none">
@@ -573,6 +693,7 @@ export default function RichTextEditor({
           onKeyUp={syncState}
           onMouseUp={syncState}
           onFocus={syncState}
+          style={basisStijl ? cssNaarStijl(basisStijl) : undefined}
           className="h-full w-full overflow-auto px-4 py-3 text-sm text-slate-800 focus:outline-none
             [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6
             [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold

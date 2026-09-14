@@ -3,4 +3,4 @@
 // editing only packages/frontend/package.json (plus the other manifests).
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
-export const APP_NAME = "Y-App";
+export const APP_NAME = "Y-Next";

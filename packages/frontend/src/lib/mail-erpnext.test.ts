@@ -342,7 +342,11 @@ test("getMessageBody: levert content-HTML plus de File-bijlagen van de Communica
   try {
     const body = await getMessageBody("COMM-0042");
     assert.equal(body.html, "<p>Hallo</p>");
-    assert.deepEqual(body.attachments, [{ file_url: "/private/files/offerte.pdf", file_name: "offerte.pdf" }]);
+    // De docnaam hoort erbij: doorsturen hangt de bijlage aan de nieuwe mail
+    // door precies deze naam mee te geven aan communication.email.make.
+    assert.deepEqual(body.attachments, [{
+      name: "FILE-1", file_url: "/private/files/offerte.pdf", file_name: "offerte.pdf",
+    }]);
     const fileCall = mock.calls.find((c) => c.url.startsWith("/api/resource/File"));
     assert.ok(fileCall);
     assert.ok(hasFilter(fileCall.url, "attached_to_doctype", "=", "Communication"));
@@ -424,6 +428,64 @@ test("sendMail: uploadt bijlagen privé en geeft de File-docnames door aan commu
     assert.equal(args.send_email, 1);
     assert.equal(args.communication_medium, "Email");
     assert.equal(args.sent_or_received, "Sent");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("sendMail: een doorgestuurde bijlage gaat mee zonder opnieuw te uploaden", async () => {
+  // Dit is de kern van doorsturen: het bestand staat al op de server, dus de
+  // docnaam gaat mee en er wordt niets geupload. Ging dit niet mee, dan kwam
+  // de doorgestuurde mail zonder bijlage aan - zonder dat iemand het merkte.
+  const mock = installFetchMock((url) => {
+    if (url === "/api/method/upload_file") {
+      return { status: 200, body: { message: { name: "FILE-99", file_name: "extra.pdf", file_url: "/private/files/extra.pdf" } } };
+    }
+    if (url === "/api/method/frappe.core.doctype.communication.email.make") {
+      return { status: 200, body: { message: { name: "COMM-5", emails_not_sent_to: [] } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendMail({
+      to: "klant@example.com",
+      subject: "Fwd: Factuur",
+      html: "<p>Zie onder</p>",
+      bestaandeBijlagen: ["FILE-1", "FILE-2", "FILE-1"],
+    });
+    const make = mock.calls.find((c) => c.url.endsWith("email.make"));
+    assert.ok(make);
+    const args = JSON.parse(String(make.init?.body));
+    // Dubbelen eruit: dezelfde docnaam twee keer hangt het bestand twee keer aan.
+    assert.deepEqual(args.attachments, ["FILE-1", "FILE-2"]);
+    assert.equal(mock.calls.some((c) => c.url === "/api/method/upload_file"), false,
+      "een bestand dat er al staat hoeft niet opnieuw omhoog");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("sendMail: doorgestuurde bijlagen en zelf gekozen bestanden gaan samen mee", async () => {
+  const mock = installFetchMock((url) => {
+    if (url === "/api/method/upload_file") {
+      return { status: 200, body: { message: { name: "FILE-99", file_name: "extra.pdf", file_url: "/private/files/extra.pdf" } } };
+    }
+    if (url === "/api/method/frappe.core.doctype.communication.email.make") {
+      return { status: 200, body: { message: { name: "COMM-6", emails_not_sent_to: [] } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendMail({
+      to: "klant@example.com",
+      subject: "Fwd: Factuur",
+      html: "<p>Zie onder</p>",
+      bestaandeBijlagen: ["FILE-1"],
+      attachments: [new File(["pdf"], "extra.pdf", { type: "application/pdf" })],
+    });
+    const make = mock.calls.find((c) => c.url.endsWith("email.make"));
+    const args = JSON.parse(String(make.init?.body));
+    assert.deepEqual(args.attachments, ["FILE-1", "FILE-99"]);
   } finally {
     mock.restore();
   }
@@ -821,13 +883,19 @@ test("moveToTrash / restoreFromTrash: PUT op email_status, nooit een DELETE", as
   const mock = installFetchMock(() => ({ status: 200, body: { data: { name: "COMM-T1" } } }));
   try {
     await moveToTrash("COMM-T1");
-    assert.equal(mock.calls[0].url, "/api/resource/Communication/COMM-T1");
-    assert.equal(mock.calls[0].init?.method, "PUT");
-    assert.deepEqual(JSON.parse(String(mock.calls[0].init?.body)), { email_status: "Trash" });
+    // Eerst de mailserver: daar gaat het bericht óók naar de prullenbak,
+    // zoals elk mailprogramma doet. Pas daarna de status in ERPNext.
+    assert.match(mock.calls[0].url, /mail_verwijderen/);
+    assert.equal(JSON.parse(String(mock.calls[0].init?.body)).actie, "prullenbak",
+      "naar de prullenbak, niet definitief weg");
+    assert.equal(mock.calls[1].url, "/api/resource/Communication/COMM-T1");
+    assert.equal(mock.calls[1].init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), { email_status: "Trash" });
 
     await restoreFromTrash("COMM-T1");
-    assert.equal(mock.calls[1].init?.method, "PUT");
-    assert.deepEqual(JSON.parse(String(mock.calls[1].init?.body)), { email_status: "Open" });
+    const terug = mock.calls[mock.calls.length - 1];
+    assert.equal(terug.init?.method, "PUT");
+    assert.deepEqual(JSON.parse(String(terug.init?.body)), { email_status: "Open" });
 
     // Weggooien mag nooit stilletjes een echte verwijdering worden.
     for (const c of mock.calls) assert.notEqual(c.init?.method, "DELETE");

@@ -1,4 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0d9488"/>
-  <text x="32" y="50" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="52" fill="white" letter-spacing="-2">Y</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Y-Next">
+  <defs>
+    <linearGradient id="ynTile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14a0a6"/>
+      <stop offset=".5" stop-color="#006876"/>
+      <stop offset="1" stop-color="#03303a"/>
+    </linearGradient>
+    <linearGradient id="ynSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".18"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#ynTile)"/>
+  <rect width="64" height="64" rx="15" fill="url(#ynSheen)"/>
+  <g fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#012227" stroke-opacity=".18" transform="translate(0 1.2)">
+      <path d="M16.5 16.5 32 31.5V50"/>
+      <path d="M47.5 16.5 32.6 31"/>
+    </g>
+    <path d="M16.5 16.5 32 31.5V50" stroke="#fff"/>
+    <path d="M47.5 16.5 32.6 31" stroke="#5eead4"/>
+  </g>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="1.6"/>
 </svg>

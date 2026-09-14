@@ -6,6 +6,7 @@ import { getMailCacheWindowDays, setMailCacheWindowDays } from "../lib/mailCache
 import { getSignatureOverride, setSignatureOverride, hydrateSignatureOverrides } from "../lib/mailSignature";
 import { getMailFolderPref, setMailFolderPref } from "../lib/mailFolderPrefs";
 import { useToast } from "../components/Toast";
+import HuisstijlInstelling from "../components/mail/HuisstijlInstelling";
 
 /* ─── Types ─── */
 
@@ -513,6 +514,11 @@ export default function MailAccountSettings() {
           </button>
         )}
       </div>
+
+      {/* Huisstijl van uitgaande post. Staat boven de accounts: het geldt
+          voor alle accounts tegelijk, en dan hoort het niet onder de lijst
+          van losse postbussen te verdwijnen. */}
+      <HuisstijlInstelling />
 
       {/* Account list */}
       {loading ? (

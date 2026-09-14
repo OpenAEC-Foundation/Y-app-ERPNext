@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Eye, EyeOff, LogIn, XCircle, Loader2 } from "lucide-react";
 import { APP_NAME, APP_VERSION } from "../lib/version";
+import { YLogo } from "./YLogo";
 import { useTranslation } from "react-i18next";
 
 interface LoginPageProps {
@@ -86,20 +87,6 @@ const Background = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-const YLogo = () => (
-  <div
-    className="inline-flex items-center justify-center w-20 h-20 rounded-2xl"
-    style={{
-      background: "linear-gradient(135deg, #0d9488, #14b8a6, #2dd4bf)",
-      animation: "logo-pulse 3s ease-in-out infinite",
-    }}
-  >
-    <svg viewBox="0 0 32 32" className="w-11 h-11">
-      <text x="16" y="23" textAnchor="middle" fontFamily="system-ui, sans-serif" fontWeight="800" fontSize="20" fill="white" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.2))" }}>Y</text>
-    </svg>
-  </div>
-);
-
 const Footer = () => (
   <div className="text-center mt-8 space-y-2">
     <div className="flex items-center justify-center gap-2 opacity-60">
@@ -167,7 +154,7 @@ export default function LoginPage({ onLogin, onSwitchToSignup }: LoginPageProps)
     <Background>
       <div className="w-full max-w-md mx-4" style={{ animation: "fade-in-up 0.5s ease-out" }}>
         <div className="text-center mb-8">
-          <YLogo />
+          <YLogo size={80} className="inline-block" />
           <h1 className="text-3xl font-bold text-white mt-5 tracking-tight">{APP_NAME}</h1>
           <p className="text-sm text-teal-300/70 mt-2 font-medium">{t("login.title")}</p>
         </div>

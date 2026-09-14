@@ -22,7 +22,7 @@ export default function ComingSoon({ title }: ComingSoonProps) {
       </h2>
       <p className="text-sm text-slate-500">
         {t("y_next.coming_soon_body", {
-          defaultValue: "This feature will arrive in a later Y-next phase.",
+          defaultValue: "This feature will arrive in a later Y-Next phase.",
         })}
       </p>
     </div>

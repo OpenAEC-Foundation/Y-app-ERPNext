@@ -12,6 +12,7 @@ import {
   newDraftKey,
   pruneDrafts,
   saveDraft,
+  draftsForThread,
   standaloneDrafts,
   type MailDraftMap,
   type StoredMailDraft,
@@ -234,4 +235,27 @@ test("draftForMessage: antwoord gaat voor op doorsturen", () => {
   saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1", body: "antwoord" }), NOW);
   assert.equal(draftForMessage(loadDrafts(INSTANCE, NOW), "m1")!.body, "antwoord");
   assert.equal(draftForMessage(loadDrafts(INSTANCE, NOW), "onbekend"), undefined);
+});
+
+test("draftsForThread: het concept hoort bij het gesprek, niet alleen bij de geopende mail", () => {
+  // Je antwoordde op het eerste bericht van een gesprek en klapte het dicht.
+  // Sla je het gesprek later open bij het laatste bericht, dan hoort dat
+  // concept er nog steeds te staan.
+  saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1", body: "half" }), NOW);
+  saveDraft(INSTANCE, draft({ key: "msg:elders", messageName: "elders", body: "ander gesprek" }), NOW);
+  const uit = draftsForThread(loadDrafts(INSTANCE, NOW), ["m3", "m2", "m1"]);
+  assert.deepEqual(uit.map((d) => d.key), ["msg:m1"]);
+});
+
+test("draftsForThread: nieuwste eerst, en losse nieuwe berichten blijven erbuiten", () => {
+  saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1", body: "oud" }), NOW);
+  saveDraft(INSTANCE, draft({ key: "fwd:m2", mode: "forward", messageName: "m2", body: "nieuw" }), NOW + 1000);
+  saveDraft(INSTANCE, draft({ key: "new:a", mode: "new", subject: "Los" }), NOW + 2000);
+  const uit = draftsForThread(loadDrafts(INSTANCE, NOW + 2000), ["m1", "m2"]);
+  assert.deepEqual(uit.map((d) => d.body), ["nieuw", "oud"]);
+});
+
+test("draftsForThread: zonder gesprek geen concepten", () => {
+  saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1" }), NOW);
+  assert.deepEqual(draftsForThread(loadDrafts(INSTANCE, NOW), []), []);
 });

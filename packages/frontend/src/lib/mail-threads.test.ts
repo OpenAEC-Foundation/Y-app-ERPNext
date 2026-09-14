@@ -116,8 +116,8 @@ test("groupThreads: de zes SAL-QTN-mails vormen één gesprek", () => {
   assert.equal(thread!.id, "ag6q4pllvv");
   assert.deepEqual(
     thread!.messages.map((m) => m.name),
-    ["ag5fe0p6oc", "ag679r79qp", "ag68fp1lod", "ag6dca9ub8", "ag6gpovjr4", "ag6q4pllvv"],
-    "leden staan chronologisch oplopend",
+    ["ag6q4pllvv", "ag6gpovjr4", "ag6dca9ub8", "ag68fp1lod", "ag679r79qp", "ag5fe0p6oc"],
+    "leden staan nieuwste eerst, net als de lijst eromheen",
   );
   assert.deepEqual([...thread!.names].sort(), [...thread!.messages.map((m) => m.name)].sort());
 });
@@ -235,7 +235,8 @@ test("groupThreads: een verzonden antwoord uit extras komt in het gesprek, niet 
   const threads = groupThreads(inbox, sent);
   assert.equal(threads.length, 1, "de verzonden mail vormt geen eigen regel");
   assert.equal(threads[0]!.head.name, "in1", "hoofdregel blijft het bericht uit de zichtbare map");
-  assert.deepEqual(threads[0]!.messages.map((m) => m.name), ["in1", "sent1"]);
+  // Nieuwste eerst: het antwoord van 2 september staat boven de vraag van 28 augustus.
+  assert.deepEqual(threads[0]!.messages.map((m) => m.name), ["sent1", "in1"]);
   assert.equal(threads[0]!.count, 2);
 });
 

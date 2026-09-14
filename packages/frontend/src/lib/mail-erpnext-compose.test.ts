@@ -14,6 +14,7 @@ import {
   effectiveSignature,
   extractEmail,
   formatAttachmentNames,
+  isIfcName,
   isPdfName,
   isValidFolderLabel,
   joinAddresses,
@@ -154,6 +155,39 @@ test("buildOutgoingHtml: handtekening staat boven het citaat, niet eronder", () 
   assert.ok(html.includes("<p>origineel</p>"));
 });
 
+test("buildOutgoingHtml: de huisstijl komt als één omhullende div mee", () => {
+  // Inline en niet als stylesheet: een mailprogramma gooit een <style>-blok
+  // weg, een style-attribuut niet.
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>tekst</p>",
+    signature: "",
+    includeSignature: false,
+    opmaakStijl: "font-family:Arial;font-size:11pt",
+  });
+  assert.equal(html, '<div style="font-family:Arial;font-size:11pt"><p>tekst</p></div>');
+});
+
+test("buildOutgoingHtml: het citaat staat binnen de huisstijl", () => {
+  // Een antwoord in een ander lettertype dan de mail eronder leest als twee
+  // losse berichten.
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>antwoord</p>",
+    signature: "",
+    includeSignature: false,
+    quoteHtml: "<p>origineel</p>",
+    opmaakStijl: "font-size:11pt",
+  });
+  assert.match(html, /^<div style="font-size:11pt">/);
+  assert.match(html, /origineel<\/p><\/blockquote><\/div>$/);
+});
+
+test("buildOutgoingHtml: zonder huisstijl blijft de body onverpakt", () => {
+  const html = buildOutgoingHtml({
+    bodyHtml: "<p>tekst</p>", signature: "", includeSignature: false, opmaakStijl: "  ",
+  });
+  assert.equal(html, "<p>tekst</p>");
+});
+
 test("buildOutgoingHtml: nooit twee handtekeningen, ook niet bij hersamenstellen", () => {
   const once = buildOutgoingHtml({
     bodyHtml: "<p>Hoi</p>",
@@ -176,4 +210,16 @@ test("buildOutgoingHtml: leeg citaat levert geen leeg blockquote op", () => {
     quoteHtml: "   ",
   });
   assert.equal(html, "<p>Hoi</p>");
+});
+
+test("isIfcName: een bouwmodel herken je aan .ifc, hoofdletters doen er niet toe", () => {
+  // Zo komen ze werkelijk binnen: van "326.09.0028-1.ifc" tot "26158013.IFC".
+  assert.equal(isIfcName("326.09.0028-1.ifc"), true);
+  assert.equal(isIfcName("26158013.IFC"), true);
+  assert.equal(isIfcName(" P26-107 Zettex 09-09.ifc "), true);
+  assert.equal(isIfcName("tekening.pdf"), false);
+  // Een gezipt model kan de viewer niet uitpakken; dat blijft een download.
+  assert.equal(isIfcName("model.ifczip"), false);
+  assert.equal(isIfcName("ifc"), false);
+  assert.equal(isIfcName(""), false);
 });
