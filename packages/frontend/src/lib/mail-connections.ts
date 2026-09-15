@@ -62,6 +62,7 @@
  */
 
 import { fetchChildTable, fetchList } from "./erpnext.ts";
+import { leesbareDoctypes } from "./doctype-toegang.ts";
 
 /* ─────────────────────────────── Categorieën ─────────────────────────── */
 
@@ -110,6 +111,19 @@ const CATEGORY_BY_ID = new Map(CONNECTION_CATEGORIES.map((c) => [c.id, c]));
 const CATEGORY_OF_DOCTYPE = new Map<string, ConnectionCategoryId>();
 for (const cat of CONNECTION_CATEGORIES) {
   for (const dt of cat.doctypes) CATEGORY_OF_DOCTYPE.set(dt, cat.id);
+}
+
+/**
+ * De categorieën die deze gebruiker hoort te zien: die waarvan hij minstens
+ * een van de documentsoorten mag lezen. "Niet gekoppeld" staat er altijd,
+ * want dat is geen document maar de rest van zijn eigen post.
+ */
+export function zichtbareCategorieen(
+  categorieen: ConnectionCategoryDef[],
+  toegestaan?: (doctype: string) => boolean,
+): ConnectionCategoryDef[] {
+  if (!toegestaan) return categorieen;
+  return categorieen.filter((c) => c.id === "unlinked" || c.doctypes.some((dt) => toegestaan(dt)));
 }
 
 /** Categorie waar een gekoppeld doctype onder valt, of `null`. */
@@ -335,6 +349,13 @@ export interface ConnectionRawInput {
   contactParties: ContactPartyRow[];
   /** `"<Doctype>::<docname>"` → weergavenaam. Ontbrekende sleutels vallen terug op de docname. */
   labels?: Record<string, string>;
+  /**
+   * Mag de gebruiker dit documentsoort lezen? Zo niet, dan telt een koppeling
+   * ernaar niet mee. Wordt gevuld met de rechten uit ERPNext (`leesbareDoctypes`),
+   * zodat een collega zonder leesrecht op inkoopfacturen ook niet ziet welke
+   * mail bij welke inkoopfactuur hoort. Niet opgegeven: alles telt.
+   */
+  toegestaan?: (doctype: string) => boolean;
 }
 
 /** Eén connectie van één mail, klaar om als chip getoond te worden. */
@@ -421,6 +442,8 @@ export function buildConnectionIndex(raw: ConnectionRawInput): ConnectionIndex {
     // Alleen mails die de momentopname kent: een getrashte mail hoort nergens
     // meer bij, en zijn link-rijen staan er wel gewoon nog.
     if (!known.has(message)) return;
+    // Zonder leesrecht op dit soort bestaat de koppeling voor deze gebruiker niet.
+    if (raw.toegestaan && !raw.toegestaan(doctype)) return;
     const category = categoryOfDoctype(doctype);
     if (!category) return;
     let bucket = perMessage.get(message);
@@ -482,7 +505,7 @@ export function buildConnectionIndex(raw: ConnectionRawInput): ConnectionIndex {
 
   const connected = new Set(byMessage.keys());
 
-  const categories: ConnectionCategoryStats[] = CONNECTION_CATEGORIES.map((cat) => {
+  const categories: ConnectionCategoryStats[] = zichtbareCategorieen(CONNECTION_CATEGORIES, raw.toegestaan).map((cat) => {
     if (cat.id === "unlinked") {
       let total = 0;
       let unseen = 0;
@@ -604,8 +627,22 @@ export function peekConnectionIndex(): ConnectionIndex | null {
   return lastIndex;
 }
 
+/** Alle documentsoorten waar een categorie uit bestaat. */
+const CATEGORIE_DOCTYPES = [...new Set(CONNECTION_CATEGORIES.flatMap((c) => c.doctypes))];
+
+/**
+ * De leesrechten van deze gebruiker op de koppelbare soorten, als regel voor
+ * `buildConnectionIndex` en `zichtbareCategorieen`. ERPNext beslist: zie
+ * `doctype-toegang.ts`.
+ */
+export async function toegestaneKoppelingen(): Promise<(doctype: string) => boolean> {
+  const leesbaar = await leesbareDoctypes(CATEGORIE_DOCTYPES);
+  return (doctype: string) => leesbaar.has(doctype);
+}
+
 async function fetchConnectionIndex(): Promise<ConnectionIndex> {
-  const [messages, links, contactParties] = await Promise.all([
+  const [toegestaan, messages, links, contactParties] = await Promise.all([
+    toegestaneKoppelingen(),
     fetchList<ConnectionMessageRow>("Communication", {
       fields: ["name", "reference_doctype", "reference_name", "seen"],
       filters: COMMUNICATION_BASE,
@@ -629,7 +666,7 @@ async function fetchConnectionIndex(): Promise<ConnectionIndex> {
     ).catch(() => [] as ContactPartyRow[]),
   ]);
 
-  const raw: ConnectionRawInput = { messages, links, contactParties };
+  const raw: ConnectionRawInput = { messages, links, contactParties, toegestaan };
   // Eerste ronde zonder labels levert al de juiste indeling; de tweede ronde
   // haalt alleen de leesbare namen op van de objecten die er echt in zitten.
   const draft = buildConnectionIndex(raw);

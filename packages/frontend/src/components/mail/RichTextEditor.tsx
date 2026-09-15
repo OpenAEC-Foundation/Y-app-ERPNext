@@ -33,6 +33,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon, X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { schaalBreedte, sleepBreedte } from "../../lib/mail-afbeeldingen";
 import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
   tabelHtml, TOGGLE_STATE_COMMANDS, TEXT_COLORS,
@@ -115,7 +116,7 @@ const BTN_ACTIVE = "bg-slate-300 text-slate-900";
 
 export default function RichTextEditor({
   value, onChange, placeholder, className, ariaLabel, autoFocus, collapseQuote,
-  basisStijl,
+  basisStijl, onAfbeelding,
 }: {
   /** De HTML van het bericht. Verandert deze van buitenaf, dan herlaadt het vak. */
   value: string;
@@ -137,6 +138,12 @@ export default function RichTextEditor({
    * krijgt. Leeg laten geeft de opmaak van de app zelf.
    */
   basisStijl?: string;
+  /**
+   * Een geplakte afbeelding wegzetten en het adres teruggeven. Het opstelvenster
+   * uploadt hem naar ERPNext; zonder deze functie blijft hij als data-bron in
+   * het tekstvak staan (goed genoeg voor een voorbeeld, niet voor verzenden).
+   */
+  onAfbeelding?: (bestand: File) => Promise<string>;
 }) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -379,11 +386,141 @@ export default function RichTextEditor({
     return { inList, indented };
   }, []);
 
+  /* ─── Afbeeldingen ─── */
+
+  /** De aangeklikte afbeelding, met zijn plek ten opzichte van het tekstvak. */
+  const [afbeelding, setAfbeelding] = useState<{
+    el: HTMLImageElement; top: number; left: number; breedte: number; hoogte: number;
+  } | null>(null);
+  const [afbeeldingBezig, setAfbeeldingBezig] = useState(false);
+  const [afbeeldingFout, setAfbeeldingFout] = useState("");
+  const houderRef = useRef<HTMLDivElement>(null);
+
+  /** Hoe breed een afbeelding in de mail mag worden: de ruimte in het tekstvak. */
+  const maxBreedte = useCallback(() => {
+    // Een vak dat nog niet is opgebouwd meldt 0 px. Daar een grens van afleiden
+    // maakt een geplakte schermafdruk postzegelklein; dan liever een gewone
+    // mailbreedte.
+    const breed = editorRef.current?.clientWidth ?? 0;
+    return breed > 120 ? breed - 32 : 600;
+  }, []);
+
+  /** De plek van het kader en de sleephoek bijwerken - na slepen, typen of scrollen. */
+  const meetAfbeelding = useCallback((el: HTMLImageElement | null) => {
+    const houder = houderRef.current;
+    if (!el || !houder || !editorRef.current?.contains(el)) { setAfbeelding(null); return; }
+    const h = houder.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setAfbeelding({ el, top: r.top - h.top, left: r.left - h.left, breedte: r.width, hoogte: r.height });
+  }, []);
+
+  const zetBreedte = useCallback((el: HTMLImageElement, breedte: number) => {
+    el.setAttribute("width", String(breedte));
+    // Hoogte vrijlaten: dan blijft de verhouding kloppen.
+    el.removeAttribute("height");
+    meetAfbeelding(el);
+  }, [meetAfbeelding]);
+
+  const kiesGrootte = useCallback((fractie: number) => {
+    if (!afbeelding) return;
+    const el = afbeelding.el;
+    zetBreedte(el, schaalBreedte(el.naturalWidth || el.width, fractie, maxBreedte()));
+    emit();
+  }, [afbeelding, zetBreedte, maxBreedte, emit]);
+
+  /** Slepen aan de hoek: breder of smaller, de verhouding blijft. */
+  const startSlepen = useCallback((e: React.PointerEvent) => {
+    if (!afbeelding) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = afbeelding.el;
+    const beginX = e.clientX;
+    const beginBreedte = el.getBoundingClientRect().width;
+    const max = maxBreedte();
+    const beweeg = (ev: PointerEvent) => zetBreedte(el, sleepBreedte(beginBreedte, ev.clientX - beginX, 40, max));
+    const los = () => {
+      window.removeEventListener("pointermove", beweeg);
+      window.removeEventListener("pointerup", los);
+      emit();
+    };
+    window.addEventListener("pointermove", beweeg);
+    window.addEventListener("pointerup", los);
+  }, [afbeelding, zetBreedte, maxBreedte, emit]);
+
+  /**
+   * Een afbeelding van het klembord in het tekstvak zetten.
+   *
+   * Wat hier eerst gebeurde: niets. Het plakken las alleen tekst en HTML van
+   * het klembord, en een schermafdruk is geen van beide - die is een bestand.
+   * Ctrl+V na een schermknipsel deed dus zichtbaar helemaal niets.
+   */
+  const plakAfbeeldingen = useCallback(async (bestanden: File[]) => {
+    // Waar de cursor stond voor het uploaden: tijdens het wachten kan de
+    // selectie verschuiven, en de afbeelding hoort te komen waar je plakte.
+    const sel = window.getSelection();
+    const plek = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+    setAfbeeldingFout("");
+    setAfbeeldingBezig(true);
+    try {
+      let html = "";
+      for (const bestand of bestanden) {
+        const bron = onAfbeelding
+          ? await onAfbeelding(bestand)
+          : await new Promise<string>((ok, mis) => {
+              const lezer = new FileReader();
+              lezer.onload = () => ok(String(lezer.result));
+              lezer.onerror = () => mis(lezer.error);
+              lezer.readAsDataURL(bestand);
+            });
+        let natuurlijk = 0;
+        try { natuurlijk = (await createImageBitmap(bestand)).width; } catch { /* onbekend formaat */ }
+        const breedte = schaalBreedte(natuurlijk || maxBreedte(), 1, maxBreedte());
+        const veilig = bron.replace(/"/g, "&quot;");
+        html += '<img src="' + veilig + '" alt="" width="' + breedte + '">';
+      }
+      if (plek && editorRef.current?.contains(plek.startContainer)) {
+        editorRef.current.focus();
+        const nu = window.getSelection();
+        nu?.removeAllRanges();
+        nu?.addRange(plek);
+      }
+      insertHtml(html);
+    } catch (err) {
+      setAfbeeldingFout(t("webmail.image_upload_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setAfbeeldingBezig(false);
+    }
+  }, [onAfbeelding, insertHtml, maxBreedte, t]);
+
   /* ─── Plakken ─── */
 
   const pasteFromClipboard = useCallback((data: DataTransfer, plainOnly: boolean) => {
     const html = plainOnly ? "" : data.getData("text/html");
     const text = data.getData("text/plain");
+
+    /*
+     * Een schermafdruk of een gekopieerde afbeelding staat als bestand op het
+     * klembord. Alleen als er geen HTML bij zit: wie uit Word of een webpagina
+     * kopieert krijgt naast de HTML vaak ook een plaatje van de hele selectie,
+     * en dan is de tekst wat bedoeld werd. SVG nooit - dat is een scriptbaar
+     * document, geen afbeelding.
+     */
+    if (!plainOnly && !html) {
+      const bestanden: File[] = [];
+      for (const item of Array.from(data.items || [])) {
+        if (item.kind !== "file") continue;
+        const bestand = item.getAsFile();
+        if (bestand && bestand.type.startsWith("image/") && bestand.type !== "image/svg+xml") {
+          bestanden.push(bestand);
+        }
+      }
+      if (bestanden.length > 0) {
+        void plakAfbeeldingen(bestanden);
+        return;
+      }
+    }
     const vormen = plainOnly ? [] : plakvormen(html, text);
 
     // Zonder echte keuze geen markering en geen blokje: een knop die niets
@@ -397,7 +534,7 @@ export default function RichTextEditor({
     const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     insertHtml(`<span ${PLAK_ATTRIBUUT}="${id}">${plakHtml(vormen[0], html, text)}</span>`);
     setPlak({ id, html, tekst: text, vormen, gekozen: vormen[0] });
-  }, [insertHtml]);
+  }, [insertHtml, plakAfbeeldingen]);
 
   /** Het geplakte stuk opnieuw neerzetten, in de gekozen vorm. */
   const kiesPlakvorm = useCallback((vorm: Plakvorm) => {
@@ -446,6 +583,7 @@ export default function RichTextEditor({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     // Zodra je verder typt is de keuze voorbij. Escape sluit hem meteen.
     if (e.key === "Escape" && plakRef.current) { e.preventDefault(); sluitPlak(); return; }
+    if (e.key === "Escape") setAfbeelding(null);
     if (plakRef.current && e.key.length === 1) sluitPlak();
     // Tab eerst: die is hier een inspringing, geen sprong naar het volgende
     // veld. `preventDefault` houdt de focus in het tekstvak — de focus-val van
@@ -644,7 +782,40 @@ export default function RichTextEditor({
         </button>
       </div>
 
-      <div className="relative flex-1 min-h-0">
+      <div ref={houderRef} className="relative flex-1 min-h-0">
+        {/* Grootte van een aangeklikte afbeelding: snelkeuzes onder het plaatje
+            en een sleephoek rechtsonder. De breedte gaat als width-attribuut
+            de mail in; dat respecteren ook mailprogramma's die CSS negeren. */}
+        {afbeelding && (
+          <>
+            <div className="pointer-events-none absolute z-10 rounded-sm ring-2 ring-blue-500"
+              style={{ top: afbeelding.top, left: afbeelding.left, width: afbeelding.breedte, height: afbeelding.hoogte }} />
+            <span role="slider" aria-label={t("webmail.image_resize_hint")} title={t("webmail.image_resize_hint")}
+              aria-valuenow={Math.round(afbeelding.breedte)}
+              onPointerDown={startSlepen}
+              className="absolute z-20 h-3 w-3 cursor-nwse-resize rounded-sm border-2 border-white bg-blue-500 shadow"
+              style={{ top: afbeelding.top + afbeelding.hoogte - 7, left: afbeelding.left + afbeelding.breedte - 7 }} />
+            <div className="absolute z-20 flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-0.5 shadow-md"
+              style={{ top: afbeelding.top + afbeelding.hoogte + 6, left: afbeelding.left }}>
+              {([["webmail.image_small", 0.25], ["webmail.image_medium", 0.5],
+                 ["webmail.image_large", 0.75], ["webmail.image_original", 1]] as const).map(([sleutel, fractie]) => (
+                <button key={sleutel} type="button"
+                  onMouseDown={(e) => e.preventDefault()} onClick={() => kiesGrootte(fractie)}
+                  className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-100">
+                  {t(sleutel)}
+                </button>
+              ))}
+              <span className="px-1 text-[10px] text-slate-400">{Math.round(afbeelding.breedte)} px</span>
+            </div>
+          </>
+        )}
+        {(afbeeldingBezig || afbeeldingFout) && (
+          <div className={"absolute left-3 bottom-2 z-20 rounded-md border px-2 py-1 text-[11px] shadow-sm " + (
+            afbeeldingFout ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"
+          )}>
+            {afbeeldingFout || t("webmail.image_uploading")}
+          </div>
+        )}
         {/* De keuze na het plakken. Blijft staan tot je verder typt, Escape
             drukt of een vorm kiest — lang genoeg om te zien wat er geplakt is,
             kort genoeg om niet in de weg te zitten. */}
@@ -686,13 +857,29 @@ export default function RichTextEditor({
           aria-multiline="true"
           aria-label={ariaLabel || t("webmail.editor_placeholder")}
           tabIndex={0}
-          onInput={emit}
+          onInput={() => { emit(); if (afbeelding) meetAfbeelding(afbeelding.el); }}
           onBlur={emit}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           onKeyUp={syncState}
           onMouseUp={syncState}
           onFocus={syncState}
+          onScroll={() => { if (afbeelding) meetAfbeelding(afbeelding.el); }}
+          onClick={(e) => {
+            const doel = e.target as HTMLElement;
+            if (doel instanceof HTMLImageElement) {
+              // Het plaatje zelf selecteren: dan haalt Backspace het weg, zoals
+              // je verwacht na het aanklikken.
+              const bereik = document.createRange();
+              bereik.selectNode(doel);
+              const sel = window.getSelection();
+              sel?.removeAllRanges();
+              sel?.addRange(bereik);
+              meetAfbeelding(doel);
+            } else {
+              setAfbeelding(null);
+            }
+          }}
           style={basisStijl ? cssNaarStijl(basisStijl) : undefined}
           className="h-full w-full overflow-auto px-4 py-3 text-sm text-slate-800 focus:outline-none
             [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6

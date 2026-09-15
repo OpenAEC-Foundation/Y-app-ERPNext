@@ -6,6 +6,7 @@ import Sidebar, { type Page, type ViewMode, isEmployerRole } from "./components/
 import ComingSoon from "./components/ComingSoon";
 import { DataProvider } from "./lib/DataContext";
 import { ToastProvider } from "./components/Toast";
+import MeldingStrook from "./components/MeldingStrook";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
@@ -477,6 +478,10 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
 
   return (
     <ToastProvider>
+    {/* Een binnenkomend bericht hoort ook te zien te zijn terwijl je in de
+        app bezig bent; de vensternotificatie van de browser toont zichzelf
+        dan bewust niet. */}
+    <MeldingStrook />
     <div className="flex flex-col h-full bg-slate-100">
       <DataProvider userRoles={user.roles}>
         <div className="flex flex-1 min-h-0">

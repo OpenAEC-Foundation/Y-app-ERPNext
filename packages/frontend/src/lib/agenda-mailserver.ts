@@ -288,6 +288,37 @@ export async function werkAfspraakBij(
  * antwoorden: het antwoord verandert één regel in het bestand zoals het er
  * staat, in plaats van er een nieuw bestand overheen te leggen.
  */
+/** Wat het verwijderen opleverde. */
+export interface VerwijderUitslag extends SchrijfUitslag {
+  /** Was jij de organisator? Alleen dan gaat hij ook bij collega's weg. */
+  organisator: boolean;
+  /** Een herhalende afspraak verdwijnt als hele reeks. */
+  herhaalt: boolean;
+}
+
+/**
+ * Een afspraak uit de mailserver-agenda halen.
+ *
+ * Uit je eigen agenda altijd; organiseer jij hem, dan ook uit die van de
+ * collega's die genodigd waren. Genodigden van buiten staan terug in `extern`:
+ * hun agenda kunnen wij niet aanraken, die krijgen een afzeggingsmail - zie
+ * `maakAfzegging` in `lib/ical.ts`. Haal het bestand daarvoor op voordat je dit
+ * aanroept: na het verwijderen staat het nergens meer.
+ */
+export async function verwijderAfspraak(uid: string, agendas: string[] = []): Promise<VerwijderUitslag> {
+  const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
+  const res = (await callMethod("agenda_schrijven", {
+    actie: "verwijderen", uid, agendas: uniek.join(","),
+  })) as Partial<VerwijderUitslag> | null;
+  return {
+    geschreven: Array.isArray(res?.geschreven) ? res.geschreven : [],
+    mislukt: Array.isArray(res?.mislukt) ? res.mislukt : [],
+    extern: Array.isArray(res?.extern) ? res.extern : [],
+    organisator: !!res?.organisator,
+    herhaalt: !!res?.herhaalt,
+  };
+}
+
 export async function haalAfspraakIcs(uid: string): Promise<string | undefined> {
   const res = (await callMethod("agenda_schrijven", { actie: "lezen", uid })) as
     { ics?: unknown } | null;

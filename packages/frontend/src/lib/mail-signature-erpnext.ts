@@ -87,6 +87,57 @@ export function kiesTelefoon(user: ErpUser | null, employee: ErpEmployee | null)
   return s(employee?.cell_number) || s(user?.mobile_no) || s(user?.phone);
 }
 
+/**
+ * Het vierkant uit het midden van een foto: een pasfoto staat rond in de
+ * handtekening, en een liggende foto zou anders platgedrukt worden.
+ */
+export function bijsnijdVierkant(breedte: number, hoogte: number): { sx: number; sy: number; zijde: number } {
+  const zijde = Math.max(1, Math.min(breedte, hoogte));
+  return {
+    sx: Math.round((breedte - zijde) / 2),
+    sy: Math.round((hoogte - zijde) / 2),
+    zijde,
+  };
+}
+
+/** Twee keer de getoonde 56 px, zodat hij op een scherm met hoge resolutie scherp blijft. */
+const FOTO_ZIJDE = 112;
+
+/**
+ * De pasfoto als base64, klein en vierkant.
+ *
+ * De foto stond in de handtekening als pad naar een privé bestand op deze
+ * server ("/private/files/..."). In het opstelvenster ben je ingelogd en zag
+ * hij er goed uit; de ontvanger kreeg een gebroken plaatje. Als base64 zit hij
+ * in de mail zelf. Verkleind tot 112 px: een pasfoto van een halve megabyte in
+ * elke mail die je verstuurt, zou elke mail een halve megabyte zwaarder maken.
+ *
+ * Lukt het niet, dan "" — liever geen foto dan een gebroken plaatje.
+ */
+export async function fotoAlsBase64(pad: string): Promise<string> {
+  try {
+    const res = await fetch(encodeURI(pad), { credentials: "same-origin" });
+    if (!res.ok) return "";
+    const blob = await res.blob();
+    if (!blob.type.startsWith("image/")) return "";
+    const beeld = await createImageBitmap(blob);
+    const { sx, sy, zijde } = bijsnijdVierkant(beeld.width, beeld.height);
+    const doek = document.createElement("canvas");
+    doek.width = FOTO_ZIJDE;
+    doek.height = FOTO_ZIJDE;
+    const ctx = doek.getContext("2d");
+    if (!ctx) return "";
+    // JPEG kent geen doorzichtigheid: een transparante rand wordt anders zwart.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, FOTO_ZIJDE, FOTO_ZIJDE);
+    ctx.drawImage(beeld, sx, sy, zijde, zijde, 0, 0, FOTO_ZIJDE, FOTO_ZIJDE);
+    beeld.close();
+    return doek.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return "";
+  }
+}
+
 /** De profielfoto van deze persoon, of "" als er geen is. */
 export function kiesFoto(user: ErpUser | null, employee: ErpEmployee | null): string {
   return s(employee?.image) || s(user?.user_image);
@@ -102,10 +153,15 @@ export function opmaakOndertekening(input: {
   employee: ErpEmployee | null;
   adres: ErpAdres | null;
   bedrijf: string;
+  /**
+   * De foto zoals hij in de mail moet: een base64-bron uit `fotoAlsBase64`.
+   * Leeg betekent geen foto. Niet opgegeven: het pad uit ERPNext, zoals vroeger.
+   */
+  fotoBron?: string;
 }): string {
   const { voor, rest } = splitsNaam(input.user, input.employee);
   const telefoon = kiesTelefoon(input.user, input.employee);
-  const foto = kiesFoto(input.user, input.employee);
+  const foto = input.fotoBron !== undefined ? input.fotoBron : kiesFoto(input.user, input.employee);
   const bedrijf = HANDELSNAAM[input.bedrijf] || input.bedrijf;
 
   const regels: string[] = [];
@@ -188,7 +244,9 @@ export async function ondertekeningVoor(emailId: string, emailAccount?: string):
     } catch { /* zonder adres blijft de rest van de ondertekening staan */ }
   }
 
-  return opmaakOndertekening({ user, employee, adres: adresRij, bedrijf });
+  const pad = kiesFoto(user, employee);
+  const fotoBron = pad ? await fotoAlsBase64(pad) : "";
+  return opmaakOndertekening({ user, employee, adres: adresRij, bedrijf, fotoBron });
 }
 
 /** De handmatig ingestelde handtekening van een Email Account. */

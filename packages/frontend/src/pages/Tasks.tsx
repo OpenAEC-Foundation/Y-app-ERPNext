@@ -39,6 +39,9 @@ export interface Task {
   priority: string;
   assigned_to: string;
   project: string;
+  /** Wanneer het werk begint. Het weekdashboard verdeelt de begrote uren over
+   *  de werkdagen tussen start en deadline; zonder start valt alles in een week. */
+  exp_start_date?: string;
   exp_end_date: string;
   description: string;
   company: string;
@@ -309,7 +312,7 @@ export default function Tasks() {
       if (company) filters.push(["company", "=", company]);
       const BASE_FIELDS = [
         "name", "subject", "status", "priority",
-        "_assign as assigned_to", "project", "exp_end_date",
+        "_assign as assigned_to", "project", "exp_start_date", "exp_end_date",
         "description", "company", "expected_time",
       ];
       // Try with workflow_state first. Frappe only exposes that field when
@@ -1475,6 +1478,28 @@ export function TaskDetail({
             )}
           </div>
         </div>
+      ),
+    },
+    {
+      label: t("tasks.detail.start_date"),
+      icon: Calendar,
+      value: isCreate ? null : (
+        <input
+          type="date"
+          value={task.exp_start_date || ""}
+          max={task.exp_end_date || undefined}
+          onChange={async (e) => {
+            const nieuweDatum = e.target.value;
+            const oudeDatum = task.exp_start_date || "";
+            onFieldUpdate?.(task.name, "exp_start_date", nieuweDatum);
+            try {
+              await updateDocument("Task", task.name, { exp_start_date: nieuweDatum || null });
+            } catch {
+              onFieldUpdate?.(task.name, "exp_start_date", oudeDatum);
+            }
+          }}
+          className="px-2 py-1 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-y-teal cursor-pointer"
+        />
       ),
     },
     {

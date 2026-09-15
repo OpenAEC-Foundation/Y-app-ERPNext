@@ -119,13 +119,13 @@
 import {
   callMethod,
   createDocument,
-  fetchCount,
   fetchList,
   invalidateCache,
   updateDocument,
   uploadFile,
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
+import type { OngelezenRij } from "./meldingen.ts";
 
 /** Het doctype waar alles op draait. Eén constante zodat tests niet gokken. */
 export const MESSAGE_DOCTYPE = "Notification Log";
@@ -837,22 +837,28 @@ export function contactNameMap(contacts: ErpMessageContact[]): Record<string, st
 }
 
 /**
- * Hoeveel berichten heb je nog niet gelezen?
+ * De berichten die je nog niet gelezen hebt.
  *
- * Eén telling in plaats van de hele lijst: dit draait elke minuut op de
- * achtergrond om de teller in de zijbalk en de melding te voeden, ook wanneer
- * het berichtenscherm dicht is. De lijst ophalen zou honderden rijen kosten
- * voor één getal.
+ * Draait op de achtergrond om de teller in de zijbalk en de melding te voeden,
+ * ook wanneer het berichtenscherm dicht is. Niet alleen een telling: de
+ * melding wil ook zeggen van wie het nieuwste bericht is, en dat in één
+ * verzoek in plaats van twee. Ongelezen berichten zijn er zelden veel; het
+ * plafond is er alleen voor het geval iemand een week weg is geweest.
  */
-export async function ongelezenBerichten(): Promise<number> {
+export async function ongelezenBerichten(): Promise<OngelezenRij[]> {
   const ik = await resolveSessionUser();
-  if (!ik) return 0;
-  return fetchCount(MESSAGE_DOCTYPE, [
-    ["for_user", "=", ik],
-    ["type", "=", MESSAGE_TYPE],
-    ["document_type", "=", MESSAGE_DOCUMENT_TYPE],
-    ["read", "=", 0],
-    // Je eigen kopie van een verstuurd bericht telt niet als ongelezen post.
-    ["owner", "!=", ik],
-  ]);
+  if (!ik) return [];
+  return fetchList<OngelezenRij>(MESSAGE_DOCTYPE, {
+    fields: ["name", "subject", "from_user", "owner", "creation"],
+    filters: [
+      ["for_user", "=", ik],
+      ["type", "=", MESSAGE_TYPE],
+      ["document_type", "=", MESSAGE_DOCUMENT_TYPE],
+      ["read", "=", 0],
+      // Je eigen kopie van een verstuurd bericht telt niet als ongelezen post.
+      ["owner", "!=", ik],
+    ],
+    order_by: "creation desc",
+    limit_page_length: 50,
+  });
 }

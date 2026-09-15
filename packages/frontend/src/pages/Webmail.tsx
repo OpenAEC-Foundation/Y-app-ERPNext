@@ -94,7 +94,7 @@ import { isFeatureEnabled, type ServerFeature } from "../lib/capabilities";
 import {
   listVirtualFolders, listMailboxMessagesPaged, getMessageBody, markRead,
   markUnread, sendMail, linkToDocument, hasEnabledEmailAccount, projectOfFolder,
-  searchMessages, bulkMoveToTrash,
+  searchMessages, searchByAttachment, bulkMoveToTrash,
   bulkRestoreFromTrash, bulkDeleteForever,
   bulkMarkRead, bulkMarkUnread, getConversation, listMailboxes, bulkMarkHandled,
   bulkMarkUnhandled, filterUnhandled, getQueueStatusFor,
@@ -131,6 +131,9 @@ import {
  * werkelijk op een bouwmodel geklikt wordt.
  */
 const IfcVoorbeeld = lazy(() => import("../components/mail/IfcVoorbeeld"));
+import { leesZoekopdracht } from "../lib/mail-zoekopdracht";
+import { maakAfbeeldingenAbsoluut, plakBestandsnaam } from "../lib/mail-afbeeldingen";
+import { uploadFile } from "../lib/erpnext";
 import { ondertekeningVoor } from "../lib/mail-signature-erpnext";
 import {
   buildComposeBodyWithQuote, buildQuoteBlock, hasQuote,
@@ -3902,6 +3905,32 @@ interface ErpDraft {
  * dit is een gewone gebruikersvoorkeur die mág meereizen naar een ander
  * apparaat (anders dan het mail-cachevenster, dat juist per apparaat hoort).
  */
+/**
+ * Onthoudt of er ook in de berichttekst gezocht wordt. Per instance en met de
+ * `pref_`-prefix, net als "alleen niet-afgehandeld": wie het aanzet omdat hij
+ * altijd op inhoud zoekt, hoort het niet elke keer opnieuw te moeten aanzetten.
+ */
+function zoekInInhoudPrefKey(instanceId: string): string {
+  return `pref_${instanceId}_mail_search_content`;
+}
+
+function readZoekInInhoudPref(instanceId: string): boolean {
+  try {
+    return localStorage.getItem(zoekInInhoudPrefKey(instanceId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveZoekInInhoudPref(instanceId: string, value: boolean): void {
+  try {
+    if (value) localStorage.setItem(zoekInInhoudPrefKey(instanceId), "1");
+    else localStorage.removeItem(zoekInInhoudPrefKey(instanceId));
+  } catch {
+    /* opslag geblokkeerd — dan geldt het alleen voor dit bezoek */
+  }
+}
+
 function unhandledOnlyPrefKey(instanceId: string): string {
   return `pref_${instanceId}_mail_unhandled_only`;
 }
@@ -3943,6 +3972,7 @@ async function fetchErpSlice(
   start: number,
   limit: number,
   mailbox: string,
+  inInhoud = false,
 ): Promise<{ rows: ErpMailMessage[]; hasMore: boolean }> {
   // Zoeken bínnen een connectie blijft binnen die connectie. Voor de gewone
   // mappen is zoeken bewust wél mapoverstijgend (dat is wat je van een
@@ -3954,7 +3984,13 @@ async function fetchErpSlice(
   }
   if (term) {
     const window = start + limit;
-    const rows = await searchMessages(term, { limit: window });
+    // `*.ifc` is een vraag naar een soort bijlage, geen tekst om op te zoeken.
+    const vraag = leesZoekopdracht(term);
+    // Binnen de gekozen postbus, net als bladeren; zonder dit zocht een
+    // beheerder door de post van alle collega's heen.
+    const rows = vraag.soort === "bijlage"
+      ? await searchByAttachment(vraag.extensie, { limit: window, mailbox })
+      : await searchMessages(vraag.term, { limit: window, mailbox, includeContent: inInhoud });
     return { rows: rows.slice(start), hasMore: rows.length === window };
   }
   const page = await listMailboxMessagesPaged(folder, { start, limit, mailbox });
@@ -4009,6 +4045,13 @@ function ErpNextWebmail() {
   useEffect(() => {
     saveUnhandledOnlyPref(getActiveInstanceId(), unhandledOnly);
   }, [unhandledOnly]);
+  const [zoekInInhoud, setZoekInInhoud] = useState(
+    () => readZoekInInhoudPref(getActiveInstanceId()),
+  );
+  const zoekInInhoudRef = useRef(zoekInInhoud);
+  useEffect(() => {
+    saveZoekInInhoudPref(getActiveInstanceId(), zoekInInhoud);
+  }, [zoekInInhoud]);
 
   const [selected, setSelected] = useState<ErpMailMessage | null>(null);
   const [body, setBody] = useState<{ html: string; attachments: BerichtBijlage[] } | null>(null);
@@ -4451,7 +4494,8 @@ function ErpNextWebmail() {
     }
     const mb = mailboxRef.current;
     try {
-      const { rows, hasMore: more } = await fetchErpSlice(folder, term, start, limit, mb);
+      const { rows, hasMore: more } = await fetchErpSlice(
+        folder, term, start, limit, mb, zoekInInhoudRef.current);
       if (activeFolderRef.current !== folder || searchRef.current !== term
         || mailboxRef.current !== mb) return;
       const next = append ? [...messagesRef.current, ...rows] : rows;
@@ -4480,6 +4524,7 @@ function ErpNextWebmail() {
     activeFolderRef.current = activeFolder;
     searchRef.current = search;
     mailboxRef.current = mailbox;
+    zoekInInhoudRef.current = zoekInInhoud;
 
     if (search) {
       void loadList(activeFolder, search);
@@ -4500,7 +4545,7 @@ function ErpNextWebmail() {
       return;
     }
     void loadList(activeFolder, "");
-  }, [activeFolder, search, mailbox, loadList]);
+  }, [activeFolder, search, mailbox, loadList, zoekInInhoud]);
 
   /** Ververs de zichtbare lijst op de huidige diepte, zonder spinner. */
   const silentReload = useCallback(() => {
@@ -5931,13 +5976,15 @@ function ErpNextWebmail() {
     // geen handtekening. `toEmailHtml` maakt van de opgemaakte tekst
     // mailclient-veilige HTML: whitelist, inline styles, geen classes.
     const { typed, quote } = splitQuoteFromBody(draft.body);
-    const html = buildOutgoingHtml({
+    // Geplakte afbeeldingen staan als /files/… in het tekstvak; bij de
+    // ontvanger laden ze alleen met een volledig adres.
+    const html = maakAfbeeldingenAbsoluut(buildOutgoingHtml({
       bodyHtml: toEmailHtml(typed),
       signature,
       includeSignature: draft.includeSignature,
       quoteHtml: quote,
       opmaakStijl: huisstijl,
-    });
+    }), window.location.origin);
     try {
       await sendMail({
         to: draft.to.trim(),
@@ -6418,9 +6465,30 @@ function ErpNextWebmail() {
                   </button>
                 )}
               </div>
-              {searching && (
-                <p className="mt-1 text-[10px] text-slate-400">{t("y_next.mail_search_hint")}</p>
-              )}
+              {searching && (() => {
+                const vraag = leesZoekopdracht(search);
+                if (vraag.soort === "bijlage") {
+                  return (
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      {t("y_next.mail_search_attachment", { ext: vraag.extensie })}
+                    </p>
+                  );
+                }
+                return (
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="flex-1 text-[10px] text-slate-400">{t("y_next.mail_search_hint")}</p>
+                    {/* Standaard uit: zoeken in de berichttekst scant elke mail
+                        en duurt op een volle postbus merkbaar langer. */}
+                    <label title={t("y_next.mail_search_content_hint")}
+                      className="flex flex-shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500">
+                      <input type="checkbox" checked={zoekInInhoud}
+                        onChange={(e) => setZoekInInhoud(e.target.checked)}
+                        className="h-3 w-3 cursor-pointer" />
+                      {t("y_next.mail_search_content")}
+                    </label>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Bulkbalk */}
@@ -7610,6 +7678,19 @@ function ErpNextWebmail() {
 const RECIPIENT_INPUT_CLASS =
   "w-full px-2 py-1 text-xs border-0 border-b border-slate-200 focus:outline-none focus:border-blue-400";
 
+/**
+ * Een geplakte afbeelding als publiek bestand wegzetten. Publiek omdat de
+ * ontvanger hem anders niet kan openen - zo staan de logo's in de
+ * handtekeningen er ook in - en daarom met een naam die niet te raden is.
+ */
+async function plakAfbeelding(bestand: File): Promise<string> {
+  // globalThis: in dit bestand is `File` het icoon uit lucide-react.
+  const hernoemd = new globalThis.File([bestand], plakBestandsnaam(bestand.type), { type: bestand.type });
+  const info = await uploadFile(hernoemd, "", "", false);
+  if (!info?.file_url) throw new Error("geen bestandsadres teruggekregen");
+  return info.file_url;
+}
+
 function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onChange, onSend, onClose, onDiscard, embedded, huisstijl }: {
   draft: ErpDraft;
   sending: boolean;
@@ -7990,6 +8071,7 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
           autoFocus={startInBody}
           collapseQuote={quoteInBody && !showQuote}
           basisStijl={huisstijl}
+          onAfbeelding={plakAfbeelding}
         />
       ) : (
         <textarea

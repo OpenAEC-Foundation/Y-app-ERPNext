@@ -11,6 +11,8 @@ import {
   parseConnectionFolder,
   type ConnectionRawInput,
   toonLabel,
+  zichtbareCategorieen,
+  CONNECTION_CATEGORIES,
 } from "./mail-connections.ts";
 
 /* ─────────────────────────────── Map-id's ─────────────────────────────── */
@@ -299,4 +301,52 @@ test("zonder naam blijft het nummer over", () => {
   assert.equal(toonLabel("Project", "3245", ""), "3245");
   assert.equal(toonLabel("Project", "3245", "   "), "3245");
   assert.equal(toonLabel("Project", "3245", "3245"), "3245");
+});
+
+/* ───────────────────── Afschermen via ERPNext-rechten ───────────────────── */
+
+/*
+ * Wie in ERPNext geen leesrecht heeft op een documentsoort, hoort de mails die
+ * daaraan hangen ook niet als koppeling te zien. Zo kan een collega de
+ * projectmails wel volgen, maar ziet hij niet welke mail bij welke
+ * inkoopfactuur hoort. Wie wat mag, bepalen de rollen in ERPNext, niet de app.
+ */
+
+const zonderInkoopfactuur = (doctype: string) => doctype !== "Purchase Invoice";
+
+test("afschermen: zonder leesrecht op Inkoopfactuur verdwijnt die koppeling", () => {
+  const index = buildConnectionIndex({ ...RAW, toegestaan: zonderInkoopfactuur });
+  const conns = (index.byMessage.get("m-pinv") ?? []).map((c) => c.category);
+  assert.deepEqual(conns, ["customer"]);
+  assert.equal(index.categories.some((c) => c.id === "purchase-invoice"), false);
+});
+
+test("afschermen: projectmails blijven gewoon zichtbaar", () => {
+  const index = buildConnectionIndex({ ...RAW, toegestaan: (dt) => dt === "Project" });
+  assert.deepEqual((index.byMessage.get("m-project") ?? []).map((c) => c.name), ["PROJ-0001"]);
+  assert.ok(index.categories.some((c) => c.id === "project"));
+  // Ook de klant is afgeschermd: geen leesrecht op Customer.
+  assert.equal(index.categories.some((c) => c.id === "customer"), false);
+});
+
+test("afschermen: zonder regel verandert er niets", () => {
+  const vrij = buildConnectionIndex(RAW);
+  assert.ok(vrij.categories.some((c) => c.id === "purchase-invoice"));
+});
+
+test("zichtbareCategorieen: niet gekoppeld staat er altijd", () => {
+  const ids = zichtbareCategorieen(CONNECTION_CATEGORIES, () => false).map((c) => c.id);
+  assert.deepEqual(ids, ["unlinked"]);
+});
+
+test("zichtbareCategorieen: een categorie is zichtbaar met leesrecht op een van zijn soorten", () => {
+  // Kansen bestaan uit Opportunity en Quotation; leesrecht op offertes is genoeg.
+  const ids = zichtbareCategorieen(CONNECTION_CATEGORIES, (dt) => dt === "Quotation").map((c) => c.id);
+  assert.ok(ids.includes("opportunity"));
+  assert.equal(ids.includes("customer"), false);
+});
+
+test("zichtbareCategorieen: zonder regel alles, in dezelfde volgorde", () => {
+  assert.deepEqual(zichtbareCategorieen(CONNECTION_CATEGORIES).map((c) => c.id),
+    CONNECTION_CATEGORIES.map((c) => c.id));
 });

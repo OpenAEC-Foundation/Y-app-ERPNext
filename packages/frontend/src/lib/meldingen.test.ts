@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bepaalMelding, type Meldingstand } from "./meldingen.ts";
+import { bepaalMelding, vatOngelezenSamen, type Meldingstand } from "./meldingen.ts";
 
 /**
  * Tests voor de meldingen.
@@ -46,4 +46,36 @@ test("de stand is altijd bruikbaar als volgende invoer", () => {
   }
   assert.deepEqual(gemeld, [2, 1]);
   assert.equal(stand, 1);
+});
+
+/* ── Wat er in de melding komt te staan ── */
+
+const RIJEN = [
+  { from_user: "nino@3bm.co.nl", owner: "nino@3bm.co.nl", subject: "Kun je even kijken?", creation: "2026-09-14 16:08:00" },
+  { from_user: "karsten@3bm.co.nl", owner: "karsten@3bm.co.nl", subject: "test", creation: "2026-09-14 16:07:00" },
+];
+
+test("de melding gaat over het nieuwste bericht", () => {
+  // Niet het eerste uit de lijst maar het laatst binnengekomene: dát is
+  // waardoor de melding afgaat.
+  const uit = vatOngelezenSamen(RIJEN);
+  assert.equal(uit.aantal, 2);
+  assert.equal(uit.van, "nino");
+  assert.equal(uit.tekst, "Kun je even kijken?");
+});
+
+test("met een namenlijst staat de naam erin en niet het adres", () => {
+  const uit = vatOngelezenSamen(RIJEN, (u) => (u === "nino@3bm.co.nl" ? "Nino van Kleef" : ""));
+  assert.equal(uit.van, "Nino van Kleef");
+});
+
+test("zonder afzenderveld valt hij terug op de eigenaar van de regel", () => {
+  const uit = vatOngelezenSamen([
+    { owner: "lance@3bm.co.nl", subject: "hoi", creation: "2026-09-14 10:00:00" },
+  ]);
+  assert.equal(uit.van, "lance");
+});
+
+test("geen ongelezen berichten geeft een leeg overzicht", () => {
+  assert.deepEqual(vatOngelezenSamen([]), { aantal: 0, van: "", tekst: "" });
 });

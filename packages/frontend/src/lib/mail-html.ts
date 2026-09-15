@@ -54,6 +54,20 @@ const DROP_SUBTREE = new Set([
 ]);
 
 /**
+ * Elementen die nooit inhoud of een sluittag hebben. Staat zo'n element in
+ * `DROP_SUBTREE`, dan valt alleen de tag zelf weg.
+ *
+ * Zonder deze uitzondering wachtte het filter na `<meta charset="utf-8">` op
+ * een `</meta>` die nooit komt, en gooide het alles daarna weg. Mails uit Word,
+ * Outlook en de meeste nieuwsbrieven beginnen met zo'n regel: bij doorsturen
+ * of beantwoorden bleef van het origineel alleen de kop over.
+ */
+const LEGE_ELEMENTEN = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+  "param", "source", "track", "wbr",
+]);
+
+/**
  * Wat overblijft na het filter. Bewust ruim genoeg voor geplakte tabellen en
  * handtekeningen (mailclients gebruiken tabellen voor lay-out), maar zonder
  * één element dat script kan uitvoeren of buiten het bericht kan reiken.
@@ -415,7 +429,7 @@ function sanitize(html: string, options: SanitizeOptions = {}): string {
       // Word/Outlook-namespaces (`<w:sdt>`, `<v:shape>`) dragen geen tekst die
       // de gebruiker bedoelde; `<o:p>` wél (een lege alinea) — die pakken we uit.
       if (DROP_SUBTREE.has(name) || (name.includes(":") && name !== "o:p")) {
-        if (!token.selfClose) { dropDepth = 1; dropTag = name; }
+        if (!token.selfClose && !LEGE_ELEMENTEN.has(name)) { dropDepth = 1; dropTag = name; }
         continue;
       }
       const clean = cleanTag(name, token.attrs, options.allowDataImage === true);

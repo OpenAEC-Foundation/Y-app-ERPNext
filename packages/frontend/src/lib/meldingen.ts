@@ -56,3 +56,47 @@ export function bepaalMelding(vorig: Meldingstand, nu: number): Meldinguitslag {
   // hij op de oude piek staan en meldt het volgende bericht niets.
   return { melden: false, nieuw: 0, stand: nieuweStand };
 }
+
+/** Eén ongelezen bericht, zoals het uit `Notification Log` komt. */
+export interface OngelezenRij {
+  /** Wie het stuurde; `owner` is de terugval voor oudere regels. */
+  from_user?: string;
+  owner?: string;
+  /** De voorvertoning van de tekst. */
+  subject?: string;
+  creation?: string;
+}
+
+export interface Berichtsamenvatting {
+  aantal: number;
+  /** Naam of, bij gebrek daaraan, het deel vóór de @ van de afzender. */
+  van: string;
+  tekst: string;
+}
+
+/**
+ * Waar de melding over gaat: het nieuwste ongelezen bericht, plus hoeveel er
+ * in totaal open staan.
+ *
+ * Het nieuwste en niet het eerste uit de lijst: dát bericht is de reden dat de
+ * melding afgaat, en de volgorde waarin de server ze teruggeeft is niet iets
+ * om op te bouwen.
+ */
+export function vatOngelezenSamen(
+  rijen: OngelezenRij[],
+  naamVan?: (gebruiker: string) => string,
+): Berichtsamenvatting {
+  const lijst = rijen || [];
+  if (lijst.length === 0) return { aantal: 0, van: "", tekst: "" };
+  let nieuwste = lijst[0];
+  for (const rij of lijst) {
+    if (String(rij.creation || "") > String(nieuwste.creation || "")) nieuwste = rij;
+  }
+  const afzender = String(nieuwste.from_user || nieuwste.owner || "").trim();
+  const naam = naamVan?.(afzender) || "";
+  return {
+    aantal: lijst.length,
+    van: naam || afzender.split("@")[0] || "",
+    tekst: String(nieuwste.subject || "").trim(),
+  };
+}

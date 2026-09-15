@@ -52,6 +52,9 @@ import { kiesPostbussen, type Postbus } from "./mail-postbussen.ts";
 import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
   buildConnectionQueries,
+  toegestaneKoppelingen,
+  zichtbareCategorieen,
+  CONNECTION_CATEGORIES,
   isConnectionFolder,
   loadConnectionIndex,
   messageMatchesSelection,
@@ -492,6 +495,14 @@ async function connectionSlice(
   // anders tonen.
   if (!sel) return { messages: [], hasMore: false };
 
+  // Zonder leesrecht op dit soort in ERPNext geen lijst, ook niet via een
+  // onthouden of zelf ingetypte map. De kolom toont de categorie dan al niet;
+  // dit is de tweede grendel.
+  const mag = await toegestaneKoppelingen();
+  if (!zichtbareCategorieen(CONNECTION_CATEGORIES, mag).some((c) => c.id === sel.category)) {
+    return { messages: [], hasMore: false };
+  }
+
   const index = await loadConnectionIndex().catch(() => null);
   const specs = buildConnectionQueries(sel, index);
   if (specs.length === 0) return { messages: [], hasMore: false };
@@ -561,10 +572,14 @@ async function connectionSlice(
  * op een volle mailbox is dat seconden per toetsaanslag. Frappe staat de
  * filter wél toe (het is geen SQL-functie in `fields`, dus geen 417), dus wie
  * die prijs bewust wil betalen zet `includeContent: true`.
+ *
+ * `mailbox` houdt de zoekactie binnen één postbus, net als de lijst eronder.
+ * Dat is geen detail: een beheerder mag élke Communication lezen, en zonder
+ * dit filter kwam een zoekopdracht terug met de post van iedere collega.
  */
 export async function searchMessages(
   query: string,
-  opts?: { limit?: number; includeContent?: boolean }
+  opts?: { limit?: number; includeContent?: boolean; mailbox?: string }
 ): Promise<ErpMailMessage[]> {
   const term = (query ?? "").trim();
   if (!term) return [];
@@ -580,8 +595,64 @@ export async function searchMessages(
     fields: SEARCH_FIELDS,
     // Zoeken gaat over álle mappen heen, maar niet over de prullenbak: wie
     // een weggegooide mail zoekt, hoort daarvoor de Prullenbak te openen.
-    filters: [["communication_type", "=", "Communication"], NOT_TRASHED],
+    filters: withMailbox([["communication_type", "=", "Communication"], NOT_TRASHED], opts?.mailbox),
     or_filters: orFilters,
+    order_by: "communication_date desc",
+    limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
+  });
+  return rows.map((row) => mapMessage(row, folderForRow(row)));
+}
+
+/** Hoeveel bijlagen we hooguit bekijken bij een zoekopdracht op extensie. */
+const BIJLAGE_ZOEK_LIMIET = 500;
+
+/**
+ * Berichten met een bijlage van een bepaalde soort — wat `*.ifc` in het
+ * zoekveld betekent.
+ *
+ * Twee vragen, omdat een bijlage een los `File`-document is en er geen
+ * zoekfilter bestaat dat door die koppeling heen kijkt. Eerst de bijlagen met
+ * die extensie, nieuwste eerst; dan de berichten waar ze aan hangen.
+ *
+ * De grenzen liggen op die tweede vraag, en dat is met opzet. De lijst van
+ * bijlagen is voor iedere medewerker volledig leesbaar — nagemeten: een
+ * gewone medewerker ziet alle IFC-bijlagen van alle postbussen. Wat je van de
+ * berichten zelf ziet, bepalen ERPNext' leesrechten, de gekozen postbus en de
+ * prullenbak, precies zoals bij gewoon zoeken.
+ *
+ * Bij `pdf` kunnen er duizenden bijlagen zijn; dan bekijken we de nieuwste
+ * `BIJLAGE_ZOEK_LIMIET`. Een heel oud bericht met een pdf valt daar buiten.
+ */
+export async function searchByAttachment(
+  extensie: string,
+  opts?: { limit?: number; mailbox?: string }
+): Promise<ErpMailMessage[]> {
+  const ext = (extensie ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9]{1,10}$/.test(ext)) return [];
+
+  const bestanden = await fetchList<{ attached_to_name?: unknown }>("File", {
+    fields: ["attached_to_name"],
+    filters: [
+      ["attached_to_doctype", "=", "Communication"],
+      ["file_name", "like", `%.${ext}`],
+    ],
+    order_by: "creation desc",
+    limit_page_length: BIJLAGE_ZOEK_LIMIET,
+  });
+  const namen: string[] = [];
+  for (const b of bestanden) {
+    const naam = toStr(b.attached_to_name);
+    if (naam && !namen.includes(naam)) namen.push(naam);
+  }
+  if (namen.length === 0) return [];
+
+  const rows = await fetchList<Record<string, unknown>>("Communication", {
+    fields: SEARCH_FIELDS,
+    filters: withMailbox([
+      ["name", "in", namen],
+      ["communication_type", "=", "Communication"],
+      NOT_TRASHED,
+    ], opts?.mailbox),
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
   });

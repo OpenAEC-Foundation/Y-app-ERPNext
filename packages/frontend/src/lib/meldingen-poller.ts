@@ -6,7 +6,9 @@ import { unseenCount } from "./mail-erpnext";
 import { ongelezenBerichten } from "./messages-erpnext";
 import { resolvePostbustoegang } from "./session";
 import { isFeatureEnabled } from "./capabilities";
-import { bepaalMelding, type Meldingstand } from "./meldingen";
+import { bepaalMelding, vatOngelezenSamen, type Meldingstand } from "./meldingen";
+import { playNotificationSound } from "./notify-sound";
+import { toonMelding } from "./melding-popup";
 
 /**
  * Kijken of er nieuwe post of nieuwe berichten zijn — op Y-Next.
@@ -28,8 +30,13 @@ import { bepaalMelding, type Meldingstand } from "./meldingen";
  *   badge terug op een getal dat de gebruiker net heeft weggeklikt.
  */
 
-/** Hoe vaak we kijken. Post is geen chat; een minuut is snel genoeg. */
-const INTERVAL_MS = 60_000;
+/**
+ * Hoe vaak we kijken. Post mag een minuut wachten; een bericht van een collega
+ * niet — dat is een gesprek, en twintig seconden is wat het berichtenscherm
+ * zelf ook aanhoudt.
+ */
+const POST_MS = 60_000;
+const BERICHT_MS = 20_000;
 
 let standMail: Meldingstand = null;
 let standBericht: Meldingstand = null;
@@ -86,20 +93,41 @@ async function kijkNaarPost(): Promise<void> {
 async function kijkNaarBerichten(): Promise<void> {
   if (!isFeatureEnabled("erpnext-messages")) return;
   if (staatOpen("messenger")) return;
-  const aantal = await ongelezenBerichten();
-  setBadgeCount("messenger", aantal);
-  berichtBadge = aantal;
+  const rijen = await ongelezenBerichten();
+  const samen = vatOngelezenSamen(rijen);
+  setBadgeCount("messenger", samen.aantal);
+  berichtBadge = samen.aantal;
   appBadge();
-  const uit = bepaalMelding(standBericht, aantal);
+  const uit = bepaalMelding(standBericht, samen.aantal);
   standBericht = uit.stand;
   if (!uit.melden) return;
+
+  const titel = samen.van
+    ? i18n.t("notify.new_message_from", { naam: samen.van })
+    : i18n.t("notify.new_message_one");
+
+  /*
+   * Drie signalen, want ze vangen elk een ander moment op. De teller in de
+   * zijbalk voor wie er later langs komt, het geluid en de strook in het
+   * scherm voor wie in de app bezig is, en de vensternotificatie voor wie op
+   * een ander tabblad zit. Die laatste toont zichzelf niet wanneer het scherm
+   * zichtbaar is — daarom is dat niet genoeg, en was er tot nu toe niets te
+   * merken van een binnenkomend bericht terwijl je in de app zat.
+   */
+  playNotificationSound();
+  toonMelding({
+    soort: "bericht",
+    titel,
+    tekst: samen.tekst || i18n.t("notify.new_message_body"),
+    naar: "#/messenger",
+  });
   showWebNotification({
-    title: uit.nieuw === 1
-      ? i18n.t("notify.new_message_one")
-      : i18n.t("notify.new_message_many", { count: uit.nieuw }),
-    body: i18n.t("notify.new_message_body"),
+    title: titel,
+    body: samen.tekst || i18n.t("notify.new_message_body"),
     tag: "y-next-bericht",
     navigateTo: "/y-next#/messenger",
+    // Het geluid is hierboven al gespeeld; twee chimes voor één bericht.
+    sound: false,
   });
 }
 
@@ -120,7 +148,12 @@ export function startMeldingen(): void {
   };
 
   ronde();
-  window.setInterval(ronde, INTERVAL_MS);
+  window.setInterval(() => {
+    void kijkNaarPost().catch(() => {});
+  }, POST_MS);
+  window.setInterval(() => {
+    void kijkNaarBerichten().catch(() => {});
+  }, BERICHT_MS);
   // Terug op het tabblad is het moment waarop je het wilt weten.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") ronde();

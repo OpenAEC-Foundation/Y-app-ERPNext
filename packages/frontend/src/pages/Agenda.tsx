@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { kiesUitnodigingen, wachtOpAntwoord } from "../lib/agenda-uitnodigingen";
+import { verstuurAfzegging } from "../lib/uitnodiging-antwoordmail";
 import { haalOpenUitnodigingen } from "../lib/uitnodigingen-uit-mail";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
@@ -18,7 +19,7 @@ import { isFeatureEnabled } from "../lib/capabilities";
 import { haalAgendas, eindTijd, haalCollegas, kleurenVoorCollegas, type Collega } from "../lib/agenda-mailserver";
 import { resolveSessionUser } from "../lib/session";
 import {
-  antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, kanAntwoorden,
+  antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, verwijderAfspraak, kanAntwoorden,
   nieuweAfspraakUid, verstuurAfspraak, werkAfspraakBij,
   type MailserverAfspraak, type MailserverGenodigde,
 } from "../lib/agenda-mailserver";
@@ -1355,6 +1356,48 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
         await deleteDocument("Event", docName);
       } else if (isErpTask) {
         await deleteDocument("Task", docName);
+      } else if (isMailserver && event.uitnodiging) {
+        /*
+         * Hier stond niets. Een afspraak uit de mailserver viel door alle
+         * takken heen, waarna het venster sloot alsof hij weg was - terwijl
+         * hij na het verversen gewoon terugkwam. Sinds nieuwe afspraken
+         * standaard in de mailserver-agenda komen, gold dat voor bijna elke
+         * afspraak.
+         */
+        const u = event.uitnodiging;
+        // Het bestand voor het weghalen: daarna staat het nergens meer, en de
+        // afzegging voor genodigden van buiten wordt eruit gemaakt.
+        const bestand = await haalAfspraakIcs(u.uid).catch(() => undefined);
+        const uitslag = await verwijderAfspraak(u.uid, u.genodigden.map((g) => g.email));
+        if (uitslag.geschreven.length === 0) {
+          throw new Error(uitslag.mislukt[0]?.reden || t("agenda.delete_failed"));
+        }
+        const waarschuwingen: string[] = [];
+        if (uitslag.mislukt.length > 0) {
+          waarschuwingen.push(t("agenda.delete_partial", {
+            agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
+          }));
+        }
+        if (uitslag.organisator && uitslag.extern.length > 0) {
+          try {
+            if (!bestand) throw new Error("geen agendabestand");
+            await verstuurAfzegging({
+              ics: bestand,
+              aan: uitslag.extern,
+              onderwerp: t("agenda.cancel_subject", { titel: event.title }),
+              tekst: t("agenda.cancel_body", { titel: event.title }),
+              ik,
+            });
+          } catch {
+            waarschuwingen.push(t("agenda.cancel_mail_failed", { adressen: uitslag.extern.join(", ") }));
+          }
+        }
+        if (waarschuwingen.length > 0) {
+          // Uit je eigen agenda is hij weg; laat wel zien wat er niet lukte.
+          setError(waarschuwingen.join(" "));
+          onUpdated();
+          return;
+        }
       } else if (isO365) {
         const graphEventId = event.id.replace(/^o365-/, "");
         const instanceId = getActiveInstanceId();
@@ -1541,7 +1584,9 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
             {canEdit && !editing && (
               confirmDelete ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-red-600">{t("agenda.confirm_delete")}</span>
+                  <span className="text-xs text-red-600">
+                    {t(event.herhaalt ? "agenda.confirm_delete_series" : "agenda.confirm_delete")}
+                  </span>
                   <button onClick={handleDelete} disabled={deleting}
                     className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50 cursor-pointer">
                     {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}

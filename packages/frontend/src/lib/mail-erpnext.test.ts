@@ -6,6 +6,7 @@ import {
   listVirtualFolders,
   listMailboxMessages,
   listMailboxMessagesPaged,
+  searchByAttachment,
   searchMessages,
   getMessageBody,
   markRead,
@@ -1524,5 +1525,106 @@ test("fetchThreadCompanions levert niets zonder zichtbare berichten", async () =
     assert.equal(mock.calls.length, 0);
   } finally {
     mock.restore();
+  }
+});
+
+test("searchMessages: zoekt binnen de gekozen postbus, niet in die van collega's", async () => {
+  /*
+   * Een beheerder mag élke Communication lezen. Zonder postbusfilter kwam een
+   * zoekopdracht dus terug met de post van iedere collega, terwijl de lijst
+   * eronder netjes alleen de gekozen postbus toonde. Zoeken hoort dezelfde
+   * grens te houden als bladeren.
+   */
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await searchMessages("offerte", { limit: 10, mailbox: "maarten" });
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "email_account", "=", "maarten"),
+      "de zoekopdracht moet op de actieve postbus gefilterd zijn");
+    // De bestaande grenzen blijven gewoon staan.
+    assert.ok(hasFilter(url, "communication_type", "=", "Communication"));
+    assert.ok(hasFilter(url, "email_status", "!=", "Trash"));
+    assert.ok(hasOrFilter(url, "subject", "%offerte%"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("searchMessages: zonder postbus geen postbusfilter", async () => {
+  // Wie geen postbus kiest (het oude gedrag) krijgt geen verzonnen filter.
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await searchMessages("offerte", { limit: 10, mailbox: "  " });
+    assert.equal(filterValue(mock.calls[0].url, "email_account"), undefined);
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("searchByAttachment: berichten met een bijlage van die soort, binnen de postbus", async () => {
+  /*
+   * Twee stappen: eerst de bijlagen met die extensie, dan de berichten
+   * waar ze aan hangen. De tweede vraag houdt de grenzen van de mail zelf —
+   * postbus en prullenbak — want het bestandsoverzicht kent die niet: een
+   * gewone medewerker ziet in de lijst van bijlagen ook die van collega's.
+   */
+  const mock = installFetchMock((url) => {
+    if (url.includes("/api/resource/File")) {
+      return rowsBody([
+        { attached_to_name: "COMM-A" },
+        { attached_to_name: "COMM-B" },
+        { attached_to_name: "COMM-A" },
+      ]);
+    }
+    return rowsBody([
+      { name: "COMM-A", subject: "Model", sender: "a@x.nl", communication_date: "2026-09-14 10:00:00",
+        seen: 1, sent_or_received: "Received" },
+    ]);
+  });
+  try {
+    const hits = await searchByAttachment("ifc", { limit: 10, mailbox: "maarten" });
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].name, "COMM-A");
+
+    const bestanden = mock.calls[0].url;
+    assert.ok(bestanden.includes("/api/resource/File"));
+    assert.ok(hasFilter(bestanden, "attached_to_doctype", "=", "Communication"));
+    assert.ok(hasFilter(bestanden, "file_name", "like", "%.ifc"));
+
+    const berichten = mock.calls[1].url;
+    assert.ok(berichten.includes("/api/resource/Communication"));
+    // Elk bericht één keer gevraagd, ook als er twee IFC's aan hangen.
+    assert.deepEqual(filterValue(berichten, "name"), ["COMM-A", "COMM-B"]);
+    assert.ok(hasFilter(berichten, "email_account", "=", "maarten"));
+    assert.ok(hasFilter(berichten, "email_status", "!=", "Trash"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+    invalidateCache("File");
+  }
+});
+
+test("searchByAttachment: geen bijlagen van die soort, dan ook geen tweede vraag", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    const hits = await searchByAttachment("ifc", { limit: 10 });
+    assert.deepEqual(hits, []);
+    assert.equal(mock.calls.length, 1);
+  } finally {
+    mock.restore();
+    invalidateCache("File");
+  }
+});
+
+test("searchMessages: met includeContent zoekt hij ook in de berichttekst", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await searchMessages("dakrand", { limit: 10, includeContent: true });
+    assert.ok(hasOrFilter(mock.calls[0].url, "content", "%dakrand%"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
   }
 });

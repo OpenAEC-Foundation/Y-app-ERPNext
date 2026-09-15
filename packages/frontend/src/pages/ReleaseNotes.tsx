@@ -6,6 +6,85 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.36.0",
+    date: "2026-09-14",
+    url: "",
+    sections: [
+      {
+        title: "Berichten: je merkt het nu",
+        items: [
+          "Komt er een bericht van een collega binnen terwijl je in de app bezig bent, dan zie je rechtsonder wie het stuurde en wat er staat, hoor je een korte toon, en loopt de teller bij Berichten op. Klik op de melding en je bent bij het gesprek.",
+          "De vensternotificatie van de browser toont zichzelf bewust niet zolang je het tabblad open hebt staan — de gedachte is dat je het dan toch wel ziet. Bij een chatbericht klopt dat niet: je zit in de mail of in de agenda. Daarom deze strook ernaast.",
+          "Er wordt nu elke twintig seconden gekeken in plaats van elke minuut; een gesprek moet niet op een teller wachten.",
+        ],
+      },
+      {
+        title: "Doorsturen: de mail gaat weer mee",
+        items: [
+          "Bij doorsturen kwam alleen de kop \"Doorgestuurd bericht van...\" aan, zonder de mail zelf. Mails uit Word, Outlook en de meeste nieuwsbrieven beginnen met een regel die het filter verkeerd las; alles daarna viel weg. Dat raakte ook het citaat bij beantwoorden en plakken uit Word. De doorgestuurde mail staat nu weer onder je handtekening.",
+        ],
+      },
+      {
+        title: "Handtekening: je foto komt aan",
+        items: [
+          "Je pasfoto in de handtekening verwees naar een afgeschermd bestand op de server. Bij jezelf zag hij er goed uit, bij de ontvanger was het een gebroken plaatje. De foto zit nu als base64 in de handtekening zelf, verkleind zodat een mail er niet zwaar van wordt. Het logo en LinkedIn blijven gewone links.",
+        ],
+      },
+      {
+        title: "Koppelingen volgen de rechten in ERPNext",
+        items: [
+          "Bij de koppelingen in de mail zie je alleen de soorten documenten waar je in ERPNext leesrecht op hebt. Wie geen leesrecht heeft op inkoopfacturen, ziet dus niet welke mail bij welke inkoopfactuur hoort; projectmails blijven voor iedereen met leesrecht op projecten zichtbaar. Wie wat mag, stel je in ERPNext in via de rollen.",
+        ],
+      },
+      {
+        title: "Agenda: verwijderen werkt",
+        items: [
+          "Een afspraak verwijderen deed niets. Het venster sloot alsof het gelukt was, maar na het verversen stond de afspraak er gewoon weer. Voor afspraken in de agenda op de mailserver was er geen verwijderpad; sinds nieuwe afspraken standaard daar komen, gold dat voor bijna alles.",
+          "Verwijder je een afspraak die jij organiseert, dan verdwijnt hij ook uit de agenda van collega's die uitgenodigd waren. Genodigden van buiten 3BM krijgen een afzegging per mail, zodat de afspraak niet bij hen blijft staan.",
+          "Bij een herhalende afspraak zegt de bevestiging dat de hele reeks weggaat.",
+        ],
+      },
+      {
+        title: "Afbeeldingen plakken in een mail",
+        items: [
+          "Een schermafdruk of gekopieerde afbeelding plak je met Ctrl+V direct in je mail. Eerst gebeurde er dan niets: het plakken las alleen tekst.",
+          "Klik op de afbeelding om de grootte aan te passen: kies Klein, Half, Groot of Origineel, of sleep aan de hoek rechtsonder. Backspace haalt een aangeklikte afbeelding weg.",
+          "De afbeelding gaat mee als bestand op de server, net als de logo's in de handtekeningen. Zo ziet de ontvanger hem ook; een afbeelding die in de mail zelf zit wordt door Gmail en Outlook weggefilterd.",
+        ],
+      },
+      {
+        title: "Taken: startdatum",
+        items: [
+          "In het detailpaneel van een taak staat nu een startdatum boven de deadline. Het weekdashboard gebruikt die om de begrote uren over de werkdagen tussen start en deadline te verdelen.",
+        ],
+      },
+      {
+        title: "Zoeken in de mail",
+        items: [
+          "Typ *.ifc in het zoekveld en je krijgt de berichten met een IFC-bijlage. Werkt voor elke extensie: *.pdf, *.dwg, *.xlsx. Een gewone bestandsnaam zonder sterretje blijft een gewone zoekterm.",
+          "Onder het zoekveld staat een vinkje \"Ook in de berichttekst\". Standaard zoek je op onderwerp, afzender en ontvanger; met het vinkje aan ook in wat er in de mail staat. Dat duurt merkbaar langer, daarom staat het uit tot je het aanzet — en daarna onthoudt de app het.",
+          "Een zoekopdracht keek door alle mail heen die je mag lezen. Voor een beheerder is dat de post van iedere collega, terwijl de lijst eronder netjes alleen het gekozen tabblad toonde. Zoeken houdt nu dezelfde grens als bladeren: het tabblad dat openstaat. Wil je in een andere postbus zoeken, open dan eerst dat tabblad.",
+        ],
+      },
+      {
+        title: "IFC-viewer: onderdelen selecteren",
+        items: [
+          "Klik in een bouwmodel op een onderdeel en het licht blauw op. Rechts in beeld zie je wat het is (bijvoorbeeld een vloer, balk of kolom), de naam en het GlobalId, en de eigenschappen die in het bestand zijn meegegeven, zoals catalogus, norm en brandklasse.",
+          "Draaien en zoomen werken zoals voorheen; alleen een klik zonder te slepen selecteert. Klik naast het model of druk op Escape om de selectie op te heffen.",
+        ],
+      },
+      {
+        title: "Bouwmodellen bekijken in de mail",
+        items: [
+          "Klik in een bericht op een IFC-bijlage en het model verschijnt naast de mail — dezelfde plek als de pdf-viewer. Slepen draait het model, scrollen zoomt in en uit. Boven het beeld staat uit hoeveel onderdelen het bestaat.",
+          "Downloaden en een ander programma openen hoeft dus niet meer om te zien wat iemand je stuurt. Getest met twee modellen die hier per mail binnenkwamen: een vloerplan van 159 kB en een staalconstructie van 9,6 MB met ruim elfduizend onderdelen, die laatste in kleur en binnen enkele seconden in beeld.",
+          "De viewer wordt pas geladen op het moment dat je op een model klikt. Krijg je er nooit een, dan verandert er niets aan de snelheid van de app.",
+          "Alleen .ifc-bestanden. Een gezipt model (.ifczip) moet eerst uitgepakt worden en blijft daarom een gewone download, in plaats van een knop die niets doet.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.35.0",
     date: "2026-09-14",
     url: "",

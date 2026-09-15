@@ -20,6 +20,8 @@ import {
   connectionFolderId,
   loadConnectionIndex,
   peekConnectionIndex,
+  toegestaneKoppelingen,
+  zichtbareCategorieen,
   type ConnectionCategoryId,
   type ConnectionIndex,
   type ConnectionObject,
@@ -48,6 +50,19 @@ export default function ConnectionNav({
   const [expanded, setExpanded] = useState<Set<ConnectionCategoryId>>(() => new Set());
   const [showAll, setShowAll] = useState<Set<ConnectionCategoryId>>(() => new Set());
   const [dragOver, setDragOver] = useState<string | null>(null);
+  /**
+   * Welke categorieën deze gebruiker volgens ERPNext mag zien. Zolang dat nog
+   * niet bekend is alleen "Niet gekoppeld": anders flitst "Inkoopfacturen" even
+   * op bij iemand die ze niet hoort te zien.
+   */
+  const [toegestaan, setToegestaan] = useState<((doctype: string) => boolean) | null>(null);
+  useEffect(() => {
+    let afgebroken = false;
+    void toegestaneKoppelingen()
+      .then((regel) => { if (!afgebroken) setToegestaan(() => regel); })
+      .catch(() => { /* geen antwoord: dan blijft het bij "Niet gekoppeld" */ });
+    return () => { afgebroken = true; };
+  }, []);
 
   const ensureIndex = useCallback(() => {
     if (loading) return;
@@ -93,7 +108,7 @@ export default function ConnectionNav({
         {loading && <Loader2 size={9} className="animate-spin text-slate-300" />}
       </div>
 
-      {CONNECTION_CATEGORIES.map((cat) => {
+      {zichtbareCategorieen(CONNECTION_CATEGORIES, toegestaan ?? (() => false)).map((cat) => {
         const catFolder = connectionFolderId({ category: cat.id });
         const active = activeFolder === catFolder;
         const stats = index?.categories.find((c) => c.id === cat.id);

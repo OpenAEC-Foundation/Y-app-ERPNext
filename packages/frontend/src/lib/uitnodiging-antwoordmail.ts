@@ -1,4 +1,4 @@
-import { zetDeelname, type Deelnamestatus } from "./ical.ts";
+import { maakAfzegging, zetDeelname, type Deelnamestatus } from "./ical.ts";
 import { sendMail } from "./mail-erpnext.ts";
 
 /**
@@ -81,5 +81,35 @@ export async function verstuurAntwoordMail(
     html: `<p>${tekst}</p>`,
     attachments: [bestand],
     sender: ik,
+  });
+}
+
+/** Tekst veilig in HTML zetten. */
+function ontsnapHtml(tekst: string): string {
+  const tabel: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+  return tekst.replace(/[&<>"]/g, (c) => tabel[c]);
+}
+
+/**
+ * Een afzegging sturen aan genodigden van buiten.
+ *
+ * Hun agenda staat niet op onze mailserver; zonder dit bericht blijft een
+ * ingetrokken afspraak bij hen gewoon staan. Het .ics gaat als bijlage mee,
+ * net als bij een antwoord op een uitnodiging.
+ */
+export async function verstuurAfzegging(opts: {
+  ics: string;
+  aan: string[];
+  onderwerp: string;
+  tekst: string;
+  ik: string;
+}): Promise<{ name: string }> {
+  const bestand = new File([maakAfzegging(opts.ics)], "afzegging.ics", { type: "text/calendar" });
+  return sendMail({
+    to: opts.aan.join(", "),
+    subject: opts.onderwerp,
+    html: "<p>" + ontsnapHtml(opts.tekst) + "</p>",
+    attachments: [bestand],
+    sender: opts.ik,
   });
 }

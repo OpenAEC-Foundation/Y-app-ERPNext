@@ -5,6 +5,7 @@ import {
   bouwAfspraakIcs,
   leesAfspraakIcs,
   leesTijdstip,
+  maakAfzegging,
   ontvouw,
   vouw,
   zetDeelname,
@@ -260,4 +261,40 @@ test("met genodigden staat de organisator er gewoon in", () => {
   }), NU));
   assert.equal(regels.some((r) => r.startsWith("ORGANIZER") && r.endsWith("mailto:maarten@3bm.co.nl")), true);
   assert.equal(regels.some((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:lance@3bm.co.nl")), true);
+});
+
+/* ── Afzeggen ── */
+
+test("maakAfzegging: van een uitnodiging een afzegging met een hoger volgnummer", () => {
+  /*
+   * Een afspraak met genodigden intrekken hoort volgens de norm een
+   * CANCEL-bericht te zijn en geen stille verwijdering: wie van buiten komt
+   * heeft hier geen agenda die wij kunnen bijwerken, en houdt de afspraak
+   * anders gewoon staan.
+   */
+  const bron = bouwAfspraakIcs(afspraak({ volgnummer: 2 }), NU);
+  const regels = ontvouw(maakAfzegging(bron));
+  assert.ok(regels.includes("METHOD:CANCEL"));
+  assert.ok(regels.includes("STATUS:CANCELLED"));
+  assert.ok(regels.includes("SEQUENCE:3"), "een afzegging moet nieuwer zijn dan de uitnodiging");
+  assert.equal(regels.filter((r) => r.startsWith("METHOD")).length, 1);
+  // Wie genodigd was blijft genoemd: die moet weten dat het niet doorgaat.
+  assert.ok(regels.some((r) => r.startsWith("ATTENDEE")));
+});
+
+test("maakAfzegging: een bestaande STATUS wordt vervangen, niet verdubbeld", () => {
+  const bron = bouwAfspraakIcs(afspraak(), NU).replace("BEGIN:VEVENT\r\n", "BEGIN:VEVENT\r\nSTATUS:CONFIRMED\r\n");
+  const regels = ontvouw(maakAfzegging(bron));
+  assert.deepEqual(regels.filter((r) => r.startsWith("STATUS")), ["STATUS:CANCELLED"]);
+});
+
+test("maakAfzegging: zonder METHOD of SEQUENCE komen ze erbij", () => {
+  const kaal = ["BEGIN:VCALENDAR", "VERSION:2.0", "BEGIN:VEVENT", "UID:x@3bm.co.nl",
+    "DTSTART:20260922T083000", "SUMMARY:Johan ABC", "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+  const regels = ontvouw(maakAfzegging(kaal));
+  assert.ok(regels.includes("METHOD:CANCEL"));
+  assert.ok(regels.includes("SEQUENCE:1"));
+  assert.ok(regels.includes("STATUS:CANCELLED"));
+  // METHOD hoort in de kalender, niet in de afspraak.
+  assert.ok(regels.indexOf("METHOD:CANCEL") < regels.indexOf("BEGIN:VEVENT"));
 });

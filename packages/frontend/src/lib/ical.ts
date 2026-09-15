@@ -145,6 +145,61 @@ export function zetDeelname(ics: string, email: string, status: Deelnamestatus):
 }
 
 /** Het e-mailadres uit een ORGANIZER- of ATTENDEE-regel, in kleine letters. */
+/**
+ * Van een afspraak een afzegging maken: `METHOD:CANCEL`, `STATUS:CANCELLED`
+ * en een volgnummer dat hoger is dan dat van de uitnodiging.
+ *
+ * Een afspraak met genodigden intrekken hoort volgens de norm zo'n bericht te
+ * zijn en geen stille verwijdering. Wie van buiten 3BM komt heeft hier geen
+ * agenda die wij kunnen bijwerken; zonder afzegging blijft de afspraak bij hem
+ * gewoon staan. Het hogere volgnummer is geen detail: een agendaprogramma
+ * negeert een bericht dat niet nieuwer is dan wat het al heeft.
+ *
+ * Alleen die drie regels veranderen; genodigden, tijden en al het andere
+ * blijven staan, zodat de ontvanger herkent welke afspraak het betreft.
+ */
+export function maakAfzegging(ics: string): string {
+  const regels = ontvouw(ics).filter((r) => r !== "");
+  const uit: string[] = [];
+  let inEvent = false;
+  let heeftMethode = false;
+  let heeftVolgnummer = false;
+  for (const regel of regels) {
+    const boven = regel.toUpperCase();
+    if (boven.startsWith("METHOD:")) {
+      if (!heeftMethode) uit.push("METHOD:CANCEL");
+      heeftMethode = true;
+      continue;
+    }
+    if (boven === "BEGIN:VEVENT") {
+      if (!heeftMethode) {
+        // METHOD hoort in de kalender, vóór de afspraak.
+        uit.push("METHOD:CANCEL");
+        heeftMethode = true;
+      }
+      inEvent = true;
+      uit.push(regel);
+      continue;
+    }
+    if (inEvent && boven.startsWith("STATUS:")) continue;
+    if (inEvent && boven.startsWith("SEQUENCE:")) {
+      const nu = parseInt(regel.slice(regel.indexOf(":") + 1), 10);
+      uit.push(`SEQUENCE:${Number.isFinite(nu) ? nu + 1 : 1}`);
+      heeftVolgnummer = true;
+      continue;
+    }
+    if (boven === "END:VEVENT") {
+      if (!heeftVolgnummer) uit.push("SEQUENCE:1");
+      uit.push("STATUS:CANCELLED");
+      inEvent = false;
+      uit.push(regel);
+      continue;
+    }
+    uit.push(regel);
+  }
+  return uit.flatMap(vouw).join("\r\n") + "\r\n";
+}
+
 export function adresVanRegel(regel: string): string {
   const i = regel.lastIndexOf(":");
   if (i < 0) return "";
