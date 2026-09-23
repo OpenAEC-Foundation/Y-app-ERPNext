@@ -425,12 +425,16 @@ export default function Wiki() {
             <div className="flex items-center justify-between gap-2 px-3 sm:px-8 py-3 sm:py-4 border-b border-slate-200 bg-white">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 {/* Mobile-only back-to-list button */}
+                {/* Terug naar de hoofdpagina van de kennisbank. Ook op een
+                    groot scherm: daar staat links wel de lijst, maar niet het
+                    overzicht met onderwerpen waar je vandaan kwam. */}
                 <button
                   onClick={() => setSelectedPage(null)}
-                  className="md:hidden p-2 -ml-2 rounded-lg hover:bg-slate-100 text-slate-600 cursor-pointer shrink-0"
-                  title={t("common.back", { defaultValue: "Back" })}
+                  className="flex shrink-0 cursor-pointer items-center gap-1 -ml-2 rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+                  title={t("wiki.back_to_overview")}
                 >
                   <ChevronLeft size={20} />
+                  <span className="hidden text-sm md:inline">{t("wiki.back_to_overview")}</span>
                 </button>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-2xl font-bold text-slate-900 truncate">

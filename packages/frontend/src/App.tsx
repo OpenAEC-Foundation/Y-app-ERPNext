@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { LogIn, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import Sidebar, { type Page, type ViewMode, isEmployerRole } from "./components/Sidebar";
 import ComingSoon from "./components/ComingSoon";
 import { DataProvider } from "./lib/DataContext";
@@ -10,8 +10,6 @@ import MeldingStrook from "./components/MeldingStrook";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
-import { APP_NAME, APP_VERSION } from "./lib/version";
-import { YLogo } from "./components/YLogo";
 
 /** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
 const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
@@ -71,6 +69,7 @@ const Letters = lazy(() => import("./pages/Letters"));
 const ReleaseNotes = lazy(() => import("./pages/ReleaseNotes"));
 const MailView = lazy(() => import("./pages/MailView"));
 const VoorbeeldVenster = lazy(() => import("./pages/VoorbeeldVenster"));
+import LoginScherm from "./components/LoginScherm";
 const MessengerView = lazy(() => import("./pages/MessengerView"));
 // Iframe-host voor extensies. Lazy (was statisch) zodat de host — inclusief
 // zijn proxy-URL-opbouw — niet in de hoofdbundel belandt zolang extensies uit
@@ -164,68 +163,10 @@ function App() {
   }
 
   if (state.status === "unauthenticated") {
-    // Zelfde kaartopmaak als het originele Y-app loginscherm (zie
-    // LoginPage.tsx): donkere teal-gradient achtergrond, glazen kaart met
-    // Y-logo-badge en een footer met "OpenAEC Foundation" + versienummer.
-    // Geen e-mail/wachtwoord-velden en geen /api/yapp-aanroepen — dit
-    // scherm stuurt alleen door naar de bestaande ERPNext-login.
-    return (
-      <div
-        className="fixed inset-0 flex items-center justify-center p-6"
-        style={{
-          background:
-            "linear-gradient(160deg, #0a1628 0%, #0f2030 20%, #0d3b3f 45%, #0a2a35 65%, #0f1e2e 85%, #0a1628 100%)",
-        }}
-      >
-        <div className="w-full max-w-sm">
-          <div className="mb-8 text-center">
-            {/* Gloed achter het logo: geeft het scherm een middelpunt. */}
-            <span className="relative inline-flex items-center justify-center">
-              <span className="absolute h-24 w-24 rounded-full bg-teal-500/20 blur-2xl" aria-hidden="true" />
-              <YLogo size={80} className="relative inline-block" />
-            </span>
-            <h1 className="mt-5 text-3xl font-bold tracking-tight text-white">{APP_NAME}</h1>
-            <p className="mt-2 text-sm font-medium text-teal-300/70">{t("y_next.direct_mode")}</p>
-          </div>
-
-          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.06] p-8 text-center shadow-2xl shadow-black/40 backdrop-blur-xl">
-            <p className="text-sm leading-relaxed text-slate-300">{t("y_next.login_required")}</p>
-            <button
-              onClick={() => window.location.assign(loginUrl())}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-teal-500/25 active:translate-y-0"
-              style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)" }}
-            >
-              <LogIn size={16} />
-              {t("y_next.login_button")}
-            </button>
-            {/* Waar je dan terechtkomt: de inlogpagina van Frappe zelf. */}
-            <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-              <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-[#2490EF] text-[9px] font-extrabold leading-none text-white">F</span>
-              {t("y_next.login_via_frappe")}
-            </p>
-          </div>
-
-          <div className="text-center mt-8 space-y-2">
-            <div className="flex items-center justify-center gap-2 opacity-60">
-              <svg viewBox="0 0 140 20" className="h-3.5" fill="none">
-                <text
-                  x="0"
-                  y="15"
-                  fontFamily="system-ui, sans-serif"
-                  fontWeight="600"
-                  fontSize="13"
-                  fill="rgba(148,163,184,0.8)"
-                  letterSpacing="0.5"
-                >
-                  OpenAEC Foundation
-                </text>
-              </svg>
-            </div>
-            <p className="text-[10px] text-slate-600 font-mono tracking-wider">v{APP_VERSION}</p>
-          </div>
-        </div>
-      </div>
-    );
+    // Het scherm zelf staat in `components/LoginScherm`: een blauwdruk met
+    // het lijnwerk van een stalen portaal, en één knop naar de inlogpagina
+    // van Frappe. Geen eigen velden — de sessie komt van die site.
+    return <LoginScherm onLogin={() => window.location.assign(loginUrl())} />;
   }
 
   if (state.status === "error") {
