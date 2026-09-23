@@ -38,6 +38,8 @@
 
 /* ─── Tags ─── */
 
+import { linkifyEscapedHtml } from "./linkify.ts";
+
 /** Tags zonder sluittag. */
 const VOID_TAGS = new Set(["br", "hr", "img", "wbr", "col"]);
 
@@ -93,7 +95,7 @@ const GLOBAL_ATTRS = new Set(["style", "dir", "lang", "title"]);
  * en het citaat begint. Een `data-`-attribuut kan niets uitvoeren en de waarde
  * wordt hoe dan ook ge-escaped; de rest van de `data-*`-ruimte blijft dicht.
  */
-const ALLOWED_DATA_ATTRS = new Set(["data-y-quote"]);
+const ALLOWED_DATA_ATTRS = new Set(["data-y-quote", "data-y-ondertekening"]);
 
 /** Extra attributen per tag. Alles wat hier niet staat, valt weg. */
 const TAG_ATTRS: Record<string, Set<string>> = {
@@ -109,6 +111,8 @@ const TAG_ATTRS: Record<string, Set<string>> = {
   ul: new Set(["type"]),
   li: new Set(["value"]),
   blockquote: new Set(["data-y-quote"]),
+  // De ondertekening in het opstelvenster; zie `voegOndertekeningIn` in `mail-quote.ts`.
+  div: new Set(["data-y-ondertekening"]),
 };
 
 /**
@@ -557,7 +561,8 @@ export function plainTextToHtml(text: string): string {
   const normalized = String(text || "").replace(/\r\n?/g, "\n");
   const blocks = normalized.split(/\n{2,}/);
   const html = blocks
-    .map((block) => escapeHtml(block).replace(/\n/g, "<br>"))
+    // Een geplakt webadres wordt meteen een link, net als in een gelezen mail.
+    .map((block) => linkifyEscapedHtml(block).replace(/\n/g, "<br>"))
     .filter((block) => block.length > 0)
     .map((block) => `<p>${block}</p>`)
     .join("");

@@ -16,12 +16,12 @@ import {
  * bestandsnaam als "image.png" die voor iedereen te raden is.
  */
 
-const ORIGIN = "https://3bm.prilk.cloud";
+const ORIGIN = "https://erp.voorbeeld.nl";
 
 test("een afbeelding van deze server krijgt een volledig adres in de uitgaande mail", () => {
   // Zo staan de logo's in de handtekeningen er ook in, en zo komen die aan.
   const uit = maakAfbeeldingenAbsoluut('<p>zie</p><img src="/files/plak-ab12.png" width="320">', ORIGIN);
-  assert.equal(uit, '<p>zie</p><img src="https://3bm.prilk.cloud/files/plak-ab12.png" width="320">');
+  assert.equal(uit, '<p>zie</p><img src="https://erp.voorbeeld.nl/files/plak-ab12.png" width="320">');
 });
 
 test("wat al een volledig adres of een cid is, blijft staan", () => {
@@ -32,7 +32,7 @@ test("wat al een volledig adres of een cid is, blijft staan", () => {
 test("enkele aanhalingstekens en een schuine streep aan het eind van de origin", () => {
   assert.equal(
     maakAfbeeldingenAbsoluut("<img alt='x' src='/files/b.jpg'>", ORIGIN + "/"),
-    "<img alt='x' src='https://3bm.prilk.cloud/files/b.jpg'>",
+    "<img alt='x' src='https://erp.voorbeeld.nl/files/b.jpg'>",
   );
 });
 

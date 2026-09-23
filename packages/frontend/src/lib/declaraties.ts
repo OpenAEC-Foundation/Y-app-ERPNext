@@ -25,10 +25,23 @@
  * werkgever geschreven worden, dus een "Goedgekeurd" record zonder
  * goedkeurstempel is zichtbaar onecht (zie `declaratiePermissions` in het
  * provisioningscript voor de volledige afweging).
+ *
+ * **Sites met reisaanvragen.** Waar HRMS wél draait en kilometers via een
+ * maandelijkse `Travel Request` per medewerker lopen, staat het server script
+ * `km_rit_boeken`. Dan lezen en schrijven de km-functies hieronder ritten in
+ * die reisaanvraag (`km-reisaanvraag.ts`) en blijft `Y Km Registratie` leeg.
+ * Onkosten lopen altijd via `Y Onkosten`.
  */
 
-import { fetchList, createDocument, updateDocument } from "./erpnext.ts";
+import { fetchList, createDocument, updateDocument, deleteDocument } from "./erpnext.ts";
 import { DEFAULT_KM_TARIEF } from "./kmTarief.ts";
+import {
+  boekKmRit,
+  fetchKmRittenReisaanvraag,
+  kmViaReisaanvraag,
+  verwijderKmRit,
+  wijzigKmRit,
+} from "./km-reisaanvraag.ts";
 
 export const KM_DOCTYPE = "Y Km Registratie";
 export const ONKOSTEN_DOCTYPE = "Y Onkosten";
@@ -61,6 +74,11 @@ export interface KmRegistratie {
   goedgekeurd_door?: string;
   goedgekeurd_op?: string;
   owner?: string;
+  /**
+   * Gevuld als de rit in een reisaanvraag staat (zie `km-reisaanvraag.ts`);
+   * `name` is dan de naam van de ritregel daarin.
+   */
+  reisaanvraag?: string;
 }
 
 export interface Onkostenpost {
@@ -126,10 +144,10 @@ export function computeKmBedrag(kilometers: number, retour: boolean, tariefPerKm
  *
  * Omgedraaid (van ⇄ naar) telt niet als dubbel; dat is de terugrit.
  */
-export function vindDubbeleRit(
-  bestaande: Pick<KmRegistratie, "name" | "employee" | "datum" | "van" | "naar">[],
+export function vindDubbeleRit<T extends Pick<KmRegistratie, "name" | "employee" | "datum" | "van" | "naar">>(
+  bestaande: T[],
   nieuwe: { employee: string; datum: string; van: string; naar: string },
-): Pick<KmRegistratie, "name" | "employee" | "datum" | "van" | "naar"> | undefined {
+): T | undefined {
   const sleutel = (waarde?: string) => String(waarde || "").trim().toLowerCase();
   const van = sleutel(nieuwe.van);
   const naar = sleutel(nieuwe.naar);
@@ -268,6 +286,7 @@ function buildFilters(filter: DeclaratieFilter): unknown[][] {
 }
 
 export async function fetchKmRegistraties(filter: DeclaratieFilter = {}): Promise<KmRegistratie[]> {
+  if (await kmViaReisaanvraag()) return fetchKmRittenReisaanvraag(filter);
   return fetchList<KmRegistratie>(KM_DOCTYPE, {
     fields: KM_FIELDS,
     filters: buildFilters(filter),
@@ -298,8 +317,60 @@ export async function fetchOnkostensoorten(): Promise<string[]> {
 
 /* ─────────────────────────── Schrijven ─────────────────────────── */
 
-export async function createKmRegistratie(invoer: KmInvoer): Promise<{ name: string }> {
+export interface KmBoeking {
+  /** Het document waar de rit in staat: de rit zelf, of de reisaanvraag. */
+  name: string;
+  /** Het bedrag zoals de server het rekende (reisaanvraag: tarief van de maand). */
+  bedrag?: number;
+  /**
+   * Alleen bij een reisaanvraag: op die dag staat al een rit met dezelfde
+   * afstand en er is níéts geboekt. Nog eens met `toch` boekt hem alsnog.
+   */
+  dubbel?: boolean;
+  reisaanvraag?: string;
+}
+
+export async function createKmRegistratie(invoer: KmInvoer, opties: { toch?: boolean } = {}): Promise<KmBoeking> {
+  if (await kmViaReisaanvraag()) {
+    const uit = await boekKmRit(invoer, opties);
+    return { name: uit.reisaanvraag, reisaanvraag: uit.reisaanvraag, bedrag: uit.bedrag, dubbel: uit.dubbel };
+  }
   return createDocument<{ name: string }>(KM_DOCTYPE, buildKmPayload(invoer));
+}
+
+export interface KmWijziging {
+  datum: string;
+  van: string;
+  naar: string;
+  kilometers: number;
+  retour: boolean;
+}
+
+/**
+ * Past een rit aan en geeft het nieuwe bedrag terug. De rit houdt zijn eigen
+ * tarief: een tariefwijziging na het boeken mag een correctie niet
+ * stilzwijgend herrekenen.
+ */
+export async function wijzigKmRegistratie(rit: KmRegistratie, w: KmWijziging, tariefTerugval = 0): Promise<number> {
+  if (rit.reisaanvraag) {
+    const uit = await wijzigKmRit(rit.name, w);
+    return uit.bedrag ?? 0;
+  }
+  const bedrag = computeKmBedrag(w.kilometers, w.retour, rit.tarief_per_km || tariefTerugval);
+  await updateDocument(KM_DOCTYPE, rit.name, {
+    datum: w.datum,
+    van: w.van,
+    naar: w.naar,
+    kilometers: w.kilometers,
+    retour: w.retour ? 1 : 0,
+    bedrag,
+  });
+  return bedrag;
+}
+
+export async function verwijderKmRegistratie(rit: KmRegistratie): Promise<void> {
+  if (rit.reisaanvraag) await verwijderKmRit(rit.name);
+  else await deleteDocument(KM_DOCTYPE, rit.name);
 }
 
 export async function createOnkosten(invoer: OnkostenInvoer): Promise<{ name: string }> {

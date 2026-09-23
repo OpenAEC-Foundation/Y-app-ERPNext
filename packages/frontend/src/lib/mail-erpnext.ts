@@ -39,6 +39,7 @@ import {
   fetchCount,
   fetchDocument,
   fetchList,
+  fetchChildTable,
   invalidateCache,
   updateDocument,
   uploadFile,
@@ -48,9 +49,11 @@ import {
 } from "./erpnext.ts";
 import { bewaarRegelovergangen } from "./mail-html.ts";
 import { resolvePostbustoegang, resolveSessionUser } from "./session.ts";
+import { isBelangrijk } from "./mail-belangrijk.ts";
 import { kiesPostbussen, type Postbus } from "./mail-postbussen.ts";
 import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
+  CONNECTION_GROUP_BY,
   buildConnectionQueries,
   toegestaneKoppelingen,
   zichtbareCategorieen,
@@ -83,6 +86,8 @@ export interface ErpMailMessage {
   /** Virtuele map-id waarin dit bericht is opgehaald. */
   folder: string;
   hasAttachments: boolean;
+  /** Door jou gemarkeerd als belangrijk (Frappe's `_liked_by`). */
+  belangrijk?: boolean;
   /** Communication-name van het bericht waarop dit een antwoord is. */
   inReplyTo?: string;
   /** Gekoppeld ERPNext-document (bv. het project van de mail). */
@@ -210,6 +215,8 @@ const NOT_TRASHED: unknown[] = ["email_status", "!=", EMAIL_STATUS_TRASH];
  */
 const COMM_STATUS_CLOSED = "Closed";
 const COMM_STATUS_OPEN = "Open";
+/** "Niet afgehandeld" als queryfilter: alles behalve Closed. */
+const NOT_HANDLED: unknown[] = ["status", "!=", COMM_STATUS_CLOSED];
 
 /** Is deze `Communication.status`-waarde "afgehandeld"? */
 export function isHandledStatus(value: unknown): boolean {
@@ -240,6 +247,8 @@ const LIST_FIELDS = [
   "in_reply_to",
   "reference_doctype",
   "reference_name",
+  // Persoonlijke "belangrijk"-markering; zie `lib/mail-belangrijk.ts`.
+  "_liked_by",
 ];
 
 /**
@@ -366,6 +375,20 @@ function folderForRow(row: Record<string, unknown>): string {
   return toStr(row.sent_or_received) === "Sent" ? MAIL_FOLDER_SENT : MAIL_FOLDER_INBOX;
 }
 
+/**
+ * Het eigen adres, onthouden zodra de sessie bekend is: `mapMessage` is
+ * synchroon en kan er niet op wachten. Tot die tijd staat er niets, en is een
+ * mail hooguit één ronde lang niet als belangrijk gemerkt.
+ */
+let eigenAdresCache = "";
+void resolveSessionUser()
+  .then((u) => { eigenAdresCache = String(u || "").trim().toLowerCase(); })
+  .catch(() => undefined);
+
+function eigenAdres(): string {
+  return eigenAdresCache;
+}
+
 function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMessage {
   const msg: ErpMailMessage = {
     name: toStr(row.name),
@@ -379,6 +402,7 @@ function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMess
     folder: folderId,
     hasAttachments: toBool(row.has_attachment),
   };
+  if (isBelangrijk(row._liked_by, eigenAdres())) msg.belangrijk = true;
   if (row.cc) msg.cc = toStr(row.cc);
   if (row.in_reply_to) msg.inReplyTo = toStr(row.in_reply_to);
   if (row.reference_doctype && row.reference_name) {
@@ -397,7 +421,7 @@ function mapMessage(row: Record<string, unknown>, folderId: string): ErpMailMess
  */
 export async function listMailboxMessages(
   folderId: string,
-  opts?: { limit?: number; start?: number; search?: string; mailbox?: string }
+  opts?: { limit?: number; start?: number; search?: string; mailbox?: string; alleenOpen?: boolean }
 ): Promise<ErpMailMessage[]> {
   if (isConnectionFolder(folderId)) {
     const page = await connectionSlice(
@@ -421,9 +445,16 @@ export async function listMailboxMessages(
     limit_start: number;
   } = {
     fields: crossCut ? SEARCH_FIELDS : LIST_FIELDS,
-    filters: mailbox
-      ? [...filtersForFolder(folderId), ["email_account", "=", mailbox]]
-      : filtersForFolder(folderId),
+    filters: [
+      ...filtersForFolder(folderId),
+      ...(mailbox ? [["email_account", "=", mailbox]] : []),
+      // "Niet afgehandeld" in de query zelf, niet pas op de geladen pagina: anders
+      // verschijnt een open mail die ouder is dan de eerste pagina pas na "meer
+      // laden". In de mappen Afgehandeld en Prullenbak betekent dit filter niets.
+      ...(opts?.alleenOpen && folderId !== MAIL_FOLDER_HANDLED && folderId !== MAIL_FOLDER_TRASH
+        ? [NOT_HANDLED]
+        : []),
+    ],
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_PAGE_SIZE,
     limit_start: opts?.start ?? 0,
@@ -445,7 +476,7 @@ export async function listMailboxMessages(
  */
 export async function listMailboxMessagesPaged(
   folderId: string,
-  opts: { start: number; limit: number; search?: string; mailbox?: string }
+  opts: { start: number; limit: number; search?: string; mailbox?: string; alleenOpen?: boolean }
 ): Promise<ErpMailPage> {
   if (isConnectionFolder(folderId)) {
     return connectionSlice(folderId, opts.search?.trim() ?? "", opts.start, opts.limit);
@@ -456,8 +487,32 @@ export async function listMailboxMessagesPaged(
     start: opts.start,
     search: opts.search,
     mailbox: opts.mailbox,
+    alleenOpen: opts.alleenOpen,
   });
   return { messages, hasMore: messages.length === limit };
+}
+
+/** Bovengrens voor "Prullenbak leegmaken": een vangnet, geen verwachting. */
+const PRULLENBAK_MAX = 2000;
+
+/**
+ * Alle berichten in de Prullenbak van een postbus, als namen. Voor "Prullenbak
+ * leegmaken": de lijst laadt per pagina, en leegmaken hoort ook de berichten te
+ * raken die nog niet in beeld zijn geweest.
+ */
+export async function namenInPrullenbak(mailbox?: string): Promise<string[]> {
+  invalidateCache("Communication");
+  const postbus = mailbox?.trim();
+  const rows = await fetchList<{ name?: unknown }>("Communication", {
+    fields: ["name"],
+    filters: [
+      ...filtersForFolder(MAIL_FOLDER_TRASH),
+      ...(postbus ? [["email_account", "=", postbus]] : []),
+    ],
+    order_by: "communication_date desc",
+    limit_page_length: PRULLENBAK_MAX,
+  });
+  return rows.map((r) => toStr(r.name)).filter(Boolean);
 }
 
 /* ─── Connecties: filteren op waar de mail aan hangt ─── */
@@ -579,7 +634,7 @@ async function connectionSlice(
  */
 export async function searchMessages(
   query: string,
-  opts?: { limit?: number; includeContent?: boolean; mailbox?: string }
+  opts?: { limit?: number; includeContent?: boolean; mailbox?: string; richting?: ZoekRichting }
 ): Promise<ErpMailMessage[]> {
   const term = (query ?? "").trim();
   if (!term) return [];
@@ -595,12 +650,124 @@ export async function searchMessages(
     fields: SEARCH_FIELDS,
     // Zoeken gaat over álle mappen heen, maar niet over de prullenbak: wie
     // een weggegooide mail zoekt, hoort daarvoor de Prullenbak te openen.
-    filters: withMailbox([["communication_type", "=", "Communication"], NOT_TRASHED], opts?.mailbox),
+    filters: withMailbox([
+      ["communication_type", "=", "Communication"],
+      NOT_TRASHED,
+      ...richtingFilters(opts?.richting),
+    ], opts?.mailbox),
     or_filters: orFilters,
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,
   });
   return rows.map((row) => mapMessage(row, folderForRow(row)));
+}
+
+/**
+ * Zoeken via connecties: mails die gekoppeld zijn aan een project, klant,
+ * leverancier of lead waarvan het nummer of de naam bij de zoekterm past.
+ *
+ * Wie op "Pauluskerk" of "3201" zoekt, wil ook de mail zien die aan project
+ * 3201 hangt als het woord niet in het onderwerp staat. Gewoon zoeken kijkt
+ * alleen naar onderwerp, afzender en ontvangers; deze functie vult dat aan en
+ * de mailpagina voegt de twee lijsten samen (`voegZoekresultatenSamen`).
+ *
+ * Twee routes naar de mail, net als bij de connectiekolom: `reference_*` op de
+ * mail zelf en de child-tabel `Communication Link`. Een klant of leverancier
+ * telt ook mee via zijn contactpersonen, want de meeste mail hangt automatisch
+ * aan een Contact. Dezelfde grenzen als gewoon zoeken: de gekozen postbus,
+ * de richting en nooit de prullenbak.
+ */
+export async function searchByConnections(
+  query: string,
+  opts?: { limit?: number; mailbox?: string; richting?: ZoekRichting }
+): Promise<ErpMailMessage[]> {
+  const term = (query ?? "").trim();
+  if (term.length < 3) return [];
+  const like = `%${term}%`;
+  const per = 25;
+  const namen = (rows: { name?: unknown }[]) => rows.map((r) => toStr(r.name)).filter(Boolean);
+  const zoek = (doctype: string, velden: string[]) => fetchList<{ name?: unknown }>(doctype, {
+    fields: ["name"],
+    or_filters: velden.map((v) => [v, "like", like]),
+    limit_page_length: per,
+  }).then(namen).catch(() => [] as string[]);
+
+  const [projecten, klanten, leveranciers, leads] = await Promise.all([
+    zoek("Project", ["name", "project_name"]),
+    zoek("Customer", ["name", "customer_name"]),
+    zoek("Supplier", ["name", "supplier_name"]),
+    zoek("Lead", ["name", "lead_name", "company_name"]),
+  ]);
+  const documenten = [...new Set([...projecten, ...klanten, ...leveranciers, ...leads])].slice(0, ZOEK_IN_MAX);
+  if (documenten.length === 0) return [];
+
+  const partijen = [...klanten, ...leveranciers];
+  const contacten = partijen.length === 0 ? [] : await fetchChildTable<{ parent?: unknown }>(
+    "Dynamic Link", "Contact", ["parent"],
+    [["parenttype", "=", "Contact"], ["link_doctype", "in", ["Customer", "Supplier"]], ["link_name", "in", partijen.slice(0, ZOEK_IN_MAX)]],
+    200,
+  ).then((rows) => rows.map((r) => toStr(r.parent)).filter(Boolean)).catch(() => [] as string[]);
+  const linkNamen = [...new Set([...documenten, ...contacten])].slice(0, ZOEK_IN_MAX);
+
+  const basis = withMailbox([
+    ["communication_type", "=", "Communication"],
+    NOT_TRASHED,
+    ...richtingFilters(opts?.richting),
+  ], opts?.mailbox);
+  const limiet = opts?.limit ?? DEFAULT_SEARCH_LIMIT;
+  const [viaLink, viaReferentie] = await Promise.all([
+    fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [...basis, ["Communication Link", "link_name", "in", linkNamen]],
+      order_by: "communication_date desc",
+      limit_page_length: limiet,
+      group_by: CONNECTION_GROUP_BY,
+    }).catch(() => [] as Record<string, unknown>[]),
+    fetchList<Record<string, unknown>>("Communication", {
+      fields: SEARCH_FIELDS,
+      filters: [...basis, ["reference_name", "in", documenten]],
+      order_by: "communication_date desc",
+      limit_page_length: limiet,
+    }).catch(() => [] as Record<string, unknown>[]),
+  ]);
+  return voegZoekresultatenSamen(
+    viaLink.map((row) => mapMessage(row, folderForRow(row))),
+    viaReferentie.map((row) => mapMessage(row, folderForRow(row))),
+    limiet,
+  );
+}
+
+/** Hoeveel namen hooguit in één `in`-filter van de connectiezoekactie gaan. */
+const ZOEK_IN_MAX = 100;
+
+/**
+ * Twee zoeklijsten samen: elke mail één keer, nieuwste eerst, hooguit `limiet`.
+ * De eerste lijst wint bij een dubbele mail (die heeft dezelfde inhoud).
+ */
+export function voegZoekresultatenSamen(a: ErpMailMessage[], b: ErpMailMessage[], limiet: number): ErpMailMessage[] {
+  const gezien = new Set<string>();
+  const uit: ErpMailMessage[] = [];
+  for (const m of [...a, ...b]) {
+    if (!m?.name || gezien.has(m.name)) continue;
+    gezien.add(m.name);
+    uit.push(m);
+  }
+  uit.sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
+  return uit.slice(0, Math.max(0, limiet));
+}
+
+/** Welke kant van de post een zoekopdracht bekijkt. */
+export type ZoekRichting = "inkomend" | "verzonden" | "alles";
+
+/**
+ * Het filter bij een zoekrichting: leeg bij "alles" of zonder keuze, zodat
+ * wie niets meegeeft het oude gedrag houdt. Op `sent_or_received`, hetzelfde
+ * veld waaruit de lijst Postvak IN en Verzonden afleidt.
+ */
+export function richtingFilters(richting?: ZoekRichting): unknown[][] {
+  if (richting === "inkomend") return [["sent_or_received", "=", "Received"]];
+  if (richting === "verzonden") return [["sent_or_received", "=", "Sent"]];
+  return [];
 }
 
 /** Hoeveel bijlagen we hooguit bekijken bij een zoekopdracht op extensie. */
@@ -625,7 +792,7 @@ const BIJLAGE_ZOEK_LIMIET = 500;
  */
 export async function searchByAttachment(
   extensie: string,
-  opts?: { limit?: number; mailbox?: string }
+  opts?: { limit?: number; mailbox?: string; richting?: ZoekRichting }
 ): Promise<ErpMailMessage[]> {
   const ext = (extensie ?? "").trim().toLowerCase();
   if (!/^[a-z0-9]{1,10}$/.test(ext)) return [];
@@ -652,6 +819,7 @@ export async function searchByAttachment(
       ["name", "in", namen],
       ["communication_type", "=", "Communication"],
       NOT_TRASHED,
+      ...richtingFilters(opts?.richting),
     ], opts?.mailbox),
     order_by: "communication_date desc",
     limit_page_length: opts?.limit ?? DEFAULT_SEARCH_LIMIT,

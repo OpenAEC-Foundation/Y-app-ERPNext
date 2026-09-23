@@ -29,11 +29,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bold, Italic, Underline, Strikethrough, List, ListOrdered,
   Indent, Outdent, Link2, Link2Off, Quote, Minus, Palette, RemoveFormatting,
-  Heading1, Heading2, Pilcrow,
+  Heading1, Heading2, Pilcrow, ExternalLink,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon, X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { schaalBreedte, sleepBreedte } from "../../lib/mail-afbeeldingen";
+import { linkAanEind } from "../../lib/linkify";
 import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
   tabelHtml, TOGGLE_STATE_COMMANDS, TEXT_COLORS,
@@ -395,6 +396,69 @@ export default function RichTextEditor({
   const [afbeeldingBezig, setAfbeeldingBezig] = useState(false);
   const [afbeeldingFout, setAfbeeldingFout] = useState("");
   const houderRef = useRef<HTMLDivElement>(null);
+  /** Aangeklikte link: een balkje eronder met het adres, dat wél opent. */
+  const [linkBalk, setLinkBalk] = useState<{ href: string; top: number; left: number } | null>(null);
+
+  const toonLinkBalk = useCallback((a: HTMLAnchorElement | null) => {
+    const houder = houderRef.current;
+    const href = a?.getAttribute("href") || "";
+    if (!a || !houder || !href || !editorRef.current?.contains(a)) { setLinkBalk(null); return; }
+    const h = houder.getBoundingClientRect();
+    const r = a.getBoundingClientRect();
+    setLinkBalk({ href, top: r.bottom - h.top + 4, left: Math.max(0, r.left - h.left) });
+  }, []);
+
+  /**
+   * Maakt van het webadres vlak vóór de cursor een link. Aangeroepen bij spatie
+   * en Enter, dus zodra het adres af is. Geeft `true` als er een link is gemaakt.
+   */
+  const linkVoorCursor = useCallback((spatie: boolean): boolean => {
+    const el = editorRef.current;
+    const sel = window.getSelection();
+    if (!el || !sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) return false;
+    if (node.parentElement?.closest("a")) return false;
+    const offset = sel.anchorOffset;
+    const link = linkAanEind((node.textContent ?? "").slice(0, offset));
+    if (!link) return false;
+    const bereik = document.createRange();
+    bereik.setStart(node, link.start);
+    bereik.setEnd(node, link.eind);
+    const a = document.createElement("a");
+    a.href = link.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    bereik.surroundContents(a);
+    // Cursor terug waar hij stond: achter de link, en achter een eventuele
+    // punt of komma die er niet bij hoort. Nooit ín de link, anders groeit
+    // die mee met wat je daarna typt.
+    const rest = offset - link.eind;
+    let doel: Text;
+    let positie: number;
+    const volgende = a.nextSibling;
+    if (volgende && volgende.nodeType === Node.TEXT_NODE) {
+      doel = volgende as Text;
+      positie = rest;
+    } else {
+      doel = document.createTextNode("");
+      a.after(doel);
+      positie = 0;
+    }
+    if (spatie) {
+      // Zelf de spatie zetten: de browser zou hem anders in de link stoppen.
+      // Aan het eind van een regel een harde spatie, anders is hij onzichtbaar.
+      const achter = doel.data.slice(positie);
+      doel.insertData(positie, achter.length === 0 ? "\u00a0" : " ");
+      positie += 1;
+    }
+    const cursor = document.createRange();
+    cursor.setStart(doel, positie);
+    cursor.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(cursor);
+    return true;
+  }, []);
 
   /** Hoe breed een afbeelding in de mail mag worden: de ruimte in het tekstvak. */
   const maxBreedte = useCallback(() => {
@@ -585,6 +649,14 @@ export default function RichTextEditor({
     if (e.key === "Escape" && plakRef.current) { e.preventDefault(); sluitPlak(); return; }
     if (e.key === "Escape") setAfbeelding(null);
     if (plakRef.current && e.key.length === 1) sluitPlak();
+    // Een getypt webadres wordt een link zodra het af is.
+    if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (linkVoorCursor(true)) { e.preventDefault(); emit(); return; }
+    }
+    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (linkVoorCursor(false)) emit();
+    }
+    if (e.key === "Escape") setLinkBalk(null);
     // Tab eerst: die is hier een inspringing, geen sprong naar het volgende
     // veld. `preventDefault` houdt de focus in het tekstvak — de focus-val van
     // het opstelvenster ziet aan `defaultPrevented` dat hij er vanaf moet
@@ -609,7 +681,7 @@ export default function RichTextEditor({
     e.preventDefault();
     if (action === "link") { editLink(); return; }
     run(action);
-  }, [editLink, indentContext, run]);
+  }, [editLink, indentContext, run, linkVoorCursor, emit]);
 
   /* ─── Werkbalk: één tab-stop, pijltjes ertussen ─── */
 
@@ -809,6 +881,24 @@ export default function RichTextEditor({
             </div>
           </>
         )}
+        {linkBalk && (
+          <div className="absolute z-20 flex max-w-[90%] items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] shadow-md"
+            style={{ top: linkBalk.top, left: linkBalk.left }}>
+            <a href={linkBalk.href} target="_blank" rel="noopener noreferrer"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setLinkBalk(null)}
+              title={t("webmail.editor_link_open")}
+              className="flex min-w-0 items-center gap-1 text-blue-600 hover:underline">
+              <ExternalLink size={11} className="flex-shrink-0" />
+              <span className="truncate">{linkBalk.href.replace(/^mailto:/, "")}</span>
+            </a>
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setLinkBalk(null)}
+              aria-label={t("common.close")}
+              className="cursor-pointer rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <X size={11} />
+            </button>
+          </div>
+        )}
         {(afbeeldingBezig || afbeeldingFout) && (
           <div className={"absolute left-3 bottom-2 z-20 rounded-md border px-2 py-1 text-[11px] shadow-sm " + (
             afbeeldingFout ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"
@@ -864,9 +954,24 @@ export default function RichTextEditor({
           onKeyUp={syncState}
           onMouseUp={syncState}
           onFocus={syncState}
-          onScroll={() => { if (afbeelding) meetAfbeelding(afbeelding.el); }}
+          onScroll={() => { if (afbeelding) meetAfbeelding(afbeelding.el); setLinkBalk(null); }}
           onClick={(e) => {
             const doel = e.target as HTMLElement;
+            // Een link is ook tijdens het opstellen te openen: Ctrl/Cmd+klik
+            // opent hem meteen, een gewone klik toont hem in een balkje (de
+            // cursor moet er ook in kunnen om de tekst aan te passen).
+            const anker = doel.closest("a");
+            if (anker && editorRef.current?.contains(anker)) {
+              const href = anker.getAttribute("href") || "";
+              if ((e.ctrlKey || e.metaKey) && href) {
+                e.preventDefault();
+                window.open(href, "_blank", "noopener,noreferrer");
+                return;
+              }
+              toonLinkBalk(anker);
+            } else {
+              setLinkBalk(null);
+            }
             if (doel instanceof HTMLImageElement) {
               // Het plaatje zelf selecteren: dan haalt Backspace het weg, zoals
               // je verwacht na het aanklikken.

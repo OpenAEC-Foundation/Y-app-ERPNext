@@ -26,6 +26,7 @@
 import { callMethod, fetchList } from "./erpnext.ts";
 import { isUitnodigingAanJou } from "./agenda-uitnodigingen.ts";
 import { bouwAfspraakIcs, zetDeelname, type AfspraakInvoer, type Deelnamestatus } from "./ical.ts";
+import { AgendaGeheugen } from "./agenda-geheugen.ts";
 
 /** Eén afspraak zoals het Server Script hem teruggeeft. */
 export interface MailserverAfspraak {
@@ -33,6 +34,8 @@ export interface MailserverAfspraak {
   gebruiker: string;
   id: string;
   titel?: string;
+  /** Waar de afspraak is; leeg als er geen locatie is opgegeven. */
+  locatie?: string;
   /** Lokale starttijd zonder zone, bijv. "2026-09-04T08:00:00". */
   start?: string;
   /** ISO 8601-duur, bijv. "PT1H30M". */
@@ -41,6 +44,10 @@ export interface MailserverAfspraak {
   hele_dag?: boolean;
   /** Onderdeel van een herhalende reeks; die verzet je niet met de muis. */
   herhaalt?: boolean;
+  /** De herhaalregel(s) van de reeks, zoals de mailserver ze geeft. */
+  herhaling?: unknown;
+  /** Voorkomens die uit de reeks zijn gehaald of verzet, op hun oorspronkelijke tijd. */
+  uitzonderingen?: Record<string, { weg?: boolean; start?: string; duur?: string } | null>;
   status?: string;
   privacy?: string;
   /** Blijft gelijk in alle agenda's waar deze afspraak in staat. */
@@ -110,6 +117,13 @@ export async function haalAgendas(
   tot: string,
   gebruikers?: string[]
 ): Promise<{ afspraken: MailserverAfspraak[]; mislukt: number }> {
+  if (gebruikers && gebruikers.length) {
+    try {
+      return await geheugen.lees(van, tot, gebruikers, haalRuw);
+    } catch {
+      return { afspraken: [], mislukt: 0 };
+    }
+  }
   try {
     const res = (await callMethod("agenda_ophalen", {
       van: `${van}T00:00:00Z`,
@@ -122,6 +136,56 @@ export async function haalAgendas(
     };
   } catch {
     return { afspraken: [], mislukt: 0 };
+  }
+}
+
+/** Wat al opgehaald is, per week en per persoon. Zie `agenda-geheugen.ts`. */
+const geheugen = new AgendaGeheugen<MailserverAfspraak>();
+
+/** Eén ophaalronde zonder geheugen; fouten gaan door naar het geheugen. */
+async function haalRuw(
+  van: string,
+  tot: string,
+  gebruikers: string[],
+): Promise<{ afspraken: MailserverAfspraak[]; mislukt: string[] }> {
+  const res = (await callMethod("agenda_ophalen", {
+    van: `${van}T00:00:00Z`,
+    tot: `${tot}T23:59:59Z`,
+    gebruikers: gebruikers.join(","),
+  })) as Antwoord | null;
+  return {
+    afspraken: Array.isArray(res?.afspraken) ? res!.afspraken : [],
+    mislukt: Array.isArray(res?.mislukt) ? res!.mislukt.map((m) => m.gebruiker) : [],
+  };
+}
+
+/**
+ * Alvast ophalen, zonder op het resultaat te wachten: bij het openen van de
+ * app de komende weken, en in de agenda de periode na de getoonde. Staat de
+ * agenda daarna open, dan komt hij uit het geheugen.
+ */
+export function voorlaadAgendas(van: string, tot: string, gebruikers: string[]): void {
+  if (!gebruikers.length) return;
+  void geheugen.lees(van, tot, gebruikers, haalRuw).catch(() => undefined);
+}
+
+/** Na een wijziging klopt wat onthouden is niet meer. */
+export function wisAgendaGeheugen(): void {
+  geheugen.wis();
+}
+
+/**
+ * Elke schrijfactie gaat hierlangs, zodat het geheugen daarna leeg is en de
+ * agenda de wijziging meteen laat zien. Ook vóór het schrijven: een ronde die
+ * nog onderweg is, mag de oude stand niet terugzetten.
+ */
+async function schrijfAgenda(args: Record<string, unknown>): Promise<unknown> {
+  const wijzigt = args.actie !== "lezen";
+  if (wijzigt) geheugen.wis();
+  try {
+    return await callMethod("agenda_schrijven", args);
+  } finally {
+    if (wijzigt) geheugen.wis();
   }
 }
 
@@ -178,31 +242,6 @@ function normaliseerCollegas(rijen: { email: string; naam: string }[]): Collega[
     uniek.set(email, { email, naam: String(r.naam || email).trim() });
   }
   return [...uniek.values()];
-}
-
-/**
- * Kleurenreeks voor collega-agenda's. Bewust andere tinten dan de vaste
- * bronkleuren van de agenda (blauw voor afspraken, oranje taken, rood verlof,
- * groen urenstaten), anders lijkt de agenda van een collega op een taak.
- */
-const COLLEGA_KLEUREN = [
-  "#0ea5e9", "#db2777", "#65a30d", "#c2410c", "#0d9488", "#9333ea",
-  "#0891b2", "#b45309", "#4f46e5", "#be123c", "#15803d", "#a16207",
-];
-
-/**
- * Wijst elke collega een kleur toe, op volgorde van de lijst.
- *
- * Op index en niet op een hash van het adres: een hash geeft bij vijftien
- * mensen en twaalf kleuren vrijwel zeker twee keer dezelfde kleur naast
- * elkaar, en juist dat wil je hier niet. Nadeel is dat iemands kleur kan
- * opschuiven als er een collega bijkomt — dat weegt niet op tegen twee
- * mensen die niet uit elkaar te houden zijn.
- */
-export function kleurenVoorCollegas(collegas: Collega[]): Map<string, string> {
-  const uit = new Map<string, string>();
-  collegas.forEach((c, i) => uit.set(c.email, COLLEGA_KLEUREN[i % COLLEGA_KLEUREN.length]));
-  return uit;
 }
 
 /* ─────────────────────────────── Schrijven ───────────────────────────── */
@@ -266,7 +305,7 @@ export async function werkAfspraakBij(
   agendas: string[] = [],
 ): Promise<SchrijfUitslag> {
   const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
-  const res = (await callMethod("agenda_schrijven", {
+  const res = (await schrijfAgenda({
     actie: "bijwerken",
     uid,
     ...(uniek.length ? { agendas: uniek.join(",") } : {}),
@@ -307,7 +346,7 @@ export interface VerwijderUitslag extends SchrijfUitslag {
  */
 export async function verwijderAfspraak(uid: string, agendas: string[] = []): Promise<VerwijderUitslag> {
   const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
-  const res = (await callMethod("agenda_schrijven", {
+  const res = (await schrijfAgenda({
     actie: "verwijderen", uid, agendas: uniek.join(","),
   })) as Partial<VerwijderUitslag> | null;
   return {
@@ -320,7 +359,7 @@ export async function verwijderAfspraak(uid: string, agendas: string[] = []): Pr
 }
 
 export async function haalAfspraakIcs(uid: string): Promise<string | undefined> {
-  const res = (await callMethod("agenda_schrijven", { actie: "lezen", uid })) as
+  const res = (await schrijfAgenda({ actie: "lezen", uid })) as
     { ics?: unknown } | null;
   return typeof res?.ics === "string" && res.ics.includes("BEGIN:VCALENDAR") ? res.ics : undefined;
 }
@@ -385,7 +424,7 @@ export async function haalUitnodigingIcs(communication: string): Promise<string 
  * neer. Het Server Script dwingt dat af.
  */
 export async function planUitnodigingIn(uid: string, ics: string): Promise<SchrijfUitslag> {
-  const res = (await callMethod("agenda_schrijven", {
+  const res = (await schrijfAgenda({
     actie: "inplannen", uid, ics,
   })) as Partial<SchrijfUitslag> | null;
   return {
@@ -421,7 +460,7 @@ export interface DeelnameUitslag {
 export async function zetEigenDeelname(
   uid: string, stand: Deelnamestatus,
 ): Promise<DeelnameUitslag> {
-  const res = (await callMethod("agenda_schrijven", {
+  const res = (await schrijfAgenda({
     actie: "deelname", uid, stand,
   })) as Partial<DeelnameUitslag> | null;
   return {
@@ -470,7 +509,7 @@ async function schrijf(
   agendas: string[],
 ): Promise<SchrijfUitslag> {
   const uniek = [...new Set(agendas.map((a) => a.trim().toLowerCase()).filter(Boolean))];
-  const res = (await callMethod("agenda_schrijven", {
+  const res = (await schrijfAgenda({
     actie, uid, ics, agendas: uniek.join(","),
   })) as Partial<SchrijfUitslag> | null;
   return {

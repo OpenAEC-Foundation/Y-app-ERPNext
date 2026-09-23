@@ -30,14 +30,36 @@ export function extractEmail(entry: string): string {
   return (angled ? angled[1] : raw).trim().toLowerCase();
 }
 
-/** Splits een komma-gescheiden adressenveld; lege entries vallen weg. */
+/**
+ * Splitst een komma-gescheiden adressenveld; lege entries vallen weg.
+ *
+ * Een komma binnen aanhalingstekens of punthaken scheidt niets: Outlook zet
+ * namen als `"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>` in de
+ * Cc. Op elke komma knippen maakte daar twee "adressen" van, waarvan één
+ * (`"Hoeven`) geen adres was. Wat geen @ heeft, telt daarom ook niet mee.
+ */
 export function splitAddresses(raw: string): MailAddress[] {
-  return (raw || "")
-    .split(",")
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let inAngles = false;
+  for (const ch of raw || "") {
+    if (ch === '"' && !inAngles) inQuotes = !inQuotes;
+    else if (ch === "<" && !inQuotes) inAngles = true;
+    else if (ch === ">" && !inQuotes) inAngles = false;
+    else if ((ch === "," || ch === ";") && !inQuotes && !inAngles) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => ({ raw: part, email: extractEmail(part) }))
-    .filter((a) => a.email.length > 0);
+    .filter((a) => a.email.includes("@"));
 }
 
 /** Plak adressen weer aan elkaar in de vorm die een `To`-veld verwacht. */

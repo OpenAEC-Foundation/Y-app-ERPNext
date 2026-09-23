@@ -56,8 +56,19 @@ export function kiesDoorstuurBijlagen(
   return uit;
 }
 
+/**
+ * De bijlagen die als bijlage in beeld horen: zonder de plaatjes uit de
+ * berichttekst. Dezelfde toets als bij doorsturen, zodat wat je ziet en wat
+ * er meegaat hetzelfde is. Een Outlook-handtekening levert zo al gauw zestien
+ * `image0NN.png`'s op, die de ene tekening waar het om ging onvindbaar maakten.
+ */
+export function echteBijlagen<T extends Pick<Berichtbijlage, "file_url">>(bijlagen: T[], berichtHtml: string): T[] {
+  const html = String(berichtHtml || "");
+  return (bijlagen || []).filter((b) => !isOpmaakPlaatje(b, html));
+}
+
 /** Staat dit bestand als afbeelding ín de berichttekst? */
-function isOpmaakPlaatje(bijlage: Berichtbijlage, html: string): boolean {
+function isOpmaakPlaatje(bijlage: Pick<Berichtbijlage, "file_url">, html: string): boolean {
   const url = String(bijlage?.file_url || "").trim();
   if (!url || !html) return false;
   // Ook de vorm met ge-escapete spaties telt: die schrijft een mailprogramma

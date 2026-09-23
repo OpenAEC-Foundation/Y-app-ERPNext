@@ -2,9 +2,34 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bijlagenamen,
+  echteBijlagen,
   kiesDoorstuurBijlagen,
   type Berichtbijlage,
 } from "./mail-doorsturen.ts";
+
+// Eigen testwaarden voor `echteBijlagen`, vóór de tests die ze gebruiken.
+const FACTUUR_VOOR_LIJST = {
+  name: "0a1b2c", file_name: "Factuur 263-05188.pdf", file_url: "/private/files/Factuur 263-05188.pdf",
+};
+const LOGO_VOOR_LIJST = { name: "9z8y7x", file_name: "image001.png", file_url: "/private/files/image001f17d34.png" };
+const FOTO_VOOR_LIJST = { name: "3d4e5f", file_name: "bouwplaats.jpg", file_url: "/private/files/bouwplaats.jpg" };
+const HTML_MET_LOGO_VOOR_LIJST = '<p>Met vriendelijke groet</p><img src="/private/files/image001f17d34.png" width="120">';
+
+test("echteBijlagen: plaatjes uit de tekst vallen weg, echte bijlagen en foto's blijven", () => {
+  const uit = echteBijlagen([LOGO_VOOR_LIJST, FACTUUR_VOOR_LIJST, FOTO_VOOR_LIJST], HTML_MET_LOGO_VOOR_LIJST);
+  assert.deepEqual(uit.map((b) => b.file_name), ["Factuur 263-05188.pdf", "bouwplaats.jpg"]);
+});
+
+test("echteBijlagen: zonder tekst blijft alles staan, en de volgorde verandert niet", () => {
+  const lijst = [FOTO_VOOR_LIJST, LOGO_VOOR_LIJST, FACTUUR_VOOR_LIJST];
+  assert.deepEqual(echteBijlagen(lijst, ""), lijst);
+});
+
+test("echteBijlagen: een plaatje met spaties in de naam, ge-escapet in de tekst, valt ook weg", () => {
+  const plaatje = { name: "p1", file_name: "image 003.png", file_url: "/private/files/image 003.png" };
+  const uit = echteBijlagen([plaatje, FACTUUR_VOOR_LIJST], '<img src="/private/files/image%20003.png">');
+  assert.deepEqual(uit.map((b) => b.name), ["0a1b2c"]);
+});
 
 /**
  * Tests voor de bijlagen bij doorsturen.

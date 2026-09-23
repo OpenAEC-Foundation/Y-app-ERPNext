@@ -10,6 +10,7 @@
  */
 
 import type { MailAddress } from "./webmail-prefetch";
+import { linkifyEscapedHtml } from "./linkify.ts";
 
 export function formatSender(addrs: MailAddress[]): { name: string; email: string } {
   const a = addrs[0];
@@ -115,6 +116,6 @@ export function attachExternalLinkHandler(
 
 /** Converteer plain text naar veilig HTML voor quote-blok (W3 fallback). */
 export function textBodyToHtml(text: string): string {
-  const escaped = (text || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
-  return escaped.replace(/\r?\n/g, "<br>");
+  // Ge-escaped, met klikbare links; zie lib/linkify.ts.
+  return linkifyEscapedHtml(text || "").replace(/\r?\n/g, "<br>");
 }

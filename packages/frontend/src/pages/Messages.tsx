@@ -28,12 +28,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageSquare, Send, Search, RefreshCw, Plus, ChevronLeft, X, Loader2, AlertCircle,
-  Paperclip, ImageIcon,
-} from "lucide-react";
+  Paperclip, ImageIcon, Smile, ThumbsUp, Trash2, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ImageLightbox from "../components/ImageLightbox";
+import BerichtAvatar from "../components/berichten/BerichtAvatar";
+import EmojiKiezer from "../components/berichten/EmojiKiezer";
+import {
+  aanwezigheid, haalCollegaStatus, isOnline, type CollegaStatusLijst,
+} from "../lib/berichten-aanwezigheid";
+import { likesPerBericht } from "../lib/berichten-reacties";
+import { voegInOpCursor } from "../lib/emoji-set";
 import { setBadgeCount } from "../lib/badges";
 import { isPermissionError } from "../lib/permission-error";
+import LinkedText from "../components/LinkedText";
 import { useIsMobile } from "../lib/useIsMobile";
 import {
   ALLOWED_IMAGE_TYPES,
@@ -48,15 +55,29 @@ import {
   listMessages,
   markMessagesRead,
   sendMessage,
+  sendReaction,
   withUsableImageName,
   type ErpMessage,
   type ErpMessageContact,
   type ErpMessageImage,
-  type ErpMessageThread,
-} from "../lib/messages-erpnext";
+  type ErpMessageThread, verwijderBericht, verwijderBerichten, verwijderKeuze } from "../lib/messages-erpnext";
 
 /** Ververs-interval. Zie de kopjes-uitleg: pollen in plaats van websockets. */
 const POLL_INTERVAL_MS = 20_000;
+
+/** Foto en online-status verversen. "Online" rekent in minuten; vaker heeft geen zin. */
+const STATUS_INTERVAL_MS = 60_000;
+
+/**
+ * Nu, in de vorm waarin ERPNext tijden levert. Voor een like die meteen
+ * zichtbaar moet zijn, nog voordat de server hem heeft bevestigd.
+ */
+function nuAlsErpTijd(): string {
+  const d = new Date();
+  const twee = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${twee(d.getMonth() + 1)}-${twee(d.getDate())} `
+    + `${twee(d.getHours())}:${twee(d.getMinutes())}:${twee(d.getSeconds())}.999999`;
+}
 
 /** `accept`-waarde van de bestandskiezer, afgeleid van de adapter-allowlist. */
 const ACCEPTED_IMAGE_TYPES = [...ALLOWED_IMAGE_TYPES].join(",");
@@ -102,26 +123,6 @@ function formatDayHeader(value: string, todayLabel: string, yesterdayLabel: stri
   return date.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
 }
 
-function initialsOf(name: string): string {
-  return name
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-const AVATAR_COLORS = [
-  "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-amber-500",
-  "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
-];
-
-function avatarColor(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
 /* ─── Pagina ─── */
 
 export default function Messages() {
@@ -129,6 +130,14 @@ export default function Messages() {
   const isMobile = useIsMobile();
 
   const [messages, setMessages] = useState<ErpMessage[]>([]);
+  /** Het bericht waarvan het verwijdermenu openstaat. */
+  const [verwijderMenu, setVerwijderMenu] = useState<string | null>(null);
+  const [verwijderBezig, setVerwijderBezig] = useState(false);
+  /**
+   * De selectiestand om meerdere berichten in één keer te verwijderen. Hij
+   * hoort bij één gesprek: wissel je van gesprek, dan is hij vanzelf uit.
+   */
+  const [selectie, setSelectie] = useState<{ gesprek: string; namen: Set<string> } | null>(null);
   const [contacts, setContacts] = useState<ErpMessageContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,9 +151,17 @@ export default function Messages() {
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [lightbox, setLightbox] = useState<ErpMessageImage | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const sluitEmoji = useCallback(() => setEmojiOpen(false), []);
+  const [status, setStatus] = useState<CollegaStatusLijst>(() => ({ collegas: new Map(), serverNu: null }));
+  /** Berichten waarvan de like onderweg is: twee keer klikken stuurt er geen twee. */
+  const [likeBezig, setLikeBezig] = useState<Set<string>>(() => new Set());
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const invoerRef = useRef<HTMLTextAreaElement | null>(null);
+  /** De emojiknop met zijn venster: een klik daarbinnen sluit het venster niet. */
+  const emojiKnopRef = useRef<HTMLDivElement | null>(null);
   /** Aantal geneste elementen waar de sleepcursor momenteel boven hangt. */
   const dragDepth = useRef(0);
   /**
@@ -169,6 +186,7 @@ export default function Messages() {
   const names = useMemo(() => contactNameMap(contacts), [contacts]);
   const threads = useMemo(() => groupThreads(messages, names), [messages, names]);
   const unread = useMemo(() => countUnread(messages), [messages]);
+  const likes = useMemo(() => likesPerBericht(messages), [messages]);
 
   /**
    * Een gesprek bestaat pas zodra er een bericht is. Wie via "Nieuw gesprek"
@@ -228,6 +246,20 @@ export default function Messages() {
   // dan met de user-id als naam.
   useEffect(() => {
     void listContacts().then(setContacts).catch(() => setContacts([]));
+  }, []);
+
+  // Foto en online-status: bij openen, en daarna elke minuut.
+  useEffect(() => {
+    let actief = true;
+    const ververs = () => {
+      void haalCollegaStatus().then((lijst) => { if (actief) setStatus(lijst); });
+    };
+    ververs();
+    const timer = setInterval(ververs, STATUS_INTERVAL_MS);
+    return () => {
+      actief = false;
+      clearInterval(timer);
+    };
   }, []);
 
   // Pollen + bijwerken zodra het tabblad weer zichtbaar wordt. Dat laatste is
@@ -409,12 +441,144 @@ export default function Messages() {
     setDraft("");
     clearPendingImage();
     setSendError(null);
+    setEmojiOpen(false);
   }
 
   function startConversation(user: string) {
     openConversation(user);
     setPickerOpen(false);
     setPickerSearch("");
+  }
+
+  /** Online volgens de servertijd. Zonder servertijd weten we het niet, en tonen we niets. */
+  function onlineVan(user: string): boolean {
+    const collega = status.collegas.get(user);
+    return Boolean(collega && status.serverNu && isOnline(collega.laatstActief, status.serverNu));
+  }
+
+  function aanwezigheidTekst(user: string): string {
+    const collega = status.collegas.get(user);
+    if (!collega || !status.serverNu) return "";
+    const stand = aanwezigheid(collega.laatstActief, status.serverNu);
+    switch (stand.soort) {
+      case "online":
+        return t("messages.online");
+      case "vandaag":
+        return t("messages.last_active_today", { tijd: stand.tijd });
+      case "gisteren":
+        return t("messages.last_active_yesterday", { tijd: stand.tijd });
+      case "eerder": {
+        const [jaar, maand, dag] = stand.datum.split("-").map(Number);
+        const datum = new Date(jaar, maand - 1, dag).toLocaleDateString("nl-NL", { day: "numeric", month: "long" });
+        return t("messages.last_active_date", { datum });
+      }
+      default:
+        return "";
+    }
+  }
+
+  /** Emoji op de plek van de cursor, en de cursor er direct achter. */
+  function kiesEmoji(emoji: string) {
+    const veld = invoerRef.current;
+    const { tekst, cursor } = voegInOpCursor(
+      draft, veld?.selectionStart ?? draft.length, veld?.selectionEnd ?? draft.length, emoji,
+    );
+    setDraft(tekst);
+    requestAnimationFrame(() => {
+      const el = invoerRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(cursor, cursor);
+    });
+  }
+
+
+  /** Een bericht verwijderen; zie `verwijderBericht` voor wat "iedereen" betekent. */
+  async function verwijder(message: ErpMessage, voor: "mij" | "iedereen") {
+    setVerwijderBezig(true);
+    try {
+      await verwijderBericht(message.name, voor);
+      setMessages((prev) => prev.filter((m) => m.name !== message.name));
+      setVerwijderMenu(null);
+      void load(true);
+    } catch {
+      setSendError(t("messages.delete_failed"));
+    } finally {
+      setVerwijderBezig(false);
+    }
+  }
+
+  /**
+   * De prullenbak bij een bericht, met de keuze erachter. Bij je eigen bericht
+   * staat hij links van de ballon, bij een ontvangen bericht rechts — altijd
+   * aan de kant waar ruimte is.
+   */
+  function renderVerwijder(message: ErpMessage) {
+    const open = verwijderMenu === message.name;
+    return (
+      <div className="relative flex-shrink-0">
+        <button type="button" onClick={() => setVerwijderMenu(open ? null : message.name)}
+          aria-label={t("messages.delete")} title={t("messages.delete")} aria-expanded={open}
+          className={`cursor-pointer rounded-full p-1.5 text-slate-400 transition-opacity hover:bg-slate-200 hover:text-red-600 ${
+            open ? "opacity-100" : isMobile ? "opacity-60" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+          }`}>
+          <Trash2 size={14} />
+        </button>
+        {open && (
+          <div role="menu"
+            className={`absolute top-full z-30 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-1 text-xs shadow-lg ${
+              message.direction === "out" ? "right-0" : "left-0"
+            }`}>
+            {message.direction === "out" && (
+              <button type="button" role="menuitem" disabled={verwijderBezig}
+                onClick={() => void verwijder(message, "iedereen")}
+                className="block w-full cursor-pointer px-3 py-1.5 text-left text-red-600 hover:bg-red-50 disabled:opacity-50">
+                {t("messages.delete_for_everyone")}
+              </button>
+            )}
+            <button type="button" role="menuitem" disabled={verwijderBezig}
+              onClick={() => void verwijder(message, "mij")}
+              className="block w-full cursor-pointer px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              {t("messages.delete_for_me")}
+            </button>
+            <button type="button" role="menuitem" onClick={() => setVerwijderMenu(null)}
+              className="block w-full cursor-pointer px-3 py-1.5 text-left text-slate-500 hover:bg-slate-50">
+              {t("common.cancel")}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  async function wisselLike(message: ErpMessage) {
+    if (!activeThread || likeBezig.has(message.sleutel)) return;
+    const aan = !likes.get(message.sleutel)?.ikVindLeuk;
+    const sleutel = message.sleutel;
+    setLikeBezig((v) => new Set(v).add(sleutel));
+    // Meteen tonen; de volgende ophaalronde vervangt dit door wat de server heeft.
+    setMessages((prev) => [...prev, {
+      name: `lokaal-${sleutel}-${Date.now()}`,
+      counterpart: activeThread.counterpart,
+      direction: "out",
+      body: "",
+      createdAt: nuAlsErpTijd(),
+      read: true,
+      sleutel,
+      reactie: { sleutel, aan },
+    }]);
+    try {
+      await sendReaction(activeThread.counterpart, sleutel, aan);
+    } catch {
+      setSendError(t("messages.like_failed"));
+    } finally {
+      await load(true);
+      setLikeBezig((v) => {
+        const volgende = new Set(v);
+        volgende.delete(sleutel);
+        return volgende;
+      });
+    }
   }
 
   const pickerContacts = useMemo(() => {
@@ -468,11 +632,14 @@ export default function Messages() {
                 thread.counterpart === selected ? "bg-y-teal/5" : ""
               }`}
             >
-              <span
-                className={`flex-shrink-0 w-9 h-9 rounded-full ${avatarColor(thread.counterpart)} text-white text-xs font-semibold flex items-center justify-center`}
-              >
-                {initialsOf(thread.counterpartName)}
-              </span>
+              <BerichtAvatar
+                key={thread.counterpart}
+                user={thread.counterpart}
+                naam={thread.counterpartName}
+                status={status.collegas.get(thread.counterpart)}
+                online={onlineVan(thread.counterpart)}
+                onlineLabel={t("messages.online")}
+              />
               <span className="flex-1 min-w-0">
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-800 truncate">{thread.counterpartName}</span>
@@ -508,6 +675,46 @@ export default function Messages() {
   // beneden met het nieuwste onderaan.
   const ordered = activeThread ? [...activeThread.messages].reverse() : [];
 
+  const selecteren = Boolean(selectie && activeThread && selectie.gesprek === activeThread.counterpart);
+  const gekozen = selecteren && selectie ? ordered.filter((m) => selectie.namen.has(m.name)) : [];
+  const keuze = verwijderKeuze(gekozen);
+
+  function wisselGekozen(naam: string) {
+    setSelectie((huidig) => {
+      if (!huidig) return huidig;
+      const namen = new Set(huidig.namen);
+      if (namen.has(naam)) namen.delete(naam);
+      else namen.add(naam);
+      return { ...huidig, namen };
+    });
+  }
+
+  function kiesAlles(aan: boolean) {
+    setSelectie((huidig) => (huidig ? { ...huidig, namen: new Set(aan ? ordered.map((m) => m.name) : []) } : huidig));
+  }
+
+  /** De geselecteerde berichten weg, na een bevestiging: dit gaat niet terug. */
+  async function verwijderGekozen(voor: "mij" | "iedereen") {
+    if (keuze.aantal === 0 || (voor === "iedereen" && !keuze.voorIedereen)) return;
+    const vraag = voor === "iedereen"
+      ? t("messages.delete_selected_confirm_everyone", { count: keuze.aantal })
+      : t("messages.delete_selected_confirm_me", { count: keuze.aantal });
+    if (!window.confirm(vraag)) return;
+    const namen = gekozen.map((m) => m.name);
+    setVerwijderBezig(true);
+    setSendError(null);
+    try {
+      await verwijderBerichten(namen, voor);
+      setMessages((prev) => prev.filter((m) => !namen.includes(m.name)));
+      setSelectie(null);
+      void load(true);
+    } catch {
+      setSendError(t("messages.delete_failed"));
+    } finally {
+      setVerwijderBezig(false);
+    }
+  }
+
   const threadPane = (
     <div
       className="relative flex flex-col h-full min-h-0 bg-slate-50"
@@ -535,15 +742,36 @@ export default function Messages() {
                 <ChevronLeft size={20} />
               </button>
             )}
-            <span
-              className={`w-9 h-9 rounded-full ${avatarColor(activeThread.counterpart)} text-white text-xs font-semibold flex items-center justify-center`}
-            >
-              {initialsOf(activeThread.counterpartName)}
-            </span>
+            <BerichtAvatar
+              key={activeThread.counterpart}
+              user={activeThread.counterpart}
+              naam={activeThread.counterpartName}
+              status={status.collegas.get(activeThread.counterpart)}
+              online={onlineVan(activeThread.counterpart)}
+              onlineLabel={t("messages.online")}
+            />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800 truncate">{activeThread.counterpartName}</p>
-              <p className="text-xs text-slate-400 truncate">{activeThread.counterpart}</p>
+              {/* Online, of wanneer laatst actief. Weten we dat niet, dan het adres. */}
+              <p className={`text-xs truncate ${onlineVan(activeThread.counterpart) ? "text-emerald-600" : "text-slate-400"}`}>
+                {aanwezigheidTekst(activeThread.counterpart) || activeThread.counterpart}
+              </p>
             </div>
+            {selecteren ? (
+              <button type="button" onClick={() => setSelectie(null)}
+                className="ml-auto flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <X size={15} /> <span className="hidden sm:inline">{t("common.cancel")}</span>
+              </button>
+            ) : (
+              <button type="button"
+                onClick={() => { setSelectie({ gesprek: activeThread.counterpart, namen: new Set() }); setVerwijderMenu(null); setEmojiOpen(false); }}
+                disabled={ordered.length === 0}
+                title={t("messages.select_to_delete")}
+                aria-label={t("messages.select_to_delete")}
+                className="ml-auto flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                <Trash2 size={15} /> <span className="hidden sm:inline">{t("messages.select_to_delete")}</span>
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 space-y-1">
@@ -565,9 +793,25 @@ export default function Messages() {
                         </span>
                       </div>
                     )}
-                    <div className={`flex ${message.direction === "out" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      onClick={selecteren ? () => wisselGekozen(message.name) : undefined}
+                      className={`group flex items-center gap-1 ${message.direction === "out" ? "justify-end" : "justify-start"} ${
+                        selecteren ? `-mx-2 cursor-pointer rounded-lg px-2 py-0.5 ${selectie?.namen.has(message.name) ? "bg-y-teal/10" : "hover:bg-slate-100"}` : ""
+                      }`}
+                    >
+                      {selecteren && (
+                        <span role="checkbox" aria-checked={Boolean(selectie?.namen.has(message.name))}
+                          aria-label={t("messages.select_message")}
+                          className={`${message.direction === "out" ? "mr-auto" : "mr-1"} flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                            selectie?.namen.has(message.name) ? "border-y-teal bg-y-teal text-white" : "border-slate-300 bg-white"
+                          }`}>
+                          {selectie?.namen.has(message.name) && <Check size={12} strokeWidth={3} />}
+                        </span>
+                      )}
+                      {!selecteren && message.direction === "out" && renderVerwijder(message)}
+                      <div className={`flex max-w-[75%] flex-col ${message.direction === "out" ? "items-end" : "items-start"}`}>
                       <div
-                        className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
+                        className={`max-w-full rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
                           message.direction === "out"
                             ? "bg-y-teal text-white rounded-br-sm"
                             : "bg-white border border-slate-200 text-slate-700 rounded-bl-sm"
@@ -582,11 +826,11 @@ export default function Messages() {
                             src={message.image.url}
                             alt={message.image.name}
                             loading="lazy"
-                            onClick={() => setLightbox(message.image ?? null)}
+                            onClick={selecteren ? undefined : () => setLightbox(message.image ?? null)}
                             className="mb-1.5 max-h-64 w-auto max-w-full rounded-lg cursor-zoom-in bg-slate-100"
                           />
                         )}
-                        {message.body}
+                        <LinkedText text={message.body} />
                         <span
                           className={`block text-[10px] mt-1 ${
                             message.direction === "out" ? "text-white/70 text-right" : "text-slate-400"
@@ -595,6 +839,44 @@ export default function Messages() {
                           {formatTime(message.createdAt)}
                         </span>
                       </div>
+                      {(() => {
+                        const stand = likes.get(message.sleutel);
+                        if (!stand) return null;
+                        return (
+                          <span
+                            title={t("messages.like_count", { n: stand.aantal })}
+                            className={`-mt-1.5 rounded-full border border-slate-200 bg-white px-1.5 text-[11px] leading-5 shadow-sm ${
+                              stand.ikVindLeuk ? "text-y-teal" : "text-slate-600"
+                            }`}
+                          >
+                            👍{stand.aantal > 1 ? ` ${stand.aantal}` : ""}
+                          </span>
+                        );
+                      })()}
+                      </div>
+                      {/* Liken doe je op het bericht van een ander. Op de telefoon
+                          is er geen hover, dus daar staat het duimpje altijd half zichtbaar. */}
+                      {!selecteren && message.direction === "in" && (() => {
+                        const ikVindLeuk = Boolean(likes.get(message.sleutel)?.ikVindLeuk);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void wisselLike(message)}
+                            disabled={likeBezig.has(message.sleutel)}
+                            aria-label={ikVindLeuk ? t("messages.unlike") : t("messages.like")}
+                            title={ikVindLeuk ? t("messages.unlike") : t("messages.like")}
+                            aria-pressed={ikVindLeuk}
+                            className={`flex-shrink-0 cursor-pointer rounded-full p-1.5 transition-opacity hover:bg-slate-200 disabled:opacity-40 ${
+                              ikVindLeuk
+                                ? "text-y-teal opacity-100"
+                                : `text-slate-400 ${isMobile ? "opacity-60" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`
+                            }`}
+                          >
+                            <ThumbsUp size={14} />
+                          </button>
+                        );
+                      })()}
+                      {!selecteren && message.direction === "in" && renderVerwijder(message)}
                     </div>
                   </div>
                 );
@@ -621,7 +903,33 @@ export default function Messages() {
             </div>
           )}
 
-          {pendingImage && previewUrl && (
+          {selecteren && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-white p-3">
+              <span className="text-sm text-slate-600">
+                {keuze.aantal > 0 ? t("messages.selection_count", { count: keuze.aantal }) : t("messages.selection_hint")}
+              </span>
+              <button type="button" onClick={() => kiesAlles(keuze.aantal < ordered.length)}
+                className="rounded-lg px-2 py-1.5 text-sm text-y-teal hover:bg-y-teal/10 cursor-pointer">
+                {keuze.aantal < ordered.length ? t("messages.select_all") : t("messages.select_none")}
+              </button>
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => void verwijderGekozen("mij")}
+                  disabled={verwijderBezig || keuze.aantal === 0}
+                  className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                  {verwijderBezig ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {t("messages.delete_selected_for_me")}
+                </button>
+                <button type="button" onClick={() => void verwijderGekozen("iedereen")}
+                  disabled={verwijderBezig || !keuze.voorIedereen}
+                  title={keuze.aantal > 0 && !keuze.voorIedereen ? t("messages.delete_everyone_only_own") : undefined}
+                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                  <Trash2 size={14} /> {t("messages.delete_selected_for_everyone")}
+                </button>
+              </span>
+            </div>
+          )}
+
+          {!selecteren && pendingImage && previewUrl && (
             <div className="mx-3 mb-2 flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
               <img src={previewUrl} alt="" className="h-12 w-12 rounded object-cover flex-shrink-0" />
               <span className="flex-1 min-w-0 text-xs text-slate-600 truncate">{pendingImage.name}</span>
@@ -636,7 +944,7 @@ export default function Messages() {
             </div>
           )}
 
-          <div className="p-3 bg-white border-t border-slate-200 flex items-end gap-2">
+          <div className={`p-3 bg-white border-t border-slate-200 flex items-end gap-2 ${selecteren ? "hidden" : ""}`}>
             <input
               ref={fileInputRef}
               type="file"
@@ -658,7 +966,39 @@ export default function Messages() {
             >
               <Paperclip size={18} />
             </button>
+            <div ref={emojiKnopRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setEmojiOpen((v) => !v)}
+                disabled={sending}
+                className={`p-2 hover:text-y-teal disabled:opacity-50 cursor-pointer ${emojiOpen ? "text-y-teal" : "text-slate-500"}`}
+                aria-label={t("messages.emoji_open")}
+                aria-expanded={emojiOpen}
+                title={t("messages.emoji_open")}
+              >
+                <Smile size={18} />
+              </button>
+              {emojiOpen && (
+                <EmojiKiezer onKies={kiesEmoji} onSluit={sluitEmoji} negeerRef={emojiKnopRef} />
+              )}
+            </div>
             <textarea
+              // Groeit mee met wat je typt, tot een regel of acht; daarna
+              // scrolt het veld. Een callback-ref draait bij elke weergave,
+              // dus na het versturen (leeg concept) krimpt hij vanzelf terug.
+              ref={(veld) => {
+                invoerRef.current = veld;
+                if (!veld) return;
+                const max = isMobile ? 140 : 200;
+                // De rand telt bij `border-box` mee in de hoogte, maar niet in
+                // `scrollHeight`; zonder die paar pixels verschijnt er bij elke
+                // regel een schuifbalk.
+                const rand = veld.offsetHeight - veld.clientHeight;
+                veld.style.height = "auto";
+                const nodig = veld.scrollHeight + rand;
+                veld.style.height = `${Math.min(nodig, max)}px`;
+                veld.style.overflowY = nodig > max ? "auto" : "hidden";
+              }}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -672,7 +1012,7 @@ export default function Messages() {
               onPaste={handlePaste}
               rows={1}
               placeholder={t("messenger.type_message")}
-              className="flex-1 resize-none max-h-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
+              className="flex-1 resize-none px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
             />
             <button
               onClick={() => void handleSend()}
@@ -768,11 +1108,15 @@ export default function Messages() {
                     onClick={() => startConversation(contact.user)}
                     className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer"
                   >
-                    <span
-                      className={`w-8 h-8 rounded-full ${avatarColor(contact.user)} text-white text-[11px] font-semibold flex items-center justify-center flex-shrink-0`}
-                    >
-                      {initialsOf(contact.fullName)}
-                    </span>
+                    <BerichtAvatar
+                      key={contact.user}
+                      user={contact.user}
+                      naam={contact.fullName}
+                      status={status.collegas.get(contact.user)}
+                      online={onlineVan(contact.user)}
+                      onlineLabel={t("messages.online")}
+                      klein
+                    />
                     <span className="min-w-0">
                       <span className="block text-sm text-slate-800 truncate">{contact.fullName}</span>
                       <span className="block text-xs text-slate-400 truncate">{contact.user}</span>

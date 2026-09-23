@@ -401,3 +401,38 @@ export function reactieOpBericht(naam: string, leden: ReactieLid[]): Reactiesoor
   }
   return gevonden;
 }
+
+/**
+ * Alle berichten die via een gesprek aan deze berichten vastzitten.
+ *
+ * `groepen` zijn de gesprekken zoals ze bekend zijn: de groepering van de lijst,
+ * en de conversatie die de server bij de geopende mail teruggaf. Die bronnen
+ * overlappen elkaar; wat via een gedeeld bericht aan elkaar hangt, is één
+ * gesprek. Daarom loopt dit door tot er niets meer bijkomt.
+ *
+ * De opgegeven namen staan vooraan, daarna wat erbij hoort — zonder dubbele en
+ * zonder lege namen.
+ */
+export function gesprekVan(namen: readonly string[], groepen: readonly (readonly string[])[]): string[] {
+  const uit: string[] = [];
+  const gezien = new Set<string>();
+  const voegToe = (naam: string) => {
+    if (!naam || gezien.has(naam)) return;
+    gezien.add(naam);
+    uit.push(naam);
+  };
+  for (const naam of namen) voegToe(naam);
+
+  const gebruikt = new Set<number>();
+  let erbij = true;
+  while (erbij) {
+    erbij = false;
+    groepen.forEach((groep, i) => {
+      if (gebruikt.has(i) || !groep.some((naam) => gezien.has(naam))) return;
+      gebruikt.add(i);
+      for (const naam of groep) voegToe(naam);
+      erbij = true;
+    });
+  }
+  return uit;
+}

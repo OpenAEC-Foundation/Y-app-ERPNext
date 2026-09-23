@@ -34,6 +34,33 @@ test("splitAddresses/joinAddresses: lege entries vallen weg, vorm blijft", () =>
   assert.equal(joinAddresses(parsed), "a@x.nl, Bea <b@x.nl>");
 });
 
+test("splitAddresses: een komma in een naam tussen aanhalingstekens splitst niet", () => {
+  // Zo zet Outlook een achternaam-eerst-naam in de Cc.
+  const parsed = splitAddresses('"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>, jan@3bm.co.nl');
+  assert.deepEqual(parsed.map((a) => a.email), ["m.vander.hoeven@vanwijnen.nl", "jan@3bm.co.nl"]);
+  assert.equal(parsed[0].raw, '"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>');
+});
+
+test("splitAddresses: een stuk zonder @ is geen adres", () => {
+  assert.deepEqual(splitAddresses('"Hoeven, alleen een naam'), []);
+});
+
+test("buildReplyRecipients: allen beantwoorden houdt een Cc met komma in de naam heel", () => {
+  const out = buildReplyRecipients(
+    {
+      sender: "Frank Rutten <frank@frankarchitect.nl>",
+      recipients: "maarten@3bm.co.nl",
+      cc: '"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>',
+    },
+    "maarten@3bm.co.nl",
+    true,
+  );
+  assert.deepEqual(out, {
+    to: "Frank Rutten <frank@frankarchitect.nl>",
+    cc: '"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>',
+  });
+});
+
 test("buildReplyRecipients: gewoon antwoord gaat alleen naar de afzender", () => {
   const out = buildReplyRecipients(
     { sender: "klant@extern.nl", recipients: "piet@3bm.co.nl, jan@3bm.co.nl", cc: "baas@3bm.co.nl" },

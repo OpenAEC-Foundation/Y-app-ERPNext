@@ -259,3 +259,12 @@ test("draftsForThread: zonder gesprek geen concepten", () => {
   saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1" }), NOW);
   assert.deepEqual(draftsForThread(loadDrafts(INSTANCE, NOW), []), []);
 });
+
+test("draftsForThread: het concept dat open staat komt niet nog een keer in de stapel", () => {
+  // Wie een antwoord typt, ziet dat bovenin. Eronder hoort het er niet
+  // opnieuw te staan, met een knop om te hervatten waar je al in zit.
+  saveDraft(INSTANCE, draft({ key: "msg:m1", messageName: "m1", body: "ik typ hier" }), NOW);
+  saveDraft(INSTANCE, draft({ key: "fwd:m2", mode: "forward", messageName: "m2", body: "ander concept" }), NOW);
+  const uit = draftsForThread(loadDrafts(INSTANCE, NOW), ["m1", "m2"], "msg:m1");
+  assert.deepEqual(uit.map((d) => d.key), ["fwd:m2"]);
+});

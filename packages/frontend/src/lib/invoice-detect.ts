@@ -93,6 +93,10 @@ export interface InvoiceGuess {
   amount?: number;
   /** `true` wanneer `amount` aantoonbaar een bedrag *inclusief* btw is. */
   amountIsGross?: boolean;
+  /** Btw-tarief uit de mailtekst: 0, 6, 9 of 21. */
+  vatRate?: number;
+  /** `true` wanneer de mailtekst zegt dat de btw verlegd is. */
+  vatShifted?: boolean;
   /** Stabiele codes van wat is herkend; de UI vertaalt ze. */
   reasons: string[];
 }
@@ -592,5 +596,33 @@ export function detectPurchaseInvoice(
     guess.amount = amount.value;
     if (amount.isGross !== undefined) guess.amountIsGross = amount.isGross;
   }
+  // De btw telt niet mee voor de zekerheid: een tarief staat ook in een
+  // offerte of een prijslijst. Hij helpt alleen bij het invullen.
+  const vat = findVat(body || subject);
+  if (vat) {
+    reasons.push(vat.reason);
+    if (vat.shifted) guess.vatShifted = true;
+    else if (vat.rate !== undefined) guess.vatRate = vat.rate;
+  }
   return guess;
+}
+
+/* ───────────────────────────────── Btw ───────────────────────────────── */
+
+/** De btw-tarieven die hier voorkomen (6% is het oude lage tarief). */
+const BEKENDE_BTW_TARIEVEN = [0, 6, 9, 21];
+const VAT_SHIFTED_RE = /\b(btw\s*-?\s*verlegd|verlegde\s+btw|verlegging\s+van\s+de\s+btw|reverse\s+charge)\b/i;
+/** "21% btw" of "btw (21%)": het percentage vlak voor of vlak na het woord. */
+const VAT_RATE_RE = /\b(\d{1,2})(?:[.,]0+)?\s*%\s*(?:btw|vat)\b|\b(?:btw|vat)\b[^\d%\n]{0,12}?(\d{1,2})(?:[.,]0+)?\s*%/gi;
+
+function findVat(text: string): { rate?: number; shifted?: boolean; reason: string } | null {
+  if (!text) return null;
+  if (VAT_SHIFTED_RE.test(text)) return { shifted: true, reason: "vat:shifted" };
+  VAT_RATE_RE.lastIndex = 0;
+  for (let m = VAT_RATE_RE.exec(text); m !== null; m = VAT_RATE_RE.exec(text)) {
+    const rate = Number(m[1] ?? m[2]);
+    // "15% btw" bestaat niet: dan is het een andere 15, geen tarief.
+    if (BEKENDE_BTW_TARIEVEN.includes(rate)) return { rate, reason: "vat:rate" };
+  }
+  return null;
 }

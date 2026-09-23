@@ -20,8 +20,11 @@ import {
   buildQuoteBlock,
   estimateQuoteLines,
   hasQuote,
+  heeftOndertekening,
   shouldCollapseQuote,
   splitQuoteFromBody,
+  splitsOndertekening,
+  voegOndertekeningIn,
 } from "./mail-quote.ts";
 import { buildOutgoingHtml } from "./mail-erpnext-compose.ts";
 import { sanitizeEditorHtml, toEmailHtml } from "./mail-html.ts";
@@ -138,6 +141,65 @@ test("splitQuoteFromBody: wie het citaat weggooit, verstuurt het ook niet", () =
   const { typed, quote } = splitQuoteFromBody("<p>Alleen mijn tekst</p>");
   assert.equal(quote, "");
   assert.equal(typed, "<p>Alleen mijn tekst</p>");
+});
+
+/* ─── De ondertekening als gewone tekst in de opsteller ─── */
+
+const ONDERTEKENING = '<div style="font-family:Segoe UI"><p>Met vriendelijke groet,</p>'
+  + '<p><img src="data:image/jpeg;base64,/9j/4AAQ" width="70" height="70"> <strong>Maarten</strong></p></div>';
+
+test("voegOndertekeningIn: bij een antwoord tussen de schrijfruimte en het citaat", () => {
+  const body = buildComposeBodyWithQuote(buildQuoteBlock({ label: LABEL, bodyHtml: "<p>Origineel</p>" }));
+  const uit = voegOndertekeningIn(body, ONDERTEKENING);
+  const plek = uit.indexOf("data-y-ondertekening");
+  assert.ok(plek > 0, "de ondertekening staat erin");
+  assert.ok(uit.startsWith("<p><br></p>"), "bovenaan blijft ruimte om te typen");
+  assert.ok(plek < uit.indexOf(QUOTE_ATTR), "boven het citaat");
+  assert.ok(uit.includes("data:image/jpeg;base64"), "de foto blijft in het tekstvak staan");
+});
+
+test("voegOndertekeningIn: bij een nieuw bericht onderaan, met ruimte erboven", () => {
+  assert.ok(voegOndertekeningIn("", ONDERTEKENING).startsWith("<p><br></p><p><br></p><div data-y-ondertekening"));
+});
+
+test("voegOndertekeningIn: maar één keer, ook als hij intussen is aangepast", () => {
+  const eenmaal = voegOndertekeningIn("", ONDERTEKENING);
+  const aangepast = eenmaal.replace("Met vriendelijke groet,", "Groet,");
+  assert.equal(voegOndertekeningIn(aangepast, ONDERTEKENING), aangepast);
+  assert.equal(voegOndertekeningIn("<p>tekst</p>", ""), "<p>tekst</p>");
+});
+
+test("de ondertekening overleeft het editor-filter, met markering en foto", () => {
+  const rond = sanitizeEditorHtml(voegOndertekeningIn("", ONDERTEKENING));
+  assert.equal(heeftOndertekening(rond), true, "zonder markering weet het verzendpad niet waar hij staat");
+  assert.ok(rond.includes("data:image/jpeg;base64"));
+});
+
+test("splitsOndertekening: haalt de ondertekening eruit, geneste div incluis", () => {
+  const typed = "<p>Mijn antwoord</p>" + voegOndertekeningIn("<p>x</p>", ONDERTEKENING).replace("<p>x</p>", "");
+  const { tekst, ondertekening } = splitsOndertekening(typed);
+  assert.equal(tekst, "<p>Mijn antwoord</p>");
+  assert.ok(ondertekening.includes("Met vriendelijke groet,"));
+  assert.ok(ondertekening.endsWith("</div>"), "de binnenste div van de ondertekening hoort erbij");
+  assert.ok(!ondertekening.includes("data-y-ondertekening"));
+});
+
+test("verzonden: eerst de tekst, dan de ondertekening met foto, dan het citaat", () => {
+  const body = voegOndertekeningIn(
+    buildComposeBodyWithQuote(buildQuoteBlock({ label: LABEL, bodyHtml: "<p>Vraag van de klant</p>" })),
+    ONDERTEKENING,
+  ).replace("<p><br></p><p><br></p>", "<p>Dank je!</p>");
+  const { typed, quote } = splitQuoteFromBody(body);
+  const { tekst, ondertekening } = splitsOndertekening(typed);
+  const html = buildOutgoingHtml({
+    bodyHtml: toEmailHtml(tekst), signature: ondertekening, includeSignature: true, quoteHtml: quote,
+  });
+  const dank = html.indexOf("Dank je!");
+  const groet = html.indexOf("Met vriendelijke groet,");
+  const vraag = html.indexOf("Vraag van de klant");
+  assert.ok(dank >= 0 && dank < groet && groet < vraag, "volgorde: tekst, ondertekening, citaat");
+  assert.ok(html.includes("data:image/jpeg;base64"), "de foto gaat mee");
+  assert.equal((html.match(/Met vriendelijke groet,/g) || []).length, 1, "één ondertekening");
 });
 
 /* ─── Het geheel: wat er echt de deur uit gaat ─── */

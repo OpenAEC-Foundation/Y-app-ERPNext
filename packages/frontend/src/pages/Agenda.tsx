@@ -1,8 +1,11 @@
-import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type CSSProperties } from "react";
 import { kiesUitnodigingen, wachtOpAntwoord } from "../lib/agenda-uitnodigingen";
 import { verstuurAfzegging } from "../lib/uitnodiging-antwoordmail";
-import { haalOpenUitnodigingen } from "../lib/uitnodigingen-uit-mail";
+import { haalOpenUitnodigingen, vergeetUitnodigingen } from "../lib/uitnodigingen-uit-mail";
+import { markHandled } from "../lib/mail-erpnext";
 import { useIsMobile } from "../lib/useIsMobile";
+import { useNu } from "../lib/useNu";
+import { tijdlijnLabel, tijdlijnTop } from "../lib/agenda-tijdlijn";
 import {
   berekenSleep, duurUitMinuten, minutenNaarTijd, sleepbaar, tijdNaarMinuten,
   verschuifDatum,
@@ -16,7 +19,14 @@ import {
 import { useLeaves } from "../lib/DataContext";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
-import { haalAgendas, eindTijd, haalCollegas, kleurenVoorCollegas, type Collega } from "../lib/agenda-mailserver";
+import { haalAgendas, eindTijd, haalCollegas, voorlaadAgendas, type Collega } from "../lib/agenda-mailserver";
+import {
+  HERHAAL_KEUZES, erpHerhaalVelden, kerenInPeriode, minutenTussen, plusMinuten, regelVanErpEvent,
+  regelVoorKeuze, voorkomens, type HerhaalKeuze,
+} from "../lib/agenda-herhaling";
+import { COLLEGA_SLEUTEL } from "../lib/agenda-voorladen";
+import { kleurenVoorAgendas } from "../lib/agenda-kleuren";
+import { deelKolommenIn } from "../lib/agenda-indeling";
 import { resolveSessionUser } from "../lib/session";
 import {
   antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, verwijderAfspraak, kanAntwoorden,
@@ -25,6 +35,10 @@ import {
 } from "../lib/agenda-mailserver";
 import type { Deelnamestatus } from "../lib/ical";
 import { RecipientInput } from "../components/RecipientInput";
+import { duurLabel, duurOpties, duurTussen, eindBijNieuweStart, eindNaDuur } from "../lib/agenda-duur";
+import LocatieInvoer from "../components/agenda/LocatieInvoer";
+import { eigenLocaties, locatieTekst, standaardLocatie } from "../lib/agenda-locaties";
+import { resolveDefaultCompany } from "../lib/default-company";
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Users,
   Plus, RefreshCw, X, Send, Video, CheckSquare, CalendarDays,
@@ -62,6 +76,11 @@ interface EventItem {
    * één blok verplaatsen zou de hele reeks verzetten.
    */
   herhaalt?: boolean;
+  /**
+   * Het ERPNext-document achter dit blok. Bij een herhalende afspraak staat
+   * elke keer als eigen blok in de agenda (eigen id), maar het is één Event.
+   */
+  docName?: string;
   /**
    * Een uitnodiging waarop jouw antwoord nog ontbreekt. De agenda tekent hem
    * gestippeld: de tijd is bezet zolang je niet hebt geweigerd, maar het is nog
@@ -130,6 +149,10 @@ interface CreateForm {
    */
   prive: boolean;
   calendarTarget: string; // "erpnext" | "mailserver" | "caldav:<calendarId>"
+  /** Terugkerende afspraak; leeg = eenmalig. */
+  herhaling: HerhaalKeuze;
+  /** Laatste dag van de reeks; leeg = zonder einde. */
+  herhaalTot: string;
 }
 
 /** Wat er tijdens het slepen van een bestaande afspraak bijgehouden wordt. */
@@ -317,8 +340,6 @@ const ERP_SOURCE_DEFAULTS: Record<ErpSourceKey, boolean> = {
   timesheets: false,
   mailbox: true,
 };
-
-const COLLEGA_SLEUTEL = "agenda_collegas";
 
 /**
  * Welke collega-agenda's aan staan. Onthouden in de browser, want het is een
@@ -669,12 +690,30 @@ function CreateModal({ initial, onClose, onCreated }: {
     withJitsi: false,
     prive: false,
     calendarTarget: getDefaultCalendarTarget(),
+    herhaling: "",
+    herhaalTot: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [sendingInvite, setSendingInvite] = useState(false);
   // Schrijfbare CalDAV-agenda's voor de doel-dropdown (alleen events).
   const writableCalDav = useMemo(() => getWritableCalDavCalendars(), []);
+
+  /*
+   * Standaard staat het adres van je eigen bedrijf als locatie klaar: de
+   * meeste afspraken zijn op kantoor. Wie al iets typte of een locatie
+   * meekreeg, houdt die; het veld is gewoon te wissen of te overschrijven.
+   */
+  useEffect(() => {
+    if (initial.location) return;
+    let gestopt = false;
+    void Promise.all([eigenLocaties(), resolveDefaultCompany().catch(() => "")]).then(([eigen, bedrijf]) => {
+      const adres = standaardLocatie(eigen, bedrijf);
+      if (gestopt || !adres) return;
+      setForm((f) => (f.location ? f : { ...f, location: locatieTekst(adres) }));
+    });
+    return () => { gestopt = true; };
+  }, [initial.location]);
 
   function toggleJitsi() {
     setForm(f => ({
@@ -733,6 +772,7 @@ function CreateModal({ initial, onClose, onCreated }: {
           eind: form.allDay ? `${form.date}T00:00:00` : `${form.date}T${form.endTime}:00`,
           tijdzone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Amsterdam",
           heleDag: form.allDay,
+          herhaling: regelVoorKeuze(form.herhaling, form.date, form.herhaalTot) ?? undefined,
           omschrijving: description || undefined,
           locatie: form.location || undefined,
           organisator: { email: ik.toLowerCase() },
@@ -790,6 +830,8 @@ function CreateModal({ initial, onClose, onCreated }: {
           description,
           location: form.location,
           status: "Open",
+          // ERPNext kent geen "om de week"; die keuze staat bij ERPNext ook niet in de lijst.
+          ...erpHerhaalVelden(form.herhaling === "biweekly" ? "weekly" : form.herhaling, form.date, form.herhaalTot),
         });
       } else {
         await createDocument("Task", {
@@ -916,7 +958,7 @@ function CreateModal({ initial, onClose, onCreated }: {
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-1 gap-3 ${form.allDay ? "" : "sm:grid-cols-2 md:grid-cols-4"}`}>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.date_label")}</label>
               <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
@@ -926,8 +968,18 @@ function CreateModal({ initial, onClose, onCreated }: {
               <>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.from")}</label>
-                  <input type="time" value={form.startTime} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))}
+                  <input type="time" value={form.startTime}
+                    onChange={e => { const v = e.target.value; setForm(f => ({ ...f, startTime: v, endTime: v ? eindBijNieuweStart(f.startTime, f.endTime, v) : f.endTime })); }}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.duration")}</label>
+                  <select value={duurTussen(form.startTime, form.endTime)}
+                    onChange={e => { const d = Number(e.target.value); setForm(f => ({ ...f, endTime: eindNaDuur(f.startTime, d) })); }}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    {duurTussen(form.startTime, form.endTime) === 0 && <option value={0}>–</option>}
+                    {duurOpties(duurTussen(form.startTime, form.endTime)).map(d => <option key={d} value={d}>{duurLabel(d)}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.to")}</label>
@@ -942,10 +994,41 @@ function CreateModal({ initial, onClose, onCreated }: {
             {t("agenda.all_day")}
           </label>
 
+          {/* Terugkerend: mailserver (RRULE) en ERPNext (herhaalvelden). Een
+              privé CalDAV-agenda neemt via deze weg geen herhaling aan. */}
+          {form.type === "event" && !doelAgenda.startsWith("caldav:") && (
+            <div className={`grid grid-cols-1 gap-3 ${form.herhaling ? "sm:grid-cols-2" : ""}`}>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.repeat")}</label>
+                <select value={form.herhaling}
+                  onChange={e => { const v = e.target.value as HerhaalKeuze; setForm(f => ({ ...f, herhaling: v })); }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  {HERHAAL_KEUZES.filter(k => !(k === "biweekly" && doelAgenda === "erpnext")).map(k => (
+                    <option key={k || "none"} value={k}>
+                      {t(`agenda.repeat_${k || "none"}`, {
+                        dag: new Date(`${form.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long" }),
+                        datum: new Date(`${form.date}T12:00:00`).getDate(),
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {form.herhaling && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.repeat_until")}</label>
+                  <input type="date" value={form.herhaalTot} min={form.date}
+                    onChange={e => setForm(f => ({ ...f, herhaalTot: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <p className="text-[10px] text-slate-400 mt-1">{t("agenda.repeat_until_hint")}</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {form.type === "event" && (
             <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
               <input type="checkbox" checked={form.prive}
-                onChange={e => setForm(f => ({ ...f, privé: e.target.checked }))}
+                onChange={e => setForm(f => ({ ...f, prive: e.target.checked }))}
                 className="rounded border-slate-300" />
               <span className="flex items-center gap-1.5">
                 {t("agenda.shared")}
@@ -958,7 +1041,7 @@ function CreateModal({ initial, onClose, onCreated }: {
           {form.type === "event" && (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.location")}</label>
-              <input type="text" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+              <LocatieInvoer value={form.location} onChange={v => setForm(f => ({ ...f, location: v }))}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder={t("agenda.location_placeholder")} />
             </div>
@@ -1167,7 +1250,20 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
    */
   const isMailserver = event.type === "mailbox" && !!event.uitnodiging
     && !event.vanAnder && !event.herhaalt;
-  const canEdit = isErpEvent || isErpTask || isO365 || isCalDav || isMailserver;
+  // Een ERPNext-reeks: bewerken zou vanuit één blok de hele reeks verzetten,
+  // weghalen haalt (na bevestiging) de hele reeks weg.
+  const canEdit = (isErpEvent && !event.herhaalt) || isErpTask || isO365 || isCalDav || isMailserver;
+  /*
+   * Verwijderen mag bij meer afspraken dan bewerken. Een reeks bewerken of
+   * verslepen verzet ongemerkt elke week; weghalen doet wat er staat, en de
+   * bevestiging zegt dat de hele reeks gaat. Een uitnodiging die alleen nog in
+   * de post staat, bestaat nergens als afspraak: die haal je uit de agenda door
+   * de mail af te handelen.
+   */
+  const magMailserverWeg = event.type === "mailbox" && !!event.uitnodiging && !event.vanAnder;
+  const isOpenUitnodiging = event.type === "mailbox" && !event.uitnodiging
+    && !!event.communication && !!event.onbeantwoord;
+  const canDelete = canEdit || isErpEvent || magMailserverWeg || isOpenUitnodiging;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1195,7 +1291,7 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
   const [inviteSent, setInviteSent] = useState(false);
 
   // Extract ERPNext document name from event id (e.g. "event-EVT-00123" → "EVT-00123")
-  const docName = event.id.replace(/^(event|task)-/, "");
+  const docName = event.docName ?? event.id.replace(/^(event|task)-/, "");
 
   async function handleSave() {
     if (!title.trim()) { setError(t("agenda.fill_title")); return; }
@@ -1356,7 +1452,12 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
         await deleteDocument("Event", docName);
       } else if (isErpTask) {
         await deleteDocument("Task", docName);
-      } else if (isMailserver && event.uitnodiging) {
+      } else if (isOpenUitnodiging && event.communication) {
+        // Als afspraak bestaat hij nog nergens. Uit de agenda halen is de mail
+        // afhandelen; `haalOpenUitnodigingen` slaat afgehandelde post over.
+        await markHandled(event.communication);
+        vergeetUitnodigingen();
+      } else if (magMailserverWeg && event.uitnodiging) {
         /*
          * Hier stond niets. Een afspraak uit de mailserver viel door alle
          * takken heen, waarna het venster sloot alsof hij weg was - terwijl
@@ -1482,8 +1583,15 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
               </label>
               {!allDay && (
                 <div className="flex items-center gap-2">
-                  <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                  <input type="time" value={startTime}
+                    onChange={e => { const v = e.target.value; if (v) setEndTime(eindBijNieuweStart(startTime, endTime, v)); setStartTime(v); }}
                     className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <select value={duurTussen(startTime, endTime)} title={t("agenda.duration")} aria-label={t("agenda.duration")}
+                    onChange={e => setEndTime(eindNaDuur(startTime, Number(e.target.value)))}
+                    className="px-2 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {duurTussen(startTime, endTime) === 0 && <option value={0}>–</option>}
+                    {duurOpties(duurTussen(startTime, endTime)).map(d => <option key={d} value={d}>{duurLabel(d)}</option>)}
+                  </select>
                   <span className="text-slate-400">–</span>
                   <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1513,7 +1621,7 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
           {editing && (isErpEvent || isO365 || isMailserver) ? (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">{t("agenda.location")}</label>
-              <input type="text" value={location} onChange={e => setLocation(e.target.value)}
+              <LocatieInvoer value={location} onChange={setLocation} placeholder={t("agenda.location_placeholder")}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           ) : event.location ? (
@@ -1581,11 +1689,12 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
         <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl">
           {/* Delete button (left) */}
           <div>
-            {canEdit && !editing && (
+            {canDelete && !editing && (
               confirmDelete ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-red-600">
-                    {t(event.herhaalt ? "agenda.confirm_delete_series" : "agenda.confirm_delete")}
+                    {t(isOpenUitnodiging ? "agenda.confirm_delete_invite"
+                      : event.herhaalt ? "agenda.confirm_delete_series" : "agenda.confirm_delete")}
                   </span>
                   <button onClick={handleDelete} disabled={deleting}
                     className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50 cursor-pointer">
@@ -1794,7 +1903,8 @@ export default function Agenda() {
     return () => { gestopt = true; };
   }, []);
 
-  const collegaKleuren = useMemo(() => kleurenVoorCollegas(collegas), [collegas]);
+  // Kleuren alleen voor wat aan staat, zie `agenda-kleuren.ts`.
+  const collegaKleuren = useMemo(() => kleurenVoorAgendas(gekozenCollegas, ikZelf), [gekozenCollegas, ikZelf]);
 
   function handleCollegasAllemaal() {
     const alles = collegas.map((c) => c.email);
@@ -1827,7 +1937,12 @@ export default function Agenda() {
   // Custom calendars
   const [calendars, setCalendars] = useState<CustomCalendar[]>(() => getCustomCalendars());
 
-  const today = useMemo(() => new Date(), []);
+  // De klok van nu, elke minuut bijgewerkt: voor de lijn in het rooster, en
+  // zodat "vandaag" na middernacht ook echt de nieuwe dag is.
+  const nu = useNu();
+  const vandaagSleutel = nu.toDateString();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const today = useMemo(() => new Date(), [vandaagSleutel]);
 
   const dateRange = useMemo(() => {
     if (viewType === "month") {
@@ -1885,20 +2000,39 @@ export default function Agenda() {
       const fetchLabels: string[] = [];
 
       if (erpSources.events) {
-        fetches.push(fetchList<{
+        type ErpEvent = {
           name: string; subject: string; starts_on: string; ends_on: string;
           all_day: number; event_type: string; description: string; location: string;
-          owner: string;
-        }>("Event", {
-          fields: ["name", "subject", "starts_on", "ends_on", "all_day", "event_type", "description", "location", "owner"],
-          filters: [
-            ["starts_on", ">=", dateRange.start],
-            ["starts_on", "<=", dateRange.end + " 23:59:59"],
-            ["status", "=", "Open"],
-          ],
-          limit_page_length: 200,
-          order_by: "starts_on asc",
-        }));
+          owner: string; repeat_this_event?: number;
+        };
+        const velden = ["name", "subject", "starts_on", "ends_on", "all_day", "event_type", "description", "location", "owner",
+          "repeat_this_event", "repeat_on", "repeat_till", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+        fetches.push(Promise.all([
+          // Eenmalige afspraken in de periode.
+          fetchList<ErpEvent>("Event", {
+            fields: velden,
+            filters: [
+              ["starts_on", ">=", dateRange.start],
+              ["starts_on", "<=", dateRange.end + " 23:59:59"],
+              ["status", "=", "Open"],
+              ["repeat_this_event", "=", 0],
+            ],
+            limit_page_length: 200,
+            order_by: "starts_on asc",
+          }),
+          // Reeksen die vóór het eind van de periode begonnen en dan nog lopen;
+          // waar ze in de periode vallen, rekent `voorkomens` uit.
+          fetchList<ErpEvent>("Event", {
+            fields: velden,
+            filters: [
+              ["repeat_this_event", "=", 1],
+              ["starts_on", "<=", dateRange.end + " 23:59:59"],
+              ["status", "=", "Open"],
+            ],
+            or_filters: [["repeat_till", "is", "not set"], ["repeat_till", ">=", dateRange.start]],
+            limit_page_length: 200,
+          }),
+        ]).then(([los, reeksen]) => [...los, ...reeksen]));
         fetchLabels.push("events");
       }
 
@@ -1943,17 +2077,33 @@ export default function Agenda() {
 
         if (label === "events") {
           for (const e of result.value) {
-            items.push({
-              id: `event-${e.name}`, title: e.subject || t("agenda.no_title"),
-              start: e.starts_on, end: e.ends_on || undefined,
-              allDay: !!e.all_day, type: "event", color: TYPE_COLORS.event,
+            const basis = {
+              title: e.subject || t("agenda.no_title"),
+              allDay: !!e.all_day, type: "event" as const, color: TYPE_COLORS.event,
               // Een publieke afspraak van een ander staat óók in jouw agenda.
               // Gedempt, net als de agenda's van collega's, zodat je eigen
               // afspraken eruit blijven springen.
               vanAnder: ikZelf !== "" && String(e.owner || "").toLowerCase() !== ikZelf,
               owner: e.owner,
               description: e.description, location: e.location,
-            });
+              docName: e.name,
+            };
+            const regel = regelVanErpEvent(e);
+            if (!regel) {
+              items.push({ ...basis, id: `event-${e.name}`, start: e.starts_on, end: e.ends_on || undefined });
+              continue;
+            }
+            // Een reeks: elke keer een eigen blok, met dezelfde lengte.
+            const duur = e.ends_on ? minutenTussen(e.starts_on, e.ends_on) : 0;
+            for (const keer of voorkomens(e.starts_on, regel, dateRange.start, dateRange.end)) {
+              items.push({
+                ...basis,
+                id: `event-${e.name}~${keer.slice(0, 10)}`,
+                start: keer,
+                end: e.ends_on ? plusMinuten(keer, duur) : undefined,
+                herhaalt: true,
+              });
+            }
           }
         } else if (label === "tasks") {
           for (const t of result.value) {
@@ -1989,33 +2139,38 @@ export default function Agenda() {
         const { afspraken } = await haalAgendas(dateRange.start, dateRange.end, gekozenCollegas);
         for (const a of afspraken) {
           if (!a.start) continue;
-          items.push({
-            id: `mb-${a.gebruiker}-${a.id}`,
-            title: a.titel || t("agenda.no_title"),
-            start: a.start.replace("T", " "),
-            end: eindTijd(a.start, a.duur),
-            allDay: !!a.hele_dag,
-            type: "mailbox",
-            color: collegaKleuren.get(a.gebruiker) || TYPE_COLORS.mailbox,
-            // Zolang het eigen adres nog niet binnen is, dempt niets: anders
-            // is de hele agenda even grijs voordat hij zichzelf herstelt. Lukt
-            // het ophalen helemaal niet, dan blijft alles gewoon vol.
-            vanAnder: ikZelf !== "" && a.gebruiker.toLowerCase() !== ikZelf,
-            herhaalt: !!a.herhaalt,
-            // Een uitnodiging die de mailserver zelf al in je agenda zette,
-            // maar waar jouw antwoord nog op ontbreekt.
-            onbeantwoord: a.gebruiker.toLowerCase() === ikZelf
-              && wachtOpAntwoord(a.genodigden, ikZelf),
-            owner: a.gebruiker.split("@")[0],
-            uitnodiging: a.uid
-              ? {
-                  uid: a.uid,
-                  agenda: a.gebruiker,
-                  organisator: (a.genodigden ?? []).find((g) => g.organisator)?.email,
-                  genodigden: a.genodigden ?? [],
-                }
-              : undefined,
-          });
+          // Een reeks komt als één afspraak op zijn eerste datum binnen; hier
+          // wordt elke keer in de getoonde periode een eigen blok.
+          for (const keer of kerenInPeriode(a, dateRange.start, dateRange.end)) {
+            items.push({
+              id: keer.reeks ? `mb-${a.gebruiker}-${a.id}~${keer.start.slice(0, 10)}` : `mb-${a.gebruiker}-${a.id}`,
+              title: a.titel || t("agenda.no_title"),
+              start: keer.start.replace("T", " "),
+              end: eindTijd(keer.start, keer.duur),
+              allDay: !!a.hele_dag,
+              type: "mailbox",
+              color: collegaKleuren.get(a.gebruiker.toLowerCase()) || TYPE_COLORS.mailbox,
+              // Zolang het eigen adres nog niet binnen is, dempt niets: anders
+              // is de hele agenda even grijs voordat hij zichzelf herstelt. Lukt
+              // het ophalen helemaal niet, dan blijft alles gewoon vol.
+              vanAnder: ikZelf !== "" && a.gebruiker.toLowerCase() !== ikZelf,
+              herhaalt: !!a.herhaalt,
+              // Een uitnodiging die de mailserver zelf al in je agenda zette,
+              // maar waar jouw antwoord nog op ontbreekt.
+              onbeantwoord: a.gebruiker.toLowerCase() === ikZelf
+                && wachtOpAntwoord(a.genodigden, ikZelf),
+              owner: a.gebruiker.split("@")[0],
+              location: a.locatie || undefined,
+              uitnodiging: a.uid
+                ? {
+                    uid: a.uid,
+                    agenda: a.gebruiker,
+                    organisator: (a.genodigden ?? []).find((g) => g.organisator)?.email,
+                    genodigden: a.genodigden ?? [],
+                  }
+                : undefined,
+            });
+          }
         }
       }
 
@@ -2074,6 +2229,21 @@ export default function Agenda() {
   }, [dateRange.start, dateRange.end, leaves, erpSources, gekozenCollegas, collegaKleuren, ikZelf]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  /*
+   * Alvast de periode hierna ophalen: wie naar de volgende week klikt, heeft
+   * die meteen, en intussen komt de week daarop al binnen. Alleen de
+   * mailserver-agenda's: dat is het trage deel, en die onthoudt de app.
+   */
+  useEffect(() => {
+    if (!erpSources.mailbox || gekozenCollegas.length === 0) return;
+    const na = new Date(`${dateRange.end}T12:00:00`);
+    na.setDate(na.getDate() + 1);
+    const tot = new Date(na);
+    tot.setDate(tot.getDate() + (viewType === "month" ? 34 : 6));
+    const id = window.setTimeout(() => voorlaadAgendas(formatDateKey(na), formatDateKey(tot), gekozenCollegas), 400);
+    return () => window.clearTimeout(id);
+  }, [dateRange.end, viewType, erpSources.mailbox, gekozenCollegas]);
 
   /* ─── Load iCal events ─── */
 
@@ -2349,6 +2519,24 @@ export default function Agenda() {
   const TOTAL_HOURS = 24;
   const GRID_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
 
+  /**
+   * Tijdens het slepen staat het blok waar de muis het heen brengt: nieuwe
+   * tijd, nieuwe lengte en (in de week) een andere dag. Zonder animatie,
+   * anders loopt het blok achter de muis aan.
+   */
+  function sleepStijl(e: EventItem, uurHoogte: number, minHoogte: number): CSSProperties | undefined {
+    if (!sleep || sleep.id !== e.id || !sleep.bewogen) return undefined;
+    const uit = sleepUitkomst(sleep);
+    return {
+      top: ((uit.startMin - START_HOUR * 60) / 60) * uurHoogte,
+      height: Math.max(minHoogte, ((uit.eindMin - uit.startMin) / 60) * uurHoogte),
+      transform: uit.dagVerschuiving ? `translateX(${uit.dagVerschuiving * sleep.kolomBreedte}px)` : undefined,
+      zIndex: 30,
+      transition: "none",
+      boxShadow: "0 4px 12px rgba(15, 23, 42, 0.18)",
+    };
+  }
+
   function getEventPosition(e: EventItem) {
     const start = new Date(e.start);
     const startMin = (start.getHours() - START_HOUR) * 60 + start.getMinutes();
@@ -2569,36 +2757,12 @@ export default function Agenda() {
     );
   }
 
-  /** Lay out overlapping events side-by-side */
+  /** Overlappende afspraken naast elkaar — zie `agenda-indeling.ts`. */
   function layoutOverlaps(events: EventItem[]): (EventItem & { left: number; width: number })[] {
-    if (events.length === 0) return [];
-    const positioned = events.map(e => {
+    return deelKolommenIn(events.map((e) => {
       const pos = getEventPosition(e);
-      return { ...e, _top: pos.top, _bottom: pos.top + pos.height, left: 0, width: 1 };
-    }).sort((a, b) => a._top - b._top || a._bottom - b._bottom);
-
-    const columns: { end: number }[][] = [];
-    for (const ev of positioned) {
-      let placed = false;
-      for (let col = 0; col < columns.length; col++) {
-        if (columns[col].every(c => c.end <= ev._top)) {
-          columns[col].push({ end: ev._bottom });
-          ev.left = col;
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        ev.left = columns.length;
-        columns.push([{ end: ev._bottom }]);
-      }
-    }
-    const totalCols = columns.length;
-    for (const ev of positioned) {
-      ev.width = 1 / totalCols;
-      ev.left = ev.left / totalCols;
-    }
-    return positioned;
+      return { ...e, _top: pos.top, _bottom: pos.top + pos.height };
+    }));
   }
 
   /* ─── Week view ─── */
@@ -2606,6 +2770,10 @@ export default function Agenda() {
   function renderWeekView() {
     const days = getWeekDays(currentDate);
     const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR);
+    // De lijn van nu, alleen als vandaag in deze week valt.
+    const nuTop = days.some((d) => isSameDay(d, nu))
+      ? tijdlijnTop(nu, HOUR_HEIGHT, START_HOUR, TOTAL_HOURS)
+      : null;
 
     return (
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -2651,6 +2819,13 @@ export default function Agenda() {
                   <span className="relative -top-[6px]">{String(hour).padStart(2, "0")}:00</span>
                 </div>
               ))}
+              {nuTop !== null && (
+                <div
+                  className="pointer-events-none absolute right-0 z-20 -translate-y-1/2 bg-white pl-1 pr-1.5 text-[10px] font-semibold text-red-500"
+                  style={{ top: nuTop }}>
+                  {tijdlijnLabel(nu)}
+                </div>
+              )}
             </div>
             {/* Day columns */}
             {days.map((day) => {
@@ -2678,7 +2853,7 @@ export default function Agenda() {
                       <div key={e.id}
                         className={`group absolute text-[10px] px-1.5 py-0.5 rounded font-medium overflow-hidden z-10 hover:brightness-95 transition-all ${
                           sleepbaar(e) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-                        } ${sleep?.id === e.id && sleep.bewogen ? "opacity-60 ring-2 ring-current" : ""}`}
+                        } ${sleep?.id === e.id && sleep.bewogen ? "opacity-90 ring-2 ring-current" : ""}`}
                         onMouseDown={(ev) => sleepbaar(e)
                           ? startSleep(ev, e, key, HOUR_HEIGHT, "verplaatsen")
                           : ev.stopPropagation()}
@@ -2699,6 +2874,7 @@ export default function Agenda() {
                           color: e.color,
                           borderLeft: `3px solid ${e.color}`,
                           ...stippel(e),
+                          ...sleepStijl(e, HOUR_HEIGHT, 20),
                         }}>
                         <div className="truncate leading-tight">{e.title}</div>
                         <div className="text-[9px] opacity-70">
@@ -2706,6 +2882,13 @@ export default function Agenda() {
                             ? `${minutenNaarTijd(sleepUitkomst(sleep).startMin)} – ${minutenNaarTijd(sleepUitkomst(sleep).eindMin)}`
                             : formatTime(e.start)}
                         </div>
+                        {/* Waar het is, onder de tijd; afgekapt als het niet past. */}
+                        {e.location && (
+                          <div data-locatie className="flex items-center gap-0.5 text-[9px] opacity-70">
+                            <MapPin size={8} className="flex-shrink-0" />
+                            <span className="truncate">{e.location}</span>
+                          </div>
+                        )}
                         {/* Greep om langer of korter te maken. Alleen zichtbaar
                             bij aanwijzen: hij mag de tekst niet in de weg zitten. */}
                         {sleepbaar(e) && (
@@ -2718,6 +2901,20 @@ export default function Agenda() {
                       </div>
                     );
                   })}
+                  {nuTop !== null && (
+                    // Vol over vandaag, dun over de rest van de week. Klikken en
+                    // slepen gaan er dwars doorheen naar het rooster.
+                    <div data-tijdlijn className="pointer-events-none absolute left-0 right-0 z-20" style={{ top: nuTop }}>
+                      {isSameDay(day, nu) ? (
+                        <>
+                          <div className="h-0.5 -translate-y-1/2 bg-red-500" />
+                          <div className="absolute -left-1 top-0 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-red-500" />
+                        </>
+                      ) : (
+                        <div className="border-t border-red-300/70" />
+                      )}
+                    </div>
+                  )}
                   {renderDragOverlay(key, HOUR_HEIGHT)}
                 </div>
               );
@@ -2738,6 +2935,9 @@ export default function Agenda() {
     const allDayEvents = dayEvents.filter(e => e.allDay);
     const timedEvents = dayEvents.filter(e => !e.allDay);
     const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i + START_HOUR);
+    const nuTop = isSameDay(currentDate, nu)
+      ? tijdlijnTop(nu, DAY_HOUR_HEIGHT, START_HOUR, TOTAL_HOURS)
+      : null;
 
     function getDayEventPosition(e: EventItem) {
       const start = new Date(e.start);
@@ -2752,37 +2952,11 @@ export default function Agenda() {
       };
     }
 
-    // Reuse overlap layout with day-specific positioning
-    const laid = (() => {
-      if (timedEvents.length === 0) return [];
-      const positioned = timedEvents.map(e => {
-        const pos = getDayEventPosition(e);
-        return { ...e, _top: pos.top, _bottom: pos.top + pos.height, left: 0, width: 1 };
-      }).sort((a, b) => a._top - b._top || a._bottom - b._bottom);
-
-      const columns: { end: number }[][] = [];
-      for (const ev of positioned) {
-        let placed = false;
-        for (let col = 0; col < columns.length; col++) {
-          if (columns[col].every(c => c.end <= ev._top)) {
-            columns[col].push({ end: ev._bottom });
-            ev.left = col;
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          ev.left = columns.length;
-          columns.push([{ end: ev._bottom }]);
-        }
-      }
-      const totalCols = columns.length;
-      for (const ev of positioned) {
-        ev.width = 1 / totalCols;
-        ev.left = ev.left / totalCols;
-      }
-      return positioned;
-    })();
+    // Dezelfde indeling als de week, met de maten van de dagweergave.
+    const laid = deelKolommenIn(timedEvents.map((e) => {
+      const pos = getDayEventPosition(e);
+      return { ...e, _top: pos.top, _bottom: pos.top + pos.height };
+    }));
 
     return (
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -2809,6 +2983,13 @@ export default function Agenda() {
                   <span className="relative -top-[7px]">{String(hour).padStart(2, "0")}:00</span>
                 </div>
               ))}
+              {nuTop !== null && (
+                <div
+                  className="pointer-events-none absolute right-0 z-20 -translate-y-1/2 bg-white pl-1 pr-2 text-xs font-semibold text-red-500"
+                  style={{ top: nuTop }}>
+                  {tijdlijnLabel(nu)}
+                </div>
+              )}
             </div>
             {/* Event column */}
             <div data-dagkolom className="flex-1 relative border-l border-slate-200"
@@ -2839,7 +3020,7 @@ export default function Agenda() {
                     }}
                     className={`group absolute rounded overflow-hidden z-10 px-3 py-1.5 hover:brightness-95 transition-all ${
                       sleepbaar(e) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-                    } ${sleep?.id === e.id && sleep.bewogen ? "opacity-60 ring-2 ring-current" : ""}`}
+                    } ${sleep?.id === e.id && sleep.bewogen ? "opacity-90 ring-2 ring-current" : ""}`}
                     style={{
                       ...demping(e),
                       top: pos.top,
@@ -2849,6 +3030,7 @@ export default function Agenda() {
                       backgroundColor: e.color + "15",
                       borderLeft: `4px solid ${e.color}`,
                       ...stippel(e),
+                      ...sleepStijl(e, DAY_HOUR_HEIGHT, 28),
                     }}>
                     <div className="text-sm font-medium truncate" style={{ color: e.color }}>{e.title}</div>
                     <div className="text-xs text-slate-500 mt-0.5">
@@ -2870,6 +3052,12 @@ export default function Agenda() {
                   </div>
                 );
               })}
+              {nuTop !== null && (
+                <div data-tijdlijn className="pointer-events-none absolute left-0 right-0 z-20" style={{ top: nuTop }}>
+                  <div className="h-0.5 -translate-y-1/2 bg-red-500" />
+                  <div className="absolute -left-1 top-0 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-red-500" />
+                </div>
+              )}
               {renderDragOverlay(key, DAY_HOUR_HEIGHT)}
             </div>
           </div>

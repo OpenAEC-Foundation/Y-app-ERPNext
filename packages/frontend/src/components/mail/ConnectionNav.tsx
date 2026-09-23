@@ -15,6 +15,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Loader2, Link2 } from "lucide-react";
+
+/** Waar de keuze "connecties open of dicht" bewaard blijft. */
+const SECTIE_SLEUTEL = "ynext_mail_connecties_open";
 import {
   CONNECTION_CATEGORIES,
   connectionFolderId,
@@ -89,6 +92,22 @@ export default function ConnectionNav({
       .catch(() => { /* de vorige momentopname blijft staan; beter dan leeg */ });
   }, [reloadToken]);
 
+  /** Staat de hele connectie-sectie open? Onthouden in de browser. */
+  const [sectieOpen, setSectieOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SECTIE_SLEUTEL) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const wisselSectie = useCallback(() => {
+    setSectieOpen((open) => {
+      try { localStorage.setItem(SECTIE_SLEUTEL, open ? "0" : "1"); } catch { /* privémodus */ }
+      if (open === false && !index) ensureIndex();
+      return !open;
+    });
+  }, [index, ensureIndex]);
+
   const toggle = useCallback((id: ConnectionCategoryId) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -100,13 +119,20 @@ export default function ConnectionNav({
 
   return (
     <div>
-      <div className="flex items-center gap-1 px-3 pt-3 pb-1">
+      {/* De hele sectie in- en uitklappen: wie met mappen werkt heeft de
+          connecties niet altijd nodig, en dan is dit tien regels ruimte. */}
+      <button type="button" onClick={wisselSectie} aria-expanded={sectieOpen}
+        title={sectieOpen ? t("y_next.conn_section_collapse") : t("y_next.conn_section_expand")}
+        className="flex w-full cursor-pointer items-center gap-1 px-3 pt-3 pb-1 text-left hover:text-slate-600">
+        {sectieOpen ? <ChevronDown size={10} className="text-slate-400" /> : <ChevronRight size={10} className="text-slate-400" />}
         <Link2 size={10} className="text-slate-400" aria-hidden />
         <span className="text-[10px] uppercase tracking-wide text-slate-400">
           {t("y_next.conn_section")}
         </span>
         {loading && <Loader2 size={9} className="animate-spin text-slate-300" />}
-      </div>
+      </button>
+
+      {sectieOpen && (<>
 
       {zichtbareCategorieen(CONNECTION_CATEGORIES, toegestaan ?? (() => false)).map((cat) => {
         const catFolder = connectionFolderId({ category: cat.id });
@@ -196,6 +222,7 @@ export default function ConnectionNav({
           </div>
         );
       })}
+      </>)}
     </div>
   );
 }

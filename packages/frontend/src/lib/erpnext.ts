@@ -14,6 +14,7 @@
 
 import { getActiveInstance } from "./instances.ts";
 import { getCsrfToken, refreshCsrfToken } from "./csrf.ts";
+import { uploadFoutmelding } from "./upload-fout.ts";
 
 /** Performance logging — shows cache hits, fetch times, and slow queries in console */
 const PERF_LOG = typeof localStorage !== "undefined" && localStorage.getItem("y_app_perf_log") === "1";
@@ -884,7 +885,10 @@ export async function uploadFile(
   }, UPLOAD_TIMEOUT_MS, () => ({ Accept: "application/json", ...csrfHeaders() }));
   if (!res.ok) {
     handleAuthError(res);
-    throw new Error(`Upload failed: ${res.status}`);
+    // Welk bestand en waarom: de reden van Frappe (te groot, type niet
+    // toegestaan, geen rechten) in plaats van alleen de statuscode.
+    const detail = await parseErpError(res);
+    throw new ApiError(res.status, uploadFoutmelding(file, res.status, detail));
   }
   const json = await res.json();
   return json.message;

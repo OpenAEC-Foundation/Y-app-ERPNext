@@ -1,4 +1,5 @@
 import { fetchList } from "./erpnext";
+import { isHandledStatus } from "./mail-erpnext.ts";
 import { leesAfspraakIcs } from "./ical.ts";
 import type { MailUitnodiging } from "./agenda-uitnodigingen.ts";
 
@@ -67,13 +68,17 @@ async function ophalen(): Promise<MailUitnodiging[]> {
    * eigen agenda en hoort er niet gestippeld naast.
    */
   const namen = [...new Set(bijlagen.map((b) => b.attached_to_name).filter(Boolean))];
-  const mails = await fetchList<{ name: string; sent_or_received: string }>("Communication", {
-    fields: ["name", "sent_or_received"],
+  const mails = await fetchList<{ name: string; sent_or_received: string; status?: string }>("Communication", {
+    fields: ["name", "sent_or_received", "status"],
     filters: [["name", "in", namen]],
     limit_page_length: namen.length,
   });
+  // Afgehandelde post ook niet: die uitnodiging is beantwoord, of vanuit de
+  // agenda met "Verwijderen" bewust weggelegd, en hoort niet gestippeld terug
+  // te komen.
   const ontvangen = new Set(
-    mails.filter((m) => m.sent_or_received === "Received").map((m) => m.name));
+    mails.filter((m) => m.sent_or_received === "Received" && !isHandledStatus(m.status))
+      .map((m) => m.name));
 
   const uitslag = await Promise.allSettled(
     bijlagen

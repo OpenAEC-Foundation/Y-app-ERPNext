@@ -11,6 +11,7 @@ import {
   normalizeSubject,
   participantsOf,
   visibleThreadOrder,
+  gesprekVan,
   type ThreadableMessage,
 } from "./mail-threads.ts";
 
@@ -446,4 +447,26 @@ test("een verzonden lid dat nergens aan hangt merkt niets", () => {
   ];
   assert.equal(reactieOpBericht("orig", leden), null);
   assert.equal(reactieOpBericht("", leden), null);
+});
+
+/* ─── gesprekVan: afhandelen raakt het hele gesprek ─── */
+
+test("gesprekVan: een bericht neemt zijn hele gesprek mee", () => {
+  const groepen = [["a1", "a2", "a3"], ["b1", "b2"]];
+  assert.deepEqual(gesprekVan(["a2"], groepen), ["a2", "a1", "a3"]);
+  assert.deepEqual(gesprekVan(["a1", "b2"], groepen), ["a1", "b2", "a2", "a3", "b1"]);
+});
+
+test("gesprekVan: overlappende bronnen horen samen bij hetzelfde gesprek", () => {
+  // De lijstgroepering en de conversatie van de server overlappen elkaar. Via
+  // het gedeelde bericht horen ook de berichten die maar in één bron staan erbij.
+  const lijst = ["a1", "a2"];
+  const server = ["a2", "a0", "verzonden-a"];
+  assert.deepEqual(gesprekVan(["a1"], [lijst, server]), ["a1", "a2", "a0", "verzonden-a"]);
+  assert.deepEqual(gesprekVan(["a0"], [lijst, server]), ["a0", "a2", "verzonden-a", "a1"]);
+});
+
+test("gesprekVan: een los bericht blijft alleen, lege en dubbele namen vallen weg", () => {
+  assert.deepEqual(gesprekVan(["los"], [["a1", "a2"]]), ["los"]);
+  assert.deepEqual(gesprekVan(["", "los", "los"], []), ["los"]);
 });

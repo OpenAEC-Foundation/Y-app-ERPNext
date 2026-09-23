@@ -30,6 +30,14 @@ import {
   isMailSuggestionDismissed,
   readDismissedMailSuggestions,
 } from "./mail-suggestions.ts";
+import type { BtwRegel, BtwSjabloon } from "./purchase-invoice-btw.ts";
+import {
+  DUBBEL_VELDEN,
+  vindDubbeleInkoopfacturen,
+  type BestaandeInkoopfactuur,
+  type DubbelInvoer,
+  type MogelijkeDubbele,
+} from "./purchase-invoice-duplicates.ts";
 import {
   buildPurchaseInvoicePayload,
   dueDateFromTerms,
@@ -320,6 +328,116 @@ async function vervaldatumUitTermijn(
   } catch {
     return undefined;
   }
+}
+
+/* ─────────────────────────── Al ingeboekt? ───────────────────────────── */
+
+/**
+ * Zoek inkoopfacturen die dezelfde factuur lijken te zijn. Wat als dubbel telt
+ * staat in `purchase-invoice-duplicates.ts`; hier alleen het ophalen.
+ *
+ * Elke bron faalt voor zichzelf: kan de gebruiker bijvoorbeeld de bestanden
+ * van andere documenten niet zien, dan valt alleen de pdf-vergelijking weg en
+ * blijven factuurnummer en bedrag gewoon gecontroleerd. Een controle die
+ * stukgaat mag het inboeken niet blokkeren.
+ *
+ * @param bijlagen File-docnames van de gekozen bijlagen op de mail
+ */
+export async function zoekDubbeleInkoopfacturen(
+  invoer: DubbelInvoer,
+  bijlagen: string[],
+): Promise<MogelijkeDubbele[]> {
+  const velden = [...DUBBEL_VELDEN];
+  const nummer = invoer.billNo?.trim();
+  // De facturen van de leverancier én alles met dit factuurnummer: de herkende
+  // leverancier kan ernaast zitten, en dan is het nummer het enige houvast.
+  // Welk nummer bij een andere leverancier telt, beslist de vergelijking.
+  const kandidaatFilters: unknown[][] = [
+    ...(invoer.supplier ? [["supplier", "=", invoer.supplier]] : []),
+    ...(nummer ? [["bill_no", "=", nummer]] : []),
+  ];
+  const kandidaten = kandidaatFilters.length > 0
+    ? fetchList<BestaandeInkoopfactuur>("Purchase Invoice", {
+      fields: velden,
+      filters: [["docstatus", "!=", 2]],
+      or_filters: kandidaatFilters,
+      order_by: "posting_date desc",
+      limit_page_length: 500,
+    }).catch(() => [])
+    : Promise.resolve([]);
+  const metZelfdeBijlage = facturenMetZelfdeBijlage(bijlagen, velden).catch(() => []);
+  return vindDubbeleInkoopfacturen(invoer, await kandidaten, await metZelfdeBijlage);
+}
+
+async function facturenMetZelfdeBijlage(
+  bijlagen: string[],
+  velden: string[],
+): Promise<BestaandeInkoopfactuur[]> {
+  if (bijlagen.length === 0) return [];
+  // Een boeking maakt een tweede File-rij naar hetzelfde bestand, met dezelfde
+  // inhoudshash. Die hash is dus de brug van mailbijlage naar factuur — ook
+  // als de pdf via een andere mail binnenkwam.
+  const eigen = await fetchList<{ content_hash?: string }>("File", {
+    fields: ["content_hash"],
+    filters: [["name", "in", bijlagen]],
+    limit_page_length: bijlagen.length,
+  });
+  const hashes = [...new Set(eigen.map((f) => f.content_hash).filter((h): h is string => !!h))];
+  if (hashes.length === 0) return [];
+  const gekoppeld = await fetchList<{ attached_to_name?: string }>("File", {
+    fields: ["attached_to_name"],
+    filters: [["attached_to_doctype", "=", "Purchase Invoice"], ["content_hash", "in", hashes]],
+    limit_page_length: 50,
+  });
+  const namen = [...new Set(gekoppeld.map((f) => f.attached_to_name).filter((n): n is string => !!n))];
+  if (namen.length === 0) return [];
+  return fetchList<BestaandeInkoopfactuur>("Purchase Invoice", {
+    fields: velden,
+    filters: [["name", "in", namen], ["docstatus", "!=", 2]],
+    limit_page_length: namen.length,
+  });
+}
+
+/* ─────────────────────────────── Btw ─────────────────────────────────── */
+
+/** De btw-sjablonen voor inkoop van dit bedrijf, zonder de uitgeschakelde. */
+export async function fetchBtwSjablonen(company: string): Promise<BtwSjabloon[]> {
+  if (!company) return [];
+  return fetchList<BtwSjabloon>("Purchase Taxes and Charges Template", {
+    fields: ["name", "is_default"],
+    filters: [["company", "=", company], ["disabled", "=", 0]],
+    order_by: "name asc",
+    limit_page_length: 100,
+  });
+}
+
+/**
+ * De regels van één sjabloon. Die gaan zelf mee in de boeking: of ERPNext een
+ * sjabloon via REST ook zelf uitvouwt, hangt af van de versie, en een
+ * inkoopfactuur zonder btw-regels boekt stil zonder btw.
+ */
+export async function fetchBtwRegels(sjabloon: string): Promise<BtwRegel[]> {
+  if (!sjabloon) return [];
+  const doc = await fetchDocument<{ taxes?: BtwRegel[] }>("Purchase Taxes and Charges Template", sjabloon);
+  return doc.taxes ?? [];
+}
+
+/**
+ * Inkoopfacturen met een van deze factuurnummers, in stukken van honderd
+ * zodat een lange inbox geen onhandelbaar lange URL oplevert. Geannuleerde
+ * blijven weg.
+ */
+export async function zoekFacturenOpNummer(nummers: string[]): Promise<BestaandeInkoopfactuur[]> {
+  const uniek = [...new Set(nummers.map((n) => n.trim()).filter(Boolean))];
+  const stukken: string[][] = [];
+  for (let i = 0; i < uniek.length; i += 100) stukken.push(uniek.slice(i, i + 100));
+  const rijen = await Promise.all(stukken.map((stuk) =>
+    fetchList<BestaandeInkoopfactuur>("Purchase Invoice", {
+      fields: [...DUBBEL_VELDEN],
+      filters: [["bill_no", "in", stuk], ["docstatus", "!=", 2]],
+      limit_page_length: 500,
+    })));
+  return rijen.flat();
 }
 
 /* ──────────────────────── "Nee, geen factuur" ────────────────────────── */

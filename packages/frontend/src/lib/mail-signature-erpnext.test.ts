@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bijsnijdVierkant, opmaakOndertekening } from "./mail-signature-erpnext.ts";
+import { bijsnijdVierkant, fotoUitOpgeslagen, opmaakOndertekening } from "./mail-signature-erpnext.ts";
 
 /**
  * Tests voor de pasfoto in de handtekening.
@@ -50,10 +50,31 @@ test("bijsnijdVierkant: het midden van een liggende foto", () => {
   assert.deepEqual(bijsnijdVierkant(400, 200), { sx: 100, sy: 0, zijde: 200 });
 });
 
-test("bijsnijdVierkant: het midden van een staande foto", () => {
-  assert.deepEqual(bijsnijdVierkant(300, 500), { sx: 0, sy: 100, zijde: 300 });
+test("bijsnijdVierkant: van een staande foto de bovenkant, daar zit het hoofd", () => {
+  // De profielfoto was een staande foto van het hele lichaam (512 x 768). Het
+  // vierkant uit het midden was het bovenlijf.
+  assert.deepEqual(bijsnijdVierkant(300, 500), { sx: 0, sy: 0, zijde: 300 });
+  assert.deepEqual(bijsnijdVierkant(512, 768), { sx: 0, sy: 0, zijde: 512 });
 });
 
 test("bijsnijdVierkant: een vierkante foto blijft heel", () => {
   assert.deepEqual(bijsnijdVierkant(240, 240), { sx: 0, sy: 0, zijde: 240 });
+});
+
+test("fotoUitOpgeslagen: de hoofdfoto uit de handtekening van de postbus, niet het logo of LinkedIn", () => {
+  // Zoals de handtekening van de postbus "maarten" er echt uitziet.
+  const html = '<p><img src="https://erp.voorbeeld.nl/files/MYb3aq8.png" width="70"></p>'
+    + '<p><img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" height="56" width="215"></p>'
+    + '<p><img src="https://erp.voorbeeld.nl/files/vm179Zv.png" height="23" width="23"></p>';
+  assert.equal(fotoUitOpgeslagen(html), "https://erp.voorbeeld.nl/files/MYb3aq8.png");
+});
+
+test("fotoUitOpgeslagen: alleen het logo en LinkedIn betekent geen foto", () => {
+  assert.equal(fotoUitOpgeslagen('<img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png"><img src="/files/vm179Zv.png">'), "");
+  assert.equal(fotoUitOpgeslagen(""), "");
+});
+
+test("de foto staat op de maat van de oudere mails", () => {
+  const html = opmaakOndertekening({ ...PERSOON, fotoBron: DATA });
+  assert.match(html, /width="70" height="70"/);
 });

@@ -91,8 +91,21 @@ export interface ProjectSuggestion {
 
 /** Een menselijke keuze eerder in dezelfde conversatie — haalt de drempel alleen. */
 const WEIGHT_THREAD = 10;
-/** Projectnummer letterlijk in onderwerp/bijlagenaam/body. */
+/** Projectnummer letterlijk in bijlagenaam of body. */
 const WEIGHT_NUMBER = 5;
+/**
+ * Projectnummer los in het onderwerp ("3201 Pauluskerk", "RE: 3201, balk").
+ * Dat is een bewuste keuze van de afzender en telt daarom zwaar: in zijn
+ * eentje "hoge zekerheid", en sterker dan afzendergeschiedenis plus klant.
+ */
+const WEIGHT_SUBJECT_NUMBER = 9;
+/**
+ * Een projectnummer dat ook een jaartal kan zijn (1990 t/m 2039) telt in het
+ * onderwerp minder zwaar: "Jaarrekening 2025" gaat niet over project 2025.
+ * Het haalt wel net de drempel als niets anders meedoet.
+ */
+const WEIGHT_SUBJECT_YEARLIKE = 5;
+const JAARACHTIG = /^(199\d|20[0-3]\d)$/;
 /** Eerder gekoppelde mail van dezelfde afzender. */
 const WEIGHT_HISTORY = 4;
 /** Zeldzaam token uit de projectnaam; maximaal twee tellen mee. */
@@ -115,6 +128,29 @@ const COMMON_TOKEN_SHARE = 0.2;
 
 /** Losse jaartallen zijn geen projectnummer. */
 const YEAR_TOKEN = /^(19|20)\d{2}$/;
+
+/**
+ * Losse getallen uit het onderwerp die een projectnummer kunnen zijn.
+ *
+ * Leestekens eromheen tellen niet ("3201," "(3201)" "#3201" "3201:"), en een
+ * nummer vóór een tekeningcode telt wel ("3201-CP-21"). Een getal dat deel is
+ * van een datum ("15-09-2026", "2026-09-15") of een bedrag ("1654,00") telt niet.
+ */
+export function nummersInOnderwerp(onderwerp: string): Set<string> {
+  const uit = new Set<string>();
+  const tekst = String(onderwerp || "");
+  const re = /\d{3,6}/g;
+  for (let m = re.exec(tekst); m; m = re.exec(tekst)) {
+    const voor = tekst.slice(Math.max(0, m.index - 3), m.index);
+    const na = tekst.slice(m.index + m[0].length, m.index + m[0].length + 4);
+    if (/\d$/.test(voor) || /^\d/.test(na)) continue;          // deel van een langer getal
+    if (/\d[-./]$/.test(voor)) continue;                         // 15-09-2026
+    if (/^[-./]\d{1,2}(?!\d)/.test(na)) continue;               // 2026-09, 1654.00, 1654,00 via komma hieronder
+    if (/^,\d{2}(?!\d)/.test(na)) continue;                      // 1654,00
+    uit.add(m[0]);
+  }
+  return uit;
+}
 
 /** Projectnummer zonder het `PROJ-`-voorvoegsel: `PROJ-0087` → `0087`. */
 function projectNumberTokens(hint: ProjectHint): string[] {
@@ -168,7 +204,15 @@ export function suggestProject(
     // handtekeningen, waarin elk projectnummer uit het verleden kan opduiken.
     (signals.bodyText || "").slice(0, 2000),
   ].join(" ");
-  const tokens = new Set(tokenizeForMatch(haystack));
+  // Leestekens los van woorden en nummers: "3201," en "(Pauluskerk)" horen mee te tellen.
+  const tokens = new Set(tokenizeForMatch(haystack.replace(/[.,:;()[\]{}#!?'"“”‘’<>|+*=&]/g, " ")));
+  const inOnderwerp = nummersInOnderwerp(signals.subject || "");
+  // Nummers buiten het onderwerp (bijlagenamen, begin van de body) zoals vroeger:
+  // zonder leestekens te splitsen, zodat een bedrag als "1654.00" geen nummer wordt.
+  const nummerTokens = new Set(tokenizeForMatch([
+    (signals.attachmentNames || []).join(" "),
+    (signals.bodyText || "").slice(0, 2000),
+  ].join(" ")));
   const rare = rareNameTokens(projects);
   const thread = new Set(signals.threadProjects || []);
   const history = new Set(signals.senderProjects || []);
@@ -181,8 +225,12 @@ export function suggestProject(
     if (thread.has(project.name)) { score += WEIGHT_THREAD; reasons.push("project:thread"); }
     if (history.has(project.name)) { score += WEIGHT_HISTORY; reasons.push("project:history"); }
 
+    const nummer = project.name.replace(/^PROJ-/i, "");
     const numberTokens = projectNumberTokens(project);
-    if (numberTokens.length > 0 && numberTokens.every((t) => tokens.has(t))) {
+    if (inOnderwerp.has(nummer)) {
+      score += JAARACHTIG.test(nummer) ? WEIGHT_SUBJECT_YEARLIKE : WEIGHT_SUBJECT_NUMBER;
+      reasons.push("project:number");
+    } else if (numberTokens.length > 0 && numberTokens.every((t) => nummerTokens.has(t))) {
       score += WEIGHT_NUMBER;
       reasons.push("project:number");
     }

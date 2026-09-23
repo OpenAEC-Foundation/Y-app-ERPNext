@@ -127,6 +127,38 @@ export default function SalesInvoices() {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
 
+  /*
+   * Openen vanuit een link — de factuurchip bij een mail stuurt hierheen met
+   * `?factuur=<naam>`. Los opgehaald, want de factuur valt lang niet altijd in
+   * het tabblad of het datumvenster dat nu openstaat.
+   */
+  const factuurUitUrl = searchParams.get("factuur");
+  useEffect(() => {
+    if (!factuurUitUrl) return;
+    let gestopt = false;
+    fetchList<SalesInvoice>("Sales Invoice", {
+      fields: [
+        "name", "customer_name", "contact_email", "grand_total", "net_total",
+        "outstanding_amount", "posting_date", "due_date", "status",
+        "company", "currency", "is_return", "payment_terms_template", "project",
+      ],
+      filters: [["name", "=", factuurUitUrl]],
+      limit_page_length: 1,
+    }).then((rows) => { if (!gestopt && rows[0]) setSelectedInvoice(rows[0]); })
+      .catch(() => { /* niet gevonden of geen recht: dan blijft gewoon de lijst staan */ });
+    return () => { gestopt = true; };
+  }, [factuurUitUrl]);
+
+  /** Het venster dicht, en de link-parameter weg — anders opent hij bij terugkomen opnieuw. */
+  function sluitFactuur() {
+    setSelectedInvoice(null);
+    if (searchParams.has("factuur")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("factuur");
+      setSearchParams(next, { replace: true });
+    }
+  }
+
   // Sync URL when tab changes externally (back/forward) or when post-creation deep-link arrives.
   useEffect(() => {
     if (tabFromUrl && validTabs.includes(tabFromUrl as SubTab) && tabFromUrl !== subTab) {
@@ -1001,7 +1033,7 @@ export default function SalesInvoices() {
           name={selectedInvoice.name}
           title={selectedInvoice.customer_name}
           onClose={() => {
-            setSelectedInvoice(null);
+            sluitFactuur();
             // Refresh whichever list is currently visible so a newly-created
             // draft shows up in the table.
             loadData();

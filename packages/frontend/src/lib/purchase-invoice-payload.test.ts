@@ -130,6 +130,45 @@ test("todayIso gebruikt de lokale datum, niet UTC", () => {
 
 /* ─────────────────────── Vervaldatum uit de termijn ──────────────────── */
 
+test("laat ingeboekt: een vervaldatum vóór de boekdatum wordt de boekdatum, zonder standaardtermijn", () => {
+  // Factuur van 30 juli, 21 dagen termijn (vervalt 20 augustus), pas op 3 september geboekt.
+  const payload = buildPurchaseInvoicePayload(
+    input({ billDate: "2026-07-30", postingDate: "2026-09-03", dueDate: "2026-08-20" }),
+    NOW,
+  );
+  assert.equal(payload.due_date, "2026-09-03");
+  assert.equal(payload.ignore_default_payment_terms_template, 1);
+  assert.equal(payload.payment_terms_template, "");
+});
+
+test("op tijd ingeboekt: de vervaldatum uit de termijn blijft, de standaardtermijn ook", () => {
+  const payload = buildPurchaseInvoicePayload(
+    input({ billDate: "2026-08-20", postingDate: "2026-08-27", dueDate: "2026-09-10" }),
+    NOW,
+  );
+  assert.equal(payload.due_date, "2026-09-10");
+  assert.equal("ignore_default_payment_terms_template" in payload, false);
+  assert.equal("payment_terms_template" in payload, false);
+});
+
+test("btw: sjabloon en regels gaan mee in de payload", () => {
+  const regels = [{
+    charge_type: "On Net Total", account_head: "VAT 21% - OSB", description: "VAT 21%", rate: 21,
+    category: "Total", add_deduct_tax: "Add", included_in_print_rate: 1,
+  }];
+  const payload = buildPurchaseInvoicePayload(
+    input({ taxesTemplate: "Netherlands VAT 21% - OSB", taxes: regels }), NOW,
+  );
+  assert.equal(payload.taxes_and_charges, "Netherlands VAT 21% - OSB");
+  assert.deepEqual(payload.taxes, regels);
+});
+
+test("btw: zonder regels geen sjabloon en geen taxes in de payload", () => {
+  const payload = buildPurchaseInvoicePayload(input({ taxesTemplate: "Netherlands VAT 21% - OSB", taxes: [] }), NOW);
+  assert.equal("taxes" in payload, false);
+  assert.equal("taxes_and_charges" in payload, false);
+});
+
 test("dueDateFromTerms rekent vanaf de factuurdatum, niet vanaf de boekdatum", () => {
   // De echte factuur waarop dit stukliep: 30 juli, termijn 21 dagen, pas op
   // 3 september geboekt. ERPNext mikte op 24 september en stond maximaal
@@ -179,8 +218,10 @@ test("dueDateFromTerms zwijgt wanneer er niets te rekenen is", () => {
 });
 
 test("de vervaldatum gaat als due_date mee in de payload", () => {
-  const payload = buildPurchaseInvoicePayload(input({ dueDate: "2026-08-20" }), NOW);
-  assert.equal(payload.due_date, "2026-08-20");
+  // Na de boekdatum (27-08): dan gaat hij ongewijzigd mee. Een vervaldatum
+  // die al verstreken is heeft hierboven een eigen test.
+  const payload = buildPurchaseInvoicePayload(input({ dueDate: "2026-09-17" }), NOW);
+  assert.equal(payload.due_date, "2026-09-17");
   // Zonder vervaldatum blijft het veld weg, zodat ERPNext hem zelf bepaalt.
   assert.equal("due_date" in buildPurchaseInvoicePayload(input(), NOW), false);
 });

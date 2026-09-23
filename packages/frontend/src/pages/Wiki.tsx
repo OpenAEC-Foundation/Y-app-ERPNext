@@ -6,6 +6,8 @@ import {
   FileText, Clock, Check, AlertTriangle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import KennisbankHome from "../components/wiki/KennisbankHome";
+import { leesTellingen, telGeopend, type Tellingen } from "../lib/wiki-overzicht";
 
 /* ─── Types ─── */
 
@@ -132,6 +134,21 @@ export default function Wiki() {
   // instance die de module wél heeft maar simpelweg nog geen pagina's.
   const [moduleUnavailable, setModuleUnavailable] = useState(false);
   const [selectedPage, setSelectedPage] = useState<WikiPage | null>(null);
+  /** Hoe vaak jij elk artikel opende; staat in deze browser. */
+  const [tellingen, setTellingen] = useState<Tellingen>(() => leesTellingen());
+
+  /** Een artikel openen vanaf de hoofdpagina, en meteen meetellen. */
+  const openArtikel = useCallback((artikelNaam: string) => {
+    setPages((huidig) => {
+      const gevonden = huidig.find((x) => x.name === artikelNaam);
+      if (gevonden) {
+        setSelectedPage(gevonden);
+        setMode("view");
+        setTellingen((vorige) => telGeopend(artikelNaam, vorige));
+      }
+      return huidig;
+    });
+  }, []);
   const [mode, setMode] = useState<Mode>("view");
   const [searchQuery, setSearchQuery] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -394,16 +411,13 @@ export default function Wiki() {
            takes the full screen); always visible on md+ ─── */}
       <div className={`${!selectedPage ? "hidden md:flex" : "flex"} flex-1 flex-col min-w-0 bg-slate-50`}>
         {!selectedPage ? (
-          /* Empty state (only seen on desktop) */
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-semibold text-slate-400 mb-1">{t("wiki.select_page")}</h3>
-              <p className="text-sm text-slate-400">
-                {t("wiki.select_or_create_hint")}
-              </p>
-            </div>
-          </div>
+          /* De hoofdpagina van de kennisbank: wat staat er allemaal? */
+          <KennisbankHome
+            artikelen={pages.map((p) => ({ name: p.name, title: p.title, route: p.route, modified: p.modified }))}
+            tellingen={tellingen}
+            onOpen={openArtikel}
+            onNieuw={() => setShowNewModal(true)}
+          />
         ) : mode === "view" ? (
           /* ─── VIEW MODE ─── */
           <div className="flex-1 flex flex-col overflow-hidden">

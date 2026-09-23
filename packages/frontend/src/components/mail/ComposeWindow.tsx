@@ -1,13 +1,14 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
-  ChevronRight, ChevronDown, X, FolderKanban, Star, ExternalLink,
+  ChevronRight, ChevronDown, X, Star, ExternalLink,
   Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link, Image,
   RefreshCw, Paperclip, Send, Cloud, Loader2, Folder, File, Link2, Forward,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useIsMobile } from "../../lib/useIsMobile";
 import { getActiveInstanceId } from "../../lib/instances";
-import { useProjects, type ProjectRecord } from "../../lib/DataContext";
+import { useProjects } from "../../lib/DataContext";
+import ProjectOnderwerpKnop from "./ProjectOnderwerpKnop";
 import {
   type RecipientSuggestion,
   loadFrequencyMap, bumpFrequency, parseRecipientEmails,
@@ -82,27 +83,8 @@ export default function ComposeWindow({ compose, onClose, onSendBackground, conf
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
-  // Project → onderwerp: kies een ERPNext-project en plak "<id> <projectnaam>"
-  // vóór het onderwerp. Hergebruikt dezelfde projectenlijst als de ReadingPane.
+  // De projectenlijst voor de knop "Project" naast het onderwerp.
   const projects = useProjects();
-  const [showSubjectProject, setShowSubjectProject] = useState(false);
-  const [subjectProjectSearch, setSubjectProjectSearch] = useState("");
-  const subjectProjectList = useMemo(() => {
-    const q = subjectProjectSearch.trim().toLowerCase();
-    const list = q
-      ? projects.filter(p =>
-          (p.project_name || "").toLowerCase().includes(q) ||
-          (p.name || "").toLowerCase().includes(q) ||
-          (p.customer_name || "").toLowerCase().includes(q))
-      : projects.filter(p => p.status === "Open" || p.status === "Working" || p.status === "In Progress");
-    return list.slice(0, 20);
-  }, [projects, subjectProjectSearch]);
-  function addProjectToSubject(p: ProjectRecord) {
-    const prefix = `${p.name}${p.project_name ? " " + p.project_name : ""}`;
-    setSubject(prev => (prev.trim() ? `${prefix} ${prev}` : prefix));
-    setShowSubjectProject(false);
-    setSubjectProjectSearch("");
-  }
 
   // Draggable & resizable state
   const [pos, setPos] = useState({ x: 0, y: 0 }); // offset from default position
@@ -628,46 +610,7 @@ export default function ComposeWindow({ compose, onClose, onSendBackground, conf
           <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
             onFocus={closeSuggestions}
             className="flex-1 text-sm border-0 focus:outline-none focus:ring-0 py-1 font-medium" />
-          <div className="relative shrink-0">
-            <button type="button" title={t("webmail.subject_add_project")}
-              onClick={() => { closeSuggestions(); setShowSubjectProject(v => !v); }}
-              className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-700 hover:bg-teal-50 px-2 py-1 rounded cursor-pointer">
-              <FolderKanban size={13} /> {t("webmail.subject_add_project_short")}
-            </button>
-            {showSubjectProject && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSubjectProject(false)} />
-                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-slate-200 w-80 z-50 overflow-hidden">
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <input type="text" value={subjectProjectSearch} onChange={(e) => setSubjectProjectSearch(e.target.value)}
-                      placeholder={t("hours_widget.search_project_placeholder")} autoFocus
-                      className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-teal-500/30" />
-                  </div>
-                  <div className="max-h-[250px] overflow-y-auto">
-                    {subjectProjectList.length === 0 && (
-                      <p className="text-xs text-slate-400 text-center py-4">{t("common.no_projects_found")}</p>
-                    )}
-                    {subjectProjectList.map(p => (
-                      <button type="button" key={p.name} onClick={() => addProjectToSubject(p)}
-                        className="w-full text-left px-3 py-2 hover:bg-teal-50 cursor-pointer flex items-center gap-2 border-b border-slate-50">
-                        <FolderKanban size={13} className="text-teal-500 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium text-slate-700 truncate flex items-center gap-1.5">
-                            <span className="font-mono text-violet-700 shrink-0">{p.name}</span>
-                            <span className="truncate">{p.project_name || ""}</span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {p.customer_name && <span>{p.customer_name} · </span>}
-                            {p.status}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <ProjectOnderwerpKnop projects={projects} subject={subject} onSubject={setSubject} onOpen={closeSuggestions} />
         </div>
 
         {/* Recipient suggestions dropdown — positioned below the active field. */}

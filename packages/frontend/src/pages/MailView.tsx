@@ -43,6 +43,7 @@ import {
   type ConnectionIndex, type MailConnection,
 } from "../lib/mail-connections";
 import { isInlineAttachment, arrayBufferToBase64 } from "../lib/attachment-utils";
+import { linkifyEscapedHtml } from "../lib/linkify";
 import { isPermissionError } from "../lib/permission-error";
 import { attachExternalLinkHandler } from "../lib/mail-format";
 import { makeExternalLinkOpener } from "../lib/desktop";
@@ -57,6 +58,8 @@ import {
 } from "../lib/erp-relation";
 import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
 import type { BookingResult } from "../lib/purchase-invoice";
+import { useGeboekteFacturen } from "../lib/useGeboekteFacturen";
+import { GeboekteFactuurBalk } from "../components/mail/GeboekteFactuur";
 import {
   classifyMailIntent, classifySender,
   type MailIntentContext,
@@ -68,6 +71,7 @@ import {
 } from "../lib/mail-suggestions";
 import { suggestProject, type ProjectHint, type ProjectSuggestion } from "../lib/project-suggest";
 import { fetchProjectHints, fetchSenderProjectHistory, linkMailToProject } from "../lib/project-link";
+import ProjectOnderwerpKnop from "../components/mail/ProjectOnderwerpKnop";
 
 interface MailAddress {
   name: string;
@@ -157,8 +161,8 @@ function formatSize(bytes: number): string {
 // met Webmail's ReadingPane). Geen lokale duplicaat meer.
 
 function textBodyToHtml(text: string): string {
-  const escaped = (text || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
-  return escaped.replace(/\r?\n/g, "<br>");
+  // Ge-escaped, met klikbare links; zie lib/linkify.ts.
+  return linkifyEscapedHtml(text || "").replace(/\r?\n/g, "<br>");
 }
 
 async function fetchSignature(emailAddress: string): Promise<string> {
@@ -882,7 +886,7 @@ function ImapMailView() {
             ref={bodyIframeRef}
             title={msg.subject || "Email"}
             sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            srcDoc={`<!DOCTYPE html><html><head><base target="_blank"></head><body>${msg.htmlBody || `<pre style="font-family:sans-serif;padding:16px;white-space:pre-wrap;">${(msg.textBody || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] || c))}</pre>`}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html><head><base target="_blank"></head><body>${msg.htmlBody || `<pre style="font-family:sans-serif;padding:16px;white-space:pre-wrap;">${linkifyEscapedHtml(msg.textBody || "")}</pre>`}</body></html>`}
             onLoad={handleBodyIframeLoad}
             className="w-full border-0"
             style={{ height: `${bodyIframeHeight}px` }}
@@ -958,20 +962,6 @@ function StandaloneCompose({ draft, fromAddr, acct, account, inReplyTo, referenc
   const [bcc, setBcc] = useState("");
   const [showCcBcc, setShowCcBcc] = useState(!!draft.cc);
   const [subject, setSubject] = useState(draft.subject);
-  const [showSubjectProject, setShowSubjectProject] = useState(false);
-  const [subjectProjectSearch, setSubjectProjectSearch] = useState("");
-  const subjectProjectList = (subjectProjectSearch.trim()
-    ? projects.filter(p => {
-        const q = subjectProjectSearch.trim().toLowerCase();
-        return (p.project_name || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q);
-      })
-    : projects).slice(0, 20);
-  function addProjectToSubject(p: ProjectRow) {
-    const prefix = `${p.name}${p.project_name ? " " + p.project_name : ""}`;
-    setSubject(prev => (prev.trim() ? `${prefix} ${prev}` : prefix));
-    setShowSubjectProject(false);
-    setSubjectProjectSearch("");
-  }
   const [forwardedAttachments, setForwardedAttachments] = useState(draft.forwardedAttachments);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -1092,40 +1082,7 @@ function StandaloneCompose({ draft, fromAddr, acct, account, inReplyTo, referenc
           <div className="flex items-center gap-2 text-sm relative">
             <span className="w-12 text-slate-500">Onderwerp</span>
             <input value={subject} onChange={e => setSubject(e.target.value)} className="flex-1 px-2 py-1 focus:outline-none" />
-            <div className="relative shrink-0">
-              <button type="button" title="Project in onderwerp"
-                onClick={() => setShowSubjectProject(v => !v)}
-                className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-700 hover:bg-teal-50 px-2 py-1 rounded cursor-pointer">
-                <FolderKanban size={13} /> Project
-              </button>
-              {showSubjectProject && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowSubjectProject(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-slate-200 w-80 z-50 overflow-hidden">
-                    <div className="px-3 py-2 border-b border-slate-100">
-                      <input type="text" value={subjectProjectSearch} onChange={e => setSubjectProjectSearch(e.target.value)}
-                        placeholder="Zoek project…" autoFocus
-                        className="w-full text-xs px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-teal-500/30" />
-                    </div>
-                    <div className="max-h-[250px] overflow-y-auto">
-                      {subjectProjectList.length === 0 && (
-                        <p className="text-xs text-slate-400 text-center py-4">Geen projecten gevonden</p>
-                      )}
-                      {subjectProjectList.map(p => (
-                        <button type="button" key={p.name} onClick={() => addProjectToSubject(p)}
-                          className="w-full text-left px-3 py-2 hover:bg-teal-50 cursor-pointer flex items-center gap-2 border-b border-slate-50">
-                          <FolderKanban size={13} className="text-teal-500 shrink-0" />
-                          <div className="min-w-0 flex-1 text-xs font-medium text-slate-700 truncate flex items-center gap-1.5">
-                            <span className="font-mono text-violet-700 shrink-0">{p.name}</span>
-                            <span className="truncate">{p.project_name || ""}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <ProjectOnderwerpKnop projects={projects} subject={subject} onSubject={setSubject} />
           </div>
         </div>
 
@@ -1459,6 +1416,15 @@ function ErpNextMailView({ name }: { name: string }) {
     return guess;
   }, [doc, body, intentCtx, dismissed, reference, name, herkenningAan]);
 
+  /** Staat deze factuur al in ERPNext? Zie `useGeboekteFacturen`. */
+  const factuurKandidaten = useMemo(() => {
+    const gok = intent?.kind === "purchase-invoice" ? intent.invoice : undefined;
+    return gok?.invoiceNo
+      ? [{ naam: name, billNo: gok.invoiceNo, ...(gok.supplier ? { supplier: gok.supplier } : {}) }]
+      : [];
+  }, [intent, name]);
+  const geboekteFactuur = useGeboekteFacturen(factuurKandidaten).get(name);
+
   /**
    * De offerte-actie — exact dezelfde beslisregel als in `Webmail.tsx`, uit
    * `mail-quote-actions.ts`. Dat is het hele punt van die module: de popout en
@@ -1614,7 +1580,9 @@ function ErpNextMailView({ name }: { name: string }) {
               />
             )}
             {/* Afvinken kan ook hier: wie een mail in een eigen tabblad
-                openzet, werkt hem daar af — niet terug in de lijst. */}
+                openzet, werkt hem daar af — niet terug in de lijst. Alleen bij
+                binnengekomen post: een verzonden mail handel je niet af. */}
+            {doc?.sent_or_received !== "Sent" && (
             <button onClick={() => void toggleHandled()} disabled={handledBusy}
               title={t("y_next.mail_shortcut_hint", {
                 label: handled ? t("y_next.mail_reopen") : t("y_next.mail_mark_handled"),
@@ -1628,13 +1596,18 @@ function ErpNextMailView({ name }: { name: string }) {
               {handled ? <Undo2 size={11} /> : <CheckCheck size={11} />}
               {handled ? t("y_next.mail_reopen") : t("y_next.mail_handled")}
             </button>
+            )}
           </div>
           {handledError && (
             <p className="mt-1 text-[11px] text-red-600">{handledError}</p>
           )}
         </div>
 
-        {intent?.kind === "purchase-invoice" && (
+        {intent?.kind === "purchase-invoice" && geboekteFactuur && (
+          <GeboekteFactuurBalk factuur={geboekteFactuur} className="px-6"
+            onTochInboeken={() => setBookingOpen(true)} />
+        )}
+        {intent?.kind === "purchase-invoice" && !geboekteFactuur && (
           <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-6 py-2">
             <Receipt size={14} className="flex-shrink-0 text-amber-600" />
             <span className="text-xs font-medium text-amber-900">{t("y_next.pinv_banner")}</span>
@@ -1831,6 +1804,7 @@ function ErpNextMailView({ name }: { name: string }) {
         {body && (
           <ErpAttachmentList
             attachments={body.attachments}
+            berichtHtml={body.html}
             onError={setPopupError}
             subject={doc?.subject}
             className="border-t border-slate-200 px-6 py-4"

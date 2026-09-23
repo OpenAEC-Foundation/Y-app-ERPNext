@@ -57,6 +57,87 @@ test("bouwAfspraakIcs maakt van een hele dag een datum, met DTEND op de dag erna
   assert.ok(r.includes("DTEND;VALUE=DATE:20260911"));
 });
 
+/** De regels binnen één onderdeel van de VTIMEZONE, bijvoorbeeld DAYLIGHT. */
+function onderdeel(r: string[], naam: string): string[] {
+  const begin = r.indexOf(`BEGIN:${naam}`);
+  const eind = r.indexOf(`END:${naam}`, begin);
+  return begin < 0 || eind < 0 ? [] : r.slice(begin + 1, eind);
+}
+
+test("bouwAfspraakIcs definieert de tijdzone die hij noemt, vóór de afspraak", () => {
+  // Zonder VTIMEZONE leest Outlook een TZID die het niet kent als UTC: een
+  // afspraak om 10:00 in Nederland kwam daar in de zomer binnen als 12:00.
+  const r = regels(bouwAfspraakIcs(afspraak(), NU));
+  const begin = r.indexOf("BEGIN:VTIMEZONE");
+  assert.ok(begin >= 0, "geen VTIMEZONE in het bestand");
+  assert.ok(begin < r.indexOf("BEGIN:VEVENT"));
+  assert.equal(r[begin + 1], "TZID:Europe/Amsterdam");
+  assert.deepEqual(onderdeel(r, "DAYLIGHT"), [
+    "DTSTART:20260329T020000", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0200",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+  ]);
+  assert.deepEqual(onderdeel(r, "STANDARD"), [
+    "DTSTART:20261025T030000", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
+  ]);
+});
+
+test("bouwAfspraakIcs: een zone zonder zomertijd krijgt één vaste STANDARD", () => {
+  const r = regels(bouwAfspraakIcs(afspraak({ tijdzone: "Asia/Tokyo" }), NU));
+  assert.equal(r.filter((x) => x === "BEGIN:VTIMEZONE").length, 1);
+  assert.equal(r.includes("BEGIN:DAYLIGHT"), false);
+  assert.deepEqual(onderdeel(r, "STANDARD"), ["DTSTART:19700101T000000", "TZOFFSETFROM:+0900", "TZOFFSETTO:+0900"]);
+});
+
+test("bouwAfspraakIcs: op het zuidelijk halfrond begint de zomertijd in oktober", () => {
+  const r = regels(bouwAfspraakIcs(afspraak({ tijdzone: "Australia/Sydney" }), NU));
+  assert.deepEqual(onderdeel(r, "DAYLIGHT"), [
+    "DTSTART:20261004T020000", "TZOFFSETFROM:+1000", "TZOFFSETTO:+1100",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=1SU",
+  ]);
+  assert.deepEqual(onderdeel(r, "STANDARD"), [
+    "DTSTART:20260405T030000", "TZOFFSETFROM:+1100", "TZOFFSETTO:+1000",
+    "RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=1SU",
+  ]);
+});
+
+test("bouwAfspraakIcs: een hele dag heeft geen tijdzone, en dus geen VTIMEZONE", () => {
+  const r = regels(bouwAfspraakIcs(afspraak({
+    heleDag: true, start: "2026-09-10T00:00:00", eind: "2026-09-10T00:00:00",
+  }), NU));
+  assert.equal(r.includes("BEGIN:VTIMEZONE"), false);
+});
+
+test("bouwAfspraakIcs: een onbekende zone breekt het bestand niet", () => {
+  const r = regels(bouwAfspraakIcs(afspraak({ tijdzone: "Nergens/Niet" }), NU));
+  assert.ok(r.includes("BEGIN:VEVENT"));
+  assert.equal(r.includes("BEGIN:VTIMEZONE"), false);
+});
+
+test("maakAfzegging vult een ontbrekende VTIMEZONE aan, en verdubbelt er geen", () => {
+  // Afspraken die al zonder VTIMEZONE op de mailserver staan: zonder dit krijgt
+  // de afzegging dezelfde verschuiving als de uitnodiging.
+  const zonder = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT", "UID:x@3bm.co.nl", "SEQUENCE:0",
+    "DTSTART;TZID=Europe/Amsterdam:20260923T090000", "DTEND;TZID=Europe/Amsterdam:20260923T113000",
+    "END:VEVENT", "END:VCALENDAR", "",
+  ].join("\r\n");
+  const r = regels(maakAfzegging(zonder));
+  assert.equal(r.filter((x) => x === "BEGIN:VTIMEZONE").length, 1);
+  assert.ok(r.indexOf("BEGIN:VTIMEZONE") < r.indexOf("BEGIN:VEVENT"));
+  assert.ok(r.includes("TZID:Europe/Amsterdam"));
+  const nogEens = regels(maakAfzegging(maakAfzegging(zonder)));
+  assert.equal(nogEens.filter((x) => x === "BEGIN:VTIMEZONE").length, 1);
+});
+
+test("leesAfspraakIcs neemt de tijd van de afspraak, niet een DTSTART uit de VTIMEZONE", () => {
+  // De VTIMEZONE bevat zelf ook DTSTART-regels (het moment van verspringen).
+  // Die horen nooit voor de begintijd van de afspraak aangezien te worden.
+  const gelezen = leesAfspraakIcs(bouwAfspraakIcs(afspraak(), NU));
+  assert.ok(String(gelezen.start).startsWith("2026-09-10"), `start was ${gelezen.start}`);
+  assert.ok(String(gelezen.start).includes("10:00"), `start was ${gelezen.start}`);
+});
+
 test("bouwAfspraakIcs zet METHOD:REQUEST alleen als er genodigden zijn", () => {
   assert.ok(regels(bouwAfspraakIcs(afspraak(), NU)).includes("METHOD:REQUEST"));
   const zonder = regels(bouwAfspraakIcs(afspraak({ genodigden: [] }), NU));
@@ -297,4 +378,14 @@ test("maakAfzegging: zonder METHOD of SEQUENCE komen ze erbij", () => {
   assert.ok(regels.includes("STATUS:CANCELLED"));
   // METHOD hoort in de kalender, niet in de afspraak.
   assert.ok(regels.indexOf("METHOD:CANCEL") < regels.indexOf("BEGIN:VEVENT"));
+});
+
+test("bouwAfspraakIcs zet een herhaling als RRULE in de afspraak", () => {
+  const ics = bouwAfspraakIcs({
+    uid: "y-next-herhaal", titel: "Planningsoverleg", start: "2026-09-21T09:00:00", eind: "2026-09-21T10:00:00",
+    tijdzone: "Europe/Amsterdam", organisator: { email: "maarten@3bm.co.nl" },
+    herhaling: { frequency: "weekly", interval: 1, byDay: [{ day: "mo" }] },
+  });
+  assert.match(ics, /\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n/);
+  assert.ok(ics.indexOf("RRULE:FREQ=WEEKLY") > ics.indexOf("BEGIN:VEVENT"));
 });

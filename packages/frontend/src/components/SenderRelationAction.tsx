@@ -27,7 +27,7 @@ import { Building2, ExternalLink, UserPlus } from "lucide-react";
 import { relationDocUrl, type ExistingRelation } from "../lib/erp-relation";
 import { getErpNextLinkUrl } from "../lib/erpnext";
 
-export type RelationSlotTone = "violet" | "amber" | "slate";
+export type RelationSlotTone = "violet" | "amber" | "rood" | "slate";
 
 /** Knop- en chipklassen per balkkleur. */
 const TONES: Record<RelationSlotTone, { button: string; chip: string }> = {
@@ -38,6 +38,12 @@ const TONES: Record<RelationSlotTone, { button: string; chip: string }> = {
   amber: {
     button: "text-amber-800 hover:bg-amber-100",
     chip: "bg-amber-100 text-amber-800 hover:bg-amber-200",
+  },
+  // Rood: de inkoopfactuurbalk. Een factuur die nog geboekt moet worden is
+  // geen achtergrondinformatie maar iets wat geld kost als het blijft liggen.
+  rood: {
+    button: "text-red-800 hover:bg-red-100",
+    chip: "bg-red-100 text-red-800 hover:bg-red-200",
   },
   slate: {
     button: "border border-slate-200 text-slate-500 hover:bg-slate-50",

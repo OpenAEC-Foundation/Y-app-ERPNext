@@ -16,7 +16,7 @@ import {
   DECLARATIE_STATUSSEN, KM_DOCTYPE, ONKOSTEN_DOCTYPE,
   beoordeel, createOnkosten, dienIn,
   fetchKmRegistraties, fetchOnkosten, fetchOnkostensoorten,
-  formatErpDate, totaleKilometers,
+  formatErpDate, totaleKilometers, verwijderKmRegistratie,
   type DeclaratieStatus, type KmRegistratie, type Onkostenpost,
 } from "../lib/declaraties";
 import { DEFAULT_KM_TARIEF, fetchKmTarief, saveKmTarief } from "../lib/kmTarief";
@@ -189,7 +189,10 @@ function MijnKilometers({ signaal = 0 }: { signaal?: number }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const concepten = useMemo(() => ritten.filter((r) => r.status === "Concept"), [ritten]);
+  // Een rit in een reisaanvraag dient de werkgever met de hele maand in, niet
+  // de medewerker per rit.
+  const concepten = useMemo(() => ritten.filter((r) => r.status === "Concept" && !r.reisaanvraag), [ritten]);
+  const reisaanvraag = ritten.find((r) => r.reisaanvraag)?.reisaanvraag;
 
   async function dienConceptenIn() {
     setBusy(true);
@@ -207,7 +210,7 @@ function MijnKilometers({ signaal = 0 }: { signaal?: number }) {
   async function verwijder(rit: KmRegistratie) {
     setError(null);
     try {
-      await deleteDocument(KM_DOCTYPE, rit.name);
+      await verwijderKmRegistratie(rit);
       setRitten((prev) => prev.filter((r) => r.name !== rit.name));
     } catch (err) {
       setError(describeError(err, "common.delete_failed"));
@@ -233,6 +236,9 @@ function MijnKilometers({ signaal = 0 }: { signaal?: number }) {
 
       {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
       <ModuleNotice show={!loading && doctypeMissing} />
+      {reisaanvraag && (
+        <p className="mb-3 text-xs text-slate-500">{t("declaraties.km_in_travel_request", { name: reisaanvraag })}</p>
+      )}
 
       {loading ? (
         <p className="text-center text-slate-400 py-4 text-sm">{t("common.loading")}</p>

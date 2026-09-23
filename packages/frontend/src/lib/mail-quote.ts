@@ -147,6 +147,80 @@ export function splitQuoteFromBody(html: string): { typed: string; quote: string
   };
 }
 
+/* ─── De ondertekening in de opsteller ─── */
+
+/**
+ * Het attribuut dat de ondertekening in het opstelvenster markeert.
+ *
+ * De ondertekening stond als vaste strook onder het tekstvak — zelfs onder het
+ * citaat — en werd pas bij verzenden tussen tekst en citaat gezet. Aanpassen
+ * kon niet. Nu staat hij als gewone inhoud in het vak, één keer ingevoegd bij
+ * het openen: onder je tekst, boven het citaat, en te bewerken of te wissen
+ * zoals elke andere alinea.
+ */
+export const ONDERTEKENING_ATTR = "data-y-ondertekening";
+
+const ONDERTEKENING_OPEN_RE = new RegExp(`<div\\b[^>]*\\b${ONDERTEKENING_ATTR}\\b[^>]*>`, "i");
+/** Elke div-tag, om geneste divs in de ondertekening goed te tellen. */
+const ANY_DIV_RE = /<(\/?)div\b[^>]*>/gi;
+
+/** Staat de ondertekening al in deze opsteller-inhoud? */
+export function heeftOndertekening(html: string): boolean {
+  return ONDERTEKENING_OPEN_RE.test(String(html || ""));
+}
+
+/**
+ * Zet de ondertekening één keer in de opsteller-inhoud: boven het citaat als er
+ * een is, anders onderaan met ruimte erboven om te typen. Staat hij er al, dan
+ * verandert er niets — ook niet als hij daar intussen is aangepast.
+ */
+export function voegOndertekeningIn(body: string, ondertekening: string): string {
+  const src = String(body || "");
+  const sig = String(ondertekening || "").trim();
+  if (!sig || heeftOndertekening(src)) return src;
+  const blok = `<div ${ONDERTEKENING_ATTR}="1">${sanitizeEditorHtml(sig)}</div>`;
+  const citaat = QUOTE_OPEN_RE.exec(src);
+  if (citaat) return src.slice(0, citaat.index) + blok + src.slice(citaat.index);
+  const ruimte = src.trim() ? "" : "<p><br></p><p><br></p>";
+  return `${ruimte}${src}${blok}`;
+}
+
+/**
+ * Haalt de ondertekening vlak voor verzenden uit de getypte tekst.
+ *
+ * Apart, om dezelfde reden als het citaat: `toEmailHtml` haalt base64-afbeeldingen
+ * uit getypte tekst, en de foto in de ondertekening staat er juist zo in. De
+ * inhoud komt terug zoals hij in het vak stond, dus ook met wat de gebruiker
+ * eraan veranderde. Tekst die ónder de ondertekening getypt is, gaat bij de
+ * tekst erboven.
+ */
+export function splitsOndertekening(html: string): { tekst: string; ondertekening: string } {
+  const src = String(html || "");
+  const open = ONDERTEKENING_OPEN_RE.exec(src);
+  if (!open) return { tekst: src, ondertekening: "" };
+
+  const binnenBegin = open.index + open[0].length;
+  let diepte = 1;
+  let binnenEind = src.length;
+  let naBegin = src.length;
+  ANY_DIV_RE.lastIndex = binnenBegin;
+  let m: RegExpExecArray | null;
+  while ((m = ANY_DIV_RE.exec(src))) {
+    diepte += m[1] === "/" ? -1 : 1;
+    if (diepte === 0) {
+      binnenEind = m.index;
+      naBegin = m.index + m[0].length;
+      break;
+    }
+  }
+  ANY_DIV_RE.lastIndex = 0;
+
+  return {
+    tekst: src.slice(0, open.index) + src.slice(naBegin),
+    ondertekening: src.slice(binnenBegin, binnenEind),
+  };
+}
+
 /**
  * Ruwe schatting van het aantal regels dat een stuk HTML oplevert.
  *

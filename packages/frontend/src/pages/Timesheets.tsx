@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchAll, fetchDocument, updateDocument, callMethod, getErpNextLinkUrl } from "../lib/erpnext";
 import UrenBoekenWidget from "../components/UrenBoekenWidget";
+import UrenRapport from "../components/UrenRapport";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { useEmployees, useProjects } from "../lib/DataContext";
 import {
@@ -45,8 +46,8 @@ export default function Timesheets() {
   const { t } = useTranslation();
   const viewMode = getViewMode();
   const [searchParams, setSearchParams] = useSearchParams();
-  type TabId = "overzicht" | "boeken" | "goedkeuren";
-  const validTabs: TabId[] = ["overzicht", "boeken", "goedkeuren"];
+  type TabId = "overzicht" | "boeken" | "goedkeuren" | "rapporten";
+  const validTabs: TabId[] = ["overzicht", "boeken", "goedkeuren", "rapporten"];
   const tabFromUrl = searchParams.get("tab");
   const initialTab: TabId = (validTabs.includes(tabFromUrl as TabId) ? tabFromUrl : "boeken") as TabId;
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
@@ -102,6 +103,16 @@ export default function Timesheets() {
         >
           <Plus size={16} /> {t("timesheets.tab.book_hours")}
         </button>
+        <button
+          onClick={() => selectTab("rapporten")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
+            activeTab === "rapporten"
+              ? "bg-y-teal text-white"
+              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+          }`}
+        >
+          <FileText size={16} /> {t("timesheets.tab.reports")}
+        </button>
         {viewMode === "employer" && (
           <button
             onClick={() => selectTab("goedkeuren")}
@@ -119,6 +130,7 @@ export default function Timesheets() {
       {activeTab === "overzicht" && <BoekingenView viewMode={viewMode} />}
       {activeTab === "boeken" && <UrenBoekenWidget showWeekTable={true} layout="side-by-side" />}
       {activeTab === "goedkeuren" && <TimesheetGoedkeuren />}
+      {activeTab === "rapporten" && <UrenRapport viewMode={viewMode} />}
     </div>
   );
 }

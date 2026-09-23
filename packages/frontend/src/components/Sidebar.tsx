@@ -141,6 +141,9 @@ function getSections(): NavSection[] {
         { id: "messenger", labelKey: "nav.messenger", icon: MessageSquare },
         { id: "calendar", labelKey: "nav.calendar", icon: Calendar },
         { id: "weekplanning", labelKey: "nav.weekplanning", icon: CalendarRange },
+        // De kennisbank staat hier en niet onder "Taken & Planning": hij wordt
+        // dagelijks gebruikt en hoort dus bij wat altijd in beeld staat.
+        { id: "wiki", labelKey: "nav.wiki", icon: BookOpen },
         { id: "nextcloud-files", labelKey: "nav.documents", icon: Cloud, visibility: "employer" },
         { id: "financieel-dashboard", labelKey: "nav.statistics", icon: BarChart3, visibility: "employer" },
       ],
@@ -168,7 +171,6 @@ function getSections(): NavSection[] {
         { id: "planning", labelKey: "nav.planning", icon: CalendarDays },
         { id: "timesheets", labelKey: "nav.timesheets", icon: Timer },
         { id: "todo", labelKey: "nav.todo", icon: ListTodo },
-        { id: "wiki", labelKey: "nav.wiki", icon: BookOpen },
       ],
     },
     {
@@ -686,31 +688,39 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
         </div>
       )}
 
-      {/* Collapse toggle — desktop only */}
+      {/* In- en uitklappen. Een knop met een rand eromheen in plaats van een
+          kale balk over de volle breedte: zo is het een bedienbaar ding en
+          niet een streep die toevallig klikbaar is. */}
       {!isMobile && (
-        <button
-          onClick={onToggleCollapse}
-          className="hidden md:flex p-3 border-t border-y-purple-light text-y-teal-light/50 hover:text-white hover:bg-y-purple-light transition-colors cursor-pointer items-center justify-center"
-          title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </button>
+        <div className="hidden md:block border-t border-white/5 px-2 py-2">
+          <button
+            onClick={onToggleCollapse}
+            title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+            aria-label={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+            aria-expanded={!sidebarCollapsed}
+            className={`group flex w-full cursor-pointer items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] py-2 text-y-teal-light/60 transition-colors hover:border-y-teal/30 hover:bg-white/[0.08] hover:text-white ${
+              sidebarCollapsed ? "justify-center px-0" : "px-3"
+            }`}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            {isExpanded && <span className="truncate text-xs font-medium">{t("sidebar.collapse")}</span>}
+          </button>
+        </div>
       )}
 
-      {/* Footer — ERPNext × OpenAEC Foundation logos (only when expanded) */}
+      {/* Waar dit op draait: Frappe, het platform onder de administratie.
+          Alleen als de balk openstaat — ingeklapt is er geen ruimte voor. */}
       {isExpanded && (
-        <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-y-purple-light pointer-events-none">
-          <svg viewBox="0 0 80 18" className="h-4" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="1" width="16" height="16" rx="3" fill="#0089FF" />
-            <text x="8" y="13.5" textAnchor="middle" fontFamily="system-ui, sans-serif" fontWeight="800" fontSize="11" fill="white">E</text>
-            <text x="22" y="14" fontFamily="system-ui, sans-serif" fontWeight="700" fontSize="12" fill="rgba(255,255,255,0.85)">RPNext</text>
-          </svg>
-          <span className="text-xs text-slate-500 font-medium">&times;</span>
-          <svg viewBox="0 0 140 18" className="h-4" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="1" width="16" height="16" rx="3" fill="#10b981" />
-            <text x="8" y="13" textAnchor="middle" fontFamily="system-ui, sans-serif" fontWeight="800" fontSize="10" fill="white">&#x2B21;</text>
-            <text x="22" y="14" fontFamily="system-ui, sans-serif" fontWeight="600" fontSize="10.5" fill="rgba(255,255,255,0.75)">OpenAEC Foundation</text>
-          </svg>
+        <div className="pointer-events-none flex items-center justify-center gap-2 border-t border-white/5 px-3 py-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1">
+            <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-[#2490EF] text-[10px] font-extrabold leading-none text-white">F</span>
+            <span className="text-[11px] font-semibold tracking-tight text-white/80">Frappe</span>
+          </span>
+          <span className="text-[10px] text-white/25">&times;</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1">
+            <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-emerald-500 text-[10px] font-extrabold leading-none text-white">&#x2B21;</span>
+            <span className="text-[11px] font-medium tracking-tight text-white/70">OpenAEC</span>
+          </span>
         </div>
       )}
     </aside>

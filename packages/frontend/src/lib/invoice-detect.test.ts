@@ -31,6 +31,36 @@ function signals(partial: Partial<InvoiceSignals> & { subject: string; sender: s
   return { attachmentNames: [], ...partial };
 }
 
+/* ────────────────────────────── Btw-tarief ───────────────────────────── */
+
+function btwUit(bodyText: string) {
+  return detectPurchaseInvoice(
+    signals({ subject: "Factuur 263-05192", sender: "info@drukwerkdeal.nl", bodyText, attachmentNames: ["Factuur 263-05192.pdf"] }),
+    SUPPLIERS,
+  );
+}
+
+test("btw: het tarief uit de mailtekst, in beide volgordes", () => {
+  const achter = btwUit("Totaal € 121,00 inclusief 21% btw.");
+  assert.equal(achter.vatRate, 21);
+  assert.ok(achter.reasons.includes("vat:rate"));
+  assert.equal(btwUit("Subtotaal € 100,00. BTW (9%): € 9,00.").vatRate, 9);
+  assert.equal(btwUit("VAT 21 % € 21,00").vatRate, 21);
+});
+
+test("btw verlegd is geen tarief maar een verlegging", () => {
+  const uit = btwUit("Bedrag € 1.250,00. Btw verlegd naar de opdrachtgever.");
+  assert.equal(uit.vatShifted, true);
+  assert.equal(uit.vatRate, undefined);
+  assert.ok(uit.reasons.includes("vat:shifted"));
+});
+
+test("een percentage zonder btw, of een tarief dat hier niet bestaat, telt niet", () => {
+  assert.equal(btwUit("U krijgt 15% korting op € 100,00.").vatRate, undefined);
+  assert.equal(btwUit("Inclusief 15% btw € 115,00").vatRate, undefined);
+  assert.equal(btwUit("Factuur zonder btw-vermelding € 100,00").vatShifted, undefined);
+});
+
 /* ─────────────────────────── Losse bouwstenen ────────────────────────── */
 
 test("normalizeCompanyName snoeit de juridische staart weg", () => {

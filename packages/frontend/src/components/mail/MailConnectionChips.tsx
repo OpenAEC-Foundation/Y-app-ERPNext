@@ -12,15 +12,17 @@
  * ook waar je de mail onder terugvindt.
  */
 
-import { ExternalLink } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { ArrowUpRight, ExternalLink } from "lucide-react";
 import { CONNECTION_TONE, connectionIcon, erpDocPath } from "../../lib/connection-visuals";
-import type { MailConnection } from "../../lib/mail-connections";
+import { yNextPadVoor, type MailConnection } from "../../lib/mail-connections";
 
 export default function MailConnectionChips({ connections, onOpen }: {
   connections: MailConnection[];
   /** Klik op een chip: filter de lijst op dit object (optioneel). */
   onOpen?: (conn: MailConnection) => void;
 }) {
+  const { t } = useTranslation();
   if (connections.length === 0) return null;
   return (
     <>
@@ -42,6 +44,14 @@ export default function MailConnectionChips({ connections, onOpen }: {
               </button>
             ) : (
               <span title={title} className="max-w-[14rem] truncate">{conn.label}</span>
+            )}
+            {/* Heeft het document een eigen scherm in Y-next (een
+                verkoopfactuur), dan gaat het eerste pijltje daarheen. */}
+            {yNextPadVoor(conn.doctype, conn.name) && (
+              <a href={yNextPadVoor(conn.doctype, conn.name)} title={t("y_next.conn_open_in_app")}
+                className="opacity-60 hover:opacity-100">
+                <ArrowUpRight size={10} />
+              </a>
             )}
             <a href={erpDocPath(conn.doctype, conn.name)} target="_blank" rel="noopener noreferrer"
               title={title} className="opacity-60 hover:opacity-100">

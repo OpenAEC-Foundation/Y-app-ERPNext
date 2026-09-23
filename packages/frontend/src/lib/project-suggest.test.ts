@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { suggestProject, type ProjectHint, type ProjectSuggestSignals } from "./project-suggest.ts";
+import { nummersInOnderwerp, suggestProject, type ProjectHint, type ProjectSuggestSignals } from "./project-suggest.ts";
 
 /**
  * Uittreksel uit de projectlijst van de doelinstance, met precies de twee
@@ -139,4 +139,61 @@ test("geciteerde staart van de mail telt niet mee", () => {
     bodyText: `${filler}\nVan: iemand\nOnderwerp: PROJ-0087 planning`,
   }), PROJECTS);
   assert.equal(hit, null);
+});
+
+/* ── 3BM: vierciferige projectnummers in het onderwerp ── */
+
+const BM: ProjectHint[] = [
+  { name: "3201", projectName: "Controle Sparingen Pauluskerk", customer: "Bouwgroep Schrijver B.V." },
+  { name: "3215", projectName: "Inteco BIM Engineering", customer: "OpenAEC Studio BV" },
+  { name: "2618", projectName: "Uitbreiding kantoorpand Patrijsweg 1 Klundert", customer: "Zettex Group" },
+  { name: "2619", projectName: "Uitbreiding hal Klundert", customer: "Zettex Group" },
+  { name: "2022", projectName: "Herindeling Restaurant Huize Eyken", customer: "Eykenburg" },
+  { name: "2026", projectName: "Dakkapel Zwijndrecht" },
+  { name: "1654", projectName: "Aanbouw Alblasserdam" },
+];
+
+test("3BM: nummer met leesteken in het onderwerp", () => {
+  const hit = suggestProject(mail({ subject: "RE: 3201, detailtekeningen balk", sender: "kees@x.nl" }), BM);
+  assert.equal(hit?.project, "3201");
+  assert.equal(hit?.confidence, "high");
+});
+
+test("3BM: nummer tussen haakjes of voor een tekeningcode", () => {
+  assert.equal(suggestProject(mail({ subject: "Opmerkingen (3215)" }), BM)?.project, "3215");
+  assert.equal(suggestProject(mail({ subject: "3201-CP-21 rev A" }), BM)?.project, "3201");
+});
+
+test("3BM: nummer in het onderwerp wint van afzendergeschiedenis en klant", () => {
+  const hit = suggestProject(mail({
+    subject: "Vraag over 2619",
+    senderProjects: ["2618"],
+    senderCustomer: "Zettex Group",
+  }), BM);
+  assert.equal(hit?.project, "2619");
+});
+
+test("3BM: een datum in het onderwerp is geen projectnummer", () => {
+  assert.equal(suggestProject(mail({ subject: "Overleg 15-09-2026" }), BM), null);
+  assert.equal(suggestProject(mail({ subject: "Planning 2026-09-15" }), BM), null);
+});
+
+test("3BM: een bedrag is geen projectnummer", () => {
+  assert.equal(suggestProject(mail({ subject: "Factuur € 1654,00" }), BM), null);
+  assert.equal(suggestProject(mail({ subject: "Totaal 1654.00" }), BM), null);
+});
+
+test("3BM: jaarachtig projectnummer telt licht, maar wel", () => {
+  const hit = suggestProject(mail({ subject: "2022 Herindeling" }), BM);
+  assert.equal(hit?.project, "2022");
+  assert.equal(hit?.confidence, "medium");
+});
+
+test("3BM: jaarachtig nummer verliest van een sterker signaal", () => {
+  const hit = suggestProject(mail({ subject: "Jaarplanning 2026", senderProjects: ["2618"], senderCustomer: "Zettex Group" }), BM);
+  assert.equal(hit?.project, "2618");
+});
+
+test("nummers uit het onderwerp", () => {
+  assert.deepEqual([...nummersInOnderwerp("RE: 3201, balk (3215) #2618 - 15-09-2026 € 1654,00")].sort(), ["2618", "3201", "3215"]);
 });

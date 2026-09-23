@@ -12,8 +12,19 @@ import {
   type ConnectionRawInput,
   toonLabel,
   zichtbareCategorieen,
+  yNextPadVoor,
   CONNECTION_CATEGORIES,
 } from "./mail-connections.ts";
+
+/* ─────────────────────────── Verkoopfacturen ──────────────────────────── */
+
+test("yNextPadVoor: een verkoopfactuur opent in Y-Next, andere documenten niet", () => {
+  assert.equal(yNextPadVoor("Sales Invoice", "263-05214"), "#/sales?factuur=263-05214");
+  // Een naam met tekens die in een URL iets betekenen blijft heel.
+  assert.equal(yNextPadVoor("Sales Invoice", "26CRB 0007/A"), "#/sales?factuur=26CRB%200007%2FA");
+  assert.equal(yNextPadVoor("Project", "3277"), undefined);
+  assert.equal(yNextPadVoor("Sales Invoice", ""), undefined);
+});
 
 /* ─────────────────────────────── Map-id's ─────────────────────────────── */
 
@@ -49,7 +60,9 @@ test("categoryOfDoctype: alleen de doctypes die een categorie vórmen", () => {
   assert.equal(categoryOfDoctype("Lead"), "lead");
   // Contact is een tussenstap, geen eigen categorie.
   assert.equal(categoryOfDoctype("Contact"), null);
-  assert.equal(categoryOfDoctype("Sales Invoice"), null);
+  // Een factuur die vanuit ERPNext of Y-next verstuurd is, hangt via
+  // `reference_*` aan die factuur; die mails horen bij elkaar.
+  assert.equal(categoryOfDoctype("Sales Invoice"), "sales-invoice");
 });
 
 /* ───────────────────────────── Filterbouwers ──────────────────────────── */
@@ -214,14 +227,17 @@ test("buildConnectionIndex: een Contact zonder klant maakt geen klantconnectie",
   assert.equal(index.byMessage.has("m-supplier-contact"), false);
 });
 
-test("buildConnectionIndex: doctypes zonder categorie (Sales Invoice) tellen niet als connectie", () => {
+test("buildConnectionIndex: een mail aan een verkoopfactuur valt onder Verkoopfacturen", () => {
   const index = buildConnectionIndex(RAW);
-  assert.equal(index.byMessage.has("m-sinv"), false);
+  assert.equal(index.byMessage.has("m-sinv"), true);
+  const verkoop = index.categories.find((c) => c.id === "sales-invoice");
+  assert.ok(verkoop);
+  assert.equal(verkoop.total, 1);
   const unlinked = index.categories.find((c) => c.id === "unlinked");
   assert.ok(unlinked);
-  // m-sinv, m-supplier-contact en m-los.
-  assert.equal(unlinked.total, 3);
-  assert.equal(unlinked.unseen, 2, "m-sinv en m-los zijn ongelezen, m-supplier-contact niet");
+  // m-supplier-contact en m-los; een leverancierscontact is geen categorie.
+  assert.equal(unlinked.total, 2);
+  assert.equal(unlinked.unseen, 1, "m-los is ongelezen, m-supplier-contact niet");
 });
 
 test("buildConnectionIndex: link-rijen van mail die de momentopname niet kent tellen niet mee", () => {

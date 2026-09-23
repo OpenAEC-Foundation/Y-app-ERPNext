@@ -46,13 +46,21 @@ export interface PurchaseInvoiceInput {
   currency?: string;
   /** Omschrijving van de factuurregel. */
   description: string;
-  /** Netto regelbedrag. */
+  /** Regelbedrag: netto, of inclusief btw als de btw-regels op inbegrepen staan. */
   amount: number;
   /** Eenheid van de regel; standaard "Nos". */
   uom?: string;
   costCenter?: string;
   /** Project waaraan de kosten hangen (uit de projectkoppeling van de mail). */
   project?: string;
+  /** Btw-sjabloon (`taxes_and_charges`); gaat alleen mee samen met `taxes`. */
+  taxesTemplate?: string;
+  /**
+   * De btw-regels zoals ze geboekt worden — zie `btwRegelsVoorBoeking`. Staan
+   * ze op "inbegrepen", dan is `amount` het bedrag inclusief btw en haalt
+   * ERPNext het netto er zelf uit.
+   */
+  taxes?: ReadonlyArray<object>;
   /**
    * Vervaldatum (`due_date`, `yyyy-mm-dd`). Laat leeg om ERPNext het zelf te
    * laten bepalen; vul hem met `dueDateFromTerms` zodra er een factuurdatum
@@ -143,9 +151,24 @@ export function buildPurchaseInvoicePayload(
   };
   if (input.billNo?.trim()) payload.bill_no = truncate(input.billNo.trim(), 140);
   if (input.billDate) payload.bill_date = input.billDate;
-  if (input.dueDate) payload.due_date = input.dueDate;
+  if (input.dueDate && input.dueDate < input.postingDate) {
+    // Laat ingeboekt: de termijn was op de boekdatum al verstreken. ERPNext
+    // weigert een vervaldatum vóór de boekdatum, én een vervaldatum na die
+    // van de standaardtermijn — samen maken ze elke late boeking onmogelijk.
+    // De factuur is dan gewoon direct opeisbaar: vervaldatum = boekdatum, en
+    // de standaardtermijn van de leverancier telt voor deze factuur niet mee.
+    payload.due_date = input.postingDate;
+    payload.payment_terms_template = "";
+    payload.ignore_default_payment_terms_template = 1;
+  } else if (input.dueDate) {
+    payload.due_date = input.dueDate;
+  }
   if (input.project?.trim()) payload.project = input.project.trim();
   if (input.costCenter?.trim()) payload.cost_center = input.costCenter.trim();
+  if (input.taxes && input.taxes.length > 0) {
+    if (input.taxesTemplate?.trim()) payload.taxes_and_charges = input.taxesTemplate.trim();
+    payload.taxes = input.taxes.map((regel) => ({ ...regel }));
+  }
   if (input.postingDate < todayIso(now)) {
     payload.set_posting_time = 1;
     payload.posting_time = "00:00:00";

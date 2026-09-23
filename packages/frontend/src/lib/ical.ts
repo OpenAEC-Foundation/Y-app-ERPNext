@@ -13,6 +13,8 @@
  * je met een test kunnen vastleggen in plaats van in een agenda ontdekken.
  */
 
+import { rrule, type Herhaalregel } from "./agenda-herhaling.ts";
+
 export type Deelnamestatus = "needs-action" | "accepted" | "declined" | "tentative";
 
 export interface Genodigde {
@@ -37,6 +39,8 @@ export interface AfspraakInvoer {
   genodigden?: Genodigde[];
   /** Volgnummer; hoger betekent "dit is de nieuwere versie van deze afspraak". */
   volgnummer?: number;
+  /** Terugkerende afspraak: de regel gaat als RRULE mee. */
+  herhaling?: Herhaalregel;
 }
 
 const PARTSTAT: Record<Deelnamestatus, string> = {
@@ -68,6 +72,7 @@ export function bouwAfspraakIcs(afspraak: AfspraakInvoer, nu: Date = new Date())
     `DTSTAMP:${utcStempel(nu)}`,
     `SEQUENCE:${afspraak.volgnummer ?? 0}`,
     ...tijdRegels(afspraak),
+    ...(afspraak.herhaling ? [rrule(afspraak.herhaling, !!afspraak.heleDag)] : []),
     `SUMMARY:${ontsnap(afspraak.titel)}`,
   );
   if (afspraak.omschrijving) regels.push(`DESCRIPTION:${ontsnap(afspraak.omschrijving)}`);
@@ -87,7 +92,7 @@ export function bouwAfspraakIcs(afspraak: AfspraakInvoer, nu: Date = new Date())
   regels.push("END:VEVENT", "END:VCALENDAR");
 
   // CRLF is voorgeschreven, en de afsluitende regeleinde hoort erbij.
-  return regels.flatMap(vouw).join("\r\n") + "\r\n";
+  return vulTijdzonesAan(regels).flatMap(vouw).join("\r\n") + "\r\n";
 }
 
 function tijdRegels(a: AfspraakInvoer): string[] {
@@ -197,7 +202,9 @@ export function maakAfzegging(ics: string): string {
     }
     uit.push(regel);
   }
-  return uit.flatMap(vouw).join("\r\n") + "\r\n";
+  // Een afspraak die zonder VTIMEZONE op de mailserver staat, krijgt er hier
+  // alsnog een; anders verschuift de afzegging net zo als de uitnodiging.
+  return vulTijdzonesAan(uit).flatMap(vouw).join("\r\n") + "\r\n";
 }
 
 export function adresVanRegel(regel: string): string {
@@ -298,6 +305,144 @@ function statusVanParam(waarde?: string): Deelnamestatus {
 }
 
 /* ─────────────────────────── Opmaak van regels ───────────────────────── */
+
+/* ─────────────────────────────── Tijdzones ────────────────────────────── */
+
+/*
+ * Een `TZID` noemen is niet genoeg: de norm wil dat elke genoemde zone in het
+ * bestand zelf gedefinieerd staat, in een VTIMEZONE. Wie dat overslaat, laat de
+ * ontvanger raden. Gmail kent "Europe/Amsterdam" toevallig; Outlook en Exchange
+ * niet, en die lezen de tijd dan als UTC. Een afspraak om 10:00 kwam daar in de
+ * zomer binnen als 12:00. De mailserver stuurt de uitnodiging door zoals hij is
+ * opgeslagen, dus de definitie moet er bij het opslaan al in staan.
+ *
+ * De definitie wordt afgeleid van de klok van dit apparaat (`Intl`), voor het
+ * jaar van de afspraak: wanneer verspringt de klok, van hoeveel naar hoeveel,
+ * en welke regel hoort daarbij ("laatste zondag van maart"). Zo klopt hij ook
+ * voor een zone op het zuidelijk halfrond of een zone zonder zomertijd, zonder
+ * een eigen tabel die veroudert.
+ */
+
+const DAGCODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+/** Hoeveel minuten de klok in de zone van `opmaak` op dit moment voorloopt op UTC. */
+function verschilMinuten(opmaak: Intl.DateTimeFormat, ms: number): number {
+  const delen = opmaak.formatToParts(new Date(ms));
+  const deel = (soort: string) => Number(delen.find((d) => d.type === soort)?.value ?? 0);
+  const alsUtc = Date.UTC(
+    deel("year"), deel("month") - 1, deel("day"), deel("hour") % 24, deel("minute"), deel("second"),
+  );
+  return Math.round((alsUtc - ms) / 60_000);
+}
+
+/** `120` → `+0200`, `-300` → `-0500`. */
+function offsetTekst(minuten: number): string {
+  const teken = minuten < 0 ? "-" : "+";
+  const absoluut = Math.abs(minuten);
+  return `${teken}${String(Math.floor(absoluut / 60)).padStart(2, "0")}${String(absoluut % 60).padStart(2, "0")}`;
+}
+
+/**
+ * De VTIMEZONE van een IANA-zone voor één jaar, als losse regels. Een zone die
+ * dit apparaat niet kent, levert niets op: dan blijft het bestand zoals het was.
+ */
+export function vtimezoneRegels(zone: string, jaar: number): string[] {
+  let opmaak: Intl.DateTimeFormat;
+  try {
+    opmaak = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  } catch {
+    return [];
+  }
+
+  const DAG = 86_400_000;
+  const MINUUT = 60_000;
+  const begin = Date.UTC(jaar, 0, 1);
+  const eind = Date.UTC(jaar + 1, 0, 1);
+  const overgangen: { ms: number; van: number; naar: number }[] = [];
+  let vorige = verschilMinuten(opmaak, begin);
+  for (let t = begin + DAG; t <= eind; t += DAG) {
+    const nu = verschilMinuten(opmaak, t);
+    if (nu === vorige) continue;
+    // Binnen die dag zoeken tot op de minuut.
+    let laag = t - DAG;
+    let hoog = t;
+    while (hoog - laag > MINUUT) {
+      const midden = laag + Math.max(1, Math.floor((hoog - laag) / 2 / MINUUT)) * MINUUT;
+      if (verschilMinuten(opmaak, midden) === vorige) laag = midden;
+      else hoog = midden;
+    }
+    overgangen.push({ ms: hoog, van: vorige, naar: nu });
+    vorige = nu;
+  }
+
+  const twee = (n: number) => String(n).padStart(2, "0");
+  const regels = ["BEGIN:VTIMEZONE", `TZID:${zone}`];
+  if (overgangen.length === 0) {
+    const vast = offsetTekst(vorige);
+    regels.push("BEGIN:STANDARD", "DTSTART:19700101T000000", `TZOFFSETFROM:${vast}`, `TZOFFSETTO:${vast}`, "END:STANDARD");
+  }
+  for (const o of overgangen) {
+    const soort = o.naar > o.van ? "DAYLIGHT" : "STANDARD";
+    // Het moment van verspringen in de kloktijd van vóór de sprong, zoals de norm het wil.
+    const lokaal = new Date(o.ms + o.van * MINUUT);
+    const j = lokaal.getUTCFullYear();
+    const m = lokaal.getUTCMonth() + 1;
+    const d = lokaal.getUTCDate();
+    const dagenInMaand = new Date(Date.UTC(j, m, 0)).getUTCDate();
+    const code = DAGCODES[lokaal.getUTCDay()];
+    const welke = d + 7 > dagenInMaand ? "-1" : String(Math.ceil(d / 7));
+    regels.push(
+      `BEGIN:${soort}`,
+      `DTSTART:${j}${twee(m)}${twee(d)}T${twee(lokaal.getUTCHours())}${twee(lokaal.getUTCMinutes())}00`,
+      `TZOFFSETFROM:${offsetTekst(o.van)}`,
+      `TZOFFSETTO:${offsetTekst(o.naar)}`,
+      `RRULE:FREQ=YEARLY;BYMONTH=${m};BYDAY=${welke}${code}`,
+      `END:${soort}`,
+    );
+  }
+  regels.push("END:VTIMEZONE");
+  return regels;
+}
+
+/**
+ * Zet voor elke `TZID` die genoemd wordt maar nergens gedefinieerd is een
+ * VTIMEZONE vóór de eerste VEVENT. Wat al gedefinieerd is, blijft staan; een
+ * zone die dit apparaat niet kent (een Windows-naam uit Outlook, bijvoorbeeld)
+ * wordt overgeslagen — die bestanden hebben hun eigen definitie al.
+ */
+function vulTijdzonesAan(regels: string[]): string[] {
+  const gedefinieerd = new Set<string>();
+  const genoemd = new Map<string, number>();
+  let inTijdzone = false;
+  for (const regel of regels) {
+    const boven = regel.toUpperCase();
+    if (boven === "BEGIN:VTIMEZONE") {
+      inTijdzone = true;
+    } else if (boven === "END:VTIMEZONE") {
+      inTijdzone = false;
+    } else if (inTijdzone) {
+      if (boven.startsWith("TZID:")) gedefinieerd.add(regel.slice(5).trim());
+    } else {
+      const zone = /;TZID=("?)([^;:"]+)\1[;:]/i.exec(regel)?.[2];
+      if (zone && !genoemd.has(zone)) {
+        const jaar = /:(\d{4})\d{4}T/.exec(regel)?.[1];
+        genoemd.set(zone, jaar ? Number(jaar) : new Date().getUTCFullYear());
+      }
+    }
+  }
+
+  const erbij: string[] = [];
+  for (const [zone, jaar] of genoemd) {
+    if (!gedefinieerd.has(zone)) erbij.push(...vtimezoneRegels(zone, jaar));
+  }
+  const plek = regels.findIndex((r) => r.toUpperCase() === "BEGIN:VEVENT");
+  if (erbij.length === 0 || plek < 0) return regels;
+  return [...regels.slice(0, plek), ...erbij, ...regels.slice(plek)];
+}
 
 /** `2026-09-10T10:00:00` → `20260910T100000`. */
 function lokaleStempel(waarde: string): string {

@@ -58,6 +58,11 @@ export interface StoredMailDraft {
   subject: string;
   body: string;
   includeSignature: boolean;
+  /**
+   * Staat de ondertekening al als tekst in `body`? Dan is hij daar ingevoegd en
+   * komt hij er bij hervatten niet nog een keer bij.
+   */
+  signatureInBody?: boolean;
   /** Het geciteerde origineel, zodat een hersteld antwoord er hetzelfde uitziet. */
   quoteHtml: string;
   quoteLabel: string;
@@ -266,12 +271,14 @@ export function draftForMessage(map: MailDraftMap, messageName: string): StoredM
  * Daarom alle namen van het gesprek, niet alleen de geopende mail.
  */
 export function draftsForThread(
-  map: MailDraftMap, namen: Iterable<string>,
+  map: MailDraftMap, namen: Iterable<string>, zonder?: string,
 ): StoredMailDraft[] {
   const doel = new Set<string>();
   for (const naam of namen) if (naam) doel.add(naam);
   if (doel.size === 0) return [];
   return Object.values(map)
-    .filter((d) => d.messageName && doel.has(d.messageName))
+    // `zonder`: het concept dat nu open staat. Dat staat al bovenin het paneel;
+    // er in de stapel eronder nog een keer "hervatten" bij zetten is dubbel.
+    .filter((d) => d.messageName && doel.has(d.messageName) && d.key !== zonder)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }

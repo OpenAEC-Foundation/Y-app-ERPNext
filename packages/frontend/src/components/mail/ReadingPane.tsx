@@ -17,6 +17,7 @@ import {
 import type { MailMessageFull } from "../../lib/mail-types";
 import { MessageAttachments } from "../MessageAttachments";
 import ThreadAboveMail from "./ThreadAboveMail";
+import LinkedText from "../LinkedText";
 
 /* ─── Reading pane ─── */
 
@@ -568,7 +569,9 @@ export default function ReadingPane({ message, onReply, onReplyAll, onForward, o
             }}
           />
         ) : (
-          <pre className="p-6 text-sm text-slate-700 whitespace-pre-wrap break-words font-sans leading-relaxed">{message.textBody || t("webmail.no_content")}</pre>
+          <pre className="p-6 text-sm text-slate-700 whitespace-pre-wrap break-words font-sans leading-relaxed">{message.textBody
+            ? <LinkedText text={message.textBody} className="text-blue-600 underline underline-offset-2 break-all hover:text-blue-800" />
+            : t("webmail.no_content")}</pre>
         )}
       </div>
 

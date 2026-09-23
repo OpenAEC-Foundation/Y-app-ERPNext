@@ -8,6 +8,8 @@ import {
   listMailboxMessagesPaged,
   searchByAttachment,
   searchMessages,
+  searchByConnections,
+  voegZoekresultatenSamen,
   getMessageBody,
   markRead,
   markUnread,
@@ -38,6 +40,7 @@ import {
   markUnhandled,
   bulkMarkHandled,
   bulkMarkUnhandled,
+  namenInPrullenbak,
   isHandledStatus,
   filterUnhandled,
   fetchThreadCompanions,
@@ -775,6 +778,42 @@ test("hasEnabledEmailAccount: false bij een andere serverfout (5xx)", async () =
 function rowsBody(rows: unknown[]): { status: number; body: unknown } {
   return { status: 200, body: { data: rows } };
 }
+
+test("listMailboxMessages: alleenOpen filtert in de query op alles behalve afgehandeld", async () => {
+  // Het filter "Niet afgehandeld" werkte alleen op de geladen pagina. Een open
+  // mail die ouder was dan de eerste vijftig verscheen pas na "Meer laden".
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await listMailboxMessages("inbox", { limit: 500, alleenOpen: true, mailbox: "maarten" });
+    assert.ok(hasFilter(mock.calls[0].url, "status", "!=", "Closed"), "open mail in de query zelf");
+    assert.ok(hasFilter(mock.calls[0].url, "email_account", "=", "maarten"), "de postbus blijft staan");
+    invalidateCache("Communication");
+    await listMailboxMessages("inbox", { limit: 50 });
+    assert.equal(filterValue(mock.calls[1].url, "status"), undefined, "zonder de optie geen filter");
+    invalidateCache("Communication");
+    await listMailboxMessages(MAIL_FOLDER_HANDLED, { limit: 50, alleenOpen: true });
+    assert.equal(hasFilter(mock.calls[2].url, "status", "!=", "Closed"), false, "in Afgehandeld betekent het niets");
+    invalidateCache("Communication");
+    await listMailboxMessages(MAIL_FOLDER_TRASH, { limit: 50, alleenOpen: true });
+    assert.equal(filterValue(mock.calls[3].url, "status"), undefined, "en in de Prullenbak ook niet");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
+test("namenInPrullenbak: alle namen uit de Prullenbak van deze postbus", async () => {
+  const mock = installFetchMock(() => rowsBody([{ name: "c1" }, { name: "c2" }]));
+  try {
+    assert.deepEqual(await namenInPrullenbak("maarten"), ["c1", "c2"]);
+    const url = mock.calls[0].url;
+    assert.ok(hasFilter(url, "email_status", "=", "Trash"));
+    assert.ok(hasFilter(url, "email_account", "=", "maarten"), "niet de prullenbak van een collega");
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
 
 test("listMailboxMessagesPaged: hasMore is waar zolang de server een volle pagina teruggeeft", async () => {
   const page = Array.from({ length: 3 }, (_, i) => ({
@@ -1563,6 +1602,30 @@ test("searchMessages: zonder postbus geen postbusfilter", async () => {
   }
 });
 
+test("searchMessages: richting beperkt tot inkomend of verzonden, 'alles' laat het filter weg", async () => {
+  /*
+   * De zoekbalk zoekt standaard alleen in inkomende post. Dat filter hoort op
+   * het veld te staan waaruit de lijst ook Postvak IN en Verzonden afleidt,
+   * en wie geen richting meegeeft houdt het oude gedrag: geen filter.
+   */
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    await searchMessages("offerte-in", { limit: 10, richting: "inkomend" });
+    assert.equal(filterValue(mock.calls[0].url, "sent_or_received"), "Received");
+    await searchMessages("offerte-uit", { limit: 10, richting: "verzonden" });
+    assert.equal(filterValue(mock.calls[1].url, "sent_or_received"), "Sent");
+    await searchMessages("offerte-alles", { limit: 10, richting: "alles" });
+    assert.equal(filterValue(mock.calls[2].url, "sent_or_received"), undefined);
+    await searchMessages("offerte-kaal", { limit: 10 });
+    assert.equal(filterValue(mock.calls[3].url, "sent_or_received"), undefined);
+    // De vaste grenzen blijven staan.
+    assert.ok(hasFilter(mock.calls[0].url, "email_status", "!=", "Trash"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+  }
+});
+
 test("searchByAttachment: berichten met een bijlage van die soort, binnen de postbus", async () => {
   /*
    * Twee stappen: eerst de bijlagen met die extensie, dan de berichten
@@ -1627,4 +1690,64 @@ test("searchMessages: met includeContent zoekt hij ook in de berichttekst", asyn
     mock.restore();
     invalidateCache("Communication");
   }
+});
+
+test("searchByConnections: vindt mail via project, klant en contactpersoon, binnen de postbus", async () => {
+  /*
+   * Zoeken op "Pauluskerk" hoort ook de mail te vinden die aan project 3201
+   * hangt, en mail die via de contactpersoon aan de klant hangt. Met dezelfde
+   * grenzen als gewoon zoeken: postbus, richting, geen prullenbak.
+   */
+  const mock = installFetchMock((url) => {
+    if (url.includes("/api/resource/Project")) return rowsBody([{ name: "3201" }]);
+    if (url.includes("/api/resource/Customer")) return rowsBody([{ name: "Bouwgroep Schrijver B.V." }]);
+    if (url.includes("/api/resource/Supplier") || url.includes("/api/resource/Lead")) return rowsBody([]);
+    if (url.includes("frappe.client.get_list")) return { status: 200, body: { message: [{ parent: "Kees-Schrijver" }] } };
+    if (url.includes("/api/resource/Communication") && url.includes("group_by")) {
+      return rowsBody([{ name: "C1", subject: "Tekeningen", communication_date: "2026-09-02 10:00:00", sent_or_received: "Received" }]);
+    }
+    if (url.includes("/api/resource/Communication")) {
+      return rowsBody([
+        { name: "C2", subject: "Akkoord", communication_date: "2026-09-05 10:00:00", sent_or_received: "Received" },
+        { name: "C1", subject: "Tekeningen", communication_date: "2026-09-02 10:00:00", sent_or_received: "Received" },
+      ]);
+    }
+    return rowsBody([]);
+  });
+  try {
+    const hits = await searchByConnections("Pauluskerk", { limit: 10, mailbox: "maarten", richting: "inkomend" });
+    assert.deepEqual(hits.map((h) => h.name), ["C2", "C1"], "elke mail één keer, nieuwste eerst");
+    const viaLink = mock.calls.find((c) => c.url.includes("/api/resource/Communication") && c.url.includes("group_by"));
+    assert.ok(viaLink, "er is een zoekactie via Communication Link");
+    // In de URL staan spaties als "+"; terugzetten voor de vergelijking.
+    const filters = JSON.parse(JSON.stringify(filtersOf(viaLink!.url)).replace(/\+/g, " ")) as unknown[][];
+    const linkFilter = filters.find((f) => f[0] === "Communication Link");
+    assert.deepEqual(linkFilter?.[3], ["3201", "Bouwgroep Schrijver B.V.", "Kees-Schrijver"]);
+    assert.ok(hasFilter(viaLink!.url, "email_account", "=", "maarten"));
+    assert.ok(hasFilter(viaLink!.url, "email_status", "!=", "Trash"));
+    assert.ok(hasFilter(viaLink!.url, "sent_or_received", "=", "Received"));
+  } finally {
+    mock.restore();
+    invalidateCache("Communication");
+    invalidateCache("Project");
+    invalidateCache("Customer");
+  }
+});
+
+test("searchByConnections: te korte zoekterm of niets gevonden kost geen mailquery", async () => {
+  const mock = installFetchMock(() => rowsBody([]));
+  try {
+    assert.deepEqual(await searchByConnections("ab"), []);
+    assert.equal(mock.calls.length, 0);
+    assert.deepEqual(await searchByConnections("onbekend-xyz"), []);
+    assert.ok(!mock.calls.some((c) => c.url.includes("/api/resource/Communication")));
+  } finally {
+    mock.restore();
+  }
+});
+
+test("voegZoekresultatenSamen: ontdubbelt, sorteert op datum en kapt af", () => {
+  const m = (name: string, date: string) => ({ name, date } as unknown as Parameters<typeof voegZoekresultatenSamen>[0][number]);
+  const uit = voegZoekresultatenSamen([m("A", "2026-09-01"), m("B", "2026-09-03")], [m("B", "2026-09-03"), m("C", "2026-09-02")], 2);
+  assert.deepEqual(uit.map((x) => x.name), ["B", "C"]);
 });

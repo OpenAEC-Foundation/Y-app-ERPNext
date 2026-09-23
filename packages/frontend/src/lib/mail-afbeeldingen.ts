@@ -7,7 +7,7 @@
  * server verwijst dat alleen hier betekenis heeft.
  *
  * **Waarom een publiek bestand met een volledig adres.** Zo staan de logo's in
- * de handtekeningen er al in (`https://3bm.prilk.cloud/files/…`), en zo komen
+ * de handtekeningen er al in (`https://erp.voorbeeld.nl/files/…`), en zo komen
  * die bij klanten aan. Een `data:`-afbeelding in de mail zelf wordt door Gmail
  * en Outlook weggefilterd. Inline meesturen via Frappe's `embed`-attribuut
  * zou mooier zijn, maar of dat attribuut het opslaan van de mail overleeft

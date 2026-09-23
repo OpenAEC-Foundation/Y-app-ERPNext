@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n/index";
 import { Send, Save, ChevronDown, Car, AlertTriangle } from "lucide-react";
-import { fetchDocument, updateDocument, deleteDocument, isDoctypeMissing, ApiError } from "../../lib/erpnext";
+import { fetchDocument, isDoctypeMissing, ApiError } from "../../lib/erpnext";
 import {
   KM_DOCTYPE,
   computeKmBedrag,
@@ -10,9 +10,12 @@ import {
   fetchKmRegistraties,
   formatErpDate,
   totaleKilometers,
+  verwijderKmRegistratie,
   vindDubbeleRit,
+  wijzigKmRegistratie,
   type KmRegistratie,
 } from "../../lib/declaraties";
+import { kmViaReisaanvraag, maandTarief } from "../../lib/km-reisaanvraag";
 import { fetchKmTarief } from "../../lib/kmTarief";
 import { useEmployees, useProjects } from "../../lib/DataContext";
 import { getActiveInstance, getActiveEmployee } from "../../lib/instances";
@@ -115,6 +118,10 @@ export function StatusBadge({ status }: { status: string }) {
  * Elke rit is één `Y Km Registratie`-document (zie lib/declaraties.ts). Het
  * kilometertarief komt uit de gedeelde instelling en wordt op het document
  * vastgelegd, zodat een latere tariefwijziging bestaande ritten niet herrekent.
+ *
+ * Op een site met reisaanvragen (lib/km-reisaanvraag.ts) gaat de rit in de
+ * reisaanvraag van die maand. Die kent geen project, en het tarief is dat van
+ * de ritten die er al in staan.
  */
 export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboekt }: {
   hideRecentTrips?: boolean;
@@ -156,6 +163,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
   /** Staat er al zo'n rit? Dan eerst waarschuwen; nog een keer drukken boekt hem alsnog. */
   const [dubbel, setDubbel] = useState("");
   const [tarief, setTarief] = useState<number | null>(null);
+  const [viaReisaanvraag, setViaReisaanvraag] = useState(false);
   const [recentTrips, setRecentTrips] = useState<KmRegistratie[]>([]);
   const [, setLoadingRecent] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => loadSavedAddresses());
@@ -221,16 +229,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
     setSavingTrip(true);
     setFormError("");
     try {
-      const tariefVoorRit = original.tarief_per_km || tarief || 0;
-      const bedrag = computeKmBedrag(editTrip.kilometers, editTrip.retour, tariefVoorRit);
-      await updateDocument(KM_DOCTYPE, original.name, {
-        datum: editTrip.datum,
-        van: editTrip.van,
-        naar: editTrip.naar,
-        kilometers: editTrip.kilometers,
-        retour: editTrip.retour ? 1 : 0,
-        bedrag,
-      });
+      const bedrag = await wijzigKmRegistratie(original, editTrip, tarief || 0);
       setRecentTrips((prev) => prev.map((r) => (
         r.name === original.name
           ? { ...r, ...editTrip, retour: (editTrip.retour ? 1 : 0) as 0 | 1, bedrag }
@@ -246,7 +245,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
   async function deleteTrip(trip: KmRegistratie) {
     setFormError("");
     try {
-      await deleteDocument(KM_DOCTYPE, trip.name);
+      await verwijderKmRegistratie(trip);
       setRecentTrips((prev) => prev.filter((r) => r.name !== trip.name));
     } catch (err) {
       setFormError(describeError(err, t("common.delete_failed")));
@@ -277,10 +276,11 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
     destinationAutoFilled.current = true;
   }, [employee, instanceId]);
 
-  // Het gedeelde kilometertarief.
+  // Het gedeelde kilometertarief, en of deze site km via reisaanvragen boekt.
   useEffect(() => {
     let cancelled = false;
     fetchKmTarief().then((value) => { if (!cancelled) setTarief(value); });
+    kmViaReisaanvraag().then((ja) => { if (!cancelled) setViaReisaanvraag(ja); });
     return () => { cancelled = true; };
   }, [instanceId]);
 
@@ -310,9 +310,12 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
     };
   }, [recentTrips]);
 
+  // Een reisaanvraag houdt één tarief per maand aan: dat van de ritten die er
+  // al in staan. Het voorbeeld rekent daarmee, net als de server.
+  const geldendTarief = (viaReisaanvraag ? maandTarief(recentTrips, date) : undefined) ?? tarief;
   const voorbeeldBedrag = useMemo(
-    () => computeKmBedrag(parseFloat(km) || 0, retour, tarief ?? 0),
-    [km, retour, tarief],
+    () => computeKmBedrag(parseFloat(km) || 0, retour, geldendTarief ?? 0),
+    [km, retour, geldendTarief],
   );
 
   async function handleSubmit(e: React.FormEvent) {
@@ -329,9 +332,11 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
      */
     const bestaat = vindDubbeleRit(recentTrips, { employee, datum: date, van: departure, naar: destination });
     if (bestaat && !dubbel) {
-      setDubbel(t("declaraties.km_duplicate_warning", { name: bestaat.name, date: bestaat.datum }));
+      setDubbel(t("declaraties.km_duplicate_warning", { name: bestaat.reisaanvraag || bestaat.name, date: bestaat.datum }));
       return;
     }
+    // De waarschuwing stond er en er is opnieuw gedrukt: dan bewust nog een keer.
+    const toch = !!dubbel;
     setDubbel("");
     setSubmitting(true);
     setFormError("");
@@ -344,12 +349,18 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
         naar: destination,
         kilometers: parseFloat(km),
         retour,
-        project: project || undefined,
+        project: viaReisaanvraag ? undefined : project || undefined,
         tariefPerKm: tarief ?? undefined,
-      });
-      setSuccess(t("declaraties.km_booked", {
+      }, { toch });
+      // De reisaanvraag kende een rit die het lijstje hier niet had (bijvoorbeeld
+      // in ERPNext zelf ingevoerd): niets geboekt, eerst waarschuwen.
+      if (doc.dubbel) {
+        setDubbel(t("declaraties.km_duplicate_warning", { name: doc.reisaanvraag || doc.name, date }));
+        return;
+      }
+      setSuccess(t(doc.reisaanvraag ? "declaraties.km_booked_travel_request" : "declaraties.km_booked", {
         name: doc.name,
-        amount: formatEuro(computeKmBedrag(parseFloat(km), retour, tarief ?? 0)),
+        amount: formatEuro(doc.bedrag ?? computeKmBedrag(parseFloat(km), retour, tarief ?? 0)),
       }));
       // Remember defaults for next time
       if (km) localStorage.setItem(`pref_${instanceId}_default_km`, km);
@@ -468,8 +479,9 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
           </div>
           {/* Het "Reistype"-veld van de oude Travel-Request-opzet is vervangen
               door een projectkoppeling: dat is een echt veld op
-              `Y Km Registratie` en bruikbaar voor projectkosten. */}
-          <div>
+              `Y Km Registratie` en bruikbaar voor projectkosten. Een
+              reisaanvraag kent geen project, dus daar valt het weg. */}
+          {!viaReisaanvraag && <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("declaraties.project_optional")}</label>
             <select value={project} onChange={(e) => setProject(e.target.value)}
               className="w-full px-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
@@ -478,8 +490,8 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
                 <option key={p.name} value={p.name}>{p.project_name || p.name}</option>
               ))}
             </select>
-          </div>
-          <div className="col-span-2 sm:col-span-1 flex items-end">
+          </div>}
+          <div className={`${viaReisaanvraag ? "" : "col-span-2 "}sm:col-span-1 flex items-end`}>
             <button type="submit" disabled={submitting || doctypeMissing || !employee || !km || !departure || !destination}
               className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 text-sm font-medium cursor-pointer">
               <Send size={14} />
@@ -491,7 +503,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
           <p className="text-[11px] text-slate-500">
             {t("declaraties.amount_preview", {
               amount: formatEuro(voorbeeldBedrag),
-              rate: formatEuro(tarief ?? 0),
+              rate: formatEuro(geldendTarief ?? 0),
             })}
           </p>
         )}

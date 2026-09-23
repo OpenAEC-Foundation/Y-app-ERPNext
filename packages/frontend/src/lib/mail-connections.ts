@@ -70,6 +70,7 @@ export type ConnectionCategoryId =
   | "project"
   | "customer"
   | "purchase-invoice"
+  | "sales-invoice"
   | "opportunity"
   | "lead"
   | "unlinked";
@@ -100,6 +101,7 @@ export const CONNECTION_CATEGORIES: ConnectionCategoryDef[] = [
   { id: "project", doctypes: ["Project"], labelKey: "y_next.conn_cat_project" },
   { id: "customer", doctypes: ["Customer"], viaDoctypes: ["Contact"], labelKey: "y_next.conn_cat_customer" },
   { id: "purchase-invoice", doctypes: ["Purchase Invoice"], labelKey: "y_next.conn_cat_purchase_invoice" },
+  { id: "sales-invoice", doctypes: ["Sales Invoice"], labelKey: "y_next.conn_cat_sales_invoice" },
   { id: "opportunity", doctypes: ["Opportunity", "Quotation"], labelKey: "y_next.conn_cat_opportunity" },
   { id: "lead", doctypes: ["Lead"], labelKey: "y_next.conn_cat_lead" },
   { id: "unlinked", doctypes: [], labelKey: "y_next.conn_cat_unlinked" },
@@ -129,6 +131,17 @@ export function zichtbareCategorieen(
 /** Categorie waar een gekoppeld doctype onder valt, of `null`. */
 export function categoryOfDoctype(doctype: string): ConnectionCategoryId | null {
   return CATEGORY_OF_DOCTYPE.get(doctype) ?? null;
+}
+
+/**
+ * Waar een gekoppeld document in Y-next zelf te openen is, of `undefined`.
+ * Een verkoopfactuur heeft een eigen scherm; vanuit de mail wil je daar in één
+ * klik heen, niet naar de ERPNext-desk.
+ */
+export function yNextPadVoor(doctype: string, name: string): string | undefined {
+  if (!name) return undefined;
+  if (doctype === "Sales Invoice") return `#/sales?factuur=${encodeURIComponent(name)}`;
+  return undefined;
 }
 
 /* ───────────────────────────── Map-id's ──────────────────────────────── */
@@ -519,9 +532,12 @@ export function buildConnectionIndex(raw: ConnectionRawInput): ConnectionIndex {
     const stats = perCategory.get(cat.id);
     const list = [...objects.values()]
       .filter((o) => o.category === cat.id)
-      // Meeste mail eerst; bij gelijkspel alfabetisch, zodat de volgorde
-      // stabiel is tussen twee ladingen.
-      .sort((a, b) => (b.total - a.total) || a.label.localeCompare(b.label));
+      // Projecten op nummer, nieuwste (hoogste) eerst. De rest: meeste mail
+      // eerst; bij gelijkspel alfabetisch, zodat de volgorde stabiel is
+      // tussen twee ladingen.
+      .sort(cat.id === "project"
+        ? (a, b) => vergelijkProjectnummer(a.name, b.name)
+        : (a, b) => (b.total - a.total) || a.label.localeCompare(b.label));
     return { id: cat.id, total: stats?.total.size ?? 0, unseen: stats?.unseen.size ?? 0, objects: list };
   });
 
@@ -586,6 +602,19 @@ const LABEL_FIELDS: Record<string, string> = {
  * zou hem verdubbelen.
  */
 const NUMMER_VOOR_NAAM = new Set(["Project"]);
+
+/**
+ * Projecten van hoog naar laag op nummer (nieuwste eerst); namen die geen
+ * nummer zijn komen daarna, alfabetisch.
+ */
+export function vergelijkProjectnummer(a: string, b: string): number {
+  const na = /^\d+$/.test(a) ? Number(a) : NaN;
+  const nb = /^\d+$/.test(b) ? Number(b) : NaN;
+  if (!Number.isNaN(na) && !Number.isNaN(nb)) return (nb - na) || a.localeCompare(b);
+  if (!Number.isNaN(na)) return -1;
+  if (!Number.isNaN(nb)) return 1;
+  return a.localeCompare(b);
+}
 
 /** Het label zoals het op een chip komt te staan. */
 export function toonLabel(doctype: string, docname: string, naam: string): string {

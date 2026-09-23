@@ -91,3 +91,124 @@ export function sourceLabelKey(source: RecipientSuggestion["source"]): string {
 export function tokenAt(value: string, caretPos: number): string {
   return getCurrentToken(value, caretPos).token;
 }
+
+/* ─── Adresblokjes ─────────────────────────────────────────────────────────
+ *
+ * Het veld toont elk afgerond adres als blokje, zoals een mailprogramma dat
+ * doet. De waarde zelf blijft één tekst (`draft.to`), want zo gaat hij het
+ * verzendpad in. Deze functies vertalen tussen die twee: opdelen voor het
+ * scherm, samenvoegen voor het concept.
+ */
+
+/**
+ * Het veld opgedeeld zoals het op het scherm staat: de adressen waar een komma
+ * of puntkomma achter staat zijn af en worden blokjes; wat daarna nog getypt
+ * wordt, blijft tekst.
+ *
+ * Een komma binnen aanhalingstekens of punthaken scheidt niets:
+ * `"Vroegindeweij, Maarten" <maarten@3bm.co.nl>` is één adres.
+ */
+export function splitsAdresInvoer(value: string): { klaar: string[]; bezig: string } {
+  const klaar: string[] = [];
+  let huidig = "";
+  let inAanhaling = false;
+  let inHaken = false;
+  for (const teken of value || "") {
+    if (teken === '"' && !inHaken) {
+      inAanhaling = !inAanhaling;
+    } else if (teken === "<" && !inAanhaling) {
+      inHaken = true;
+    } else if (teken === ">" && !inAanhaling) {
+      inHaken = false;
+    } else if ((teken === "," || teken === ";") && !inAanhaling && !inHaken) {
+      if (huidig.trim()) klaar.push(huidig.trim());
+      huidig = "";
+      continue;
+    }
+    huidig += teken;
+  }
+  return { klaar, bezig: huidig.replace(/^\s+/, "") };
+}
+
+/**
+ * Blokjes en lopende tekst weer als één veldwaarde. Na het laatste blokje
+ * staat ", ", zodat het volgende adres er meteen achter kan — dezelfde vorm
+ * die het veld altijd al had na het kiezen van een suggestie.
+ */
+export function voegAdresInvoerSamen(klaar: readonly string[], bezig: string): string {
+  const lijst = klaar.map((a) => a.trim()).filter(Boolean);
+  if (lijst.length === 0) return bezig;
+  return lijst.join(", ") + ", " + bezig;
+}
+
+/** Het kale adres uit een blokje: `Piet <piet@x.nl>` wordt `piet@x.nl`. */
+function adresUitBlokje(blokje: string): string {
+  const haken = (blokje || "").match(/<([^>]*)>/);
+  return (haken ? haken[1] : blokje || "").trim();
+}
+
+/**
+ * Hoe een gekozen suggestie in het veld komt: met naam, zoals een
+ * mailprogramma hem toont — `Maarten Vroegindeweij <maarten@3bm.co.nl>`.
+ * Tekens die in een adresregel iets betekenen (komma, puntkomma,
+ * aanhalingstekens, punthaken) gaan uit de naam; anders valt het adres bij het
+ * versturen in stukken.
+ */
+export function adresMetNaam(email: string, naam?: string): string {
+  const adres = (email || "").trim();
+  const schoon = (naam || "").replace(/[",;<>]/g, " ").replace(/\s+/g, " ").trim();
+  if (!schoon || schoon.toLowerCase() === adres.toLowerCase()) return adres;
+  return `${schoon} <${adres}>`;
+}
+
+/**
+ * Een gekozen suggestie wordt een blokje in plaats van het zoekwoord. Staat
+ * dat adres er al, dan komt het er geen tweede keer bij — anders krijgt
+ * iemand de mail dubbel.
+ */
+export function kiesAdres(value: string, email: string, naam?: string): string {
+  const { klaar } = splitsAdresInvoer(value);
+  const doel = (email || "").trim().toLowerCase();
+  if (klaar.some((k) => adresUitBlokje(k).toLowerCase() === doel)) {
+    return voegAdresInvoerSamen(klaar, "");
+  }
+  return voegAdresInvoerSamen([...klaar, adresMetNaam(email, naam)], "");
+}
+
+/** Het veld zonder het blokje op plek `index`; de lopende tekst blijft staan. */
+export function zonderBlokje(value: string, index: number): string {
+  const { klaar, bezig } = splitsAdresInvoer(value);
+  return voegAdresInvoerSamen(klaar.filter((_, i) => i !== index), bezig);
+}
+
+/**
+ * Een blokje weer als tekst, om het aan te passen. Wat er al getypt stond,
+ * wordt eerst zelf een blokje: het mag niet stilletjes verdwijnen.
+ */
+export function blokjeTerugNaarTekst(value: string, index: number): string {
+  const { klaar, bezig } = splitsAdresInvoer(value);
+  const blokje = klaar[index];
+  if (blokje === undefined) return value;
+  const rest = klaar.filter((_, i) => i !== index);
+  if (bezig.trim()) rest.push(bezig.trim());
+  return voegAdresInvoerSamen(rest, blokje);
+}
+
+/**
+ * Wat nog getypt staat, wordt ook een blokje — bij Enter, Tab of het verlaten
+ * van het veld. Een leeg stuk verandert niets.
+ */
+export function rondAdresAf(value: string): string {
+  const { klaar, bezig } = splitsAdresInvoer(value);
+  if (!bezig.trim()) return value;
+  return voegAdresInvoerSamen([...klaar, bezig.trim()], "");
+}
+
+/**
+ * Ziet het adres in dit blokje eruit als een bruikbaar e-mailadres? Zo niet,
+ * dan kleurt het blokje rood: een tikfout zie je dan vóór het versturen, niet
+ * pas aan de foutmelding van de mailserver.
+ */
+export function isBruikbaarAdres(blokje: string): boolean {
+  return /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[^\s@<>(),;:".]{2,}$/.test(adresUitBlokje(blokje));
+}

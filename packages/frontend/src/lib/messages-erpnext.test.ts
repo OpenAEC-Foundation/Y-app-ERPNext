@@ -36,10 +36,14 @@ import {
   previewOf,
   rowToMessage,
   sendMessage,
+  sendReaction,
   textToHtml,
+  verwijderBerichten,
+  verwijderKeuze,
   withUsableImageName,
   type ErpMessage,
 } from "./messages-erpnext.ts";
+import { sleutelUitLink } from "./berichten-reacties.ts";
 
 const ME = "nino@3bm.co.nl";
 
@@ -352,6 +356,7 @@ function msg(overrides: Partial<ErpMessage>): ErpMessage {
     body: "tekst",
     createdAt: "2026-09-03 10:00:00.000000",
     read: false,
+    sleutel: "s-x",
     ...overrides,
   };
 }
@@ -394,6 +399,42 @@ test("groupThreads + countUnread: alleen ontvangen ongelezen post telt mee", () 
   ];
   assert.equal(countUnread(messages), 1);
   assert.equal(groupThreads(messages)[0].unread, 1);
+});
+
+test("rowToMessage: een like is geen bericht maar een verwijzing, en altijd gelezen", () => {
+  const link = `${MESSAGE_LINK}?reactie=abc12345&stand=aan`;
+  const like = rowToMessage(row({ link, email_content: "", subject: "👍", read: 0 }), ME);
+  assert.ok(like);
+  assert.deepEqual(like.reactie, { sleutel: "abc12345", aan: true });
+  assert.equal(like.read, true);
+  assert.equal(like.body, "");
+  assert.equal(like.image, undefined);
+});
+
+test("rowToMessage: beide kopieën van een oud bericht krijgen dezelfde sleutel", () => {
+  const bijMij = rowToMessage(row({ creation: "2026-09-03 10:00:01.000000" }), ME);
+  // De verzonden kopie in het postvak van Lara zelf: owner = for_user = Lara.
+  const bijLara = rowToMessage(
+    row({
+      for_user: "lara@3bm.co.nl", owner: "lara@3bm.co.nl", document_name: ME,
+      creation: "2026-09-03 10:00:02.000000", read: 1,
+    }),
+    "lara@3bm.co.nl",
+  );
+  assert.ok(bijMij && bijLara);
+  assert.equal(bijMij.sleutel, bijLara.sleutel);
+});
+
+test("groupThreads + countUnread: likes tellen niet mee en verschuiven het gesprek niet", () => {
+  const messages = [
+    msg({ name: "a", createdAt: "2026-09-03 10:00:00", body: "echt bericht" }),
+    msg({ name: "like", createdAt: "2026-09-03 11:00:00", body: "", reactie: { sleutel: "s-x", aan: true } }),
+  ];
+  const threads = groupThreads(messages);
+  assert.equal(threads[0].messages.length, 1);
+  assert.equal(threads[0].lastBody, "echt bericht");
+  assert.equal(threads[0].lastAt, "2026-09-03 10:00:00");
+  assert.equal(countUnread(messages), 1);
 });
 
 /* ─── listMessages ─── */
@@ -490,9 +531,12 @@ test("sendMessage: schrijft twee documenten en stuurt NOOIT een owner mee", asyn
       assert.equal("owner" in payload, false);
       assert.equal(payload.type, MESSAGE_TYPE);
       assert.equal(payload.document_type, MESSAGE_DOCUMENT_TYPE);
-      assert.equal(payload.link, MESSAGE_LINK);
+      // Het merk, plus de gedeelde sleutel waar een like later naar wijst.
+      assert.ok(String(payload.link).startsWith(`${MESSAGE_LINK}?k=`));
       assert.equal(payload.email_content, "<div>Hoi Lara</div>");
     }
+    // Beide kopieën dragen dezelfde sleutel.
+    assert.equal(recipientCopy.link, sentCopy.link);
   } finally {
     mock.restore();
     await resetState();
@@ -563,12 +607,16 @@ test("sendMessage met afbeelding: privé-upload aan het bericht van de ONTVANGER
 
     const put = mock.calls.find((c) => c.init?.method === "PUT");
     assert.ok(put);
-    assert.equal(bodyOf(put.init).link, buildMessageLink("/private/files/bouwput.jpg"));
+    const putLink = String(bodyOf(put.init).link);
+    assert.equal(parseImageFromLink(putLink)?.url, "/private/files/bouwput.jpg");
 
     // De eigen verzonden kopie draagt dezelfde link, dus dezelfde afbeelding.
     const posts = mock.calls.filter((c) => c.init?.method === "POST" && c.url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`));
     assert.equal(posts.length, 2);
-    assert.equal(bodyOf(posts[1].init).link, buildMessageLink("/private/files/bouwput.jpg"));
+    assert.equal(bodyOf(posts[1].init).link, putLink);
+    // De ontvangerskopie kreeg dezelfde sleutel al bij het aanmaken.
+    assert.ok(sleutelUitLink(putLink));
+    assert.equal(sleutelUitLink(putLink), sleutelUitLink(String(bodyOf(posts[0].init).link)));
   } finally {
     mock.restore();
     await resetState();
@@ -665,6 +713,37 @@ test("sendMessage: lege tekst of lege ontvanger doet niets", async () => {
     await sendMessage("lara@3bm.co.nl", "   ");
     await sendMessage("", "iets");
     assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendReaction: twee gelezen kopieën met de verwijzing, en nooit een owner", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      return { status: 200, body: { data: { name: "NL-like" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendReaction("lara@3bm.co.nl", "abc12345", false);
+    const posts = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init));
+    assert.equal(posts.length, 2);
+    assert.deepEqual(
+      posts.map((p) => [p.for_user, p.document_name]),
+      [["lara@3bm.co.nl", ME], [ME, "lara@3bm.co.nl"]],
+    );
+    for (const payload of posts) {
+      assert.equal("owner" in payload, false);
+      // Gelezen: een like levert geen melding, geluid of teller op.
+      assert.equal(payload.read, 1);
+      assert.equal(payload.type, MESSAGE_TYPE);
+      const terug = rowToMessage(row({ link: payload.link }), ME);
+      assert.deepEqual(terug?.reactie, { sleutel: "abc12345", aan: false });
+    }
   } finally {
     mock.restore();
     await resetState();
@@ -777,6 +856,42 @@ test("listContacts: een 403 op User (de normale situatie voor een medewerker) la
   try {
     const contacts = await listContacts();
     assert.deepEqual(contacts, [{ user: "lara@3bm.co.nl", fullName: "Lara N." }]);
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+/* ─── Berichten verwijderen ─── */
+
+function bericht(overrides: Partial<ErpMessage> = {}): ErpMessage {
+  return {
+    name: "NL-1", counterpart: "lance@3bm.co.nl", direction: "out", body: "hoi",
+    createdAt: "2026-09-19 09:00:00", read: true, sleutel: "k1", ...overrides,
+  };
+}
+
+test("verwijderKeuze: voor iedereen kan alleen als alles je eigen bericht is", () => {
+  assert.deepEqual(verwijderKeuze([bericht(), bericht({ name: "NL-2" })]), { aantal: 2, voorIedereen: true });
+  assert.deepEqual(verwijderKeuze([bericht(), bericht({ name: "NL-2", direction: "in" })]), { aantal: 2, voorIedereen: false });
+  assert.deepEqual(verwijderKeuze([]), { aantal: 0, voorIedereen: false });
+  // Een like die nog onderweg is bestaat op de server nog niet.
+  assert.deepEqual(verwijderKeuze([bericht({ name: "lokaal-k1-1" })]), { aantal: 0, voorIedereen: false });
+});
+
+test("verwijderBerichten: één aanroep met alle namen, en niets als er niets gekozen is", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.includes("/api/method/berichten_verwijderen")) return { status: 200, body: { message: { verwijderd: 3, voor: "mij" } } };
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    assert.equal(await verwijderBerichten(["NL-1", "lokaal-k1-1", "NL-2"], "mij"), 3);
+    const aanroepen = mock.calls.filter((c) => c.url.includes("berichten_verwijderen"));
+    assert.equal(aanroepen.length, 1);
+    assert.deepEqual(bodyOf(aanroepen[0].init), { namen: ["NL-1", "NL-2"], voor: "mij" });
+    assert.equal(await verwijderBerichten([], "iedereen"), 0);
+    assert.equal(mock.calls.filter((c) => c.url.includes("berichten_verwijderen")).length, 1);
   } finally {
     mock.restore();
     await resetState();

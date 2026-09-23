@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { LogIn, Menu } from "lucide-react";
 import Sidebar, { type Page, type ViewMode, isEmployerRole } from "./components/Sidebar";
 import ComingSoon from "./components/ComingSoon";
 import { DataProvider } from "./lib/DataContext";
@@ -70,6 +70,7 @@ const LiquidityPlanning = lazy(() => import("./pages/LiquidityPlanning"));
 const Letters = lazy(() => import("./pages/Letters"));
 const ReleaseNotes = lazy(() => import("./pages/ReleaseNotes"));
 const MailView = lazy(() => import("./pages/MailView"));
+const VoorbeeldVenster = lazy(() => import("./pages/VoorbeeldVenster"));
 const MessengerView = lazy(() => import("./pages/MessengerView"));
 // Iframe-host voor extensies. Lazy (was statisch) zodat de host — inclusief
 // zijn proxy-URL-opbouw — niet in de hoofdbundel belandt zolang extensies uit
@@ -177,20 +178,31 @@ function App() {
         }}
       >
         <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <YLogo size={80} className="inline-block" />
-            <h1 className="text-3xl font-bold text-white mt-5 tracking-tight">{APP_NAME}</h1>
+          <div className="mb-8 text-center">
+            {/* Gloed achter het logo: geeft het scherm een middelpunt. */}
+            <span className="relative inline-flex items-center justify-center">
+              <span className="absolute h-24 w-24 rounded-full bg-teal-500/20 blur-2xl" aria-hidden="true" />
+              <YLogo size={80} className="relative inline-block" />
+            </span>
+            <h1 className="mt-5 text-3xl font-bold tracking-tight text-white">{APP_NAME}</h1>
+            <p className="mt-2 text-sm font-medium text-teal-300/70">{t("y_next.direct_mode")}</p>
           </div>
 
-          <div className="bg-white/[0.08] backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/30 border border-white/[0.12] p-8 text-center space-y-5">
-            <p className="text-sm text-slate-300">{t("y_next.login_required")}</p>
+          <div className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.06] p-8 text-center shadow-2xl shadow-black/40 backdrop-blur-xl">
+            <p className="text-sm leading-relaxed text-slate-300">{t("y_next.login_required")}</p>
             <button
               onClick={() => window.location.assign(loginUrl())}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white rounded-xl cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-teal-500/25 hover:-translate-y-0.5 active:translate-y-0"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-teal-500/25 active:translate-y-0"
               style={{ background: "linear-gradient(135deg, #0d9488, #14b8a6)" }}
             >
+              <LogIn size={16} />
               {t("y_next.login_button")}
             </button>
+            {/* Waar je dan terechtkomt: de inlogpagina van Frappe zelf. */}
+            <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+              <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-[#2490EF] text-[9px] font-extrabold leading-none text-white">F</span>
+              {t("y_next.login_via_frappe")}
+            </p>
           </div>
 
           <div className="text-center mt-8 space-y-2">
@@ -247,6 +259,15 @@ function App() {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
         <MailView />
+      </Suspense>
+    );
+  }
+  // Een bijlage schermvullend in een eigen tabblad: bouwmodel, tekening of
+  // document, zonder zijbalk en maillijst eromheen.
+  if (popoutHash.startsWith("#/voorbeeld")) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-100" />}>
+        <VoorbeeldVenster />
       </Suspense>
     );
   }
@@ -447,6 +468,12 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
     if (isFeatureEnabled("messenger")) {
       void import("./lib/messenger-prefetch").then((m) => m.prefetchConversations()).catch(() => {});
     }
+    // De agenda van deze en de komende twee weken alvast in het geheugen, zodat
+    // hij direct op het scherm staat als je hem opent. Na even wachten: het
+    // openen van de app zelf gaat voor.
+    const agendaTimer = window.setTimeout(() => {
+      void import("./lib/agenda-voorladen").then((m) => m.voorlaadAgendaBijStart()).catch(() => {});
+    }, 1500);
     /*
      * Y-next heeft geen Express-server, dus de meldingen van
      * BackgroundSyncProvider (die op `/api/mail/*` hangen) kwamen hier nooit
@@ -457,6 +484,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
     if (isFeatureEnabled(ERPNEXT_MAIL)) {
       void import("./lib/meldingen-poller").then((m) => m.startMeldingen()).catch(() => {});
     }
+    return () => window.clearTimeout(agendaTimer);
   }, []);
 
   function handleNavigate(page: Page) {

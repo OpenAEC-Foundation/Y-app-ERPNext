@@ -126,6 +126,18 @@ import {
 } from "./erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
 import type { OngelezenRij } from "./meldingen.ts";
+import {
+  isArchiefNaam,
+  listArchiefBerichten,
+  markeerArchiefGelezen,
+} from "./berichten-archief.ts";
+import {
+  SLEUTEL_PARAM,
+  berichtSleutel,
+  nieuweSleutel,
+  reactieQuery,
+  reactieUitLink,
+} from "./berichten-reacties.ts";
 
 /** Het doctype waar alles op draait. Eén constante zodat tests niet gokken. */
 export const MESSAGE_DOCTYPE = "Notification Log";
@@ -219,6 +231,13 @@ export interface ErpMessage {
   read: boolean;
   /** Afbeelding bij dit bericht, als er één is en de URL door de check kwam. */
   image?: ErpMessageImage;
+  /**
+   * Waarmee een like naar dit bericht wijst; in beide kopieën van het bericht
+   * dezelfde. Zie `lib/berichten-reacties.ts`.
+   */
+  sleutel: string;
+  /** Gezet als dit geen bericht is maar een like, of het intrekken ervan. */
+  reactie?: { sleutel: string; aan: boolean };
 }
 
 /** Alle berichten met één collega, plus wat de gesprekslijst moet tonen. */
@@ -349,9 +368,14 @@ export function isSafeFileUrl(url: string): boolean {
 }
 
 /** Bouwt de `link`-waarde: het merk, plus optioneel het pad naar de afbeelding. */
-export function buildMessageLink(fileUrl?: string): string {
-  if (!fileUrl) return MESSAGE_LINK;
-  return `${MESSAGE_LINK}?${MESSAGE_IMAGE_PARAM}=${encodeURIComponent(fileUrl)}`;
+export function buildMessageLink(fileUrl?: string, sleutel?: string): string {
+  const query = new URLSearchParams();
+  if (fileUrl) query.set(MESSAGE_IMAGE_PARAM, fileUrl);
+  // De gedeelde sleutel staat in beide kopieën, zodat een like van de één bij
+  // de ander op hetzelfde bericht landt.
+  if (sleutel) query.set(SLEUTEL_PARAM, sleutel);
+  const rest = query.toString();
+  return rest ? `${MESSAGE_LINK}?${rest}` : MESSAGE_LINK;
 }
 
 /** Herkent een `link` als de onze — met of zonder afbeeldingsparameter. */
@@ -410,17 +434,43 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
   const counterpart = outgoing ? toStr(row.document_name) : owner;
   if (!counterpart) return null;
 
+  const createdAt = toStr(row.creation);
+  const reactie = reactieUitLink(link);
+  if (reactie) {
+    // Een like: geen tekst en geen afbeelding, alleen de verwijzing. Altijd
+    // gelezen, zodat hij nooit in een teller belandt.
+    return {
+      name,
+      counterpart,
+      direction: outgoing ? "out" : "in",
+      body: "",
+      createdAt,
+      read: true,
+      sleutel: reactie.sleutel,
+      reactie,
+    };
+  }
+
   const html = toStr(row.email_content);
   const body = html ? htmlToText(html) : toStr(row.subject);
   const image = parseImageFromLink(link);
+  const sleutel = berichtSleutel({
+    link,
+    afzender: outgoing ? me : counterpart,
+    ontvanger: outgoing ? counterpart : me,
+    body,
+    createdAt,
+    imageUrl: image?.url,
+  });
 
   return {
     name,
     counterpart,
     direction: outgoing ? "out" : "in",
     body,
-    createdAt: toStr(row.creation),
+    createdAt,
     read: Number(row.read) === 1,
+    sleutel,
     ...(image ? { image } : {}),
   };
 }
@@ -447,24 +497,34 @@ export async function listMessages(limit: number = DEFAULT_MESSAGE_LIMIT): Promi
   // aanroepen kosten nog steeds één request.
   invalidateCache(MESSAGE_DOCTYPE);
 
-  const rows = await fetchList<NotificationLogRow>(MESSAGE_DOCTYPE, {
-    fields: [
-      "name", "subject", "email_content", "for_user",
-      "document_name", "owner", "creation", "link", "read",
-    ],
-    filters: [
-      ["for_user", "=", me],
-      ["type", "=", MESSAGE_TYPE],
-      ["document_type", "=", MESSAGE_DOCUMENT_TYPE],
-    ],
-    order_by: "creation desc",
-    limit_page_length: limit,
-  });
+  // Het archief van vóór de Notification Log-messenger leest parallel mee;
+  // op installaties zonder "Y Bericht" is dat een lege lijst (zie
+  // `berichten-archief.ts`).
+  const [rows, archief] = await Promise.all([
+    fetchList<NotificationLogRow>(MESSAGE_DOCTYPE, {
+      fields: [
+        "name", "subject", "email_content", "for_user",
+        "document_name", "owner", "creation", "link", "read",
+      ],
+      filters: [
+        ["for_user", "=", me],
+        ["type", "=", MESSAGE_TYPE],
+        ["document_type", "=", MESSAGE_DOCUMENT_TYPE],
+      ],
+      order_by: "creation desc",
+      limit_page_length: limit,
+    }),
+    listArchiefBerichten(),
+  ]);
 
   const out: ErpMessage[] = [];
   for (const row of rows) {
     const message = rowToMessage(row, me);
     if (message) out.push(message);
+  }
+  if (archief.length > 0) {
+    out.push(...archief);
+    out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   return out;
 }
@@ -483,6 +543,9 @@ export function groupThreads(
 ): ErpMessageThread[] {
   const byCounterpart = new Map<string, ErpMessage[]>();
   for (const message of messages) {
+    // Likes zijn geen berichten: ze horen niet in de lijst, niet in de
+    // voorbeeldregel en niet in de teller. Zie `likesPerBericht`.
+    if (message.reactie) continue;
     const bucket = byCounterpart.get(message.counterpart);
     if (bucket) bucket.push(message);
     else byCounterpart.set(message.counterpart, [message]);
@@ -519,7 +582,7 @@ export function groupThreads(
  * is doorgekomen.
  */
 export function countUnread(messages: ErpMessage[]): number {
-  return messages.filter((m) => m.direction === "in" && !m.read).length;
+  return messages.filter((m) => m.direction === "in" && !m.read && !m.reactie).length;
 }
 
 /* ─── Schrijven ─── */
@@ -537,6 +600,55 @@ export class MessageImageError extends Error {
     super(message);
     this.name = "MessageImageError";
   }
+}
+
+/**
+ * Een bericht verwijderen: alleen je eigen kopie (`mij`), of — bij een bericht
+ * dat je zelf stuurde — ook dat van de ander (`iedereen`), met de likes erop.
+ *
+ * Via het Server Script `berichten_verwijderen`: de rol `Employee` mag een
+ * `Notification Log` niet verwijderen. Het script controleert zelf of het
+ * bericht van jou is; wat de app hier meestuurt is alleen de vraag.
+ */
+export async function verwijderBericht(naam: string, voor: "mij" | "iedereen"): Promise<void> {
+  if (!naam) return;
+  await callMethod("berichten_verwijderen", { naam, voor });
+  invalidateCache(MESSAGE_DOCTYPE);
+}
+
+/**
+ * Een like die nog onderweg is heeft een tijdelijke naam; op de server
+ * bestaat hij nog niet. Archiefberichten bestaan wél, maar zijn alleen-lezen:
+ * het server script kent het oude doctype niet.
+ */
+function bestaatOpServer(naam: string): boolean {
+  return Boolean(naam) && !naam.startsWith("lokaal-") && !isArchiefNaam(naam);
+}
+
+/**
+ * Wat er met een selectie berichten kan. "Voor iedereen" alleen als het
+ * allemaal je eigen berichten zijn: het server script weigert het anders
+ * toch, en dan liever een knop die niet aan staat dan een halve verwijdering.
+ */
+export function verwijderKeuze(berichten: ReadonlyArray<Pick<ErpMessage, "name" | "direction">>): {
+  aantal: number;
+  voorIedereen: boolean;
+} {
+  const echt = berichten.filter((b) => bestaatOpServer(b.name));
+  return { aantal: echt.length, voorIedereen: echt.length > 0 && echt.every((b) => b.direction === "out") };
+}
+
+/**
+ * Meerdere berichten in één keer verwijderen, bijvoorbeeld een heel gesprek.
+ * Eén aanroep: het server script loopt ze zelf langs. Geeft terug hoeveel
+ * kopieën er weg zijn (bij "iedereen" ook die van de ander).
+ */
+export async function verwijderBerichten(namen: ReadonlyArray<string>, voor: "mij" | "iedereen"): Promise<number> {
+  const echt = namen.filter(bestaatOpServer);
+  if (echt.length === 0) return 0;
+  const uit = (await callMethod("berichten_verwijderen", { namen: echt, voor })) as { verwijderd?: number } | null;
+  invalidateCache(MESSAGE_DOCTYPE);
+  return uit?.verwijderd ?? 0;
 }
 
 /* ─── Afbeeldingen uit het klembord ─── */
@@ -676,15 +788,17 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
     from_user: me,
   };
 
+  // Eén sleutel voor beide kopieën: daar wijst een like later naar.
+  const sleutel = nieuweSleutel();
   const received = await createDocument<{ name?: string }>(MESSAGE_DOCTYPE, {
     ...shared,
     for_user: to,
     document_name: me,
     read: 0,
-    link: MESSAGE_LINK,
+    link: buildMessageLink(undefined, sleutel),
   });
 
-  let link = MESSAGE_LINK;
+  let link = buildMessageLink(undefined, sleutel);
   if (image) {
     const receivedName = toStr(received?.name);
     try {
@@ -700,7 +814,7 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
       });
       const fileUrl = toStr(uploaded?.file_url);
       if (!isSafeFileUrl(fileUrl)) throw new Error(`Onverwachte bestands-URL: ${fileUrl}`);
-      link = buildMessageLink(fileUrl);
+      link = buildMessageLink(fileUrl, sleutel);
       await updateDocument(MESSAGE_DOCTYPE, receivedName, { link });
     } catch (err) {
       invalidateCache(MESSAGE_DOCTYPE);
@@ -724,6 +838,35 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
 }
 
 /**
+ * Een bericht liken, of de like intrekken.
+ *
+ * Net als een bericht twee documenten: één in het postvak van de ander en één
+ * in dat van jezelf, anders ziet maar één van beiden de like. Allebei als
+ * gelezen, zodat een like geen melding, geluid of teller oplevert. Intrekken is
+ * een nieuwe like met stand "uit": `Notification Log` geeft de rol `Employee`
+ * geen `delete`, en per persoon telt de laatste stand (zie `likesPerBericht`).
+ */
+export async function sendReaction(to: string, sleutel: string, aan: boolean): Promise<void> {
+  const me = await resolveSessionUser();
+  if (!me) throw new Error("Geen ERPNext-sessie");
+  if (!to || !sleutel) return;
+
+  const shared = {
+    type: MESSAGE_TYPE,
+    document_type: MESSAGE_DOCUMENT_TYPE,
+    subject: aan ? "👍" : "👍 ingetrokken",
+    email_content: "",
+    from_user: me,
+    link: `${MESSAGE_LINK}?${reactieQuery(sleutel, aan)}`,
+    read: 1,
+  };
+
+  await createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: to, document_name: me });
+  await createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: me, document_name: to });
+  invalidateCache(MESSAGE_DOCTYPE);
+}
+
+/**
  * Markeer berichten als gelezen.
  *
  * Loopt via Frappe's eigen `mark_as_read`-RPC en niet via `updateDocument`,
@@ -740,6 +883,14 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
  */
 export async function markMessagesRead(names: string[]): Promise<void> {
   if (names.length === 0) return;
+
+  // Archiefberichten hebben hun gelezen-vinkje op het oude doctype.
+  const archief = names.filter(isArchiefNaam);
+  if (archief.length > 0) {
+    await markeerArchiefGelezen(archief);
+    names = names.filter((n) => !isArchiefNaam(n));
+    if (names.length === 0) return;
+  }
 
   await Promise.allSettled(
     names.map(async (docname) => {

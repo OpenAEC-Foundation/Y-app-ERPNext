@@ -8,6 +8,32 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
+## v0.39.0 — 2026-09-21
+
+### Mail
+- Links in een mail zijn aanklikbaar, ook tijdens het opstellen: een geplakt of getypt webadres wordt meteen een link. Klik erop voor een balkje met het adres, of open hem direct met Ctrl+klik.
+- Lukt het versturen niet door een bijlage, dan zie je nu welk bestand het is, hoe groot het is en waarom (bijvoorbeeld te groot), in plaats van alleen een foutcode.
+- Staat er een projectnummer in het onderwerp, dan weegt dat zwaar mee in de projectsuggestie. Datums en bedragen tellen niet als projectnummer.
+- Zoeken vindt ook mails die aan een project, klant, leverancier of lead gekoppeld zijn waarvan de naam of het nummer past, ook als het woord niet in het onderwerp staat.
+- Onder de zoekbalk staan passende projecten en relaties: kies er één en je ziet alle mail die eraan gekoppeld is.
+- Projecten in de connectiekolom staan van hoog naar laag op projectnummer, de nieuwste bovenaan.
+- Kies je in een nieuwe mail een project, dan komt het e-mailadres van de opdrachtgever meteen in Aan. Alleen als Aan nog leeg is; bij een antwoord blijft staan wat er staat.
+
+### Agenda
+- Terugkerende afspraken: kies bij Herhalen elke dag, elke werkdag, elke week, om de week, elke maand of elk jaar, eventueel met een einddatum.
+- Herhalende afspraken staan nu op alle dagen waarop ze vallen. Het wekelijkse overleg stond eerder alleen in de eerste week.
+- Een afspraak die je versleept of langer maakt, beweegt direct met de muis mee, ook naar een andere dag, in plaats van pas na het loslaten.
+- Concepten kunnen nu ook op de server staan in plaats van alleen in deze browser: ze staan bovenaan Postvak IN bij de concepten, en zijn te openen, te versturen of weg te gooien.
+- Afwezigheidsmelding: de tekst wordt ingevuld met de datums, een collega naar keuze en je eigen ondertekening.
+- Bij een geopende mail staat het mail-kenmerk in beeld, met een kopieerknop.
+- Nieuw veld Tijdsduur: kies hoe lang de afspraak duurt en de eindtijd schuift mee. Verzet je de begintijd, dan schuift de eindtijd ook mee.
+- Locatie kiezen uit de bedrijfsadressen in ERPNext. Een nieuwe afspraak krijgt standaard het adres van je eigen bedrijf; alleen actieve bedrijven staan in de lijst.
+- De agenda van deze en de komende twee weken wordt bij het openen van de app al opgehaald, en bij het bladeren telkens de volgende week. Daardoor staat hij sneller op het scherm.
+
+### Opgelost
+- Het vinkje "Gedeeld" bij een nieuwe afspraak deed niets; de afspraak bleef altijd privé.
+- Het versienummer in de app liep achter op de release notes.
+
 ## v0.33.0 — 2026-09-09
 
 ### Toegevoegd

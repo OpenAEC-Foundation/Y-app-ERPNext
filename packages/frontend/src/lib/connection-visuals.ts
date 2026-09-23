@@ -7,7 +7,7 @@
  * chips als de connectiekolom deze twee nodig.
  */
 
-import { FolderKanban, Building2, ReceiptText, UserPlus, FileBarChart } from "lucide-react";
+import { FolderKanban, Building2, Receipt, ReceiptText, UserPlus, FileBarChart } from "lucide-react";
 import { getErpNextLinkUrl } from "./erpnext.ts";
 import type { ConnectionCategoryId } from "./mail-connections.ts";
 
@@ -22,6 +22,7 @@ export function connectionIcon(category: ConnectionCategoryId) {
     case "project": return FolderKanban;
     case "customer": return Building2;
     case "purchase-invoice": return ReceiptText;
+    case "sales-invoice": return Receipt;
     case "opportunity": return FileBarChart;
     case "lead": return UserPlus;
     default: return FolderKanban;
@@ -33,6 +34,7 @@ export const CONNECTION_TONE: Record<ConnectionCategoryId, string> = {
   project: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
   customer: "bg-sky-50 text-sky-700 hover:bg-sky-100",
   "purchase-invoice": "bg-indigo-50 text-indigo-700 hover:bg-indigo-100",
+  "sales-invoice": "bg-teal-50 text-teal-700 hover:bg-teal-100",
   opportunity: "bg-purple-50 text-purple-700 hover:bg-purple-100",
   lead: "bg-violet-50 text-violet-700 hover:bg-violet-100",
   unlinked: "bg-slate-50 text-slate-600 hover:bg-slate-100",

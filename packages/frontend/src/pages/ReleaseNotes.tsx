@@ -6,6 +6,233 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.39.0",
+    date: "2026-09-21",
+    url: "",
+    sections: [
+      {
+        title: "Mail",
+        items: [
+          "Links in een mail zijn aanklikbaar, ook tijdens het opstellen: een geplakt of getypt webadres wordt meteen een link. Klik erop voor een balkje met het adres, of open hem direct met Ctrl+klik.",
+          "Lukt het versturen niet door een bijlage, dan zie je nu welk bestand het is, hoe groot het is en waarom (bijvoorbeeld te groot), in plaats van alleen een foutcode.",
+          "Staat er een projectnummer in het onderwerp, dan weegt dat zwaar mee in de projectsuggestie. Datums en bedragen tellen niet als projectnummer.",
+          "Zoeken vindt ook mails die aan een project, klant, leverancier of lead gekoppeld zijn waarvan de naam of het nummer past, ook als het woord niet in het onderwerp staat.",
+          "Onder de zoekbalk staan passende projecten en relaties: kies er één en je ziet alle mail die eraan gekoppeld is.",
+          "Projecten in de connectiekolom staan van hoog naar laag op projectnummer, de nieuwste bovenaan.",
+          "Kies je in een nieuwe mail een project, dan komt het e-mailadres van de opdrachtgever meteen in Aan. Alleen als Aan nog leeg is; bij een antwoord blijft staan wat er staat.",
+        ],
+      },
+      {
+        title: "Agenda",
+        items: [
+          "Terugkerende afspraken: kies bij Herhalen elke dag, elke werkdag, elke week, om de week, elke maand of elk jaar, eventueel met een einddatum.",
+          "Herhalende afspraken staan nu op alle dagen waarop ze vallen. Het wekelijkse overleg stond eerder alleen in de eerste week.",
+          "Een afspraak die je versleept of langer maakt, beweegt direct met de muis mee, ook naar een andere dag, in plaats van pas na het loslaten.",
+          "Concepten kunnen nu ook op de server staan in plaats van alleen in deze browser: ze staan bovenaan Postvak IN bij de concepten, en zijn te openen, te versturen of weg te gooien.",
+          "Afwezigheidsmelding: de tekst wordt ingevuld met de datums, een collega naar keuze en je eigen ondertekening.",
+          "Bij een geopende mail staat het mail-kenmerk in beeld, met een kopieerknop.",
+          "Nieuw veld Tijdsduur: kies hoe lang de afspraak duurt en de eindtijd schuift mee. Verzet je de begintijd, dan schuift de eindtijd ook mee.",
+          "Locatie kiezen uit de bedrijfsadressen in ERPNext. Een nieuwe afspraak krijgt standaard het adres van je eigen bedrijf; alleen actieve bedrijven staan in de lijst.",
+          "De agenda van deze en de komende twee weken wordt bij het openen van de app al opgehaald, en bij het bladeren telkens de volgende week. Daardoor staat hij sneller op het scherm.",
+        ],
+      },
+      {
+        title: "Opgelost",
+        items: [
+          "Het vinkje \"Gedeeld\" bij een nieuwe afspraak deed niets; de afspraak bleef altijd privé.",
+          "Het versienummer in de app liep achter op de release notes.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.38.1",
+    date: "2026-09-19",
+    url: "",
+    sections: [
+      {
+        title: "Y-messaging: knop om berichten te verwijderen",
+        items: [
+          "Bovenin elk gesprek staat nu de knop \"Berichten verwijderen\". Klik daarna op de berichten die weg moeten, of kies \"Alles selecteren\" om het hele gesprek op te ruimen.",
+          "\"Voor mij verwijderen\" haalt ze alleen bij jou weg; de ander houdt ze. \"Voor iedereen verwijderen\" haalt ze bij allebei weg, en kan alleen als alle gekozen berichten van jou zijn. Je krijgt altijd eerst een bevestigingsvraag.",
+          "Het prullenbakje bij een los bericht blijft ook bestaan.",
+        ],
+      },
+      {
+        title: "Mail: project als onderwerp",
+        items: [
+          "Bij het kiezen van een project in een nieuwe mail staat bovenin de projectlijst het vinkje \"Nummer + naam als onderwerp\". Staat het aan, dan wordt het onderwerp meteen bijvoorbeeld \"3312 Woonhuis Platteweg 14 Reeuwijk\". Het vinkje wordt onthouden.",
+          "Heb je al een project gekozen, dan staat ernaast de knop \"Als onderwerp\": één klik en projectnummer + naam worden het onderwerp.",
+          "In het losse mailvenster kies je bij de knop \"Project\" naast het onderwerp of het project vóór het onderwerp komt of het hele onderwerp wordt.",
+          "Staat het projectnummer al in de projectnaam, zoals bij \"(3077) Nieuwbouw …\", dan komt het er niet meer twee keer in.",
+        ],
+      },
+      {
+        title: "Kilometers: één tarief per maand",
+        items: [
+          "Heeft iemand in een maand nog geen ritten, dan krijgt zijn eerste rit het tarief dat collega's die maand al hebben. Zo rekent iedereen in dezelfde maand met hetzelfde tarief.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.38.0",
+    date: "2026-09-18",
+    url: "",
+    sections: [
+      {
+        title: "Kilometers komen in de reisaanvraag",
+        items: [
+          "Een rit die je in Y-Next boekt, komt nu direct in je reisaanvraag van die maand in ERPNext, als extra regel. Totale afstand en reiskosten worden bijgewerkt. Is er voor die maand nog geen reisaanvraag, dan wordt die aangemaakt. Je hoeft de rit dus niet meer ook in ERPNext in te voeren.",
+          "Onder het formulier en op de declaratiepagina zie je de ritten die in je reisaanvraag staan, ook de ritten die je in ERPNext zelf hebt ingevoerd. Zolang de werkgever de reisaanvraag niet heeft ingediend, kun je ze hier nog wijzigen of verwijderen.",
+          "Staat er op die dag al een rit met dezelfde afstand, dan krijg je eerst een waarschuwing. Druk nog een keer op Boeken als je hem toch wilt toevoegen.",
+          "Het bedrag rekent met het tarief dat al in de reisaanvraag van die maand staat. De hint bij Retour klopt weer: vul de enkele reis in, retour telt hem dubbel.",
+        ],
+      },
+      {
+        title: "Urenregistratie: rapporten",
+        items: [
+          "Nieuw tabblad Rapporten in Urenregistratie. Kies een week, maand, kwartaal, jaar of eigen periode en blader vooruit of terug. Zet medewerkers, projecten of activiteiten in de rijen en dagen, weken, maanden, projecten of medewerkers in de kolommen, met totalen. Filter op medewerker, project of alleen declarabel.",
+          "Klik op een getal en je ziet de boekingen die erachter zitten. \"Exporteren (Excel)\" geeft de tabel als bestand dat Excel meteen goed opent; \"Afdrukken / pdf\" maakt er een nette pagina van.",
+          "Het rapport haalt de uren van een hele periode in één keer op, en telt alleen regels die echt in de periode vallen — ook als een urenstaat ernaast regels met een verkeerde datum bevat.",
+        ],
+      },
+      {
+        title: "Y-messaging: berichten verwijderen",
+        items: [
+          "Berichten heet nu Y-messaging.",
+          "Een bericht is te verwijderen via het prullenbakje ernaast. Een eigen bericht haal je weg voor iedereen of alleen voor jezelf; een ontvangen bericht alleen voor jezelf. \"Voor iedereen\" haalt het bericht en de likes erop ook bij de ander weg.",
+        ],
+      },
+      {
+        title: "Agenda: afspraken zo breed als er ruimte is",
+        items: [
+          "Afspraken zijn zo breed als er plaats is. Eerst bepaalde het drukste moment van de dag de breedte van álle afspraken die dag: stonden er om 10:00 drie naast elkaar, dan was een afspraak om 14:00 ook een derde breed, terwijl hij daar alleen stond. Nu delen alleen afspraken die elkaar werkelijk raken de breedte, en groeit een afspraak naar rechts zolang daar niets staat.",
+        ],
+      },
+      {
+        title: "Mail: verkoopfacturen en klikbare adressen",
+        items: [
+          "Mails die vanuit een verkoopfactuur verstuurd zijn, hangen aan die factuur — dat deed ERPNext al, maar Y-Next liet het niet zien. Nu staat het factuurnummer als chip bij de mail, in de lijst én in de mail zelf, en klik je in één keer door naar de factuur. In de zijkolom staat \"Verkoopfacturen\" als eigen ingang.",
+          "Klik op de afzender of op een adres bij Aan of Cc, en je schrijft die persoon meteen een nieuwe mail.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.37.0",
+    date: "2026-09-15",
+    url: "",
+    sections: [
+      {
+        title: "Mail: kolommen op breedte, en de adressen bij allen beantwoorden",
+        items: [
+          "Plaatjes uit de mailtekst, zoals de logo's in een handtekening (image001.png en verder), staan niet meer tussen de bijlagen. Je ziet ze al in de mail zelf. Met \"afbeeldingen uit de tekst tonen\" haal je ze er toch bij, en \"Alles downloaden\" neemt alleen de echte bijlagen mee.",
+          "Afhandelen hoort bij binnengekomen post: de knop Afgehandeld, het filter \"alleen open\", de sneltoets E en het vinkje in de lijst staan alleen nog in Postvak IN, en in de map Afgehandeld om iets terug te zetten. In Verzonden, de Prullenbak en eigen mappen zijn ze weg.",
+          "De mappen en de berichtenlijst zijn nu breder of smaller te slepen aan hun rechterrand. Dubbelklik op de rand voor de standaardbreedte. De breedte blijft bewaard op dit apparaat, en het leespaneel houdt altijd genoeg ruimte over.",
+          "Bij allen beantwoorden stonden Aan en Cc als halfgetypte tekst in het veld in plaats van als blokjes. Een naam met een komma, zoals \"Hoeven, Maarten van der\", werd daarbij ook nog in twee stukken geknipt. Beide staan nu goed: elk adres een blokje, en een naam tussen aanhalingstekens blijft heel.",
+        ],
+      },
+      {
+        title: "Inkoopfactuur: al ingeboekt of betaald, en niet dubbel inboeken",
+        items: [
+          "Btw bij het inboeken: je kiest of het bedrag inclusief of exclusief btw is en welk btw-tarief geldt, en eronder staan netto, btw en totaal. Staat er in de mail \"21% btw\", \"BTW (9%)\" of \"btw verlegd\", dan staat het juiste tarief al klaar; anders het standaardtarief van het bedrijf. De btw-regels gaan mee naar de conceptfactuur in ERPNext, en bij een bedrag inclusief btw rekent ERPNext het netto zelf uit.",
+          "Een inkoopfactuur die je pas na zijn vervaldatum inboekt, wordt niet meer geweigerd. ERPNext keurde die af omdat de betalingstermijn op de boekdatum al verstreken was. Nu wordt de vervaldatum in dat geval de boekdatum, en telt de standaard betalingstermijn van de leverancier voor die ene factuur niet mee.",
+          "Een factuurmail waarvan de factuur al in ERPNext staat, krijgt geen voorstel \"inboeken?\" meer. In de maillijst staat \"Al betaald\", \"Deels betaald\", \"Al ingeboekt\" of \"Als concept ingeboekt\", en boven de geopende mail een balk met het documentnummer, het factuurnummer, de datum, het bedrag en een link naar ERPNext. Dat werkt ook voor facturen die met de hand in ERPNext zijn ingeboekt en dus niet aan de mail hangen. Is het toch een andere factuur, dan kan \"Toch inboeken\" nog.",
+          "Boek je een inkoopfactuur in vanuit de mail, dan kijkt Y-Next eerst of hij er al is: hetzelfde factuurnummer bij deze leverancier, dezelfde pdf aan een andere inkoopfactuur, of hetzelfde bedrag op dezelfde factuurdatum. Is dat zo, dan staat bovenaan welke factuur het is, met een link en de status, en boekt de knop pas als je \"Toch inboeken\" aanvinkt. Geannuleerde facturen tellen niet mee.",
+          "De pdf van de factuur staat nu ook op een smaller scherm naast het formulier, zoals een laptop met 150% schaling. Daar bleef het venster eerder weg. Op een telefoon open je de bijlage met het icoon achter de naam.",
+        ],
+      },
+      {
+        title: "Uitnodigingen op de juiste tijd",
+        items: [
+          "Een uitnodiging uit Y-Next kwam bij ontvangers met Outlook twee uur te laat binnen: 10:00 werd 12:00. Het agendabestand noemde de tijdzone wel, maar legde hem niet uit, en Outlook rekende de tijd dan als wereldtijd. Nieuwe uitnodigingen en afzeggingen dragen de volledige tijdzone nu mee.",
+          "Uitnodigingen die al verstuurd waren, staan bij de ontvanger nog op de verkeerde tijd. Verstuur die opnieuw of laat het de ontvanger even weten.",
+        ],
+      },
+      {
+        title: "Agenda: de locatie bij een afspraak, en een eigen kleur per agenda",
+        items: [
+          "Elke agenda heeft een duidelijk eigen kleur. Je eigen agenda is altijd blauw; de collega's die je aanvinkt krijgen op volgorde van aanvinken een tint die goed te onderscheiden is. Eerst kreeg iedereen een kleur op zijn plek in de medewerkerslijst, en dan konden twee agenda's naast elkaar vrijwel dezelfde roze tint hebben, of zelfs precies dezelfde kleur. Rood, oranje, groen en blauw blijven voor verlof, taken, uren en afspraken.",
+          "Een afspraak laat zijn locatie weer zien: in het venster als je hem aanklikt, en in het week- en dagrooster onder de tijd. Bij afspraken in de agenda van de mailserver — waar nieuwe afspraken standaard komen — viel de locatie onderweg weg.",
+        ],
+      },
+      {
+        title: "Mail: alle open mail in beeld, en de Prullenbak leegmaken",
+        items: [
+          "Met \"Niet afgehandeld\" aan staan alle open mails van je inbox in één keer in de lijst — tot vijfhonderd — in plaats van alleen de open mails uit de nieuwste vijftig. Een oudere mail die nog iets van je vraagt, verstopt zich dus niet meer achter \"Meer laden\".",
+          "In de Prullenbak staat een knop \"Prullenbak leegmaken\". Die haalt alles in één keer weg, ook wat nog niet geladen is, na een bevestiging met het aantal berichten. Dat is definitief.",
+        ],
+      },
+      {
+        title: "Mail: ondertekening en antwoorden",
+        items: [
+          "In de ondertekening staat weer alleen je hoofd, zoals in de oudere mails, als base64 in de mail zelf. De foto kwam uit je profiel in ERPNext; bij een staande foto van het hele lichaam kwam er een bovenlijf in de handtekening. Nu gaat de foto uit de handtekening van je postbus voor, en anders het bovenste deel van je profielfoto.",
+          "Terwijl je een antwoord schrijft, staat datzelfde concept niet meer nog een keer in het gesprek eronder, met een knop om te hervatten waar je al in zat.",
+          "De ondertekening komt nu één keer als gewone tekst in je bericht: direct onder waar je typt, en boven het doorgestuurde of geciteerde bericht. Je past hem aan of haalt hem weg zoals elke andere tekst; het vaste blok onder het schrijfvenster is weg.",
+          "Typ je een adres in \"Aan\", dan blijft de cursor daar staan. Bij de eerste letter sprong hij naar de tekst van de mail.",
+        ],
+      },
+      {
+        title: "Mail: afgehandeld geldt voor het hele gesprek",
+        items: [
+          "Zet je een mail op afgehandeld, dan gaat het hele gesprek mee: ook de eerdere berichten en je eigen antwoorden in Verzonden. Het gesprek verdwijnt daarmee in één keer uit \"Niet afgehandeld\". Dat geldt voor de knop boven de mail, de knop in de lijst, de sneltoets en het beantwoorden van een uitnodiging. Heropenen doe je nog steeds per bericht.",
+        ],
+      },
+      {
+        title: "Agenda: een lijn op de huidige tijd",
+        items: [
+          "In de week- en dagweergave loopt een rode lijn over het rooster op de huidige tijd, met de tijd ernaast. Over vandaag staat hij vol, over de andere dagen van de week dun. Hij schuift elke minuut mee, en na middernacht springt ook \"vandaag\" naar de nieuwe dag.",
+        ],
+      },
+      {
+        title: "Agenda: verwijderen, ook bij reeksen en uitnodigingen",
+        items: [
+          "De agenda herkende herhalende afspraken niet: de mailserver noemt de herhaling anders dan waar de app op lette. Bij verwijderen ging daardoor zonder waarschuwing de hele reeks weg, en een reeks was gewoon te verslepen. Nu zegt de bevestiging dat de hele reeks weggaat; een reeks bewerken of verslepen doe je in je agendaprogramma.",
+          "Een uitnodiging die nog in je mail staat — gestippeld in de agenda — had geen verwijderknop. Die is er nu: de uitnodiging verdwijnt uit de agenda en de mail gaat naar Afgehandeld. De organisator krijgt daarbij geen antwoord; wil je afzeggen, kies dan Weigeren.",
+          "Afgehandelde uitnodigingen, ook geweigerde, komen niet meer gestippeld terug in de agenda.",
+        ],
+      },
+      {
+        title: "Zoeken: inkomend of verzonden",
+        items: [
+          "Onder de zoekbalk kies je tussen Inkomend, Verzonden en Alles. Standaard zoek je alleen in inkomende post, zodat je eigen antwoorden met hetzelfde onderwerp de lijst niet dubbel zo lang maken. Je keuze wordt onthouden.",
+          "Het werkt ook bij zoeken op een soort bijlage, zoals *.ifc.",
+        ],
+      },
+      {
+        title: "Adressen als blokjes",
+        items: [
+          "In Aan, Cc en Bcc staat elk adres nu als blokje, met naam en adres: Maarten Vroegindeweij <maarten@3bm.co.nl>. Een gekozen contact komt er met naam in.",
+          "Het kruisje haalt een adres weg, dubbelklikken maakt het weer tekst om aan te passen, en Backspace in een leeg veld haalt het laatste adres weg.",
+          "Een adres dat geen geldig e-mailadres lijkt, kleurt rood. Een tikfout zie je dan vóór het versturen.",
+          "Een lijst plakken met komma's of puntkomma's werkt nog steeds: elk adres wordt een blokje.",
+        ],
+      },
+      {
+        title: "Gesprekken lezen",
+        items: [
+          "Klik je een gesprek aan, dan klapt het in de lijst vanzelf open, zodat je ziet welke berichten erbij horen.",
+          "Het voorbeeld toont een gesprek standaard als stapel: alle berichten onder elkaar, het gekozen bericht uitgeklapt. Met de knop boven het gesprek zet je dat uit; die keuze wordt onthouden.",
+        ],
+      },
+      {
+        title: "Berichten: het invoerveld groeit mee",
+        items: [
+          "Typ je een langer bericht, dan wordt het invoerveld hoger in plaats van dat de tekst uit beeld schuift — tot een regel of acht, daarna scrolt het veld. Na het versturen is het weer één regel. Ook op de telefoon.",
+        ],
+      },
+      {
+        title: "Berichten: emoji, likes en wie er online is",
+        items: [
+          "Met de smiley naast het invoerveld kies je een emoji. De emoji die je het laatst gebruikte staan vooraan.",
+          "Een bericht of foto van een collega kun je liken met het duimpje. Jullie zien het allebei; nog eens klikken trekt de like in.",
+          "In de gesprekkenlijst en boven het gesprek staat de foto van je collega, met een groen bolletje als die de afgelopen vijf minuten actief was. Anders zie je wanneer die laatst actief was.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.36.0",
     date: "2026-09-14",
     url: "",
@@ -64,6 +291,14 @@ const LOCAL_RELEASES = [
           "Typ *.ifc in het zoekveld en je krijgt de berichten met een IFC-bijlage. Werkt voor elke extensie: *.pdf, *.dwg, *.xlsx. Een gewone bestandsnaam zonder sterretje blijft een gewone zoekterm.",
           "Onder het zoekveld staat een vinkje \"Ook in de berichttekst\". Standaard zoek je op onderwerp, afzender en ontvanger; met het vinkje aan ook in wat er in de mail staat. Dat duurt merkbaar langer, daarom staat het uit tot je het aanzet — en daarna onthoudt de app het.",
           "Een zoekopdracht keek door alle mail heen die je mag lezen. Voor een beheerder is dat de post van iedere collega, terwijl de lijst eronder netjes alleen het gekozen tabblad toonde. Zoeken houdt nu dezelfde grens als bladeren: het tabblad dat openstaat. Wil je in een andere postbus zoeken, open dan eerst dat tabblad.",
+        ],
+      },
+      {
+        title: "Afwezigheidsmelding",
+        items: [
+          "In de mail stel je onder de mappen je afwezigheidsmelding in: aan of uit, vanaf en tot en met welke dag, een onderwerp en het bericht. De mailserver verstuurt het antwoord zelf, dus het werkt ook als ERPNext even geen mail ophaalt.",
+          "Met een einddatum gaat hij na die dag vanzelf weer uit. Zolang hij aan staat, zie je dat bovenaan in de mappenkolom, zodat je hem niet vergeet uit te zetten.",
+          "Het geldt voor je eigen postbus; je kunt geen melding namens een collega aan- of uitzetten.",
         ],
       },
       {

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Box, Download, FileArchive, FileText, Loader2, Paperclip } from "lucide-react";
+import { Box, Download, FileArchive, FileText, ImageIcon, Loader2, Paperclip } from "lucide-react";
 import { getFileUrl } from "../../lib/erpnext";
 import { isIfcName, isPdfName } from "../../lib/mail-erpnext-compose";
+import { isCadNaam, isLeesbaarOffice } from "../../lib/bijlage-soort";
+import { echteBijlagen } from "../../lib/mail-doorsturen";
 import { isPermissionError } from "../../lib/permission-error";
 import {
   checkAttachmentAccess,
@@ -30,6 +32,11 @@ import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
  *   bestandsnaam en zonder dat er iets te blokkeren valt. De klik start
  *   daarnaast een controle die een 403 alsnog in de app meldt.
  *
+ * De plaatjes uit de mailtekst — logo's en foto's in een handtekening, bij
+ * Outlook `image001.png` en verder — staan er standaard niet tussen: die zie
+ * je al in de mail zelf, en een rij van zestien naamloze plaatjes verstopt de
+ * ene tekening waar het om ging. Eén klik haalt ze erbij.
+ *
  * Gedeeld tussen het leespaneel in `Webmail.tsx` en de popout in
  * `MailView.tsx`, zodat die twee niet opnieuw uit elkaar groeien (dat gebeurde
  * eerder al bij de IMAP-variant, waar de popout de NextCloud-knoppen miste).
@@ -37,7 +44,7 @@ import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
 export type ErpAttachment = MailAttachmentRef;
 
 export default function ErpAttachmentList({
-  attachments, onError, className, subject, onVoorbeeld, voorbeeldVan,
+  attachments, onError, className, subject, onVoorbeeld, voorbeeldVan, berichtHtml,
 }: {
   attachments: ErpAttachment[];
   /** Meldkanaal richting de gebruiker (toast of foutregel). */
@@ -56,9 +63,17 @@ export default function ErpAttachmentList({
   onVoorbeeld?: (att: ErpAttachment) => void;
   /** De bijlage die nu naast de mail staat; die krijgt een actieve rand. */
   voorbeeldVan?: string;
+  /** De HTML van de mail, om de plaatjes uit de tekst te herkennen. */
+  berichtHtml?: string;
 }) {
   const { t } = useTranslation();
   const [zipBezig, setZipBezig] = useState(false);
+  const [toonAlles, setToonAlles] = useState(false);
+  const zichtbaar = useMemo(
+    () => (toonAlles ? attachments : echteBijlagen(attachments, berichtHtml ?? "")),
+    [attachments, berichtHtml, toonAlles],
+  );
+  const verborgen = attachments.length - echteBijlagen(attachments, berichtHtml ?? "").length;
   if (attachments.length === 0) return null;
 
   /**
@@ -96,9 +111,9 @@ export default function ErpAttachmentList({
   }
 
   /**
-   * Alle bijlagen in één zip. De browser mag meerdere downloads uit één klik
-   * weigeren of er een toestemmingsvraag over stellen, en je houdt dan losse
-   * bestanden over; één archief is precies wat er gevraagd wordt.
+   * De getoonde bijlagen in één zip. De browser mag meerdere downloads uit één
+   * klik weigeren of er een toestemmingsvraag over stellen, en je houdt dan
+   * losse bestanden over; één archief is precies wat er gevraagd wordt.
    *
    * Alles wordt eerst opgehaald en pas daarna aangeboden: een half archief is
    * erger dan een foutmelding, dus mislukt er één bijlage, dan gaat de hele
@@ -108,8 +123,8 @@ export default function ErpAttachmentList({
     if (zipBezig) return;
     setZipBezig(true);
     try {
-      const namen = uniekeNamen(attachments.map((a) => a.file_name));
-      const bestanden = await Promise.all(attachments.map(async (att, i) => {
+      const namen = uniekeNamen(zichtbaar.map((a) => a.file_name));
+      const bestanden = await Promise.all(zichtbaar.map(async (att, i) => {
         const res = await fetch(getFileUrl(att.file_url), { credentials: "include" });
         if (!res.ok) {
           throw Object.assign(new Error(`${att.file_name} (HTTP ${res.status})`), { status: res.status });
@@ -134,13 +149,17 @@ export default function ErpAttachmentList({
   }
 
   return (
-    <div className={className ?? "border-t border-slate-200 px-5 py-2.5 flex-shrink-0"}>
-      <p className="text-[11px] text-slate-500 mb-1.5 flex items-center gap-1">
-        <Paperclip size={11} />
-        {attachments.length === 1
-          ? t("webmail.one_attachment")
-          : t("webmail.n_attachments", { count: attachments.length })}
-        {attachments.length > 1 && (
+    <div data-bijlagen className={className ?? "border-t border-slate-200 px-5 py-2.5 flex-shrink-0"}>
+      <p className="text-[11px] text-slate-500 mb-1.5 flex flex-wrap items-center gap-1">
+        {zichtbaar.length > 0 && (
+          <>
+            <Paperclip size={11} />
+            {zichtbaar.length === 1
+              ? t("webmail.one_attachment")
+              : t("webmail.n_attachments", { count: zichtbaar.length })}
+          </>
+        )}
+        {zichtbaar.length > 1 && (
           <button onClick={() => void handleDownloadAll()} disabled={zipBezig}
             title={t("webmail.download_all_hint")}
             className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 disabled:opacity-50 cursor-pointer">
@@ -150,44 +169,55 @@ export default function ErpAttachmentList({
             {t("webmail.download_all")}
           </button>
         )}
+        {verborgen > 0 && (
+          <button type="button" data-plaatjes-wissel onClick={() => setToonAlles((v) => !v)}
+            className={`${zichtbaar.length > 0 ? "ml-1.5" : ""} inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-slate-400 hover:text-blue-600 hover:bg-slate-100 cursor-pointer`}>
+            <ImageIcon size={11} />
+            {toonAlles
+              ? t("webmail.hide_inline_images")
+              : t("webmail.show_inline_images", { count: verborgen })}
+          </button>
+        )}
       </p>
-      <div className="flex flex-wrap gap-2">
-        {attachments.map((att) => {
-          const url = getFileUrl(att.file_url);
-          return (
-            <span key={att.file_url}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-slate-200 text-xs text-slate-600">
-              {isPdfName(att.file_name) || (onVoorbeeld && isIfcName(att.file_name)) ? (
-                /* Een bouwmodel opent alleen naast de mail wanneer daar plek
-                   voor is; zonder `onVoorbeeld` (de popout-lezer) blijft het
-                   een gewone download in plaats van een knop die niets doet. */
-                <button onClick={() => { if (onVoorbeeld) onVoorbeeld(att); else void handleOpenPdf(att); }}
-                  aria-pressed={onVoorbeeld ? voorbeeldVan === att.file_url : undefined}
-                  title={t("y_next.mail_open_attachment")}
-                  className="inline-flex items-center gap-1.5 hover:text-blue-700 cursor-pointer">
-                  {isIfcName(att.file_name)
-                    ? <Box size={12} className="text-sky-500" />
-                    : <FileText size={12} className="text-red-400" />}
-                  <span className="truncate max-w-[180px]">{att.file_name}</span>
-                </button>
-              ) : (
-                <a href={url} target="_blank" rel="noopener noreferrer"
-                  onClick={() => verifyInBackground(att, "y_next.attachment_open_failed")}
-                  title={t("y_next.mail_open_attachment")}
-                  className="inline-flex items-center gap-1.5 hover:text-blue-700">
-                  <FileText size={12} className="text-slate-400" />
-                  <span className="truncate max-w-[180px]">{att.file_name}</span>
+      {zichtbaar.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {zichtbaar.map((att) => {
+            const url = getFileUrl(att.file_url);
+            return (
+              <span key={att.file_url}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-slate-200 text-xs text-slate-600">
+                {isPdfName(att.file_name) || (onVoorbeeld && (isIfcName(att.file_name) || isLeesbaarOffice(att.file_name) || isCadNaam(att.file_name))) ? (
+                  /* Een bouwmodel opent alleen naast de mail wanneer daar plek
+                     voor is; zonder `onVoorbeeld` (de popout-lezer) blijft het
+                     een gewone download in plaats van een knop die niets doet. */
+                  <button onClick={() => { if (onVoorbeeld) onVoorbeeld(att); else void handleOpenPdf(att); }}
+                    aria-pressed={onVoorbeeld ? voorbeeldVan === att.file_url : undefined}
+                    title={t("y_next.mail_open_attachment")}
+                    className="inline-flex items-center gap-1.5 hover:text-blue-700 cursor-pointer">
+                    {isIfcName(att.file_name)
+                      ? <Box size={12} className="text-sky-500" />
+                      : <FileText size={12} className="text-red-400" />}
+                    <span className="truncate max-w-[180px]">{att.file_name}</span>
+                  </button>
+                ) : (
+                  <a href={url} target="_blank" rel="noopener noreferrer"
+                    onClick={() => verifyInBackground(att, "y_next.attachment_open_failed")}
+                    title={t("y_next.mail_open_attachment")}
+                    className="inline-flex items-center gap-1.5 hover:text-blue-700">
+                    <FileText size={12} className="text-slate-400" />
+                    <span className="truncate max-w-[180px]">{att.file_name}</span>
+                  </a>
+                )}
+                <a href={url} download={att.file_name} title={t("webmail.download")}
+                  onClick={() => verifyInBackground(att, "y_next.attachment_download_failed")}
+                  className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100">
+                  <Download size={11} />
                 </a>
-              )}
-              <a href={url} download={att.file_name} title={t("webmail.download")}
-                onClick={() => verifyInBackground(att, "y_next.attachment_download_failed")}
-                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100">
-                <Download size={11} />
-              </a>
-            </span>
-          );
-        })}
-      </div>
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
