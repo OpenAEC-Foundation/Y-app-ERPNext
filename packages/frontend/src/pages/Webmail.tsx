@@ -137,7 +137,7 @@ import {
 } from "../lib/mail-erpnext-compose";
 import { adresMetNaam, rondAdresAf } from "../lib/recipient-field";
 import AdresKnoppen from "../components/mail/AdresKnoppen";
-import { KOLOM_SLEUTEL, KOLOM_START, begrensKolom, opgeslagenKolom, type MailKolom } from "../lib/mail-kolommen";
+import { KOLOM_SLEUTEL, KOLOM_START, begrensKolom, opgeslagenKolom, type MailKolom , VOORBEELD_SLEUTEL, VOORBEELD_START, begrensVoorbeeld, opgeslagenVoorbeeld } from "../lib/mail-kolommen";
 import KolomGreep from "../components/mail/KolomGreep";
 /*
  * De IFC-viewer sleept three.js en een WebAssembly-module mee — samen groter
@@ -4406,6 +4406,45 @@ function ErpNextWebmail() {
     window.addEventListener("mouseup", stop);
   }, [mappenBreedte, lijstBreedte]);
 
+  /**
+   * Breedte van het voorbeeldpaneel naast de mail. Te slepen aan zijn
+   * linkerrand; dubbelklikken zet hem terug. Een tekening wil je breed, een
+   * pdf vaak smaller — dat is een keuze van het moment, dus versleepbaar.
+   */
+  const [voorbeeldBreedte, setVoorbeeldBreedte] = useState(() => {
+    try { return opgeslagenVoorbeeld(localStorage.getItem(VOORBEELD_SLEUTEL)); } catch { return VOORBEELD_START; }
+  });
+
+  const startVoorbeeldSleep = useCallback((e: ReactMouseEvent<HTMLElement>) => {
+    e.preventDefault();
+    const beginX = e.clientX;
+    const begin = voorbeeldBreedte;
+    // De rij met de mail en het voorbeeld ernaast.
+    const ruimte = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+    let laatste = begin;
+    function beweeg(ev: globalThis.MouseEvent) {
+      // Naar links slepen maakt het paneel breder: het staat rechts.
+      laatste = begrensVoorbeeld(begin - (ev.clientX - beginX), ruimte);
+      setVoorbeeldBreedte(laatste);
+    }
+    function stop() {
+      window.removeEventListener("mousemove", beweeg);
+      window.removeEventListener("mouseup", stop);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      try { localStorage.setItem(VOORBEELD_SLEUTEL, String(laatste)); } catch { /* privémodus */ }
+    }
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("mousemove", beweeg);
+    window.addEventListener("mouseup", stop);
+  }, [voorbeeldBreedte]);
+
+  const herstelVoorbeeld = useCallback(() => {
+    setVoorbeeldBreedte(VOORBEELD_START);
+    try { localStorage.removeItem(VOORBEELD_SLEUTEL); } catch { /* privémodus */ }
+  }, []);
+
   const herstelKolom = useCallback((kolom: MailKolom) => {
     (kolom === "mappen" ? setMappenBreedte : setLijstBreedte)(KOLOM_START[kolom]);
     try { localStorage.removeItem(KOLOM_SLEUTEL[kolom]); } catch { /* privémodus */ }
@@ -8049,11 +8088,12 @@ function ErpNextWebmail() {
                       uitnodigingspaneel: dat laatste verschijnt vanzelf, de
                       bijlage vroeg je om. */}
                   {voorbeeld ? (
-                    <aside className={`hidden min-w-[320px] flex-shrink-0 flex-col border-l border-slate-200 bg-slate-100 lg:flex ${
-                      // Een tekening of bouwmodel heeft ruimte nodig; een pdf of
-                      // document leest prima in een smallere kolom.
-                      voorbeeld.soort === "cad" || voorbeeld.soort === "ifc" ? "w-[62%]" : "w-[46%]"
-                    }`}>
+                    <aside style={{ width: voorbeeldBreedte }}
+                      className="relative hidden min-w-[320px] flex-shrink-0 flex-col border-l border-slate-200 bg-slate-100 lg:flex">
+                      {/* Aan de linkerrand slepen om het paneel breder of
+                          smaller te maken; dubbelklikken zet hem terug. */}
+                      <KolomGreep kant="links" label={t("webmail.column_resize")}
+                        onStart={startVoorbeeldSleep} onReset={herstelVoorbeeld} />
                       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
                         {voorbeeld.soort === "ifc"
                           ? <Box size={13} className="flex-shrink-0 text-slate-400" />

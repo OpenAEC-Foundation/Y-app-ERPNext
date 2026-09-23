@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { KOLOM_START, LEESPANEEL_MIN, begrensKolom, opgeslagenKolom } from "./mail-kolommen.ts";
+import {
+  KOLOM_START, LEESPANEEL_MIN, VOORBEELD_START, begrensKolom, begrensVoorbeeld, opgeslagenKolom, opgeslagenVoorbeeld,
+} from "./mail-kolommen.ts";
 
 test("begrensKolom: de mappenkolom blijft tussen 160 en 400", () => {
   assert.equal(begrensKolom("mappen", 100, 2000, 384), 160);
@@ -35,4 +37,13 @@ test("opgeslagenKolom: een bewaarde breedte komt terug, binnen de grenzen", () =
   assert.equal(opgeslagenKolom("lijst", "520"), 520);
   assert.equal(opgeslagenKolom("lijst", "5000"), 900);
   assert.equal(opgeslagenKolom("mappen", "20"), 160);
+});
+
+test("voorbeeldpaneel: grenzen en bewaarde breedte", () => {
+  assert.equal(begrensVoorbeeld(560, 1400), 560);
+  assert.equal(begrensVoorbeeld(100, 1400), 320, "niet smaller dan het minimum");
+  assert.equal(begrensVoorbeeld(1200, 1000), 580, "de mail houdt zijn minimumbreedte");
+  assert.equal(opgeslagenVoorbeeld(null), VOORBEELD_START);
+  assert.equal(opgeslagenVoorbeeld("onzin"), VOORBEELD_START);
+  assert.equal(opgeslagenVoorbeeld("700"), 700);
 });

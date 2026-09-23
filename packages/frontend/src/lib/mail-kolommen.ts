@@ -23,6 +23,33 @@ export const KOLOM_SLEUTEL: Record<MailKolom, string> = {
   lijst: "ynext_mail_lijst_breedte",
 };
 
+/* ── Het voorbeeldpaneel naast de mail (pdf, tekening, model, document) ── */
+
+/** Startbreedte: breed genoeg voor een tekening, smal genoeg om te blijven lezen. */
+export const VOORBEELD_START = 560;
+const VOORBEELD_MIN = 320;
+const VOORBEELD_MAX = 1600;
+export const VOORBEELD_SLEUTEL = "ynext_mail_voorbeeld_breedte";
+
+/**
+ * De breedte waar een sleepbeweging op uitkomt. `ruimte` is de breedte van het
+ * leespaneel plus het voorbeeld samen; wat overblijft voor de mail zelf mag
+ * niet onder `LEESPANEEL_MIN` zakken.
+ */
+export function begrensVoorbeeld(px: number, ruimte: number): number {
+  let max = VOORBEELD_MAX;
+  if (Number.isFinite(ruimte) && ruimte > 0) max = Math.min(max, ruimte - LEESPANEEL_MIN);
+  return Math.round(Math.max(VOORBEELD_MIN, Math.min(px, Math.max(VOORBEELD_MIN, max))));
+}
+
+/** Een bewaarde breedte terug; iets onleesbaars geeft de standaardbreedte. */
+export function opgeslagenVoorbeeld(raw: string | null): number {
+  if (raw === null || raw.trim() === "") return VOORBEELD_START;
+  const px = Number(raw);
+  if (!Number.isFinite(px)) return VOORBEELD_START;
+  return Math.round(Math.max(VOORBEELD_MIN, Math.min(px, VOORBEELD_MAX)));
+}
+
 /**
  * De breedte waar een sleepbeweging op uitkomt.
  *
