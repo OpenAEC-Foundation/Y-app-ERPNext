@@ -6,7 +6,7 @@ import {
   FileSpreadsheet, Wallet, CalendarCheck, Settings, BarChart3,
   ListTodo, LayoutDashboard, UserCheck, Cloud, ListTree,
   Calendar, CalendarRange, ChevronDown, ChevronRight, Landmark, BookMarked, Shield, MessageSquare, ClipboardList, Contact,
-  Target, Banknote, PenLine, X, PanelLeftClose, PanelLeftOpen, Puzzle,
+  Target, Banknote, PenLine, X, PanelLeftClose, PanelLeftOpen, Puzzle, NotebookPen,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getActiveCompany } from "../lib/instances";
@@ -35,7 +35,7 @@ export type Page =
   | "nextcloud-files" | "nextcloud-talk" | "webmail" | "subtasks"
   | "calendar" | "weekplanning" | "ledgers" | "bank-transactions" | "booking-program"
   | "wiki" | "passwords" | "messenger" | "erpnext-overview" | "contacts"
-  | "meeting-notes" | "leads" | "liquidity-planning" | "letters"
+  | "meeting-notes" | "notities" | "leads" | "liquidity-planning" | "letters"
   | "release-notes"
   | "to-invoice";
 
@@ -73,7 +73,7 @@ const ROLE_PAGE_MAP: Record<string, Set<Page>> = {
 /** Pages everyone can see regardless of roles */
 const UNIVERSAL_PAGES: Set<Page> = new Set([
   "dashboard", "settings", "contacts", "calendar", "weekplanning", "todo", "wiki",
-  "webmail", "messenger", "meeting-notes", "letters", "release-notes",
+  "webmail", "messenger", "meeting-notes", "notities", "letters", "release-notes",
   "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview",
 ]);
 
@@ -157,6 +157,7 @@ function getSections(): NavSection[] {
         { id: "quotations", labelKey: "nav.quotations", icon: FileBarChart, visibility: "employer" },
         { id: "salesorders", labelKey: "nav.salesorders", icon: ClipboardCheck, visibility: "employer" },
         { id: "leads", labelKey: "nav.leads", icon: Target, visibility: "employer" },
+        { id: "notities", labelKey: "nav.notes", icon: NotebookPen },
         { id: "meeting-notes", labelKey: "nav.meeting_notes", icon: FileText, visibility: "employer" },
         { id: "deliverynotes", labelKey: "nav.deliverynotes", icon: Truck, visibility: "employer" },
       ],

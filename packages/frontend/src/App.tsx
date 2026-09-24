@@ -63,6 +63,7 @@ const Messenger = lazy(() => import("./pages/Messenger"));
 const Messages = lazy(() => import("./pages/Messages"));
 const ErpNextOverview = lazy(() => import("./pages/ErpNextOverview"));
 const MeetingNotes = lazy(() => import("./pages/MeetingNotes"));
+const Notities = lazy(() => import("./pages/Notities"));
 const Leads = lazy(() => import("./pages/Leads"));
 const LiquidityPlanning = lazy(() => import("./pages/LiquidityPlanning"));
 const Letters = lazy(() => import("./pages/Letters"));
@@ -558,6 +559,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                     element={gate("/messenger", isFeatureEnabled(ERPNEXT_MESSAGES) ? <Messages /> : <Messenger />)}
                   />
                   <Route path="/meeting-notes" element={gate("/meeting-notes", <MeetingNotes />)} />
+                  <Route path="/notities" element={gate("/notities", <Notities />)} />
                   <Route path="/leads" element={gate("/leads", <Leads />)} />
                   <Route path="/liquidity-planning" element={gate("/liquidity-planning", <LiquidityPlanning />)} />
                   <Route path="/letters" element={gate("/letters", <Letters />)} />

@@ -20,11 +20,16 @@ const KEUZES: [Deelnamestatus, typeof Check, string][] = [
 
 export default function UitnodigingBalk({ uitnodiging }: { uitnodiging: Uitnodiging }) {
   const { t } = useTranslation();
-  const { afspraak, genodigd, stand, bezig, bevestigd, fout, antwoord } = uitnodiging;
+  const {
+    afspraak, genodigd, alleenInAgenda, zetInAgenda, stand, bezig, bevestigd, fout, antwoord,
+  } = uitnodiging;
 
-  // Geen uitnodiging, of eentje waar je zelf niet in staat: dan valt er niets
-  // te beantwoorden en hoort er geen balk te staan.
-  if (!afspraak?.start || !genodigd) return null;
+  // Zonder afspraak valt er niets te tonen. Staat er wel een afspraak in de
+  // mail maar jij niet in de genodigdenlijst (doorgestuurd, of aan een
+  // gedeelde postbus), dan is er niets te beantwoorden maar wél iets in je
+  // agenda te zetten.
+  if (!afspraak?.start) return null;
+  if (!genodigd && !alleenInAgenda) return null;
 
   return (
     /* Opgebouwd als in Thunderbird: eerst de mededeling dát dit een
@@ -34,7 +39,9 @@ export default function UitnodigingBalk({ uitnodiging }: { uitnodiging: Uitnodig
     <div className="border-b border-violet-100 bg-violet-50/60 px-5 py-2">
       <p className="flex items-center gap-2 text-xs text-violet-900">
         <CalendarPlus size={14} className="flex-shrink-0 text-violet-500" />
-        {stand === "needs-action" ? t("agenda.invite_banner") : t("agenda.invite_answer_question")}
+        {!genodigd
+          ? t("agenda.invite_not_invited")
+          : stand === "needs-action" ? t("agenda.invite_banner") : t("agenda.invite_answer_question")}
       </p>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-[22px]">
@@ -45,7 +52,15 @@ export default function UitnodigingBalk({ uitnodiging }: { uitnodiging: Uitnodig
           : ` · ${t("agenda.all_day")}`}
       </span>
 
-      <div className="flex items-center gap-1">
+      {!genodigd && (
+        <button type="button" disabled={bezig} onClick={() => void zetInAgenda()}
+          className="flex cursor-pointer items-center gap-1 rounded border border-violet-300 bg-white px-2.5 py-1 text-xs text-violet-800 transition-colors hover:bg-violet-50 disabled:opacity-50">
+          {bezig ? <Loader2 size={12} className="animate-spin" /> : <CalendarPlus size={12} />}
+          {t("agenda.invite_add_to_calendar")}
+        </button>
+      )}
+
+      <div className={`items-center gap-1 ${genodigd ? "flex" : "hidden"}`}>
         {KEUZES.map(([waarde, Icoon, actiefKlasse]) => {
           const actief = stand === waarde;
           return (

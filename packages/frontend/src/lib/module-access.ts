@@ -146,6 +146,8 @@ const MODULE_DOCTYPE: Record<string, string> = {
   // doctype op een kale site, dan is `doctype-missing` precies goed.
   "bank-transactions": "Bank Transaction",
   "meeting-notes": "Y Meeting Note",
+  // Notities delen het doctype met de vergadernotities; zie lib/notities.ts.
+  notities: "Y Meeting Note",
 };
 
 /** Alle module-ids waarover deze module een uitspraak doet. */

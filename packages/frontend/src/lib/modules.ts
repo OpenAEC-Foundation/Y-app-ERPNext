@@ -49,6 +49,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
       { id: "quotations", label: "Offertes" },
       { id: "salesorders", label: "Verkooporders" },
       { id: "leads", label: "Leads" },
+      { id: "notities", label: "Notities" },
       { id: "meeting-notes", label: "Vergadernotities" },
       { id: "deliverynotes", label: "Leveringen" },
     ],

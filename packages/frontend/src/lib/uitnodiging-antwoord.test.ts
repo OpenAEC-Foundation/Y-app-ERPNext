@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { beantwoordUitnodiging, handeltMailAf } from "./uitnodiging-antwoord.ts";
+import { beantwoordUitnodiging, handeltMailAf, magInAgenda } from "./uitnodiging-antwoord.ts";
 
 /**
  * Tests voor de twee wegen waarlangs een antwoord op een uitnodiging kan gaan.
@@ -91,4 +91,13 @@ test("voorlopig is nog geen antwoord", () => {
   // juist níet afgehandeld.
   assert.equal(handeltMailAf("tentative"), false);
   assert.equal(handeltMailAf("needs-action"), false);
+});
+
+test("magInAgenda: alleen als er een afspraak is waarin jij niet als genodigde staat", () => {
+  const basis = { heeftAfspraak: true, genodigd: false, ruweIcs: "BEGIN:VCALENDAR", ik: "maarten@3bm.co.nl" };
+  assert.equal(magInAgenda(basis), true);
+  assert.equal(magInAgenda({ ...basis, genodigd: true }), false, "genodigd: dan beantwoord je hem");
+  assert.equal(magInAgenda({ ...basis, heeftAfspraak: false }), false);
+  assert.equal(magInAgenda({ ...basis, ruweIcs: "  " }), false, "zonder .ics valt er niets neer te leggen");
+  assert.equal(magInAgenda({ ...basis, ik: "" }), false);
 });

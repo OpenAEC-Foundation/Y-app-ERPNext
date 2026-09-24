@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { leesAfspraakIcs, zetDeelname, type Deelnamestatus, type GelezenAfspraak } from "./ical.ts";
 import { haalUitnodigingIcs, planUitnodigingIn, zetEigenDeelname } from "./agenda-mailserver.ts";
-import { beantwoordUitnodiging, handeltMailAf } from "./uitnodiging-antwoord.ts";
+import { beantwoordUitnodiging, handeltMailAf, magInAgenda } from "./uitnodiging-antwoord.ts";
 import { maakAntwoordMail, verstuurAntwoordMail } from "./uitnodiging-antwoordmail.ts";
 import i18n from "../i18n/index";
 import { resolveSessionUser } from "./session.ts";
@@ -30,6 +30,14 @@ export interface Uitnodiging {
   ik: string;
   /** Sta je er als genodigde in? Zo niet, dan valt er niets te beantwoorden. */
   genodigd: boolean;
+  /**
+   * Er is wél een afspraak, maar jij staat niet in de genodigdenlijst —
+   * doorgestuurd, of gericht aan een gedeelde postbus. Dan kun je hem alleen
+   * in je eigen agenda zetten; zie `magInAgenda`.
+   */
+  alleenInAgenda: boolean;
+  /** De afspraak in je eigen agenda zetten, zonder antwoord aan de organisator. */
+  zetInAgenda: () => Promise<void>;
   /** Je antwoord zoals het nu staat. */
   stand: Deelnamestatus;
   /** Er loopt een antwoord. */
@@ -170,11 +178,38 @@ export function useUitnodiging(
     }
   }, [afspraak, ruweIcs, ik, communication, opAfgehandeld]);
 
+  /**
+   * De afspraak in je eigen agenda leggen. Geen antwoordmail: de organisator
+   * heeft jou niet uitgenodigd, dus een "ja" van jou zou hem verwarren.
+   */
+  const zetInAgenda = useCallback(async () => {
+    const uid = afspraak?.uid;
+    if (!uid || !ruweIcs || !ik) return;
+    setBezig(true);
+    setFout("");
+    try {
+      await planUitnodigingIn(uid, zetDeelname(ruweIcs, ik, "accepted"));
+      setStand("accepted");
+      if (communication) opAfgehandeld?.(communication);
+    } catch (err) {
+      setFout(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBezig(false);
+    }
+  }, [afspraak, ruweIcs, ik, communication, opAfgehandeld]);
+
   return {
     afspraak,
     ruweIcs,
     ik,
     genodigd: !!mijnRegel,
+    alleenInAgenda: magInAgenda({
+      heeftAfspraak: !!afspraak?.start,
+      genodigd: !!mijnRegel,
+      ruweIcs,
+      ik,
+    }),
+    zetInAgenda,
     stand: huidigeStand,
     bezig,
     bevestigd: stand !== null,

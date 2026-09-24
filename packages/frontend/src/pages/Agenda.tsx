@@ -28,6 +28,8 @@ import { COLLEGA_SLEUTEL } from "../lib/agenda-voorladen";
 import { kleurenVoorAgendas } from "../lib/agenda-kleuren";
 import { deelKolommenIn } from "../lib/agenda-indeling";
 import { resolveSessionUser } from "../lib/session";
+import { bouwAfspraakIcs } from "../lib/ical";
+import { maakUitnodigingMail, verstuurUitnodigingMail } from "../lib/uitnodiging-versturen";
 import {
   antwoordOpUitnodiging, eigenDeelname, haalAfspraakIcs, verwijderAfspraak, kanAntwoorden,
   nieuweAfspraakUid, verstuurAfspraak, werkAfspraakBij,
@@ -765,7 +767,7 @@ function CreateModal({ initial, onClose, onCreated }: {
          */
         const ik = (await resolveSessionUser()) || "";
         if (!ik.includes("@")) throw new Error(t("agenda.no_session_email"));
-        const uitslag = await verstuurAfspraak({
+        const afspraak = {
           uid: nieuweAfspraakUid(),
           titel: form.title.trim(),
           start: form.allDay ? `${form.date}T00:00:00` : `${form.date}T${form.startTime}:00`,
@@ -777,7 +779,8 @@ function CreateModal({ initial, onClose, onCreated }: {
           locatie: form.location || undefined,
           organisator: { email: ik.toLowerCase() },
           genodigden: inviteRecipients.map((email) => ({ email: email.toLowerCase() })),
-        });
+        };
+        const uitslag = await verstuurAfspraak(afspraak);
         if (uitslag.geschreven.length === 0) {
           throw new Error(uitslag.mislukt[0]?.reden || t("agenda.invite_failed"));
         }
@@ -788,6 +791,42 @@ function CreateModal({ initial, onClose, onCreated }: {
           setError(t("agenda.invite_partial", {
             agendas: uitslag.mislukt.map((m) => m.agenda).join(", "),
           }));
+        }
+
+        /*
+         * En dan de uitnodiging per mail. De mailserver zet de afspraak wel in
+         * de agenda's die hij kent, maar wie zijn post elders leest krijgt
+         * daar niets van mee. Deze mail draagt het .ics als bijlage; daarop
+         * tonen Outlook, Apple Mail en Gmail hun knoppen om te accepteren of
+         * af te wijzen. Mislukt het versturen, dan staat de afspraak er nog
+         * steeds — dat is een melding, geen reden om alles terug te draaien.
+         */
+        const post = maakUitnodigingMail({
+          titel: afspraak.titel,
+          start: afspraak.start,
+          eind: afspraak.eind,
+          heleDag: afspraak.heleDag,
+          locatie: afspraak.locatie,
+          omschrijving: afspraak.omschrijving,
+          organisator: afspraak.organisator.email,
+          genodigden: inviteRecipients,
+          woorden: {
+            onderwerp: t("agenda.invite_mail_subject"),
+            wanneer: t("agenda.invite_mail_when"),
+            waar: t("agenda.location"),
+            wie: t("agenda.invite_mail_who"),
+            heleDag: t("agenda.all_day"),
+            uitleg: t("agenda.invite_mail_hint"),
+          },
+        });
+        if (post) {
+          try {
+            await verstuurUitnodigingMail(post, bouwAfspraakIcs(afspraak), afspraak.organisator.email);
+          } catch (err) {
+            setError(t("agenda.invite_mail_failed", {
+              error: err instanceof Error ? err.message : String(err),
+            }));
+          }
         }
       } else if (form.type === "event" && doelAgenda.startsWith("caldav:") && isFeatureEnabled("calendar-bridge")) {
         // Doel = privé CalDAV-agenda: schrijf een VEVENT via de server (PUT .ics).

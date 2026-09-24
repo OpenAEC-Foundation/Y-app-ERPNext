@@ -104,7 +104,7 @@ import {
   fetchThreadCompanions, MAIL_FOLDER_INBOX, MAIL_FOLDER_SENT,
   MAIL_FOLDER_UNREAD, MAIL_FOLDER_TRASH, type ErpMailMessage, type BerichtBijlage,
   type ErpMailFolder, type ErpMailbox, MAIL_FOLDER_HANDLED,
-  type BulkOutcome,
+  type BulkOutcome, haalNieuwePostOp,
 } from "../lib/mail-erpnext";
 import type { ZoekRichting } from "../lib/mail-erpnext";
 import {
@@ -4834,6 +4834,23 @@ function ErpNextWebmail() {
     refreshFolders();
   }, [loadList, refreshFolders]);
 
+  /**
+   * De knop "Vernieuwen": eerst ERPNext bij de mailserver laten kijken, dan
+   * pas de lijst opnieuw ophalen. Zonder die eerste stap zie je alleen wat er
+   * bij de vorige ronde van de planner binnenkwam.
+   */
+  const [ophalen, setOphalen] = useState(false);
+  const vernieuwEnHaalOp = useCallback(async () => {
+    setOphalen(true);
+    try {
+      const nieuw = await haalNieuwePostOp(mailbox || undefined);
+      refreshAll();
+      if (nieuw > 0) setToast(t("y_next.mail_fetched_new", { count: nieuw }));
+    } finally {
+      setOphalen(false);
+    }
+  }, [mailbox, refreshAll, t]);
+
   /* ─── Verstoetser: 60s-poll op de ongelezen-teller + de actieve lijst ─── */
 
   /**
@@ -6831,9 +6848,10 @@ function ErpNextWebmail() {
             </span>
           </button>
           <div className="flex-1" />
-          <button onClick={refreshAll} disabled={loading} title={t("webmail.retry")}
+          <button onClick={() => void vernieuwEnHaalOp()} disabled={loading || ophalen}
+            title={t("y_next.mail_fetch_now")}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 rounded text-xs hover:bg-slate-100 cursor-pointer disabled:opacity-50">
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={13} className={loading || ophalen ? "animate-spin" : ""} />
           </button>
         </div>
       )}
@@ -8157,6 +8175,7 @@ function ErpNextWebmail() {
                 {body && body.attachments.length > 0 && (
                   <ErpAttachmentList attachments={body.attachments} onError={setToast}
                     subject={selected?.subject}
+                    project={selectedConnections.find((c) => c.category === "project")?.name}
                     berichtHtml={body.html}
                     voorbeeldVan={voorbeeld?.url}
                     onVoorbeeld={(att) => setVoorbeeld((huidig) =>

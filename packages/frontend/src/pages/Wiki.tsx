@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { fetchList, createDocument, updateDocument, isDoctypeMissing } from "../lib/erpnext";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { fetchList, createDocument, updateDocument, isDoctypeMissing, uploadFile } from "../lib/erpnext";
+import RichTextEditor from "../components/mail/RichTextEditor";
 import {
   BookOpen, Plus, Search, Edit3, Save, X, ChevronRight, ChevronLeft,
-  Bold, Italic, Heading, List, Link, Code, Eye, RefreshCw,
+  Eye, RefreshCw,
   FileText, Clock, Check, AlertTriangle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -105,22 +106,6 @@ function markdownToHtml(md: string): string {
 
 /* ─── Toolbar Config ─── */
 
-interface ToolbarAction {
-  icon: typeof Bold;
-  label: string;
-  prefix: string;
-  suffix: string;
-  block?: boolean;
-}
-
-const toolbarActions: ToolbarAction[] = [
-  { icon: Bold, label: "wiki.toolbar_bold", prefix: "**", suffix: "**" },
-  { icon: Italic, label: "wiki.toolbar_italic", prefix: "*", suffix: "*" },
-  { icon: Heading, label: "wiki.toolbar_heading", prefix: "## ", suffix: "", block: true },
-  { icon: List, label: "wiki.toolbar_list", prefix: "- ", suffix: "", block: true },
-  { icon: Link, label: "wiki.toolbar_link", prefix: "[", suffix: "](url)" },
-  { icon: Code, label: "wiki.toolbar_code", prefix: "`", suffix: "`" },
-];
 
 /* ─── Component ─── */
 
@@ -156,7 +141,6 @@ export default function Wiki() {
   // Edit state
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // New page modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -212,12 +196,27 @@ export default function Wiki() {
   function startEditing() {
     if (!selectedPage) return;
     setEditTitle(selectedPage.title || "");
-    setEditContent(selectedPage.content || "");
+    // Oudere artikelen staan als markdown in ERPNext. Ze gaan hier één keer
+    // door dezelfde omzetting als de weergave, zodat je in het bewerkvak de
+    // opgemaakte tekst ziet en niet de tekens eromheen. Opslaan gebeurt
+    // daarna als HTML.
+    setEditContent(markdownToHtml(selectedPage.content || ""));
     setMode("edit");
     setSaveStatus("idle");
   }
 
   /* ─── Save ─── */
+  /**
+   * Een geplakte of gesleepte afbeelding wegzetten in ERPNext en het adres
+   * teruggeven. Publiek, want een artikel in de kennisbank wordt door het hele
+   * bureau gelezen; een privébestand zou bij iedereen als kapot plaatje staan.
+   */
+  async function plakAfbeelding(bestand: File): Promise<string> {
+    const info = await uploadFile(bestand, "Wiki Page", selectedPage?.name ?? "", false);
+    if (!info?.file_url) throw new Error("geen bestandsadres teruggekregen");
+    return info.file_url;
+  }
+
   async function handleSave() {
     if (!selectedPage) return;
     setSaveStatus("saving");
@@ -271,36 +270,6 @@ export default function Wiki() {
     } finally {
       setCreating(false);
     }
-  }
-
-  /* ─── Toolbar insert ─── */
-  function insertMarkdown(action: ToolbarAction) {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const selected = editContent.substring(start, end);
-    const before = editContent.substring(0, start);
-    const after = editContent.substring(end);
-
-    let insertion: string;
-    if (action.block) {
-      // For block-level, prepend at line start
-      const lineStart = before.lastIndexOf("\n") + 1;
-      const prefix = before.substring(0, lineStart);
-      const lineContent = before.substring(lineStart);
-      insertion = prefix + action.prefix + lineContent + selected + action.suffix + after;
-    } else {
-      insertion = before + action.prefix + (selected || t("wiki.placeholder_text")) + action.suffix + after;
-    }
-
-    setEditContent(insertion);
-    // Restore focus
-    requestAnimationFrame(() => {
-      ta.focus();
-      const newCursor = start + action.prefix.length + (selected || t("wiki.placeholder_text")).length;
-      ta.setSelectionRange(newCursor, newCursor);
-    });
   }
 
   /* ─── Render ─── */
@@ -548,31 +517,20 @@ export default function Wiki() {
                   className="w-full text-2xl font-bold text-slate-900 bg-transparent border-none outline-none placeholder:text-slate-300 mb-6"
                 />
 
-                {/* Toolbar */}
-                <div className="bg-white rounded-t-xl border border-slate-200 border-b-0 px-3 py-2 flex items-center gap-1">
-                  {toolbarActions.map((action) => {
-                    const Icon = action.icon;
-                    return (
-                      <button
-                        key={action.label}
-                        onClick={() => insertMarkdown(action)}
-                        title={t(action.label)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
-                      >
-                        <Icon size={16} />
-                      </button>
-                    );
-                  })}
+                {/* Schrijven met opmaak: dezelfde editor als bij een mail, dus
+                    vet, koppen, lijsten, links en tabellen — en een afbeelding
+                    die je erin plakt wordt meteen geüpload. */}
+                <div className="min-h-[520px] overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <RichTextEditor
+                    value={editContent}
+                    onChange={setEditContent}
+                    onAfbeelding={plakAfbeelding}
+                    placeholder={t("wiki.content_placeholder")}
+                    ariaLabel={t("wiki.content_placeholder")}
+                    className="h-full"
+                  />
                 </div>
-
-                {/* Content textarea */}
-                <textarea
-                  ref={textareaRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder={t("wiki.content_placeholder")}
-                  className="w-full min-h-[500px] bg-white rounded-b-xl border border-slate-200 px-6 py-5 text-sm text-slate-700 font-mono leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <p className="mt-2 text-[11px] text-slate-400">{t("wiki.editor_hint")}</p>
               </div>
             </div>
           </div>

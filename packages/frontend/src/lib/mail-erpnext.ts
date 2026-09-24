@@ -756,6 +756,29 @@ export function voegZoekresultatenSamen(a: ErpMailMessage[], b: ErpMailMessage[]
   return uit.slice(0, Math.max(0, limiet));
 }
 
+/**
+ * Nu meteen nieuwe post ophalen bij de mailserver.
+ *
+ * "Vernieuwen" haalde alleen op wat ERPNext al wist; binnenkomende post komt
+ * normaal langs de planner van Frappe, elke paar minuten. Wie een mail staat
+ * te wachten, keek dus naar dezelfde lijst. Het Server Script `mail_ophalen`
+ * laat ERPNext de postbussen van de ingelogde gebruiker meteen langsgaan.
+ *
+ * Lukt dat niet — geen script op deze instance, of de mailserver reageert
+ * niet — dan is dat geen fout die het vernieuwen hoort tegen te houden: de
+ * lijst wordt daarna toch opnieuw opgehaald.
+ */
+export async function haalNieuwePostOp(postbus?: string): Promise<number> {
+  try {
+    const res = (await callMethod("mail_ophalen", postbus ? { postbus } : {})) as
+      | { nieuw?: number }
+      | null;
+    return Number(res?.nieuw) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Welke kant van de post een zoekopdracht bekijkt. */
 export type ZoekRichting = "inkomend" | "verzonden" | "alles";
 

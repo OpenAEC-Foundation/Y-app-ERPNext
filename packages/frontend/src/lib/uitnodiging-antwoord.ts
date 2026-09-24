@@ -75,3 +75,21 @@ export function handeltMailAf(stand: string): boolean {
   const schoon = String(stand || "").trim().toLowerCase();
   return schoon === "accepted" || schoon === "declined";
 }
+
+/**
+ * Mag deze mail met één knop in je eigen agenda gezet worden?
+ *
+ * Een uitnodiging waarin jij als genodigde staat, beantwoord je met ja, nee of
+ * misschien. Maar een afspraak komt ook binnen zonder dat jouw adres in de
+ * lijst staat: doorgestuurd door een collega, of gericht aan een gedeelde
+ * postbus. Dan valt er niets te beantwoorden — de organisator wacht niet op
+ * jou — maar wil je hem wél in je agenda kunnen zetten.
+ */
+export function magInAgenda(invoer: {
+  heeftAfspraak: boolean;
+  genodigd: boolean;
+  ruweIcs: string;
+  ik: string;
+}): boolean {
+  return invoer.heeftAfspraak && !invoer.genodigd && !!invoer.ruweIcs.trim() && !!invoer.ik.trim();
+}

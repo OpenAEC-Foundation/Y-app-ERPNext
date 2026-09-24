@@ -2,7 +2,9 @@ import { useTranslation } from "react-i18next";
 import { LogIn } from "lucide-react";
 import { YLogo } from "./YLogo";
 import { APP_NAME, APP_VERSION } from "../lib/version";
-import achtergrond from "../assets/login-staalconstructie.jpg";
+// `?inline` maakt er een data-URI van, dus geen los bestand bij het uitrollen:
+// ERPNext hernoemt een bestand met dezelfde inhoud, en dan wijst de bundel mis.
+import achtergrond from "../assets/login-staalconstructie.jpg?inline";
 
 /**
  * Het scherm dat je ziet als je (nog) niet bij Frappe bent ingelogd.

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Box, Download, FileArchive, FileText, ImageIcon, Loader2, Paperclip } from "lucide-react";
+import { Box, Download, FileArchive, FileText, FolderOpen, ImageIcon, Loader2, Paperclip } from "lucide-react";
 import { getFileUrl } from "../../lib/erpnext";
 import { isIfcName, isPdfName } from "../../lib/mail-erpnext-compose";
 import { isCadNaam, isLeesbaarOffice } from "../../lib/bijlage-soort";
@@ -12,6 +12,11 @@ import {
   type MailAttachmentRef,
 } from "../../lib/mail-attachment";
 import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
+import { zoekProjectmap } from "../../lib/projectmap";
+import { getActiveInstanceId, getActiveCompany } from "../../lib/instances";
+import {
+  ensureHandlePermission, getCompanyHandle, isFsaSupported, pickNasRoot, setCompanyHandle, writeFileSafe,
+} from "../../lib/nasStorage";
 
 /**
  * Bijlagenpaneel van de Communication-mail (Y-next).
@@ -44,11 +49,16 @@ import { maakZip, uniekeNamen, veiligeBestandsnaam } from "../../lib/zip";
 export type ErpAttachment = MailAttachmentRef;
 
 export default function ErpAttachmentList({
-  attachments, onError, className, subject, onVoorbeeld, voorbeeldVan, berichtHtml,
+  attachments, onError, className, subject, project, onVoorbeeld, voorbeeldVan, berichtHtml,
 }: {
   attachments: ErpAttachment[];
   /** Meldkanaal richting de gebruiker (toast of foutregel). */
   onError: (message: string) => void;
+  /**
+   * Het project waar deze mail aan hangt. Staat er een project, dan komt er
+   * per bijlage een knop bij om hem in de projectmap op de NAS te zetten.
+   */
+  project?: string;
   /** Container-styling; het leespaneel en de popout hebben andere marges. */
   className?: string;
   /** Onderwerp van de mail; wordt de naam van het zip-bestand. */
@@ -68,6 +78,8 @@ export default function ErpAttachmentList({
 }) {
   const { t } = useTranslation();
   const [zipBezig, setZipBezig] = useState(false);
+  /** Welke bijlage nu naar de NAS geschreven wordt. */
+  const [bezigMet, setBezigMet] = useState("");
   const [toonAlles, setToonAlles] = useState(false);
   const zichtbaar = useMemo(
     () => (toonAlles ? attachments : echteBijlagen(attachments, berichtHtml ?? "")),
@@ -108,6 +120,46 @@ export default function ErpAttachmentList({
    */
   function verifyInBackground(att: ErpAttachment, fallbackKey: string) {
     void checkAttachmentAccess(att).catch((err) => report(err, fallbackKey));
+  }
+
+  /**
+   * Een bijlage in de projectmap op de NAS zetten.
+   *
+   * De browser mag alleen bij een map die je zelf hebt aangewezen; de eerste
+   * keer vraagt hij daarom om de hoofdmap met de projectmappen. Daarna zoekt
+   * hij de map van dít project op nummer en schrijft het bestand daarin. Het
+   * in POST IN zetten blijft handwerk: welke submap het moet worden verschilt
+   * per project, en een bestand in de verkeerde map is erger dan er één die
+   * nog verplaatst moet worden.
+   */
+  async function bewaarInProjectmap(att: ErpAttachment) {
+    if (!project) return;
+    if (!isFsaSupported()) { onError(t("y_next.projectmap_geen_ondersteuning")); return; }
+    setBezigMet(att.file_url);
+    try {
+      const instanceId = getActiveInstanceId();
+      const bedrijf = getActiveCompany() || "algemeen";
+      let root = await getCompanyHandle(instanceId, bedrijf);
+      if (!root) {
+        root = await pickNasRoot();
+        await setCompanyHandle(instanceId, bedrijf, root);
+      }
+      if (!(await ensureHandlePermission(root))) { onError(t("y_next.projectmap_geen_toegang")); return; }
+
+      const gevonden = await zoekProjectmap(root, project);
+      if (!gevonden) { onError(t("y_next.projectmap_niet_gevonden", { project })); return; }
+
+      const res = await fetch(getFileUrl(att.file_url), { credentials: "include" });
+      if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+      const naam = await writeFileSafe(gevonden.handle, att.file_name, await res.arrayBuffer());
+      onError(t("y_next.projectmap_opgeslagen", { bestand: naam, map: gevonden.pad.join(" / ") }));
+    } catch (err) {
+      // Het venster wegklikken is geen fout om over te klagen.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      report(err, "y_next.projectmap_mislukt");
+    } finally {
+      setBezigMet("");
+    }
   }
 
   /**
@@ -207,6 +259,16 @@ export default function ErpAttachmentList({
                     <FileText size={12} className="text-slate-400" />
                     <span className="truncate max-w-[180px]">{att.file_name}</span>
                   </a>
+                )}
+                {project && (
+                  <button onClick={() => void bewaarInProjectmap(att)}
+                    disabled={bezigMet === att.file_url}
+                    title={t("y_next.projectmap_knop", { project })}
+                    className="p-1 rounded text-slate-400 hover:bg-slate-100 hover:text-emerald-600 cursor-pointer disabled:opacity-50">
+                    {bezigMet === att.file_url
+                      ? <Loader2 size={11} className="animate-spin" />
+                      : <FolderOpen size={11} />}
+                  </button>
                 )}
                 <a href={url} download={att.file_name} title={t("webmail.download")}
                   onClick={() => verifyInBackground(att, "y_next.attachment_download_failed")}
