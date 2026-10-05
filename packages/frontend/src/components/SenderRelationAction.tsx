@@ -78,6 +78,16 @@ export default function SenderRelationAction({ existing, tone, label, onAdd }: S
       />
     );
   }
+  if (existing.supplier) {
+    return (
+      <RelationChip
+        className={classes.chip}
+        href={relationDocUrl("Supplier", existing.supplier)}
+        text={t("y_next.rel_known_supplier", { name: existing.supplier })}
+        icon={<Building2 size={10} />}
+      />
+    );
+  }
   if (existing.contact) {
     return (
       <RelationChip

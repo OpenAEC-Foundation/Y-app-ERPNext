@@ -83,3 +83,17 @@ function isOpmaakPlaatje(bijlage: Pick<Berichtbijlage, "file_url">, html: string
 export function bijlagenamen(bijlagen: { fileName: string }[]): string {
   return (bijlagen || []).map((b) => (b.fileName || "").trim()).filter(Boolean).join(", ");
 }
+
+/**
+ * Welke van de meegegeven bijlagen niet (meer) op de server staan.
+ *
+ * Een bijlage van een concept verdwijnt met dat concept zodra het verstuurd
+ * is. Staat er daarna nog een verwijzing naar in het opstelvenster, dan zou
+ * ERPNext met een onbegrijpelijke fout weigeren ("'NoneType' object has no
+ * attribute 'file_url'"). Met deze lijst kan de verzendknop zeggen wélke
+ * bijlage het is.
+ */
+export function ontbrekendeBijlagen(gevraagd: readonly string[], gevonden: readonly string[]): string[] {
+  const er = new Set(gevonden);
+  return [...new Set(gevraagd)].filter((naam) => !er.has(naam));
+}

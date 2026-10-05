@@ -10,6 +10,7 @@ import MeldingStrook from "./components/MeldingStrook";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isFeatureEnabled, isPageEnabled, type ServerFeature } from "./lib/capabilities";
 import { loadSession, loginUrl, SessionUnavailableError, type ERPNextSession } from "./lib/session";
+import { onthoudAdres, haalAdresTerug, sessieOpslag } from "./lib/na-inloggen";
 
 /** Webmail op ERPNext `Communication` (Y-next, geen eigen server). */
 const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
@@ -29,6 +30,7 @@ const Subtasks = lazy(() => import("./pages/Subtasks"));
 const Planning = lazy(() => import("./pages/Planning"));
 const Agenda = lazy(() => import("./pages/Agenda"));
 const Weekplanning = lazy(() => import("./pages/Weekplanning"));
+const Roadmap = lazy(() => import("./pages/Roadmap"));
 const Employees = lazy(() => import("./pages/Employees"));
 const FinancieelDashboard = lazy(() => import("./pages/FinancieelDashboard"));
 const Revenue = lazy(() => import("./pages/Revenue"));
@@ -129,7 +131,11 @@ function App() {
     let cancelled = false;
     loadSession()
       .then((session) => {
-        if (!cancelled) setState({ status: "ready", session });
+        if (cancelled) return;
+        // Kwam je via de inlogpagina? Dan terug naar de link die je opende.
+        const terug = haalAdresTerug(window.location.hash, sessieOpslag());
+        if (terug) window.history.replaceState(null, "", terug);
+        setState({ status: "ready", session });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -150,7 +156,10 @@ function App() {
   // Single-tenant is er niets meer om lokaal op te ruimen: stuur de gebruiker
   // rechtstreeks naar de standaard Frappe-loginpagina.
   useEffect(() => {
-    const handler = () => window.location.assign(loginUrl());
+    const handler = () => {
+      onthoudAdres(window.location.hash, sessieOpslag());
+      window.location.assign(loginUrl());
+    };
     window.addEventListener("y-app:unauthorized", handler);
     return () => window.removeEventListener("y-app:unauthorized", handler);
   }, []);
@@ -167,7 +176,14 @@ function App() {
     // Het scherm zelf staat in `components/LoginScherm`: een blauwdruk met
     // het lijnwerk van een stalen portaal, en één knop naar de inlogpagina
     // van Frappe. Geen eigen velden — de sessie komt van die site.
-    return <LoginScherm onLogin={() => window.location.assign(loginUrl())} />;
+    return (
+      <LoginScherm
+        onLogin={() => {
+          onthoudAdres(window.location.hash, sessieOpslag());
+          window.location.assign(loginUrl());
+        }}
+      />
+    );
   }
 
   if (state.status === "error") {
@@ -526,6 +542,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/planning" element={gate("/planning", <Planning />)} />
                   <Route path="/calendar" element={gate("/calendar", <Agenda />)} />
                   <Route path="/weekplanning" element={gate("/weekplanning", <Weekplanning />)} />
+                  <Route path="/roadmap" element={gate("/roadmap", <Roadmap />)} />
                   <Route path="/employees" element={gate("/employees", <Employees />)} />
                   <Route path="/financieel-dashboard" element={gate("/financieel-dashboard", <FinancieelDashboard />)} />
                   <Route path="/revenue" element={gate("/revenue", <Revenue />)} />
@@ -551,7 +568,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/settings" element={gate("/settings", <SettingsPage />)} />
                   <Route path="/settings/:tab" element={gate("/settings", <SettingsPage />)} />
                   <Route path="/todo" element={gate("/todo", <Todo />)} />
-                  <Route path="/wiki" element={gate("/wiki", <Wiki />)} />
+                  <Route path="/wiki/*" element={gate("/wiki", <Wiki />)} />
                   <Route path="/passwords" element={gate("/passwords", <Passwords />)} />
                   <Route path="/contacts" element={gate("/contacts", <Contacts />)} />
                   <Route

@@ -74,20 +74,30 @@ export interface RelationDraft {
   territory?: string;
   createCustomer: boolean;
   /**
+   * Wat voor relatie het bedrijf is. Een klant wordt een Customer, een
+   * leverancier een Supplier; de contactpersoon hangt aan wat er gekozen is.
+   * Ontbreekt het, dan is het een klant — zo gedroeg de dialoog zich altijd.
+   */
+  soort?: RelatieSoort;
+  /**
    * Herkenningscodes per veld, `veld:bron` (bv. `company:signature`). De
    * dialoog toont hiermee per veld of het herkend is of leeg gelaten.
    */
   reasons: string[];
 }
 
+export type RelatieSoort = "klant" | "leverancier";
+
 export interface ExistingRelation {
   customer?: string;
+  supplier?: string;
   contact?: string;
   lead?: string;
 }
 
 export interface RelationResult {
   customer?: string;
+  supplier?: string;
   contact: string;
   /** True als het adres al bekend was en er dus niets nieuws is aangemaakt. */
   reused: boolean;
@@ -559,9 +569,20 @@ export function buildCustomerPayload(draft: RelationDraft): Record<string, unkno
   return payload;
 }
 
+export function buildSupplierPayload(draft: RelationDraft): Record<string, unknown> {
+  // Supplier kent maar twee verplichte velden. Een leveranciersgroep laten we
+  // aan ERPNext: op deze instance heeft de helft van de leveranciers er geen,
+  // en een groep die hier niet bestaat laat het aanmaken klappen.
+  return {
+    supplier_name: draft.customerName.trim(),
+    supplier_type: draft.customerType,
+  };
+}
+
 export function buildContactPayload(
   draft: RelationDraft,
-  customer?: string
+  customer?: string,
+  doctype: "Customer" | "Supplier" = "Customer",
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     first_name: draft.contactFirstName.trim(),
@@ -577,7 +598,7 @@ export function buildContactPayload(
   }
   if (customer) {
     payload.company_name = customer;
-    payload.links = [{ link_doctype: "Customer", link_name: customer }];
+    payload.links = [{ link_doctype: doctype, link_name: customer }];
   }
   return payload;
 }
@@ -640,11 +661,16 @@ export async function lookupExisting(email: string): Promise<ExistingRelation> {
       filters: [["email_id", "=", address]],
       limit_page_length: 5,
     }),
+    fetchList<NamedRow>("Supplier", {
+      fields: ["name"],
+      filters: [["email_id", "=", address]],
+      limit_page_length: 5,
+    }),
   ]);
 
   const rows = (index: 0 | 1): ContactLinkRow[] =>
     settled[index].status === "fulfilled" ? (settled[index].value as ContactLinkRow[]) : [];
-  const named = (index: 2 | 3): NamedRow[] =>
+  const named = (index: 2 | 3 | 4): NamedRow[] =>
     settled[index].status === "fulfilled" ? (settled[index].value as NamedRow[]) : [];
 
   const contactRows = [...rows(0), ...rows(1)];
@@ -655,10 +681,18 @@ export async function lookupExisting(email: string): Promise<ExistingRelation> {
       (r) => r.link_doctype === "Customer" && typeof r.link_name === "string" && r.link_name
     );
     if (linked?.link_name) result.customer = linked.link_name;
+    const leverancier = contactRows.find(
+      (r) => r.link_doctype === "Supplier" && typeof r.link_name === "string" && r.link_name
+    );
+    if (leverancier?.link_name) result.supplier = leverancier.link_name;
   }
   if (!result.customer) {
     const customer = named(2)[0]?.name;
     if (customer) result.customer = customer;
+  }
+  if (!result.supplier) {
+    const supplier = named(4)[0]?.name;
+    if (supplier) result.supplier = supplier;
   }
   const lead = named(3)[0]?.name;
   if (lead) result.lead = lead;
@@ -721,6 +755,18 @@ async function findCustomerByName(customerName: string): Promise<string | null> 
   return rows[0]?.name ?? null;
 }
 
+/** Bestaat er al een leverancier met exact deze naam? Dan die hergebruiken. */
+async function findSupplierByName(supplierName: string): Promise<string | null> {
+  const name = supplierName.trim();
+  if (!name) return null;
+  const rows = await fetchList<NamedRow>("Supplier", {
+    fields: ["name"],
+    filters: [["supplier_name", "=", name]],
+    limit_page_length: 1,
+  });
+  return rows[0]?.name ?? null;
+}
+
 /**
  * Legt de relatie en/of de contactpersoon vast.
  *
@@ -747,7 +793,31 @@ export async function createRelation(draft: RelationDraft): Promise<RelationResu
   if (existing.contact) {
     const result: RelationResult = { contact: existing.contact, reused: true };
     if (existing.customer) result.customer = existing.customer;
+    if (existing.supplier) result.supplier = existing.supplier;
     primeRelationLookup(draft.email, existing);
+    return result;
+  }
+
+  if (draft.soort === "leverancier") {
+    let supplier: string | undefined;
+    if (draft.createCustomer) {
+      supplier = existing.supplier ?? (await findSupplierByName(draft.customerName)) ?? undefined;
+      if (!supplier) {
+        const created = await createDocument<NamedRow>("Supplier", buildSupplierPayload(draft));
+        supplier = created.name;
+      }
+    } else if (existing.supplier) {
+      supplier = existing.supplier;
+    }
+    const contact = await createDocument<NamedRow>("Contact", buildContactPayload(draft, supplier, "Supplier"));
+    const result: RelationResult = { contact: contact.name, reused: false };
+    if (supplier) result.supplier = supplier;
+    primeRelationLookup(draft.email, {
+      contact: contact.name,
+      ...(supplier ? { supplier } : {}),
+      ...(existing.customer ? { customer: existing.customer } : {}),
+      ...(existing.lead ? { lead: existing.lead } : {}),
+    });
     return result;
   }
 
@@ -805,6 +875,45 @@ function mode(values: (string | undefined)[]): string {
     if (count > bestCount) { best = key; bestCount = count; }
   }
   return best;
+}
+
+/**
+ * Een leverancier toevoegen vanuit het inboekvenster: één klik, niet meer.
+ *
+ * Bestaat er al een leverancier met deze naam, dan komt die terug en wordt er
+ * niets aangemaakt. Is er een adres bij en kent ERPNext dat adres nog niet,
+ * dan komt er ook een contactpersoon aan te hangen: daaraan herkent de
+ * factuurherkenning de volgende factuur van deze afzender.
+ */
+export async function voegLeverancierToe(naam: string, email?: string): Promise<string> {
+  const schoon = naam.trim();
+  if (!schoon) throw new Error("Geen naam voor de leverancier");
+  const supplier = (await findSupplierByName(schoon))
+    ?? (await createDocument<NamedRow>("Supplier", { supplier_name: schoon, supplier_type: "Company" })).name;
+
+  const adres = email ? normalizeEmail(email) : "";
+  if (adres && isValidEmail(adres)) {
+    try {
+      const bekend = await lookupExisting(adres);
+      if (!bekend.contact) {
+        const persoon = nameFromLocalPart(adres);
+        const contact = await createDocument<NamedRow>("Contact", buildContactPayload({
+          customerName: schoon,
+          customerType: "Company",
+          contactFirstName: persoon.first || schoon,
+          ...(persoon.last ? { contactLastName: persoon.last } : {}),
+          email: adres,
+          createCustomer: false,
+          reasons: [],
+        }, supplier, "Supplier"));
+        primeRelationLookup(adres, { ...bekend, contact: contact.name, supplier });
+      }
+    } catch {
+      // De leverancier staat er; zonder contactpersoon is hij net zo goed te
+      // kiezen. Alleen de herkenning van de volgende factuur mist dan het adres.
+    }
+  }
+  return supplier;
 }
 
 /**
@@ -900,7 +1009,7 @@ export function classifyRelationError(err: unknown): RelationErrorKind {
 /* ────────────────────────────── Deeplinks ────────────────────────────── */
 
 /** Directe link naar het document in ERPNext (nieuw tabblad in de dialoog). */
-export function relationDocUrl(doctype: "Customer" | "Contact", name: string): string {
+export function relationDocUrl(doctype: "Customer" | "Supplier" | "Contact", name: string): string {
   const slug = doctype.toLowerCase().replace(/\s+/g, "-");
   return `${getErpNextLinkUrl()}/${slug}/${encodeURIComponent(name)}`;
 }

@@ -61,6 +61,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
       { id: "tasks", label: "Taken" },
       { id: "subtasks", label: "Subtaken" },
       { id: "planning", label: "Planning" },
+      { id: "roadmap", label: "Roadmap" },
       { id: "timesheets", label: "Urenregistratie" },
       { id: "todo", label: "Todo" },
       { id: "wiki", label: "Kennisbank" },

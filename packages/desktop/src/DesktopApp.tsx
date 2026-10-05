@@ -938,7 +938,7 @@ function DesktopAuthenticatedApp({ user }: { user: { username: string; fullName:
                     <Route path="/x/:extId" element={<ExtensionHost />} />
                     <Route path="/x/:extId/*" element={<ExtensionHost />} />
                     <Route path="/todo" element={<Todo />} />
-                    <Route path="/wiki" element={<Wiki />} />
+                    <Route path="/wiki/*" element={<Wiki />} />
                     <Route path="/passwords" element={<Passwords />} />
                     <Route path="/contacts" element={<Contacts />} />
                     <Route path="/messenger" element={<Messenger />} />

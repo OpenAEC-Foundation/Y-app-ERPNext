@@ -11,8 +11,8 @@ import { SALES_INVOICE_ACTIVE_FILTER } from "../lib/invoice-docstatus";
 import {
   FolderKanban, RefreshCw, Search, Plus, FolderOpen, MapPin, Map as MapIcon,
   X, ExternalLink, Clock, CheckCircle2, ListTodo, CalendarDays,
-  ChevronRight, ChevronLeft, AlertCircle, List, FileText, Link2, Receipt, Pencil,
-  Building2, User, Flag, ShoppingCart, LayoutTemplate, FolderPlus,
+  ChevronLeft, AlertCircle, List, FileText, Link2, Receipt, Pencil,
+  Building2, User, Flag, ShoppingCart, LayoutTemplate, FolderPlus, NotebookPen,
 } from "lucide-react";
 import { isDesktopApp } from "../lib/desktop";
 import { isFeatureEnabled } from "../lib/capabilities";
@@ -246,11 +246,19 @@ export function ProjectDetail({
   projectHours,
   onClose,
   onEdit,
+  variant = "overlay",
 }: {
   project: ProjectRecord;
   projectHours: Map<string, number>;
   onClose: () => void;
   onEdit?: () => void;
+  /**
+   * `overlay` legt het project over het hele scherm, met de inhoudsopgave
+   * links. `pane` vult alleen de ruimte die de ouder geeft — de rechterkant
+   * van het projectenscherm, naast de lijst. Daar is geen ruimte voor een
+   * inhoudsopgave in een kolom; die staat dan als rij onder de kop.
+   */
+  variant?: "overlay" | "pane";
 }) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -553,15 +561,17 @@ export function ProjectDetail({
 
   const erpUrl = getErpNextLinkUrl();
 
+  const paneel = variant === "pane";
+
   return (
-    <div className="fixed inset-0 z-50 flex pt-[env(safe-area-inset-top,0px)]">
+    <div className={paneel ? "h-full flex" : "fixed inset-0 z-50 flex pt-[env(safe-area-inset-top,0px)]"}>
       {/* Backdrop — hidden on mobile */}
-      {!isMobile && <div className="flex-shrink-0 w-[15vw] bg-black/40" onClick={onClose} />}
+      {!isMobile && !paneel && <div className="flex-shrink-0 w-[15vw] bg-black/40" onClick={onClose} />}
 
       {/* Panel */}
-      <div className="flex-1 bg-white shadow-2xl flex overflow-hidden">
+      <div className={paneel ? "flex-1 min-w-0 bg-white flex overflow-hidden" : "flex-1 bg-white shadow-2xl flex overflow-hidden"}>
         {/* TOC Sidebar — hidden on mobile */}
-        {!isMobile && (
+        {!isMobile && !paneel && (
           <nav className="w-48 flex-shrink-0 border-r border-slate-200 bg-slate-50 p-4 flex flex-col">
             <div className="mb-6">
               <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">{t("tasks.detail.project")}</p>
@@ -600,7 +610,7 @@ export function ProjectDetail({
         {/* Content */}
         <div ref={contentRef} className="flex-1 overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className={`sticky top-0 z-10 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between ${paneel ? "flex-wrap gap-y-2 pt-4 pb-2" : "py-4"}`}>
             <div className="flex items-center gap-2 min-w-0">
               {isMobile && (
                 <button onClick={onClose} className="p-2.5 -ml-1 rounded-lg hover:bg-slate-100 flex-shrink-0 cursor-pointer">
@@ -632,6 +642,24 @@ export function ProjectDetail({
                   <FolderOpen size={14} /> {t("projects.detail.open_nas_folder")}
                 </button>
               )}
+              <a
+                href={`#/notities?project=${encodeURIComponent(project.name)}`}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+                title={t("projects.notes")}
+              >
+                <NotebookPen size={16} className="text-slate-400 hover:text-y-teal" />
+              </a>
+              {paneel && (
+                <a
+                  href={`${erpUrl}/project/${project.name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+                  title={t("projects.open_in_erpnext")}
+                >
+                  <ExternalLink size={16} className="text-slate-400 hover:text-y-teal" />
+                </a>
+              )}
               {onEdit && (
                 <button onClick={onEdit} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer" title={t("projects.edit_project")}>
                   <Pencil size={16} className="text-slate-400 hover:text-y-teal" />
@@ -643,6 +671,27 @@ export function ProjectDetail({
                 </button>
               )}
             </div>
+            {paneel && (
+              <div className="w-full flex gap-1 overflow-x-auto -mx-1">
+                {TOC_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => scrollTo(item.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap cursor-pointer transition-colors ${
+                        activeSection === item.id
+                          ? "bg-y-teal/10 text-y-teal-dark font-semibold"
+                          : "text-slate-500 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {t(item.labelKey)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="p-4 sm:p-6 space-y-10">
@@ -2098,7 +2147,7 @@ export default function Projects() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  type SortColumn = "name" | "project_name" | "customer_name" | "company" | "status" | "percent_complete" | "expected_start_date" | "expected_end_date";
+  type SortColumn = "name" | "project_name" | "customer_name" | "status";
   const [sortColumn, setSortColumn] = useState<SortColumn>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -2241,247 +2290,237 @@ export default function Projects() {
   const sortIndicator = (col: SortColumn) =>
     sortColumn === col ? (sortDir === "asc" ? " ▲" : " ▼") : "";
 
+  const isMobile = useIsMobile();
+
+  function kiesProject(p: ProjectRecord) {
+    setSelectedProject(p);
+    // In de adresbalk, zodat vernieuwen of een gedeelde link op hetzelfde
+    // project uitkomt.
+    const next = new URLSearchParams(searchParams);
+    next.set("p", p.name);
+    setSearchParams(next, { replace: true });
+  }
+
+  function sluitProject() {
+    setSelectedProject(null);
+    if (searchParams.get("p")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("p");
+      setSearchParams(next, { replace: true });
+    }
+  }
+
+  const kolomKop = (col: SortColumn, label: string, extra = "") => (
+    <button
+      onClick={() => handleSort(col)}
+      className={`text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 cursor-pointer select-none ${extra}`}
+    >
+      {label}{sortIndicator(col)}
+    </button>
+  );
+
+  const filterKlasse = "px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal cursor-pointer";
+
+  /*
+   * Lijst links, project rechts.
+   *
+   * Voorheen was dit één brede tabel, en een project openen legde een venster
+   * over het hele scherm. Nu blijft de lijst staan en verschijnt het project
+   * ernaast: je bladert door projecten zonder steeds heen en terug te gaan.
+   * De lijst is daarom smal — nummer, naam, klant, status — en wat er verder
+   * over een project te weten valt staat rechts. Op een telefoon is er geen
+   * "ernaast"; daar opent het project nog als volledig scherm.
+   */
   return (
-    <div className="p-3 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">{t("projects.title")}</h2>
-        <div className="flex items-center gap-2">
-          {isEmployer && (
+    <div className="h-full flex flex-col">
+      <div className="px-3 sm:px-6 pt-4 pb-3 bg-white border-b border-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-2xl font-bold text-slate-800">{t("projects.title")}</h2>
+            <span className="text-sm text-slate-400" title={t("projects.total_projects")}>
+              {loading ? "…" : filtered.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setActiveTab("lijst")}
+                className={`px-3 py-1.5 flex items-center gap-1.5 text-sm rounded-md cursor-pointer transition-colors ${
+                  activeTab === "lijst" ? "bg-white text-y-teal-dark shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <List size={15} /> {t("projects.tab_list")}
+              </button>
+              <button
+                onClick={() => setActiveTab("kaart")}
+                className={`px-3 py-1.5 flex items-center gap-1.5 text-sm rounded-md cursor-pointer transition-colors ${
+                  activeTab === "kaart" ? "bg-white text-y-teal-dark shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <MapIcon size={15} /> {t("projects.tab_map")}
+              </button>
+            </div>
             <button
-              onClick={() => { setFormProject(null); setFormMode("create"); }}
-              className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark cursor-pointer text-sm font-medium"
+              onClick={loadData}
+              disabled={loading}
+              title={t("common.refresh")}
+              className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg disabled:opacity-50 cursor-pointer"
             >
-              <Plus size={16} />
-              {t("projects.new")}
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             </button>
-          )}
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            {t("common.refresh")}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          {error}
-        </div>
-      )}
-
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-3 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <div className="p-2 bg-indigo-100 rounded-lg">
-            <FolderKanban className="text-indigo-600" size={20} />
-          </div>
-          <div>
-            <p className="text-sm text-slate-500">{t("projects.total_projects")}</p>
-            <p className="text-2xl font-bold text-slate-800">
-              {loading ? "..." : filtered.length}
-            </p>
+            {isEmployer && (
+              <button
+                onClick={() => { setFormProject(null); setFormMode("create"); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark cursor-pointer text-sm font-medium"
+              >
+                <Plus size={16} />
+                {t("projects.new")}
+              </button>
+            )}
           </div>
         </div>
-        <select
-          value={companyFilter}
-          onChange={(e) => setCompanyFilter(e.target.value)}
-          className="px-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-y-teal cursor-pointer"
-        >
-          <option value="">{t("instance_bar.all_companies")}</option>
-          {companies.map((c) => (
-            <option key={c.name} value={c.name}>{c.company_name || c.name}</option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-y-teal cursor-pointer"
-        >
-          <option value="">{t("common.all_statuses")}</option>
-          {PROJECT_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <select
-          value={yearFilter}
-          onChange={(e) => setYearFilter(e.target.value)}
-          className="px-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-y-teal cursor-pointer"
-        >
-          <option value="">{t("projects.all_years")}</option>
-          {availableYears.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-        <div className="w-full md:flex-1 relative">
-          <Search
-            size={18}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            type="text"
-            placeholder={t("projects.search_placeholder")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-y-teal text-sm"
-          />
-        </div>
-      </div>
 
-      {/* Tab navigation */}
-      <div className="flex gap-1 mb-4 bg-white border border-slate-200 rounded-lg p-1 w-fit">
-        <button
-          onClick={() => setActiveTab("lijst")}
-          className={`px-4 py-2 flex items-center gap-1.5 text-sm rounded-md cursor-pointer transition-colors ${
-            activeTab === "lijst" ? "bg-y-teal text-white" : "text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          <List size={16} /> {t("projects.tab_list")}
-        </button>
-        <button
-          onClick={() => setActiveTab("kaart")}
-          className={`px-4 py-2 flex items-center gap-1.5 text-sm rounded-md cursor-pointer transition-colors ${
-            activeTab === "kaart" ? "bg-y-teal text-white" : "text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          <MapIcon size={16} /> {t("projects.tab_map")}
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[12rem]">
+            <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder={t("projects.search_placeholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-y-teal text-sm"
+            />
+          </div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={filterKlasse}>
+            <option value="">{t("common.all_statuses")}</option>
+            {PROJECT_STATUSES.map((st) => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+          <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className={filterKlasse}>
+            <option value="">{t("projects.all_years")}</option>
+            {availableYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className={filterKlasse}>
+            <option value="">{t("instance_bar.all_companies")}</option>
+            {companies.map((c) => (
+              <option key={c.name} value={c.name}>{c.company_name || c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {error && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
       </div>
 
       {activeTab === "kaart" ? (
-        <ProjectMap projects={filtered} />
+        <div className="flex-1 min-h-0 overflow-auto p-3 sm:p-6">
+          <ProjectMap projects={filtered} />
+        </div>
       ) : (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th onClick={() => handleSort("name")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.project_nr")}{sortIndicator("name")}</th>
-              <th onClick={() => handleSort("project_name")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_name")}{sortIndicator("project_name")}</th>
-              <th onClick={() => handleSort("customer_name")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_customer")}{sortIndicator("customer_name")}</th>
-              <th onClick={() => handleSort("company")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.company")}{sortIndicator("company")}</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">{t("projects.col_most_work")}</th>
-              <th onClick={() => handleSort("status")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_status")}{sortIndicator("status")}</th>
-              <th onClick={() => handleSort("percent_complete")} className="text-right px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_progress")}{sortIndicator("percent_complete")}</th>
-              <th onClick={() => handleSort("expected_start_date")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_start_date")}{sortIndicator("expected_start_date")}</th>
-              <th onClick={() => handleSort("expected_end_date")} className="text-left px-4 py-3 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 select-none">{t("projects.col_end_date")}{sortIndicator("expected_end_date")}</th>
-              <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">{t("projects.col_folder")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
-                  {t("common.loading")}
-                </td>
-              </tr>
-            ) : sorted.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
-                  {t("common.no_projects_found")}
-                </td>
-              </tr>
-            ) : (
-              sorted.map((p) => {
-                const worker = topWorkers.get(p.name);
-                return (
-                  <tr
-                    key={`${p.name}-${p.company}`}
-                    onClick={() => setSelectedProject(p)}
-                    className="border-b border-slate-100 hover:bg-y-teal/5 cursor-pointer transition-colors"
-                  >
-                    <td className="px-4 py-3 text-sm font-medium">
-                      <span className="text-y-teal flex items-center gap-1">
-                        {p.name}
-                        <ChevronRight size={14} className="text-slate-300" />
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-700">
-                      {p.project_name}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {p.customer_name || p.customer || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {p.company || "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {worker ? (
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-7 h-7 rounded-full ${getAvatarColor(worker.name)} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}
-                            title={worker.name}
-                          >
-                            {getInitials(worker.name)}
-                          </div>
-                          <div className="min-w-[160px]">
-                            <p className="text-sm text-slate-700 font-medium">{worker.name}</p>
-                            <p className="text-xs text-slate-400">{t("projects.hours_unit", { hours: worker.hours.toFixed(1) })}</p>
-                          </div>
+        <div className="flex-1 min-h-0 flex">
+          {/* ─── Lijst ─── */}
+          <div className={`${isMobile ? "flex-1" : "w-[26rem] xl:w-[30rem] flex-shrink-0 border-r border-slate-200"} bg-white flex flex-col min-h-0`}>
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-slate-50">
+              {kolomKop("name", t("projects.project_nr"), "w-14 flex-shrink-0")}
+              <div className="flex-1 min-w-0 flex gap-2">
+                {kolomKop("project_name", t("projects.col_name"))}
+                <span className="text-slate-300">/</span>
+                {kolomKop("customer_name", t("projects.col_customer"))}
+              </div>
+              {kolomKop("status", t("projects.col_status"), "flex-shrink-0")}
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <p className="px-4 py-8 text-center text-sm text-slate-400">{t("common.loading")}</p>
+              ) : sorted.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-slate-400">{t("common.no_projects_found")}</p>
+              ) : (
+                sorted.map((p) => {
+                  const worker = topWorkers.get(p.name);
+                  const gekozen = selectedProject?.name === p.name;
+                  return (
+                    <div
+                      key={`${p.name}-${p.company}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => kiesProject(p)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); kiesProject(p); } }}
+                      className={`group flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 cursor-pointer transition-colors outline-none focus-visible:bg-y-teal/10 ${
+                        gekozen ? "bg-y-teal/10 border-l-2 border-l-y-teal pl-[14px]" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="w-14 flex-shrink-0 text-sm font-semibold text-y-teal tabular-nums">{p.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-800 truncate">{p.project_name}</p>
+                        <p className="text-xs text-slate-400 truncate">{p.customer_name || p.customer || "—"}</p>
+                      </div>
+                      {worker && (
+                        <div
+                          className={`w-6 h-6 rounded-full ${getAvatarColor(worker.name)} flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0`}
+                          title={`${worker.name} · ${t("projects.hours_unit", { hours: worker.hours.toFixed(1) })}`}
+                        >
+                          {getInitials(worker.name)}
                         </div>
-                      ) : (
-                        <span className="text-sm text-slate-300">-</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${statusColors[p.status] ?? "bg-slate-100 text-slate-600"}`}
-                      >
+                      <span className={`flex-shrink-0 px-2 py-0.5 text-[10px] font-medium rounded-full ${statusColors[p.status] ?? "bg-slate-100 text-slate-600"}`}>
                         {p.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-y-teal rounded-full"
-                            style={{ width: `${p.percent_complete}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-slate-500">
-                          {p.percent_complete}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {p.expected_start_date || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {p.expected_end_date || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-center">
                       {isFeatureEnabled("nextcloud") && (
-                        <button
+                        <span
+                          role="button"
+                          tabIndex={-1}
                           title={getProjectFolderPath({ name: p.name, project_name: p.project_name })}
                           onClick={async (e) => { e.stopPropagation(); await hydrateProjectFoldersConfig(); openFolder(getProjectFolderPath({ name: p.name, project_name: p.project_name })); }}
-                          className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-y-teal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                          className="flex-shrink-0 p-1 text-slate-300 group-hover:text-slate-400 hover:!text-y-teal rounded cursor-pointer"
                         >
-                          <FolderOpen size={16} />
-                        </button>
+                          <FolderOpen size={15} />
+                        </span>
                       )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ─── Project ─── */}
+          {!isMobile && (
+            <div className="flex-1 min-w-0 min-h-0 bg-slate-50">
+              {selectedProject ? (
+                <ProjectDetail
+                  key={selectedProject.name}
+                  variant="pane"
+                  project={selectedProject}
+                  projectHours={allProjectHours.get(selectedProject.name) || new Map()}
+                  onClose={sluitProject}
+                  onEdit={() => { setFormProject(selectedProject); setFormMode("edit"); }}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center p-8 text-center">
+                  <div>
+                    <FolderKanban size={36} className="mx-auto text-slate-300 mb-3" />
+                    <p className="text-sm text-slate-500">{t("projects.pick_project")}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Project Detail Panel */}
-      {selectedProject && (
+      {/* Op een telefoon is er geen ruimte ernaast: daar blijft het volledige scherm. */}
+      {isMobile && selectedProject && (
         <ProjectDetail
           project={selectedProject}
           projectHours={allProjectHours.get(selectedProject.name) || new Map()}
-          onClose={() => {
-            setSelectedProject(null);
-            if (searchParams.get("p")) {
-              const next = new URLSearchParams(searchParams);
-              next.delete("p");
-              setSearchParams(next, { replace: true });
-            }
-          }}
+          onClose={sluitProject}
           onEdit={() => { setFormProject(selectedProject); setFormMode("edit"); }}
         />
       )}

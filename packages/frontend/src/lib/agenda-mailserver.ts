@@ -36,6 +36,11 @@ export interface MailserverAfspraak {
   titel?: string;
   /** Waar de afspraak is; leeg als er geen locatie is opgegeven. */
   locatie?: string;
+  /**
+   * De tekst/uitnodiging zelf. Hierin staat bijvoorbeeld de deelnamelink van
+   * een Teams- of Jitsi-vergadering; zie `lib/agenda-vergaderlink.ts`.
+   */
+  omschrijving?: string;
   /** Lokale starttijd zonder zone, bijv. "2026-09-04T08:00:00". */
   start?: string;
   /** ISO 8601-duur, bijv. "PT1H30M". */

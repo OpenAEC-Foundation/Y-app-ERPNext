@@ -9,6 +9,7 @@ import { ProjectDetail } from "./Projects";
 import InfoOverlay from "../components/InfoOverlay";
 import SendInvoiceModal from "../components/SendInvoiceModal";
 import { SALES_INVOICE_ACTIVE_FILTER } from "../lib/invoice-docstatus";
+import { FACTUURDATUM_SLEUTEL, bepaalFactuurdatum, bewaarFactuurdatum, isIsoDatum } from "../lib/factuurdatum";
 import {
   AlertTriangle, Clock, FileText, TrendingUp, Users,
   ChevronDown, ChevronRight, Info, CheckSquare, Square, Loader2,
@@ -218,6 +219,23 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [invoiceWarnings, setInvoiceWarnings] = useState<InvoiceWarning[]>([]);
   const [invoiceCreating, setInvoiceCreating] = useState(false);
+  /**
+   * De datum die alle facturen uit deze run krijgen. Zonder datum zet ERPNext
+   * de dag van vandaag, en een factuur over september die op 2 oktober
+   * aangemaakt wordt, hoort op 30 september. Zie `lib/factuurdatum.ts`.
+   */
+  const [factuurDatum, setFactuurDatumState] = useState<string>(() => {
+    try {
+      return bepaalFactuurdatum(JSON.parse(localStorage.getItem(FACTUURDATUM_SLEUTEL) || "null"), new Date());
+    } catch {
+      return bepaalFactuurdatum(null, new Date());
+    }
+  });
+  function setFactuurDatum(datum: string) {
+    setFactuurDatumState(datum);
+    if (!isIsoDatum(datum)) return;
+    try { localStorage.setItem(FACTUURDATUM_SLEUTEL, JSON.stringify(bewaarFactuurdatum(datum, new Date()))); } catch { /* alleen een gemak */ }
+  }
   const [invoiceResults, setInvoiceResults] = useState<{ project: string; projectName: string; siName: string; error?: string }[]>([]);
   // Opens the SendInvoiceModal in DRAFT mode for the freshly created SI;
   // ERPNext submits + sends in one click.
@@ -943,6 +961,9 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
           customer: projInfo?.customer || projInfo?.customer_name || first.customer,
           company: projCompany,
           project: projId,
+          // De gekozen factuurdatum; `set_posting_time` laat ERPNext hem staan
+          // in plaats van hem bij het opslaan naar vandaag te zetten.
+          ...(isIsoDatum(factuurDatum) ? { posting_date: factuurDatum, set_posting_time: 1 } : {}),
           currency: "EUR",
           ...(taxTemplate ? { taxes_and_charges: taxTemplate } : {}),
           items,
@@ -951,7 +972,7 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
 
         // ── Naming series validation: check volgnummer ──
         const abbr = companyAbbrMap.get(projCompany);
-        const yy = new Date().getFullYear().toString().slice(2);
+        const yy = (isIsoDatum(factuurDatum) ? factuurDatum.slice(0, 4) : String(new Date().getFullYear())).slice(2);
         const expectedPrefix = abbr ? `${yy}${abbr}-` : null;
         let namingWarning = "";
 
@@ -1462,6 +1483,8 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
           creating={invoiceCreating}
           results={invoiceResults}
           onConfirm={handleConfirmCreateInvoices}
+          factuurDatum={factuurDatum}
+          onFactuurDatum={setFactuurDatum}
           onClose={() => { setShowInvoiceModal(false); setInvoiceResults([]); }}
           onSendInvoice={(siName) => setSendInvoiceTarget(siName)}
           sentSiNames={sentSiNames}
@@ -1670,7 +1693,10 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
 
 function InvoiceModal({
   warnings, selectedRows, billingRates, creating, results, onConfirm, onClose, onSendInvoice, sentSiNames, projectMap, companyAbbrMap,
+  factuurDatum, onFactuurDatum,
 }: {
+  factuurDatum: string;
+  onFactuurDatum: (datum: string) => void;
   warnings: InvoiceWarning[];
   selectedRows: FlatRow[];
   billingRates: Map<string, number>;
@@ -1860,6 +1886,21 @@ function InvoiceModal({
                 );
               })}
             </div>
+          )}
+
+          {/* Factuurdatum voor alle facturen uit deze run */}
+          {!hasResults && (
+            <label className="flex flex-wrap items-center gap-3 rounded-lg border border-y-teal/30 bg-y-teal/5 p-3">
+              <span className="text-sm font-semibold text-slate-700">{t("to_invoice.invoice_date")}</span>
+              <input
+                type="date"
+                value={factuurDatum}
+                onChange={(e) => onFactuurDatum(e.target.value)}
+                disabled={creating}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
+              />
+              <span className="text-xs text-slate-500">{t("to_invoice.invoice_date_hint")}</span>
+            </label>
           )}
 
           {/* Warnings */}

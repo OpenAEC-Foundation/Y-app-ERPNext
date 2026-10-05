@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   detectPurchaseInvoice,
+  handmatigeFactuurGok,
   looksLikeInvoiceNumber,
   normalizeCompanyName,
   parseAmount,
   parseDateish,
+  vulAanUitPdf,
   type InvoiceSignals,
   type SupplierHint,
 } from "./invoice-detect.ts";
@@ -355,4 +357,123 @@ test("expliciete factuurdatum in de body wint van de maildatum", () => {
   }), SUPPLIERS);
   assert.equal(guess.invoiceDate, "2026-08-12");
   assert.ok(guess.reasons.includes("date:labelled"));
+});
+
+/* ─────────────────────────── Zelf aangewezen ─────────────────────────── */
+
+test("zelf aangewezen: een mail zonder factuurwoorden levert toch de gegevens", () => {
+  const s = signals({
+    subject: "Stukken voor u",
+    sender: "info@drukwerkdeal.nl",
+    bodyText: "Hierbij de stukken. Totaal EUR 121,00 inclusief btw.",
+    attachmentNames: ["document.pdf"],
+  });
+  assert.equal(detectPurchaseInvoice(s, SUPPLIERS).isLikely, false);
+  const gok = handmatigeFactuurGok(s, SUPPLIERS);
+  assert.equal(gok.isLikely, true);
+  assert.equal(gok.supplier, "Drukwerkdeal.nl B.V.");
+});
+
+test("zelf aangewezen: ook uit Verzonden, en zonder tegensignalen in de redenen", () => {
+  const s = signals({
+    subject: "Fwd: Factuur 263-05192",
+    sender: "info@drukwerkdeal.nl",
+    attachmentNames: ["Factuur 263-05192.pdf"],
+    direction: "sent",
+  });
+  assert.deepEqual(detectPurchaseInvoice(s, SUPPLIERS).reasons, ["negative:sent"]);
+  const gok = handmatigeFactuurGok(s, SUPPLIERS);
+  assert.equal(gok.supplier, "Drukwerkdeal.nl B.V.");
+  assert.ok(gok.reasons.every((r) => !r.startsWith("negative:")));
+});
+
+test("zelf aangewezen: een nieuwsbrief geeft lege velden, geen fout", () => {
+  const gok = handmatigeFactuurGok(signals({ subject: "Nieuwsbrief september", sender: "news@example.com" }), SUPPLIERS);
+  assert.equal(gok.isLikely, true);
+  assert.deepEqual(gok.reasons, []);
+  assert.equal(gok.amount, undefined);
+});
+
+/* ───────────────────────────── Uit de PDF ────────────────────────────── */
+
+/**
+ * Een echte factuur van ANWB Energie, zoals `regelsUitTekstItems` hem uit de
+ * PDF opbouwt. De mail zelf noemt geen bedrag en geen factuurdatum; zonder de
+ * PDF bleef het bedrag leeg en werd de maildatum (4 oktober) als factuurdatum
+ * genomen, terwijl de factuur van 30 september is.
+ */
+const NL = String.fromCharCode(10);
+
+const ANWB_PDF = [
+  "Factuur",
+  "MAARTEN VROEGINDEWEIJ Klantnummer: EV-a4115451-2469-45eb-",
+  "3BM Bouwtechniek VOF b641-018c97d57ff1",
+  "Wattstraat 17 Factuurdatum: 30-09-2026",
+  "3335LV Zwijndrecht Vervaldatum: 30-09-2026",
+  "NL Factuurnummer: 1705154431",
+  "Omschrijving Aantal Btw Totaal",
+  "Laadsessies - (Periode 01-09-2026 - 30-09-2026) 10 21,00% EUR 151,38",
+  "Attentie",
+  "U hoeft niets te doen; het bedrag wordt automatisch geïncasseerd",
+  "met SEPA Direct Debit.",
+  "Subtotaal (excl. btw) EUR 151,38",
+  "Btw 21,00% EUR 31,79",
+  "Totaal (incl. btw) EUR 183,17",
+  "KvK: 85042285 ANWB Energie B.V.",
+  "Btw: NL863484268B01 Wassenaarseweg 220, 2596EC 's-Gravenhage",
+].join(NL);
+
+const ANWB_MAIL: InvoiceSignals = {
+  subject: "ANWB Laadpas - Factuur (1705154431)",
+  sender: "noreply_laadpas@anwb.nl",
+  attachmentNames: ["Factuur - 1705154431.pdf", "Factuurspecificatie - 1705154431.pdf"],
+  bodyText: "Beste Maarten, in de bijlage vind je je factuur. Met vriendelijke groet, ANWB Energie",
+  mailDate: "2026-10-04 01:08:44",
+};
+
+test("vulAanUitPdf: bedrag, factuurdatum en btw komen uit de PDF", () => {
+  const uitMail = detectPurchaseInvoice(ANWB_MAIL, SUPPLIERS);
+  assert.equal(uitMail.amount, undefined);
+  assert.equal(uitMail.invoiceDate, "2026-10-04");
+
+  const g = vulAanUitPdf(uitMail, ANWB_PDF, ANWB_MAIL, SUPPLIERS);
+  assert.equal(g.amount, 151.38);
+  assert.equal(g.amountIsGross, false);
+  assert.equal(g.invoiceDate, "2026-09-30");
+  assert.equal(g.vatRate, 21);
+  assert.equal(g.invoiceNo, "1705154431");
+  assert.ok(g.reasons.includes("amount:net"));
+  assert.ok(g.reasons.includes("date:labelled"));
+  assert.ok(!g.reasons.includes("date:mail"));
+});
+
+test("vulAanUitPdf: een in de mail gevonden factuurdatum blijft staan", () => {
+  const mail: InvoiceSignals = { ...ANWB_MAIL, bodyText: "Factuurdatum: 29-09-2026" };
+  const g = vulAanUitPdf(detectPurchaseInvoice(mail, SUPPLIERS), ANWB_PDF, mail, SUPPLIERS);
+  assert.equal(g.invoiceDate, "2026-09-29");
+});
+
+test("vulAanUitPdf: een bedrag met btw-label in de PDF wint van een los bedrag in de mail", () => {
+  // "Uw termijnbedrag van € 183,17 wordt geïncasseerd" zegt niet of het met
+  // of zonder btw is; de PDF zegt het wel.
+  const mail: InvoiceSignals = { ...ANWB_MAIL, bodyText: "Het bedrag van € 183,17 wordt geïncasseerd." };
+  const uitMail = detectPurchaseInvoice(mail, SUPPLIERS);
+  assert.equal(uitMail.amount, 183.17);
+  const g = vulAanUitPdf(uitMail, ANWB_PDF, mail, SUPPLIERS);
+  assert.equal(g.amount, 151.38);
+  assert.equal(g.amountIsGross, false);
+  assert.equal(g.reasons.filter((r) => r.startsWith("amount:")).length, 1);
+});
+
+test("vulAanUitPdf: zonder PDF-tekst verandert er niets", () => {
+  const uitMail = detectPurchaseInvoice(ANWB_MAIL, SUPPLIERS);
+  assert.deepEqual(vulAanUitPdf(uitMail, "", ANWB_MAIL, SUPPLIERS), uitMail);
+  assert.deepEqual(vulAanUitPdf(uitMail, "  " + NL + " ", ANWB_MAIL, SUPPLIERS), uitMail);
+});
+
+test("findAmount: een bedrag loopt niet door over een regeleinde", () => {
+  // In PDF-tekst staat elk bedrag op een eigen regel; "151,38" en de "10"
+  // op de volgende regel zijn geen "151,3810".
+  const g = detectPurchaseInvoice({ ...ANWB_MAIL, bodyText: ["Factuur", "Totaal EUR 151,38", "10 stuks"].join(NL) }, SUPPLIERS);
+  assert.equal(g.amount, 151.38);
 });

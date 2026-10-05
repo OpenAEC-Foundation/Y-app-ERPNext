@@ -199,6 +199,48 @@ export function tabCommand(chord: KeyChord, ctx: IndentContext): "indent" | "out
 }
 
 /**
+ * Wat doet Backspace in het tekstvak?
+ *
+ * De tegenhanger van Tab. De browser haalt bij Backspace tekens weg, geen
+ * inspringing: wie Tab drukte en daarna Backspace, bleef ingesprongen staan.
+ * In elke tekstverwerker en mailclient springt Backspace aan het begin van
+ * een ingesprongen regel juist één niveau terug — dat doen we hier ook.
+ *
+ * Alleen aan het begin van de regel en zonder toets erbij: midden in de tekst
+ * is Backspace gewoon een teken weghalen, en Ctrl+Backspace wist een woord.
+ * Lijsten laten we aan de browser; die zet een lijstitem bij Backspace al
+ * zelf terug.
+ */
+export function backspaceCommand(
+  chord: KeyChord, ctx: { opBeginVanInspringing: boolean },
+): "outdent" | null {
+  if (chord.key !== "Backspace") return null;
+  if (chord.ctrlKey || chord.metaKey || chord.altKey || chord.shiftKey) return null;
+  return ctx.opBeginVanInspringing ? "outdent" : null;
+}
+
+/**
+ * Is dit element een inspringing zoals Tab of de inspringknop die maakt?
+ *
+ * Chrome maakt er een `<blockquote>` met een linkermarge en zonder rand van,
+ * met CSS-opmaak aan een `<div>`/`<p>` met een linkermarge, en Firefox zonder
+ * CSS een kale `<blockquote>`. Het citaat van een antwoord is ook een
+ * `<blockquote>`, maar met een rand en `data-y-quote`; dat telt niet mee,
+ * anders haalt Backspace een geciteerde regel uit het citaat.
+ */
+export function isInspringBlok(el: {
+  tag: string; marginLeft?: string; borderLeft?: string; citaat?: boolean;
+}): boolean {
+  const tag = el.tag.toUpperCase();
+  if (tag === "LI" || el.citaat) return false;
+  const rand = (el.borderLeft || "").trim().toLowerCase();
+  if (rand && rand !== "none" && !/^0(px)?\b/.test(rand)) return false;
+  const marge = parseFloat(el.marginLeft || "");
+  if (marge > 0) return true;
+  return tag === "BLOCKQUOTE" && !el.marginLeft;
+}
+
+/**
  * Nieuwe actieve knop in de werkbalk na een pijltoets. `null` = deze toets
  * gaat niet over de werkbalk en mag doorlopen.
  *

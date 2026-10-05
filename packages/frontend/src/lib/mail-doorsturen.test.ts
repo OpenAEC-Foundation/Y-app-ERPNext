@@ -112,3 +112,10 @@ test("namen op een rij", () => {
   assert.equal(bijlagenamen([{ fileName: "a.pdf" }, { fileName: " " }, { fileName: "b.docx" }]),
     "a.pdf, b.docx");
 });
+
+test("ontbrekende bijlagen: wat niet gevonden is, zonder dubbelen", async () => {
+  const { ontbrekendeBijlagen } = await import("./mail-doorsturen.ts");
+  assert.deepEqual(ontbrekendeBijlagen(["a", "b", "b", "c"], ["a", "c"]), ["b"]);
+  assert.deepEqual(ontbrekendeBijlagen([], ["a"]), []);
+  assert.deepEqual(ontbrekendeBijlagen(["a"], ["a"]), []);
+});

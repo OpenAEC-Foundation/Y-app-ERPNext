@@ -338,7 +338,10 @@ export function parseAmount(raw: string): number | undefined {
   return Math.round(value * 100) / 100;
 }
 
-const AMOUNT_RE = /(?:€|EUR\b)\s*([\d][\d.,\s\u00a0\u202f]*[\d])|([\d][\d.,\s\u00a0\u202f]*[\d])\s*(?:€|EUR\b)/gi;
+// Binnen een bedrag mogen spaties staan ("€ 2 417,58"), maar geen
+// regeleinde: in de tekst uit een PDF staat elk bedrag op een eigen regel,
+// en "151,38" met een "10" op de regel eronder is geen 151.3810.
+const AMOUNT_RE = /(?:€|EUR\b)[ \t\u00a0]*([\d][\d., \t\u00a0\u202f]*[\d])|([\d][\d., \t\u00a0\u202f]*[\d])[ \t\u00a0]*(?:€|EUR\b)/gi;
 const GROSS_RE = /\b(incl|inclusief|including|bruto|met\s+btw)\b/i;
 const NET_RE = /\b(excl|exclusief|excluding|netto|ex\.?\s*btw|zonder\s+btw|subtotaal|subtotal)\b/i;
 
@@ -625,4 +628,95 @@ function findVat(text: string): { rate?: number; shifted?: boolean; reason: stri
     if (BEKENDE_BTW_TARIEVEN.includes(rate)) return { rate, reason: "vat:rate" };
   }
   return null;
+}
+
+/**
+ * De factuurgegevens voor een mail die de gebruiker zelf als factuur aanwijst.
+ *
+ * `detectPurchaseInvoice` is voorzichtig: een labeltje dat er vaak naast zit,
+ * leert je het te negeren. Maar wie zelf op "inkoopfactuur" drukt, heeft die
+ * afweging al gemaakt. Dan telt niet meer óf het een factuur is, alleen wat er
+ * uit de mail te halen valt: leverancier, nummer, datum, bedrag.
+ *
+ * Twee dingen gaan daarom anders dan bij de herkenning. De richting telt niet
+ * (ook een doorgestuurde factuur uit Verzonden moet te boeken zijn), en de
+ * tegensignalen verdwijnen uit de redenen — die zouden in het venster als
+ * uitleg verschijnen bij een besluit dat de gebruiker net zelf nam.
+ */
+export function handmatigeFactuurGok(
+  signals: InvoiceSignals,
+  suppliers: SupplierHint[],
+): InvoiceGuess {
+  const gok = detectPurchaseInvoice({ ...signals, direction: "received" }, suppliers);
+  return {
+    ...gok,
+    isLikely: true,
+    reasons: gok.reasons.filter((r) => !r.startsWith("negative:")),
+  };
+}
+
+/* ───────────────────────────── Uit de PDF ────────────────────────────── */
+
+/**
+ * Vult een herkenning uit de mail aan met wat er in de PDF-bijlage staat.
+ *
+ * Veel leveranciers zetten het bedrag en de factuurdatum alleen in de PDF; de
+ * mail zegt hooguit "in de bijlage vind je je factuur". De PDF is het
+ * eigenlijke boekstuk, dus waar hij iets zegt dat de mail niet (zeker) wist,
+ * geldt de PDF:
+ *
+ * - **Bedrag**: uit de PDF zodra daar een btw-label bij staat ("Subtotaal
+ *   (excl. btw)"), of als de mail helemaal geen bedrag had. Een los bedrag in
+ *   de mail ("€ 183,17 wordt geïncasseerd") zegt niet of de btw erbij zit.
+ * - **Factuurdatum**: uit de PDF als de mail er alleen de maildatum voor had.
+ *   Een datum die in de mail met "factuurdatum" erbij staat, blijft staan.
+ * - **Nummer, btw, leverancier**: uit de PDF als de mail ze niet had.
+ *
+ * `pdfTekst` komt uit `leesPdfTekst` (`pdf-tekst.ts`). Is die leeg, dan komt
+ * de herkenning ongewijzigd terug.
+ */
+export function vulAanUitPdf(
+  guess: InvoiceGuess,
+  pdfTekst: string,
+  signals: InvoiceSignals,
+  suppliers: SupplierHint[],
+): InvoiceGuess {
+  if (!pdfTekst.trim()) return guess;
+  const pdf = detectPurchaseInvoice(
+    { ...signals, bodyText: pdfTekst, mailDate: undefined, direction: "received" },
+    suppliers,
+  );
+  const uit = { ...guess, reasons: [...guess.reasons] };
+  const reden = (g: InvoiceGuess, prefix: string) => g.reasons.find((r) => r.startsWith(`${prefix}:`));
+  const vervang = (prefix: string) => {
+    uit.reasons = uit.reasons.filter((r) => !r.startsWith(`${prefix}:`));
+    const nieuw = reden(pdf, prefix);
+    if (nieuw) uit.reasons.push(nieuw);
+  };
+
+  const pdfBedragMetLabel = reden(pdf, "amount") !== undefined && reden(pdf, "amount") !== "amount:plain";
+  if (pdf.amount !== undefined && (guess.amount === undefined || pdfBedragMetLabel)) {
+    uit.amount = pdf.amount;
+    if (pdf.amountIsGross !== undefined) uit.amountIsGross = pdf.amountIsGross;
+    else delete uit.amountIsGross;
+    vervang("amount");
+  }
+  if (pdf.invoiceDate && reden(pdf, "date") === "date:labelled" && reden(guess, "date") !== "date:labelled") {
+    uit.invoiceDate = pdf.invoiceDate;
+    vervang("date");
+  }
+  if (pdf.invoiceNo && !guess.invoiceNo) {
+    uit.invoiceNo = pdf.invoiceNo;
+    vervang("invoice-no");
+  }
+  if (pdf.supplier && !guess.supplier) {
+    uit.supplier = pdf.supplier;
+    vervang("supplier");
+  }
+  if (guess.vatRate === undefined && !guess.vatShifted) {
+    if (pdf.vatShifted) uit.vatShifted = true;
+    else if (pdf.vatRate !== undefined) uit.vatRate = pdf.vatRate;
+    if (pdf.vatShifted || pdf.vatRate !== undefined) vervang("vat");
+  }
+  return uit;
 }

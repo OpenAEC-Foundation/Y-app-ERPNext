@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   lijktMarkdown,
   plakHtml,
+  plakPlan,
   plakvormen,
   verwijderPlakMarkering,
 } from "./mail-plakken.ts";
+import { plainTextToHtml } from "./mail-html.ts";
 
 /**
  * Tests voor de plakkeuze.
@@ -88,4 +90,50 @@ test("gewone spans blijven staan", () => {
 
 test("lege invoer blijft leeg", () => {
   assert.equal(verwijderPlakMarkering(""), "");
+});
+
+/* ───────────────────────────── wat er geplakt wordt ───────────────────────────── */
+
+const leeg = { html: "", tekst: "", afbeeldingen: [] as File[] };
+const png = new File(["png"], "image.png", { type: "image/png" });
+
+test("met opmaak op het klembord komt het keuzeblokje", () => {
+  assert.deepEqual(plakPlan({ ...leeg, html: "<b>hoi</b>", tekst: "hoi" }, false),
+    { soort: "kiezen", html: "<b>hoi</b>", tekst: "hoi", vormen: ["opmaak", "tekst"] });
+});
+
+test("als platte tekst: alleen de tekst, zonder keuzeblokje", () => {
+  assert.deepEqual(plakPlan({ ...leeg, html: "<b>hoi</b>", tekst: "hoi" }, true),
+    { soort: "invoegen", html: plainTextToHtml("hoi") });
+});
+
+test("gewone tekst gaat er meteen in", () => {
+  assert.deepEqual(plakPlan({ ...leeg, tekst: "regel" }, false),
+    { soort: "invoegen", html: plainTextToHtml("regel") });
+});
+
+test("een schermafdruk wordt een afbeelding", () => {
+  assert.deepEqual(plakPlan({ ...leeg, afbeeldingen: [png] }, false), { soort: "afbeeldingen", bestanden: [png] });
+});
+
+test("staat er HTML bij het plaatje, dan was de tekst bedoeld", () => {
+  // Word en webpagina's zetten naast de HTML ook een plaatje van de selectie op het klembord.
+  const plan = plakPlan({ html: "<p>tekst</p>", tekst: "tekst", afbeeldingen: [png] }, false);
+  assert.notEqual(plan.soort, "afbeeldingen");
+});
+
+test("als platte tekst met alleen een plaatje: niets om te plakken", () => {
+  assert.deepEqual(plakPlan({ ...leeg, afbeeldingen: [png] }, true), { soort: "niets" });
+});
+
+test("een leeg klembord plakt niets", () => {
+  assert.deepEqual(plakPlan(leeg, false), { soort: "niets" });
+  assert.deepEqual(plakPlan(leeg, true), { soort: "niets" });
+});
+test("de plakknoppen hebben de keuze al gemaakt: geen keuzeblokje", () => {
+  // "Plak" is met opmaak, "Plak als platte tekst" zonder; daarna nog eens vragen is dubbelop.
+  assert.deepEqual(plakPlan({ ...leeg, html: "<b>hoi</b>", tekst: "hoi" }, false, false),
+    { soort: "invoegen", html: "<b>hoi</b>" });
+  assert.deepEqual(plakPlan({ ...leeg, tekst: "- een\n- twee" }, false, false),
+    { soort: "invoegen", html: plainTextToHtml("- een\n- twee") });
 });

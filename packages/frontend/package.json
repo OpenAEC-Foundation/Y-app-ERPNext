@@ -1,7 +1,7 @@
 {
   "name": "@y-app/frontend",
   "private": true,
-  "version": "0.39.0",
+  "version": "0.39.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
     "mammoth": "^1.12.3",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.2.5",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.5",

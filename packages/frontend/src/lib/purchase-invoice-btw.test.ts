@@ -72,3 +72,38 @@ test("btwRegelsVoorBoeking: bij inclusief staan de netto-regels op inbegrepen", 
   const anders = btwRegelsVoorBoeking([{ ...REGEL_21, charge_type: "Actual" }], true);
   assert.equal(anders[0].included_in_print_rate, 0);
 });
+
+/* ──────────────────────── Leesbare keuzelijst ──────────────────────── */
+
+test("sjabloonnamen worden leesbaar", async () => {
+  const { btwKeuzeVoor } = await import("./purchase-invoice-btw.ts");
+  assert.deepEqual(btwKeuzeVoor("Netherlands VAT 21% - 3"), { waarde: "Netherlands VAT 21% - 3", label: "21% btw", groep: "nl" });
+  assert.equal(btwKeuzeVoor("Netherlands VAT 9% - 3").label, "9% btw");
+  assert.equal(btwKeuzeVoor("Netherlands VAT 6% - 10").label, "6% btw (oud laag tarief)");
+  assert.equal(btwKeuzeVoor("Netherlands VAT 21% included - 3").label, "21% btw, inbegrepen");
+  assert.deepEqual(btwKeuzeVoor("Netherlands VAT shifted 21% - 3"), {
+    waarde: "Netherlands VAT shifted 21% - 3", label: "Btw verlegd (21%)", groep: "verlegd",
+  });
+  assert.equal(btwKeuzeVoor("NL Reverse Charge 21%VAT - 3").label, "Reverse charge 21%");
+  assert.equal(btwKeuzeVoor("Netherlands VAT Abroad 0% - 3").groep, "buitenland");
+  assert.equal(btwKeuzeVoor("Iets eigens").label, "Iets eigens");
+});
+
+test("de keuzelijst: gegroepeerd, hoogste tarief eerst, buitenlandse btw erbij", async () => {
+  const { btwKeuzelijst, BUITENLANDSE_BTW } = await import("./purchase-invoice-btw.ts");
+  const lijst = btwKeuzelijst([
+    { name: "Abroad VAT - 0% - 3" },
+    { name: "Netherlands VAT 0% - 3" },
+    { name: "Netherlands VAT 21% - 3", is_default: 1 },
+    { name: "Netherlands VAT 9% - 3" },
+    { name: "Netherlands VAT Abroad 0% - 3" },
+    { name: "Netherlands VAT shifted 21% - 3" },
+  ], "Buitenlandse btw");
+  assert.deepEqual(lijst.map((k) => k.groep), ["nl", "nl", "nl", "verlegd", "buitenland", "buitenland", "buitenland"]);
+  assert.deepEqual(lijst.slice(0, 3).map((k) => k.label), ["21% btw", "9% btw", "0% btw"]);
+  // Twee sjablonen met hetzelfde label houden hun naam erachter.
+  const buitenland = lijst.filter((k) => k.groep === "buitenland" && k.waarde !== BUITENLANDSE_BTW);
+  assert.equal(new Set(buitenland.map((k) => k.label)).size, 2);
+  assert.ok(buitenland.every((k) => k.label.includes(k.waarde)));
+  assert.deepEqual(lijst.at(-1), { waarde: BUITENLANDSE_BTW, label: "Buitenlandse btw", groep: "buitenland" });
+});

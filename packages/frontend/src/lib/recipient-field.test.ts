@@ -4,7 +4,7 @@ import {
   nextSuggestionIndex, isSelectKey, applyRecipientSuggestion,
   filterCachedSuggestions, sourceLabelKey, tokenAt,
   splitsAdresInvoer, voegAdresInvoerSamen, adresMetNaam, kiesAdres,
-  zonderBlokje, blokjeTerugNaarTekst, rondAdresAf, isBruikbaarAdres,
+  zonderBlokje, blokjeTerugNaarTekst, rondAdresAf, isBruikbaarAdres, waardeBijTab,
 } from "./recipient-field.ts";
 import type { RecipientSuggestion } from "./contact-suggestions.ts";
 
@@ -94,6 +94,17 @@ test("afronden maakt van getypte tekst een blokje; zonder getypte tekst verander
   assert.equal(rondAdresAf("a@b.nl, c@d.nl"), "a@b.nl, c@d.nl, ");
   assert.equal(rondAdresAf("a@b.nl, "), "a@b.nl, ");
   assert.equal(rondAdresAf(""), "");
+});
+
+test("Tab neemt de gekozen suggestie mee, of maakt een blokje van wat er getypt staat", () => {
+  // Met een suggestie in beeld: die wordt het blokje, niet het halve zoekwoord.
+  assert.equal(waardeBijTab("a@b.nl, maar", { email: "maarten@3bm.co.nl", label: "Maarten" }),
+    "a@b.nl, Maarten <maarten@3bm.co.nl>, ");
+  // Zonder suggestie: het getypte adres wordt een blokje.
+  assert.equal(waardeBijTab("a@b.nl, piet@x.nl"), "a@b.nl, piet@x.nl, ");
+  // Niets getypt: er verandert niets, Tab springt alleen verder.
+  assert.equal(waardeBijTab("a@b.nl, "), "a@b.nl, ");
+  assert.equal(waardeBijTab(""), "");
 });
 
 test("een blokje zonder bruikbaar adres valt op", () => {

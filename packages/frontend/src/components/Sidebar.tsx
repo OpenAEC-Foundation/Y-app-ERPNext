@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   FileText, ShoppingCart, FolderKanban, Mail, CheckSquare,
-  FileBarChart, ClipboardCheck, Users, CalendarDays, Search,
+  FileBarChart, ClipboardCheck, Users, CalendarDays, Map as MapIcon, Search,
   TrendingUp, Clock, PieChart, BookOpen, Receipt, Truck, Timer,
   FileSpreadsheet, Wallet, CalendarCheck, Settings, BarChart3,
   ListTodo, LayoutDashboard, UserCheck, Cloud, ListTree,
@@ -28,7 +28,7 @@ const ERPNEXT_MAIL: ServerFeature = "erpnext-mail";
 export type Page =
   | "dashboard" | "management-dashboard"
   | "sales" | "purchase" | "quotations" | "salesorders"
-  | "projects" | "tasks" | "planning" | "employees"
+  | "projects" | "tasks" | "planning" | "roadmap" | "employees"
   | "financieel-dashboard" | "revenue" | "outstanding" | "cost-insight" | "jaarrekening"
   | "btw" | "loonaangifte" | "expenses" | "deliverynotes" | "timesheets"
   | "leave" | "todo" | "settings" | "profitability"
@@ -60,8 +60,8 @@ interface SidebarProps {
 const ROLE_PAGE_MAP: Record<string, Set<Page>> = {
   "HR User": new Set(["employees", "leave", "expenses", "loonaangifte", "management-dashboard"]),
   "HR Manager": new Set(["employees", "leave", "expenses", "loonaangifte", "management-dashboard"]),
-  "Projects User": new Set(["projects", "tasks", "subtasks", "planning", "timesheets"]),
-  "Projects Manager": new Set(["projects", "tasks", "subtasks", "planning", "timesheets"]),
+  "Projects User": new Set(["projects", "tasks", "subtasks", "planning", "roadmap", "timesheets"]),
+  "Projects Manager": new Set(["projects", "tasks", "subtasks", "planning", "roadmap", "timesheets"]),
   "Accounts User": new Set(["sales", "purchase", "quotations", "salesorders", "deliverynotes", "financieel-dashboard", "revenue", "outstanding", "cost-insight", "jaarrekening", "btw", "profitability", "ledgers", "bank-transactions", "booking-program", "liquidity-planning", "to-invoice", "management-dashboard"]),
   "Accounts Manager": new Set(["sales", "purchase", "quotations", "salesorders", "deliverynotes", "financieel-dashboard", "revenue", "outstanding", "cost-insight", "jaarrekening", "btw", "profitability", "ledgers", "bank-transactions", "booking-program", "liquidity-planning", "to-invoice", "management-dashboard"]),
   "Sales User": new Set(["sales", "quotations", "salesorders", "deliverynotes", "leads"]),
@@ -170,6 +170,7 @@ function getSections(): NavSection[] {
         { id: "tasks", labelKey: "nav.tasks", icon: CheckSquare },
         { id: "subtasks", labelKey: "nav.subtasks", icon: ListTree },
         { id: "planning", labelKey: "nav.planning", icon: CalendarDays },
+        { id: "roadmap", labelKey: "nav.roadmap", icon: MapIcon },
         { id: "timesheets", labelKey: "nav.timesheets", icon: Timer },
         { id: "todo", labelKey: "nav.todo", icon: ListTodo },
       ],

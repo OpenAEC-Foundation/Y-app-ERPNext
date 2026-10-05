@@ -31,21 +31,25 @@ import {
   Indent, Outdent, Link2, Link2Off, Quote, Minus, Palette, RemoveFormatting,
   Heading1, Heading2, Pilcrow, ExternalLink,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Table as TableIcon, X,
+  ClipboardPaste, ClipboardType,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { schaalBreedte, sleepBreedte } from "../../lib/mail-afbeeldingen";
 import { linkAanEind } from "../../lib/linkify";
 import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
+  backspaceCommand, isInspringBlok,
   tabelHtml, TOGGLE_STATE_COMMANDS, TEXT_COLORS,
   type EditorCommandName, type IndentContext,
 } from "../../lib/rich-text-commands";
+import { QUOTE_ATTR } from "../../lib/mail-quote";
 import {
-  sanitizeEditorHtml, plainTextToHtml, normalizeLinkUrl, isHtmlEmpty,
+  sanitizeEditorHtml, normalizeLinkUrl, isHtmlEmpty,
 } from "../../lib/mail-html";
 import {
-  PLAK_ATTRIBUUT, plakHtml, plakvormen, verwijderPlakMarkering, type Plakvorm,
+  PLAK_ATTRIBUUT, plakHtml, plakPlan, verwijderPlakMarkering, type Plakvorm,
 } from "../../lib/mail-plakken";
+import { inhoudUitDataTransfer, leesKlembord, type KlembordInhoud } from "../../lib/klembord-lezen";
 
 /** Eén werkbalkknop; `hideOnMobile` houdt de balk op een telefoon één regel. */
 interface ToolButton {
@@ -116,8 +120,8 @@ const BTN_BASE =
 const BTN_ACTIVE = "bg-slate-300 text-slate-900";
 
 export default function RichTextEditor({
-  value, onChange, placeholder, className, ariaLabel, autoFocus, collapseQuote,
-  basisStijl, onAfbeelding,
+  value, onChange, placeholder, className, ariaLabel, autoFocus, focusSignaal, collapseQuote,
+  basisStijl, onAfbeelding, plakKnoppen,
 }: {
   /** De HTML van het bericht. Verandert deze van buitenaf, dan herlaadt het vak. */
   value: string;
@@ -126,6 +130,11 @@ export default function RichTextEditor({
   className?: string;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /**
+   * Verhoog dit getal om de cursor bovenaan in het tekstvak te zetten, zoals
+   * bij `autoFocus`. Het opstelvenster doet dat na Tab in het Aan-veld.
+   */
+  focusSignaal?: number;
   /**
    * Toont het geciteerde origineel (`blockquote[data-y-quote]`) afgeknot in
    * plaats van volledig. Puur weergave: de inhoud staat er nog steeds
@@ -145,6 +154,12 @@ export default function RichTextEditor({
    * het tekstvak staan (goed genoeg voor een voorbeeld, niet voor verzenden).
    */
   onAfbeelding?: (bestand: File) => Promise<string>;
+  /**
+   * Knoppen "Plak" en "Plak als platte tekst" vooraan in de werkbalk, voor wie
+   * niet met Ctrl+V werkt. Ze lezen het klembord zelf; de browser vraagt
+   * daarvoor de eerste keer toestemming.
+   */
+  plakKnoppen?: boolean;
 }) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -202,8 +217,7 @@ export default function RichTextEditor({
    * niet betrouwbaar de eerste lege alinea. Bij beantwoorden hoor je bóven het
    * citaat te beginnen, dus zetten we het bereik expliciet op het begin.
    */
-  useEffect(() => {
-    if (!autoFocus) return;
+  const zetCursorBovenaan = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
     el.focus();
@@ -215,7 +229,13 @@ export default function RichTextEditor({
       selection?.removeAllRanges();
       selection?.addRange(range);
     } catch { /* geen selectie-API (test-omgeving): focus volstaat */ }
-  }, [autoFocus]);
+  }, []);
+  useEffect(() => {
+    if (autoFocus) zetCursorBovenaan();
+  }, [autoFocus, zetCursorBovenaan]);
+  useEffect(() => {
+    if (focusSignaal) zetCursorBovenaan();
+  }, [focusSignaal, zetCursorBovenaan]);
 
   /*
    * Een druk op Enter hoort een `<p>` op te leveren, geen `<div>`.
@@ -385,6 +405,40 @@ export default function RichTextEditor({
       if (tag === "blockquote" || cur.style.marginLeft) indented = true;
     }
     return { inList, indented };
+  }, []);
+
+  /**
+   * Staat de cursor vooraan in een ingesprongen blok? Dat is het moment
+   * waarop Backspace de inspringing weghaalt (`backspaceCommand`). "Vooraan"
+   * betekent: tussen het begin van dat blok en de cursor staat geen tekst,
+   * afbeelding of regeleinde. Een lijstitem dat eerder komt, laat het aan de
+   * browser.
+   */
+  const opBeginVanInspringing = useCallback((): boolean => {
+    const el = editorRef.current;
+    const selection = window.getSelection();
+    if (!el || !selection || selection.rangeCount === 0 || !selection.isCollapsed) return false;
+    const bereik = selection.getRangeAt(0);
+    if (!el.contains(bereik.startContainer)) return false;
+    let blok: HTMLElement | null = null;
+    for (let cur: Node | null = bereik.startContainer; cur && cur !== el; cur = cur.parentNode) {
+      if (!(cur instanceof HTMLElement)) continue;
+      if (cur.tagName === "LI") return false;
+      if (isInspringBlok({
+        tag: cur.tagName,
+        marginLeft: cur.style.marginLeft,
+        borderLeft: cur.style.borderLeft || cur.style.borderLeftStyle,
+        citaat: cur.hasAttribute(QUOTE_ATTR),
+      })) { blok = cur; break; }
+    }
+    if (!blok) return false;
+    const ervoor = document.createRange();
+    ervoor.setStart(blok, 0);
+    ervoor.setEnd(bereik.startContainer, bereik.startOffset);
+    // Een zero-width space of BOM die de browser soms achterlaat, telt niet als tekst.
+    const onzichtbaar = new RegExp("[" + String.fromCharCode(0x200b, 0xfeff) + "]", "g");
+    if (ervoor.toString().replace(onzichtbaar, "") !== "") return false;
+    return !ervoor.cloneContents().querySelector("img, br, hr, table");
   }, []);
 
   /* ─── Afbeeldingen ─── */
@@ -560,44 +614,22 @@ export default function RichTextEditor({
 
   /* ─── Plakken ─── */
 
-  const pasteFromClipboard = useCallback((data: DataTransfer, plainOnly: boolean) => {
-    const html = plainOnly ? "" : data.getData("text/html");
-    const text = data.getData("text/plain");
-
-    /*
-     * Een schermafdruk of een gekopieerde afbeelding staat als bestand op het
-     * klembord. Alleen als er geen HTML bij zit: wie uit Word of een webpagina
-     * kopieert krijgt naast de HTML vaak ook een plaatje van de hele selectie,
-     * en dan is de tekst wat bedoeld werd. SVG nooit - dat is een scriptbaar
-     * document, geen afbeelding.
-     */
-    if (!plainOnly && !html) {
-      const bestanden: File[] = [];
-      for (const item of Array.from(data.items || [])) {
-        if (item.kind !== "file") continue;
-        const bestand = item.getAsFile();
-        if (bestand && bestand.type.startsWith("image/") && bestand.type !== "image/svg+xml") {
-          bestanden.push(bestand);
-        }
-      }
-      if (bestanden.length > 0) {
-        void plakAfbeeldingen(bestanden);
-        return;
-      }
-    }
-    const vormen = plainOnly ? [] : plakvormen(html, text);
-
-    // Zonder echte keuze geen markering en geen blokje: een knop die niets
-    // verandert maakt de andere knoppen ongeloofwaardig.
-    if (vormen.length === 0) {
-      if (html) insertHtml(html);
-      else if (text) insertHtml(plainTextToHtml(text));
-      return;
-    }
+  /**
+   * Zet de inhoud van het klembord op de cursor — voor Ctrl+V en de
+   * plakknoppen hetzelfde, zie `plakPlan`. Geeft `false` als er niets te
+   * plakken viel. `metKeuze` is `false` voor de knoppen: die hebben de vorm al
+   * gekozen.
+   */
+  const plakInhoud = useCallback((inhoud: KlembordInhoud, plainOnly: boolean, metKeuze: boolean): boolean => {
+    const plan = plakPlan(inhoud, plainOnly, metKeuze);
+    if (plan.soort === "niets") return false;
+    if (plan.soort === "afbeeldingen") { void plakAfbeeldingen(plan.bestanden); return true; }
+    if (plan.soort === "invoegen") { insertHtml(plan.html); return true; }
 
     const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    insertHtml(`<span ${PLAK_ATTRIBUUT}="${id}">${plakHtml(vormen[0], html, text)}</span>`);
-    setPlak({ id, html, tekst: text, vormen, gekozen: vormen[0] });
+    insertHtml(`<span ${PLAK_ATTRIBUUT}="${id}">${plakHtml(plan.vormen[0], plan.html, plan.tekst)}</span>`);
+    setPlak({ id, html: plan.html, tekst: plan.tekst, vormen: plan.vormen, gekozen: plan.vormen[0] });
+    return true;
   }, [insertHtml, plakAfbeeldingen]);
 
   /** Het geplakte stuk opnieuw neerzetten, in de gekozen vorm. */
@@ -641,8 +673,34 @@ export default function RichTextEditor({
     e.preventDefault();
     const plainOnly = plainPaste.current;
     plainPaste.current = false;
-    pasteFromClipboard(e.clipboardData, plainOnly);
-  }, [pasteFromClipboard]);
+    plakInhoud(inhoudUitDataTransfer(e.clipboardData), plainOnly, true);
+  }, [plakInhoud]);
+
+  /** Waarom een plakknop niets plakte; verdwijnt vanzelf. */
+  const [plakMelding, setPlakMelding] = useState("");
+  useEffect(() => {
+    if (!plakMelding) return;
+    const klok = window.setTimeout(() => setPlakMelding(""), 8000);
+    return () => window.clearTimeout(klok);
+  }, [plakMelding]);
+
+  /**
+   * De plakknoppen. Die krijgen geen plak-event zoals Ctrl+V, maar lezen het
+   * klembord zelf. De cursor gaat eerst terug in het tekstvak: het lezen kan
+   * even duren (de toestemmingsvraag van de browser), en het geplakte hoort
+   * te komen waar je aan het typen was.
+   */
+  const plakMetKnop = useCallback(async (plainOnly: boolean) => {
+    setPlakMelding("");
+    sluitPlak();
+    if (!focusEditor()) return;
+    const uitkomst = await leesKlembord(typeof navigator === "undefined" ? undefined : navigator.clipboard);
+    if ("fout" in uitkomst) {
+      setPlakMelding(t(`webmail.paste_error_${uitkomst.fout}`));
+      return;
+    }
+    if (!plakInhoud(uitkomst.inhoud, plainOnly, false)) setPlakMelding(t("webmail.paste_error_geen_tekst"));
+  }, [focusEditor, plakInhoud, sluitPlak, t]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     // Zodra je verder typt is de keuze voorbij. Escape sluit hem meteen.
@@ -668,6 +726,12 @@ export default function RichTextEditor({
       run(indent);
       return;
     }
+    // En Backspace vooraan in een ingesprongen regel draait dat weer terug.
+    if (e.key === "Backspace" && backspaceCommand(e, { opBeginVanInspringing: opBeginVanInspringing() })) {
+      e.preventDefault();
+      run("outdent");
+      return;
+    }
     const action = shortcutFor(e);
     if (!action) return;
     if (action === "plainPaste") {
@@ -681,7 +745,7 @@ export default function RichTextEditor({
     e.preventDefault();
     if (action === "link") { editLink(); return; }
     run(action);
-  }, [editLink, indentContext, run, linkVoorCursor, emit]);
+  }, [editLink, indentContext, opBeginVanInspringing, run, linkVoorCursor, emit]);
 
   /* ─── Werkbalk: één tab-stop, pijltjes ertussen ─── */
 
@@ -752,6 +816,27 @@ export default function RichTextEditor({
       <div ref={toolbarRef} role="toolbar" aria-label={t("webmail.formatting_toolbar")}
         onKeyDown={handleToolbarKeyDown}
         className="flex items-center flex-wrap gap-0.5 px-2 py-1 border-b border-slate-200 bg-slate-50 flex-shrink-0">
+        {/* Plakken vooraan, zoals in een tekstverwerker. Met een woord erbij:
+            een klembord-icoontje alleen herkent niet iedereen. */}
+        {plakKnoppen && (
+          <>
+            <button type="button"
+              onMouseDown={(e) => e.preventDefault()} onClick={() => void plakMetKnop(false)}
+              title={t("webmail.tt_paste")} aria-label={t("webmail.tt_paste")}
+              className={`${BTN_BASE} inline-flex items-center gap-1`}>
+              <ClipboardPaste size={14} />
+              <span className="hidden md:inline text-xs">{t("webmail.paste_button")}</span>
+            </button>
+            <button type="button"
+              onMouseDown={(e) => e.preventDefault()} onClick={() => void plakMetKnop(true)}
+              title={t("webmail.tt_paste_plain")} aria-label={t("webmail.tt_paste_plain")}
+              className={`${BTN_BASE} inline-flex items-center gap-1`}>
+              <ClipboardType size={14} />
+              <span className="hidden md:inline text-xs">{t("webmail.paste_plain_button")}</span>
+            </button>
+            {divider("d0")}
+          </>
+        )}
         {INLINE_BUTTONS.map(toolButton)}
         {divider("d1")}
         {LIST_BUTTONS.map(toolButton)}
@@ -897,6 +982,12 @@ export default function RichTextEditor({
               className="cursor-pointer rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
               <X size={11} />
             </button>
+          </div>
+        )}
+        {plakMelding && !afbeeldingBezig && !afbeeldingFout && (
+          <div role="status"
+            className="absolute left-3 bottom-2 z-20 max-w-[90%] rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 shadow-sm">
+            {plakMelding}
           </div>
         )}
         {(afbeeldingBezig || afbeeldingFout) && (

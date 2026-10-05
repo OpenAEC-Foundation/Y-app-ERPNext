@@ -49,6 +49,7 @@
  *   node scripts/generate-signatures.mjs --dry-run
  *   node scripts/generate-signatures.mjs
  *   node scripts/generate-signatures.mjs --force
+ *   node scripts/generate-signatures.mjs --dry-run "--bedrijf=3BM Bouwtechniek V.O.F." --zonder-functie
  */
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
@@ -127,10 +128,28 @@ export function requiredEnv(env) {
   return { baseUrl, token };
 }
 
-/** Leest de vlaggen uit argv (bewust tolerant: onbekende argumenten negeren). */
+/**
+ * Leest de vlaggen uit argv (bewust tolerant: onbekende argumenten negeren).
+ *
+ *  - `--bedrijf=<naam>`: alleen medewerkers met een medewerkerskaart bij dat
+ *    bedrijf; AI-, service- en externe accounts vallen dan buiten de run.
+ *  - `--zonder-functie`: geen functieregel onder de naam.
+ */
 export function parseArgs(argv) {
   const args = new Set(argv);
-  return { dryRun: args.has("--dry-run"), force: args.has("--force") };
+  const bedrijfArg = argv.find((a) => a.startsWith("--bedrijf="));
+  return {
+    dryRun: args.has("--dry-run"),
+    force: args.has("--force"),
+    bedrijf: bedrijfArg ? bedrijfArg.slice("--bedrijf=".length).trim() : "",
+    zonderFunctie: args.has("--zonder-functie"),
+  };
+}
+
+/** Met een bedrijf: alleen wie een medewerkerskaart bij dat bedrijf heeft. */
+export function kiesMensen(people, bedrijf) {
+  if (!bedrijf) return people;
+  return people.filter((p) => p.employeeCompany === bedrijf);
 }
 
 /* ───────────────────────────── HTML-opbouw ───────────────────────────── */
@@ -183,6 +202,22 @@ function labelled(label, value) {
   const raw = str(value);
   if (!raw) return "";
   return new RegExp(`^${label}\\b`, "i").test(raw) ? raw : `${label} ${raw}`;
+}
+
+/**
+ * Het KvK-nummer uit `Company.registration_details`, of "" als er geen in staat.
+ *
+ * Het veld is vrije tekst: soms alleen "KvK 99480697", soms een compleet
+ * geplakt uittreksel met RSIN, vestigingsnummer en (oud) bezoekadres. Alleen
+ * het nummer hoort in een handtekening.
+ */
+export function kvkNummer(registration) {
+  const tekst = str(registration);
+  if (!tekst) return "";
+  const gelabeld = tekst.match(/kvk[\s\-–:]*(?:nummer|nr\.?)?[\s:]*(\d{8})(?!\d)/i);
+  if (gelabeld) return gelabeld[1];
+  const kaal = tekst.match(/^\s*(\d{8})\s*$/);
+  return kaal ? kaal[1] : "";
 }
 
 /**
@@ -280,7 +315,7 @@ export function buildSignatureHtml(person) {
 
   // Voetregel met de formele gegevens: klein, grijs, één regel.
   const legal = [
-    labelled("KvK", person?.registration),
+    labelled("KvK", kvkNummer(person?.registration)),
     labelled("BTW", person?.taxId),
     labelled("IBAN", formatIban(person?.iban)),
   ].filter(Boolean);
@@ -572,6 +607,7 @@ export async function collectPeople({ baseUrl, token }) {
     people.push({
       user: name,
       fullName,
+      employeeCompany: str(emp?.company),
       designation: str(emp?.designation),
       company: str(company?.company_name) || companyName,
       email: name,
@@ -615,12 +651,13 @@ async function writeSignature(baseUrl, token, user, html) {
  * Zet de handtekening van elke medewerker. Zie de modulekop voor het
  * idempotentie- en maatwerkbeleid.
  *
- * @param {{ baseUrl: string, token: string, dryRun?: boolean, force?: boolean }} params
+ * @param {{ baseUrl: string, token: string, dryRun?: boolean, force?: boolean,
+ *           bedrijf?: string, zonderFunctie?: boolean }} params
  * @returns {Promise<{ written: string[], skipped: string[], failed: string[],
  *   previews: Array<{ user: string, html: string }> }>}
  */
-export async function generateSignatures({ baseUrl, token, dryRun = false, force = false }) {
-  const people = await collectPeople({ baseUrl, token });
+export async function generateSignatures({ baseUrl, token, dryRun = false, force = false, bedrijf = "", zonderFunctie = false }) {
+  const people = kiesMensen(await collectPeople({ baseUrl, token }), bedrijf);
   const written = [];
   const skipped = [];
   const failed = [];
@@ -634,7 +671,7 @@ export async function generateSignatures({ baseUrl, token, dryRun = false, force
       continue;
     }
 
-    const html = buildSignatureHtml(person);
+    const html = buildSignatureHtml(zonderFunctie ? { ...person, designation: "" } : person);
     const verb = hasMarker(person.currentSignature) ? "bijgewerkt" : "gezet";
 
     if (dryRun) {
@@ -659,15 +696,18 @@ export async function generateSignatures({ baseUrl, token, dryRun = false, force
 
 async function main() {
   const { baseUrl, token } = requiredEnv(process.env);
-  const { dryRun, force } = parseArgs(process.argv.slice(2));
+  const { dryRun, force, bedrijf, zonderFunctie } = parseArgs(process.argv.slice(2));
   console.log(
-    `Handtekeningen genereren tegen ${baseUrl}${dryRun ? " (dry-run)" : ""}${force ? " (force)" : ""} ...`
+    `Handtekeningen genereren tegen ${baseUrl}${dryRun ? " (dry-run)" : ""}${force ? " (force)" : ""}` +
+      `${bedrijf ? ` voor ${bedrijf}` : ""}${zonderFunctie ? " (zonder functie)" : ""} ...`
   );
   const { written, skipped, failed, previews } = await generateSignatures({
     baseUrl,
     token,
     dryRun,
     force,
+    bedrijf,
+    zonderFunctie,
   });
   console.log(
     `Klaar. ${dryRun ? `Zou schrijven: ${previews.length}` : `Geschreven: ${written.length}`}, ` +

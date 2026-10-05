@@ -198,7 +198,14 @@ export interface DefaultCompanyState {
  * paar honderd milliseconden zélf een bedrijf, dan mag het antwoord van de
  * server dat niet meer overschrijven.
  */
-export function useDefaultCompany(): DefaultCompanyState {
+export function useDefaultCompany(opts?: {
+  /**
+   * Een voorkeur die alleen voor dit scherm geldt en vóór de gewone volgorde
+   * gaat — bv. het vaste bedrijf voor inkoopfacturen. Levert hij niets op, of
+   * een bedrijf dat niet bestaat, dan beslist de resolver zoals altijd.
+   */
+  voorkeur?: () => Promise<string>;
+}): DefaultCompanyState {
   const [company, setCompanyState] = useState<string>(() => safePreference());
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const touched = useRef(false);
@@ -214,11 +221,16 @@ export function useDefaultCompany(): DefaultCompanyState {
       const rows = await fetchCompanyOptions();
       if (cancelled) return;
       setCompanies(rows);
+      const eigen = opts?.voorkeur ? (await opts.voorkeur().catch(() => "")).trim() : "";
+      if (cancelled || touched.current) return;
+      if (eigen && knownIn(rows, eigen)) { setCompanyState(eigen); return; }
       const resolved = await resolveDefaultCompany({ companies: rows });
       if (cancelled || touched.current) return;
       setCompanyState((prev) => (prev && knownIn(rows, prev) ? prev : resolved));
     })();
     return () => { cancelled = true; };
+    // Eén keer per scherm: de voorkeur verandert niet terwijl het open staat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { company, setCompany, companies };

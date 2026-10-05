@@ -415,8 +415,10 @@ test("sendMail: uploadt bijlagen privé en geeft de File-docnames door aan commu
     assert.equal(mock.calls[0].url, "/api/method/upload_file", "bijlagen gaan eerst omhoog");
     const upload = mock.calls[0].init?.body as FormData;
     assert.equal(upload.get("is_private"), "1");
-    assert.equal(upload.get("doctype"), "Project");
-    assert.equal(upload.get("docname"), "PROJ-0001");
+    // Niet aan het project hangen: `make` koppelt het bestand aan de mail.
+    // Aan het project liep het vast op de bijlagelimiet (standaard vier).
+    assert.equal(upload.get("doctype"), "");
+    assert.equal(upload.get("docname"), "");
 
     const makeCall = mock.calls[1];
     assert.equal(makeCall.url, "/api/method/frappe.core.doctype.communication.email.make");
@@ -448,6 +450,9 @@ test("sendMail: een doorgestuurde bijlage gaat mee zonder opnieuw te uploaden", 
     if (url === "/api/method/frappe.core.doctype.communication.email.make") {
       return { status: 200, body: { message: { name: "COMM-5", emails_not_sent_to: [] } } };
     }
+    if (url.startsWith("/api/resource/File")) {
+      return { status: 200, body: { data: [{ name: "FILE-1" }, { name: "FILE-2" }] } };
+    }
     throw new Error(`unexpected url: ${url}`);
   });
   try {
@@ -477,6 +482,9 @@ test("sendMail: doorgestuurde bijlagen en zelf gekozen bestanden gaan samen mee"
     if (url === "/api/method/frappe.core.doctype.communication.email.make") {
       return { status: 200, body: { message: { name: "COMM-6", emails_not_sent_to: [] } } };
     }
+    if (url.startsWith("/api/resource/File")) {
+      return { status: 200, body: { data: [{ name: "FILE-1" }] } };
+    }
     throw new Error(`unexpected url: ${url}`);
   });
   try {
@@ -490,6 +498,26 @@ test("sendMail: doorgestuurde bijlagen en zelf gekozen bestanden gaan samen mee"
     const make = mock.calls.find((c) => c.url.endsWith("email.make"));
     const args = JSON.parse(String(make.init?.body));
     assert.deepEqual(args.attachments, ["FILE-1", "FILE-99"]);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("sendMail: een bijlage die niet meer bestaat geeft een leesbare fout en verstuurt niets", async () => {
+  // Zo ging het mis: een concept was al verstuurd en daarmee opgeruimd, maar
+  // een achtergebleven kopie verwees nog naar zijn bijlage.
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/resource/File")) {
+      return { status: 200, body: { data: [{ name: "FILE-1" }] } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await assert.rejects(
+      sendMail({ to: "klant@example.com", subject: "Re: Factuur", html: "<p>x</p>", bestaandeBijlagen: ["FILE-1", "FILE-WEG"] }),
+      /bestaat niet meer.*FILE-WEG/,
+    );
+    assert.equal(mock.calls.some((c) => c.url.endsWith("email.make")), false, "er gaat niets de deur uit");
   } finally {
     mock.restore();
   }

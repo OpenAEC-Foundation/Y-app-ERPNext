@@ -28,10 +28,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, ExternalLink, FileText, Loader2, Search, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, FileText, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
 import { fetchAttachments, getErpNextLinkUrl, getFileUrl, type FileInfo } from "../lib/erpnext";
 import { useDefaultCompany } from "../lib/default-company";
-import type { InvoiceGuess, SupplierHint } from "../lib/invoice-detect";
+import { vulAanUitPdf, type InvoiceGuess, type SupplierHint } from "../lib/invoice-detect";
+import { leesPdfTekst } from "../lib/pdf-tekst";
 import {
   todayIso,
   validatePurchaseInvoiceInput,
@@ -45,6 +46,8 @@ import {
   fetchPurchaseInvoiceDefaults,
   fetchBtwRegels,
   fetchBtwSjablonen,
+  fetchInkoopBedrijf,
+  resetSupplierCache,
   savePurchaseInvoiceDefaults,
   zoekDubbeleInkoopfacturen,
   type AccountOption,
@@ -55,7 +58,10 @@ import {
   type BestaandeInkoopfactuur,
   type MogelijkeDubbele,
 } from "../lib/purchase-invoice-duplicates";
+import { parseSenderDetails, voegLeverancierToe } from "../lib/erp-relation";
 import {
+  BUITENLANDSE_BTW,
+  btwKeuzelijst,
   btwOverzicht,
   btwRegelsVoorBoeking,
   kiesBtwSjabloon,
@@ -70,6 +76,8 @@ export interface BookPurchaseInvoiceMessage {
   name: string;
   subject: string;
   sender: string;
+  /** Weergavenaam van de afzender; helpt bij de naam van een nieuwe leverancier. */
+  senderName?: string;
   /** ERPNext-datetime van de mail. */
   date: string;
   /** Project waaraan de mail nu gekoppeld is, indien van toepassing. */
@@ -89,8 +97,18 @@ function reasonFor(guess: InvoiceGuess, prefix: string): string | undefined {
   return guess.reasons.find((r) => r.startsWith(`${prefix}:`));
 }
 
-export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, onClose, onBooked }: Props) {
+export default function BookPurchaseInvoiceDialog({ message, guess: beginGuess, suppliers, onClose, onBooked }: Props) {
   const { t, i18n } = useTranslation();
+  /**
+   * De herkenning, aangevuld met wat in de PDF-bijlage staat zodra die gelezen
+   * is. Velden die je zelf al hebt aangepast, blijven daarbij van jou.
+   */
+  const [guess, setGuess] = useState(beginGuess);
+  /** De PDF waarvan het lezen klaar is (gelukt of niet). */
+  const [pdfKlaarVoor, setPdfKlaarVoor] = useState<string | null>(null);
+  const pdfGelezen = useRef(false);
+  /** Zelf aan het bedrag of aan incl./excl. gezeten? Dan wint dat van de PDF. */
+  const bedragAangeraakt = useRef(false);
   /**
    * Bedrijf én bedrijvenlijst komen uit `useDefaultCompany()` en niet uit
    * `useCompanies()`. Twee redenen: de popout-lezer (`/mail/view`) rendert
@@ -101,14 +119,25 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
    * `rows[0]?.name` als vangnet; dat is op deze instance alfabetisch het
    * verkeerde bedrijf. Zie `default-company.ts`.
    */
-  const { company, setCompany, companies } = useDefaultCompany();
-  const [supplier, setSupplier] = useState(guess.supplier ?? "");
+  const { company, setCompany, companies } = useDefaultCompany({ voorkeur: fetchInkoopBedrijf });
+  const [supplier, setSupplier] = useState(beginGuess.supplier ?? "");
+  /**
+   * Leveranciers die in dit venster zijn toegevoegd. De lijst `suppliers` komt
+   * van de ouder en is een momentopname; zonder dit zou de net aangemaakte
+   * leverancier als losse docname in het veld staan.
+   */
+  const [nieuweLeveranciers, setNieuweLeveranciers] = useState<SupplierHint[]>([]);
+  const alleLeveranciers = useMemo(() => [...nieuweLeveranciers, ...suppliers], [nieuweLeveranciers, suppliers]);
+  /** De naam die een nieuwe leverancier krijgt: wat er uit de afzender te halen viel. */
+  const [nieuweNaam, setNieuweNaam] = useState(() =>
+    parseSenderDetails({ email: message.sender, ...(message.senderName ? { displayName: message.senderName } : {}) }).customerName);
+  const [toevoegen, setToevoegen] = useState(false);
   const [supplierQuery, setSupplierQuery] = useState("");
   const [supplierOpen, setSupplierOpen] = useState(false);
-  const [billNo, setBillNo] = useState(guess.invoiceNo ?? "");
-  const [billDate, setBillDate] = useState(guess.invoiceDate ?? "");
+  const [billNo, setBillNo] = useState(beginGuess.invoiceNo ?? "");
+  const [billDate, setBillDate] = useState(beginGuess.invoiceDate ?? "");
   const [postingDate, setPostingDate] = useState(() => todayIso());
-  const [amount, setAmount] = useState(guess.amount !== undefined ? String(guess.amount) : "");
+  const [amount, setAmount] = useState(beginGuess.amount !== undefined ? String(beginGuess.amount) : "");
   const [description, setDescription] = useState(message.subject || "");
   const [expenseAccount, setExpenseAccount] = useState("");
   const [creditTo, setCreditTo] = useState("");
@@ -116,7 +145,7 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
   const [remember, setRemember] = useState(false);
 
   /** Is het ingevulde bedrag inclusief btw? Standaard wat de herkenning vond. */
-  const [inclusief, setInclusief] = useState(guess.amountIsGross === true);
+  const [inclusief, setInclusief] = useState(beginGuess.amountIsGross === true);
   const [btwSjablonen, setBtwSjablonen] = useState<BtwSjabloon[]>([]);
   /**
    * Voor welk bedrijf de sjablonen binnen zijn — ook als het ophalen mislukte.
@@ -188,6 +217,42 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
     return () => { cancelled = true; };
   }, [message.name]);
 
+  /*
+   * De PDF lezen. Veel leveranciers zetten het bedrag en de factuurdatum alleen
+   * daarin; de mail zegt hooguit "in de bijlage vind je je factuur". Eén keer,
+   * de eerste PDF. Een veld neemt de PDF-waarde alleen over als het nog op de
+   * oorspronkelijke herkenning staat — wat je zelf al typte, blijft staan.
+   */
+  useEffect(() => {
+    if (pdfGelezen.current) return;
+    const pdf = attachments.find((f) => /\.pdf$/i.test(f.file_name));
+    if (!pdf) return;
+    pdfGelezen.current = true;
+    let cancelled = false;
+    leesPdfTekst(getFileUrl(pdf.file_url)).then((tekst) => {
+      if (cancelled) return;
+      const signals = {
+        subject: message.subject || "",
+        sender: message.sender || "",
+        attachmentNames: attachments.map((f) => f.file_name),
+        mailDate: message.date,
+      };
+      const nieuw = vulAanUitPdf(beginGuess, tekst, signals, suppliers);
+      if (nieuw === beginGuess) return;
+      setGuess(nieuw);
+      const zelfdeAls = <T,>(begin: T, waarde: T | undefined) => (huidig: T) =>
+        huidig === begin && waarde !== undefined ? waarde : huidig;
+      setSupplier(zelfdeAls(beginGuess.supplier ?? "", nieuw.supplier));
+      setBillNo(zelfdeAls(beginGuess.invoiceNo ?? "", nieuw.invoiceNo));
+      setBillDate(zelfdeAls(beginGuess.invoiceDate ?? "", nieuw.invoiceDate));
+      if (!bedragAangeraakt.current && nieuw.amount !== undefined) {
+        setAmount(String(nieuw.amount));
+        setInclusief(nieuw.amountIsGross === true);
+      }
+    }).finally(() => { if (!cancelled) setPdfKlaarVoor(pdf.name); });
+    return () => { cancelled = true; };
+  }, [attachments, beginGuess, message.subject, message.sender, message.date, suppliers]);
+
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (supplierBoxRef.current && !supplierBoxRef.current.contains(e.target as Node)) setSupplierOpen(false);
@@ -205,10 +270,35 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
   const supplierMatches = useMemo(() => {
     const q = supplierQuery.trim().toLowerCase();
     const rows = q
-      ? suppliers.filter((s) => `${s.name} ${s.supplierName ?? ""}`.toLowerCase().includes(q))
-      : suppliers;
+      ? alleLeveranciers.filter((s) => `${s.name} ${s.supplierName ?? ""}`.toLowerCase().includes(q))
+      : alleLeveranciers;
     return rows.slice(0, 30);
-  }, [suppliers, supplierQuery]);
+  }, [alleLeveranciers, supplierQuery]);
+
+  /**
+   * Een leverancier toevoegen met één klik. Bestaat de naam al, dan wordt die
+   * gekozen in plaats van een tweede aangemaakt; het afzenderadres gaat mee
+   * als contactpersoon, zodat de volgende factuur van dit adres herkend wordt.
+   */
+  async function leverancierToevoegen(naam: string) {
+    const schoon = naam.trim();
+    if (!schoon) return;
+    setToevoegen(true);
+    setError("");
+    try {
+      const docname = await voegLeverancierToe(schoon, message.sender);
+      setNieuweLeveranciers((vorige) => vorige.some((s) => s.name === docname)
+        ? vorige
+        : [{ name: docname, supplierName: schoon, emails: [message.sender] }, ...vorige]);
+      setSupplier(docname);
+      setSupplierOpen(false);
+      resetSupplierCache();
+    } catch (err) {
+      setError(t("y_next.pinv_supplier_add_failed", { error: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setToevoegen(false);
+    }
+  }
 
   const parsedAmount = useMemo(() => {
     const normalized = amount.trim().replace(/\s/g, "").replace(",", ".");
@@ -240,6 +330,8 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
 
   const dubbelBevestigd = dubbelen.length === 0 || bevestigdVoor === dubbelSleutel(dubbelen);
 
+  const eerstePdf = attachments.find((f) => /\.pdf$/i.test(f.file_name));
+
   const herkendeBtw: HerkendeBtw = guess.vatShifted
     ? { verlegd: true }
     : guess.vatRate !== undefined ? { tarief: guess.vatRate } : undefined;
@@ -247,20 +339,27 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
    * Het sjabloon dat geldt. Een eigen keuze wint, zolang die bij het gekozen
    * bedrijf hoort — wissel je van bedrijf, dan beslist de herkenning opnieuw.
    */
-  const gekozenSjabloon = btwKeuze !== null && (btwKeuze === "" || btwSjablonen.some((s) => s.name === btwKeuze))
+  const gekozenSjabloon = btwKeuze !== null
+    && (btwKeuze === "" || btwKeuze === BUITENLANDSE_BTW || btwSjablonen.some((s) => s.name === btwKeuze))
     ? btwKeuze
     : (kiesBtwSjabloon(btwSjablonen, herkendeBtw) ?? "");
+  /** Buitenlandse btw heeft geen sjabloon: het hele bedrag gaat in de kosten. */
+  const buitenlandseBtw = gekozenSjabloon === BUITENLANDSE_BTW;
+  const btwKeuzes = useMemo(
+    () => btwKeuzelijst(btwSjablonen, t("y_next.pinv_vat_foreign")),
+    [btwSjablonen, t],
+  );
 
   useEffect(() => {
-    if (!gekozenSjabloon || regelsPerSjabloon[gekozenSjabloon]) return;
+    if (!gekozenSjabloon || buitenlandseBtw || regelsPerSjabloon[gekozenSjabloon]) return;
     let cancelled = false;
     fetchBtwRegels(gekozenSjabloon)
       .then((regels) => { if (!cancelled) setRegelsPerSjabloon((vorige) => ({ ...vorige, [gekozenSjabloon]: regels })); })
       .catch(() => { /* zonder regels toont het overzicht niets; boeken haalt ze opnieuw op */ });
     return () => { cancelled = true; };
-  }, [gekozenSjabloon, regelsPerSjabloon]);
+  }, [gekozenSjabloon, buitenlandseBtw, regelsPerSjabloon]);
 
-  const btwRegels = gekozenSjabloon ? regelsPerSjabloon[gekozenSjabloon] : [];
+  const btwRegels = gekozenSjabloon && !buitenlandseBtw ? regelsPerSjabloon[gekozenSjabloon] : [];
   const sjablonenGeladen = sjablonenVoor === company;
   const overzicht = sjablonenGeladen && btwRegels && Number.isFinite(parsedAmount) && parsedAmount > 0
     ? btwOverzicht(parsedAmount, tariefVanRegels(btwRegels), inclusief)
@@ -299,7 +398,7 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
         return;
       }
       // De btw-regels van het gekozen sjabloon; nog niet binnen, dan nu ophalen.
-      if (gekozenSjabloon) {
+      if (gekozenSjabloon && !buitenlandseBtw) {
         const regels = regelsPerSjabloon[gekozenSjabloon] ?? await fetchBtwRegels(gekozenSjabloon);
         if (regels.length > 0) {
           input.taxesTemplate = gekozenSjabloon;
@@ -354,7 +453,7 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
     }`;
 
   const selectedSupplierLabel = supplier
-    ? (suppliers.find((s) => s.name === supplier)?.supplierName ?? supplier)
+    ? (alleLeveranciers.find((s) => s.name === supplier)?.supplierName ?? supplier)
     : "";
 
   /**
@@ -393,6 +492,11 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
             <p className="mt-0.5 truncate text-[11px] text-slate-500">
               {message.subject} · {message.sender}
             </p>
+            {eerstePdf && pdfKlaarVoor !== eerstePdf.name && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] text-blue-600">
+                <Loader2 size={11} className="animate-spin" /> {t("y_next.pinv_reading_pdf")}
+              </p>
+            )}
           </div>
           <button onClick={onClose} title={t("common.close")}
             className="cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -473,9 +577,16 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
                         </button>
                       ))}
                     </div>
-                    {/* Een leverancier aanmaken raakt btw-, betaal- en
-                        adresgegevens die niet uit een mail te halen zijn —
-                        dat hoort in ERPNext zelf te gebeuren. */}
+                    {/* Wat je zocht en niet vond: meteen als leverancier
+                        toevoegen. Btw-nummer, IBAN en adres vul je later in
+                        ERPNext aan; voor het inboeken is de naam genoeg. */}
+                    {supplierQuery.trim() && (
+                      <button type="button" disabled={toevoegen}
+                        onClick={() => void leverancierToevoegen(supplierQuery)}
+                        className="flex w-full cursor-pointer items-center gap-1.5 border-t border-slate-100 px-3 py-1.5 text-left text-[11px] font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                        <Plus size={11} /> {t("y_next.pinv_supplier_add_named", { name: supplierQuery.trim() })}
+                      </button>
+                    )}
                     <a href={`${getErpNextLinkUrl()}/supplier/new`} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1 border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500 hover:bg-slate-50">
                       <ExternalLink size={10} /> {t("y_next.pinv_new_supplier_hint")}
@@ -483,6 +594,21 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
                   </div>
                 )}
               </div>
+              {/* Geen leverancier herkend: de afzender in één klik toevoegen. */}
+              {!supplier && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <input value={nieuweNaam} onChange={(e) => setNieuweNaam(e.target.value)}
+                    placeholder={t("y_next.pinv_supplier_new_name")}
+                    aria-label={t("y_next.pinv_supplier_new_name")}
+                    className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  <button type="button" disabled={toevoegen || !nieuweNaam.trim()}
+                    onClick={() => void leverancierToevoegen(nieuweNaam)}
+                    className="flex flex-shrink-0 cursor-pointer items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-40">
+                    {toevoegen ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+                    {t("y_next.pinv_supplier_add")}
+                  </button>
+                </div>
+              )}
             </div>
 
             <label className="block">
@@ -528,7 +654,7 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
               {label("y_next.pinv_amount", "amount")}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400">€</span>
-                <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)}
+                <input inputMode="decimal" value={amount} onChange={(e) => { bedragAangeraakt.current = true; setAmount(e.target.value); }}
                   placeholder="0,00" className={fieldClass("amount")} />
               </div>
             </label>
@@ -542,7 +668,7 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
                 <div role="group" className="flex overflow-hidden rounded border border-slate-200 text-xs">
                   {[false, true].map((incl) => (
                     <button key={String(incl)} type="button" aria-pressed={inclusief === incl}
-                      onClick={() => setInclusief(incl)}
+                      onClick={() => { bedragAangeraakt.current = true; setInclusief(incl); }}
                       className={`flex-1 cursor-pointer px-2 py-1.5 transition-colors ${
                         inclusief === incl ? "bg-blue-600 font-medium text-white" : "bg-white text-slate-600 hover:bg-slate-50"
                       }`}>
@@ -557,9 +683,19 @@ export default function BookPurchaseInvoiceDialog({ message, guess, suppliers, o
                   disabled={!sjablonenGeladen}
                   className={fieldClass("vat")}>
                   <option value="">{t("y_next.pinv_vat_none")}</option>
-                  {btwSjablonen.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                  {(["nl", "verlegd", "buitenland"] as const).map((groep) => {
+                    const opties = btwKeuzes.filter((k) => k.groep === groep);
+                    return opties.length === 0 ? null : (
+                      <optgroup key={groep} label={t(`y_next.pinv_vat_group_${groep}`)}>
+                        {opties.map((k) => <option key={k.waarde} value={k.waarde}>{k.label}</option>)}
+                      </optgroup>
+                    );
+                  })}
                 </select>
               </label>
+              {buitenlandseBtw && (
+                <p className="text-[11px] text-slate-500 @md:col-span-2">{t("y_next.pinv_vat_foreign_hint")}</p>
+              )}
               {overzicht && (
                 <p data-btw-overzicht className="text-[11px] text-slate-500 @md:col-span-2">
                   {t("y_next.pinv_vat_totals", {

@@ -197,6 +197,21 @@ export default function ComposeWindow({ compose, onClose, onSendBackground, conf
     if (e.key === "Tab" && !e.shiftKey) {
       e.preventDefault();
       closeSuggestions();
+      // From To, Tab goes straight to the message body, caret at the top
+      // (above the signature). From CC/BCC it still goes to the subject.
+      const editor = editorRef.current;
+      if (e.currentTarget === toInputRef.current && editor) {
+        editor.focus();
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(editor);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        } catch { /* no selection API: focus is enough */ }
+        return;
+      }
       // Find the Subject input — it's the only text input after To/CC/BCC in this form.
       const compose = e.currentTarget.closest("form, .flex.flex-col") as HTMLElement | null;
       const host = compose ?? document;

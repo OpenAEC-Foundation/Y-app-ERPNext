@@ -1,14 +1,22 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { fetchList, createDocument, updateDocument, isDoctypeMissing, uploadFile } from "../lib/erpnext";
+import type { MouseEvent } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { fetchList, createDocument, updateDocument, isDoctypeMissing, uploadFile, getErpNextAppUrl } from "../lib/erpnext";
+import { sanitizeEditorHtml } from "../lib/mail-html";
+import { isDesktopApp } from "../lib/desktop";
 import RichTextEditor from "../components/mail/RichTextEditor";
 import {
   BookOpen, Plus, Search, Edit3, Save, X, ChevronRight, ChevronLeft,
   Eye, RefreshCw,
-  FileText, Clock, Check, AlertTriangle,
+  FileText, Clock, Check, AlertTriangle, Link2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import KennisbankHome from "../components/wiki/KennisbankHome";
 import { leesTellingen, telGeopend, type Tellingen } from "../lib/wiki-overzicht";
+import { markdownToHtml } from "../lib/wiki-markdown";
+import {
+  deelbareLink, herschrijfWikiLinks, interneWikiLink, urlVoorArtikel, urlVoorPad, zoekArtikelOpPad,
+} from "../lib/wiki-link";
 
 /* ─── Types ─── */
 
@@ -48,62 +56,6 @@ function formatDate(dateStr?: string): string {
   });
 }
 
-/**
- * Very basic markdown-to-HTML converter for view mode.
- * Handles headings, bold, italic, code blocks, inline code, links, lists, paragraphs.
- */
-function markdownToHtml(md: string): string {
-  if (!md) return "";
-
-  // If content already looks like HTML (contains common tags), return as-is
-  if (/<(div|p|h[1-6]|ul|ol|li|table|br|img|a|span|section)\b/i.test(md)) {
-    return md;
-  }
-
-  let html = md;
-
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
-    return `<pre class="bg-slate-100 rounded-lg p-4 overflow-x-auto text-sm font-mono my-4"><code>${code
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")}</code></pre>`;
-  });
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code class="bg-slate-100 px-1.5 py-0.5 rounded text-sm font-mono text-rose-600">$1</code>');
-
-  // Headings
-  html = html.replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-slate-800 mt-6 mb-2">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-slate-800 mt-8 mb-3">$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-slate-900 mt-8 mb-4">$1</h1>');
-
-  // Bold & italic
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">$1</a>');
-
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-4" />');
-
-  // Unordered lists
-  html = html.replace(/^[\t ]*[-*] (.+)$/gm, '<li class="ml-4">$1</li>');
-  html = html.replace(/((?:<li[^>]*>.*<\/li>\n?)+)/g, '<ul class="list-disc pl-4 my-2 space-y-1">$1</ul>');
-
-  // Ordered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4">$1</li>');
-
-  // Horizontal rule
-  html = html.replace(/^---+$/gm, '<hr class="my-6 border-slate-200" />');
-
-  // Paragraphs: wrap standalone lines
-  html = html.replace(/^(?!<[a-z])((?!<).+)$/gm, '<p class="my-2 leading-relaxed">$1</p>');
-
-  return html;
-}
-
 /* ─── Toolbar Config ─── */
 
 
@@ -118,23 +70,68 @@ export default function Wiki() {
   // gewoon "Geen wiki pagina's gevonden", niet te onderscheiden van een
   // instance die de module wél heeft maar simpelweg nog geen pagina's.
   const [moduleUnavailable, setModuleUnavailable] = useState(false);
-  const [selectedPage, setSelectedPage] = useState<WikiPage | null>(null);
   /** Hoe vaak jij elk artikel opende; staat in deze browser. */
   const [tellingen, setTellingen] = useState<Tellingen>(() => leesTellingen());
 
+  // Elk artikel heeft een eigen adres: #/wiki/<route zonder "wiki/">. Het
+  // adres bepaalt welk artikel open staat; zo werkt een doorgestuurde link,
+  // terugbladeren en een verwijzing van het ene artikel naar het andere.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const padUitAdres = useParams()["*"] ?? "";
+  const selectedPage: WikiPage | null = useMemo(
+    () => (padUitAdres ? zoekArtikelOpPad(pages, padUitAdres) ?? null : null),
+    [pages, padUitAdres],
+  );
+  /** Het pad uit een link waarbij geen artikel hoort (verplaatst of hernoemd). */
+  /** Het laden van de artikelen mislukte (geen verbinding, geen leesrecht). */
+  const [laadFout, setLaadFout] = useState(false);
+  const nietGevonden = padUitAdres && !loading && !laadFout && !selectedPage ? padUitAdres : "";
+
+  // Het adres van de Y-app, voor een link die je doorstuurt. In de browser is
+  // dat de huidige pagina; in de desktop-app de site zelf, want het eigen
+  // adres daar (tauri.localhost) opent bij een collega niets.
+  const appAdres = useMemo(() => {
+    if (!isDesktopApp()) return window.location.origin + window.location.pathname;
+    try {
+      return new URL(getErpNextAppUrl()).origin + "/y-next";
+    } catch {
+      return "";
+    }
+  }, []);
+  const eigenOrigin = useMemo(() => {
+    try {
+      return new URL(appAdres).origin;
+    } catch {
+      return window.location.origin;
+    }
+  }, [appAdres]);
+  const [linkGekopieerd, setLinkGekopieerd] = useState(false);
+
+  // Bewerken hoort bij één artikel: open je een ander, dan lees je dat.
+  const [bewerkt, setBewerkt] = useState<string | null>(null);
+  const mode: Mode = selectedPage && bewerkt === selectedPage.name ? "edit" : "view";
+
+  /** Een artikel tonen: het adres gaat erheen, zodat de link in de adresbalk altijd klopt. */
+  const toonArtikel = useCallback((page: WikiPage) => {
+    setBewerkt(null);
+    const doel = urlVoorArtikel(page);
+    if (location.pathname !== doel) navigate(doel);
+  }, [location.pathname, navigate]);
+
+  /** Terug naar de hoofdpagina van de kennisbank. */
+  const toonOverzicht = useCallback(() => {
+    setBewerkt(null);
+    if (location.pathname !== "/wiki") navigate("/wiki");
+  }, [location.pathname, navigate]);
+
   /** Een artikel openen vanaf de hoofdpagina, en meteen meetellen. */
   const openArtikel = useCallback((artikelNaam: string) => {
-    setPages((huidig) => {
-      const gevonden = huidig.find((x) => x.name === artikelNaam);
-      if (gevonden) {
-        setSelectedPage(gevonden);
-        setMode("view");
-        setTellingen((vorige) => telGeopend(artikelNaam, vorige));
-      }
-      return huidig;
-    });
-  }, []);
-  const [mode, setMode] = useState<Mode>("view");
+    const gevonden = pages.find((x) => x.name === artikelNaam);
+    if (!gevonden) return;
+    setTellingen((vorige) => telGeopend(artikelNaam, vorige));
+    toonArtikel(gevonden);
+  }, [pages, toonArtikel]);
   const [searchQuery, setSearchQuery] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
@@ -158,23 +155,56 @@ export default function Wiki() {
       });
       setPages(data);
       setModuleUnavailable(isDoctypeMissing("Wiki Page"));
-      // If we had a selected page, refresh it
-      if (selectedPage) {
-        const updated = data.find((p) => p.name === selectedPage.name);
-        if (updated) setSelectedPage(updated);
-      }
+      setLaadFout(false);
     } catch (err) {
       console.error("Failed to load wiki pages:", err);
+      setLaadFout(true);
     } finally {
       setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadPages();
   }, [loadPages]);
 
+  /** Een verwijzing naar een ander artikel opent in de kennisbank zelf. */
+  function volgArtikelLink(e: MouseEvent<HTMLDivElement>) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const href = (e.target as HTMLElement).closest("a")?.getAttribute("href");
+    if (!href) return;
+    const pad = interneWikiLink(href, eigenOrigin);
+    if (pad === null) return;
+    e.preventDefault();
+    navigate(urlVoorPad(pad));
+  }
+
+  /** De link naar dit artikel kopiëren, om door te sturen. */
+  async function kopieerLink() {
+    if (!selectedPage || !appAdres) return;
+    const link = deelbareLink(selectedPage, appAdres);
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkGekopieerd(true);
+      window.setTimeout(() => setLinkGekopieerd(false), 2000);
+    } catch {
+      // Geen toegang tot het klembord: laat de link zien om zelf te kopiëren.
+      prompt(t("wiki.copy_link_prompt"), link);
+    }
+  }
+
   /* ─── Filtered list ─── */
+  /* ─── Het artikel zoals het getoond wordt ─── */
+  // Eerst door hetzelfde filter als de editor (geen script, geen
+  // event-attributen, ook niet in artikelen die buiten de Y-app om zijn
+  // opgeslagen), daarna de verwijzingen naar andere artikelen naar de Y-app.
+  const artikelHtml = useMemo(
+    () => (selectedPage?.content
+      ? herschrijfWikiLinks(sanitizeEditorHtml(markdownToHtml(selectedPage.content)), eigenOrigin)
+      : ""),
+    [selectedPage, eigenOrigin],
+  );
+
   const filteredPages = useMemo(() => {
     if (!searchQuery.trim()) return pages;
     const q = searchQuery.toLowerCase();
@@ -187,9 +217,7 @@ export default function Wiki() {
 
   /* ─── Select page ─── */
   function handleSelectPage(page: WikiPage) {
-    setSelectedPage(page);
-    setMode("view");
-    setSaveStatus("idle");
+    toonArtikel(page);
   }
 
   /* ─── Edit mode ─── */
@@ -201,7 +229,7 @@ export default function Wiki() {
     // opgemaakte tekst ziet en niet de tekens eromheen. Opslaan gebeurt
     // daarna als HTML.
     setEditContent(markdownToHtml(selectedPage.content || ""));
-    setMode("edit");
+    setBewerkt(selectedPage.name);
     setSaveStatus("idle");
   }
 
@@ -226,17 +254,16 @@ export default function Wiki() {
         content: editContent,
       });
       setSaveStatus("saved");
-      setSelectedPage({ ...selectedPage, ...updated, title: editTitle, content: editContent });
-      // Refresh the list
+      // De lijst bijwerken; het open artikel komt daaruit.
       setPages((prev) =>
         prev.map((p) =>
           p.name === selectedPage.name
-            ? { ...p, title: editTitle, content: editContent, modified: new Date().toISOString() }
+            ? { ...p, ...updated, title: editTitle, content: editContent, modified: updated?.modified ?? new Date().toISOString() }
             : p
         )
       );
       setTimeout(() => {
-        setMode("view");
+        setBewerkt(null);
         setSaveStatus("idle");
       }, 800);
     } catch (err) {
@@ -260,11 +287,13 @@ export default function Wiki() {
       setShowNewModal(false);
       setNewTitle("");
       await loadPages();
-      setSelectedPage(created);
+      // Ook als het herladen mislukte: het nieuwe artikel staat in de lijst.
+      setPages((prev) => (prev.some((p) => p.name === created.name) ? prev : [created, ...prev]));
+      navigate(urlVoorArtikel(created));
       // Go straight to edit mode for the new page
       setEditTitle(created.title || newTitle);
       setEditContent(created.content || "");
-      setMode("edit");
+      setBewerkt(created.name);
     } catch (err) {
       console.error("Failed to create wiki page:", err);
     } finally {
@@ -307,6 +336,21 @@ export default function Wiki() {
             <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2">
               <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{t("y_next.module_unavailable")}</span>
+            </div>
+          )}
+          {laadFout && (
+            <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-lg text-red-800 text-xs flex items-start gap-2">
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+              <span className="flex-1">{t("wiki.load_error")}</span>
+              <button onClick={loadPages} className="shrink-0 font-medium underline cursor-pointer">{t("extensions.retry")}</button>
+            </div>
+          )}
+          {/* Op een telefoon staat hier de lijst, niet het overzicht: de
+              melding over een onbekende link moet dan hier. */}
+          {nietGevonden && (
+            <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2 md:hidden">
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>{t("wiki.link_not_found", { pad: nietGevonden })}</span>
             </div>
           )}
           {/* Search */}
@@ -381,12 +425,20 @@ export default function Wiki() {
       <div className={`${!selectedPage ? "hidden md:flex" : "flex"} flex-1 flex-col min-w-0 bg-slate-50`}>
         {!selectedPage ? (
           /* De hoofdpagina van de kennisbank: wat staat er allemaal? */
-          <KennisbankHome
-            artikelen={pages.map((p) => ({ name: p.name, title: p.title, route: p.route, modified: p.modified }))}
-            tellingen={tellingen}
-            onOpen={openArtikel}
-            onNieuw={() => setShowNewModal(true)}
-          />
+          <>
+            {nietGevonden && (
+              <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:mx-8">
+                <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                <span>{t("wiki.link_not_found", { pad: nietGevonden })}</span>
+              </div>
+            )}
+            <KennisbankHome
+              artikelen={pages.map((p) => ({ name: p.name, title: p.title, route: p.route, modified: p.modified }))}
+              tellingen={tellingen}
+              onOpen={openArtikel}
+              onNieuw={() => setShowNewModal(true)}
+            />
+          </>
         ) : mode === "view" ? (
           /* ─── VIEW MODE ─── */
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -398,7 +450,7 @@ export default function Wiki() {
                     groot scherm: daar staat links wel de lijst, maar niet het
                     overzicht met onderwerpen waar je vandaan kwam. */}
                 <button
-                  onClick={() => setSelectedPage(null)}
+                  onClick={toonOverzicht}
                   className="flex shrink-0 cursor-pointer items-center gap-1 -ml-2 rounded-lg p-2 text-slate-600 hover:bg-slate-100"
                   title={t("wiki.back_to_overview")}
                 >
@@ -417,32 +469,58 @@ export default function Wiki() {
                   )}
                 </div>
               </div>
-              <button
-                onClick={startEditing}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer shrink-0"
-              >
-                <Edit3 size={16} />
-                <span className="hidden sm:inline">{t("wiki.edit")}</span>
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {appAdres && (
+                  <button
+                    onClick={kopieerLink}
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium cursor-pointer"
+                    title={t("wiki.copy_link_title")}
+                  >
+                    {linkGekopieerd ? <Check size={16} className="text-green-600" /> : <Link2 size={16} />}
+                    <span className="hidden sm:inline">{linkGekopieerd ? t("wiki.link_copied") : t("wiki.copy_link")}</span>
+                  </button>
+                )}
+                <button
+                  onClick={startEditing}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm font-medium cursor-pointer"
+                >
+                  <Edit3 size={16} />
+                  <span className="hidden sm:inline">{t("wiki.edit")}</span>
+                </button>
+              </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            {/* Content — per artikel een eigen scrollvak, zodat een ander
+                artikel bovenaan opent en niet op de plek van het vorige. */}
+            <div key={selectedPage.name} className="flex-1 overflow-y-auto">
               <div className="max-w-4xl mx-auto px-3 sm:px-8 py-4 sm:py-8">
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-8 md:p-12">
                   {selectedPage.content ? (
+                    /* De opmaak van het artikel staat hier, en geldt voor
+                       markdown- en HTML-artikelen gelijk. (De typografie-
+                       plugin achter "prose" zit niet in de app; zonder deze
+                       regels waren koppen en opsommingen platte tekst.) */
                     <div
-                      className="prose prose-slate max-w-none
-                        prose-headings:text-slate-800
-                        prose-p:text-slate-600 prose-p:leading-relaxed
-                        prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
-                        prose-code:text-rose-600 prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-                        prose-pre:bg-slate-100 prose-pre:rounded-lg
-                        prose-img:rounded-lg prose-img:shadow-sm
-                        prose-li:text-slate-600
-                        prose-strong:text-slate-800
-                        prose-blockquote:border-blue-300 prose-blockquote:text-slate-500"
-                      dangerouslySetInnerHTML={{ __html: markdownToHtml(selectedPage.content) }}
+                      className="max-w-none text-slate-700 leading-relaxed
+                        [&_h1]:mb-4 [&_h1]:mt-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:text-slate-900
+                        [&_h2]:mb-3 [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-slate-800
+                        [&_h3]:mb-2 [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-slate-800
+                        [&_p]:my-2
+                        [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1
+                        [&_a]:text-blue-600 [&_a:hover]:underline
+                        [&_strong]:font-semibold [&_strong]:text-slate-800
+                        [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-200 [&_blockquote]:pl-4 [&_blockquote]:text-slate-600
+                        [&_table]:my-3 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:border-collapse [&_table]:text-sm
+                        [&_th]:border [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold
+                        [&_td]:border [&_td]:border-slate-200 [&_td]:px-3 [&_td]:py-1.5 [&_td]:align-top
+                        [&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-lg
+                        [&_hr]:my-6 [&_hr]:border-slate-200
+                        [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-slate-100 [&_pre]:p-4 [&_pre]:text-sm
+                        [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_code]:text-rose-600"
+                      onClick={volgArtikelLink}
+                      dangerouslySetInnerHTML={{
+                        __html: artikelHtml,
+                      }}
                     />
                   ) : (
                     <div className="text-center py-16 text-slate-400">
@@ -488,7 +566,7 @@ export default function Wiki() {
                 )}
 
                 <button
-                  onClick={() => { setMode("view"); setSaveStatus("idle"); }}
+                  onClick={() => { setBewerkt(null); setSaveStatus("idle"); }}
                   className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium cursor-pointer"
                 >
                   <X size={16} />

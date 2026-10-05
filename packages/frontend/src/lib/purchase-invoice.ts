@@ -168,6 +168,22 @@ export interface PurchaseInvoiceDefaults {
 
 const SETTING_DOCTYPE = "Y Next Setting";
 const SETTING_KEY = "purchase-invoice-defaults";
+/**
+ * Onder welk bedrijf een inkoopfactuur standaard valt. Los van het actieve
+ * bedrijf in de app: wie in Y-next onder het ene bedrijf werkt, boekt de
+ * facturen vaak toch onder het andere. Eén regel in `Y Next Setting`, voor
+ * iedereen gelijk; ontbreekt hij, dan beslist de gewone volgorde.
+ */
+const INKOOP_BEDRIJF_KEY = "inkoop-bedrijf";
+
+export async function fetchInkoopBedrijf(): Promise<string> {
+  try {
+    const doc = await fetchDocument<{ setting_value?: string }>(SETTING_DOCTYPE, INKOOP_BEDRIJF_KEY);
+    return (doc?.setting_value || "").trim();
+  } catch {
+    return "";
+  }
+}
 const LS_KEY = "y_next_purchase_invoice_defaults";
 
 interface YNextSettingDoc {

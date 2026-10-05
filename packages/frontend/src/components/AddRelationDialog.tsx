@@ -50,6 +50,7 @@ import {
   type RelationDraft,
   type RelationResult,
   type SenderInfo,
+  type RelatieSoort,
 } from "../lib/erp-relation";
 
 /**
@@ -72,7 +73,7 @@ function RecognisedChip({ reasons, prefix }: { reasons: string[]; prefix: string
 }
 
 /** Doorklikbare verwijzing naar het document in ERPNext. */
-function DocLink({ doctype, name }: { doctype: "Customer" | "Contact"; name: string }) {
+function DocLink({ doctype, name }: { doctype: "Customer" | "Supplier" | "Contact"; name: string }) {
   return (
     <a
       href={relationDocUrl(doctype, name)}
@@ -91,9 +92,14 @@ export interface AddRelationDialogProps {
   onClose: () => void;
   /** Wordt aangeroepen zodra er is aangemaakt of een bestaande relatie herbruikt is. */
   onCreated?: (result: RelationResult) => void;
+  /**
+   * Waar de keuze klant/leverancier op begint. Opent de dialoog vanuit een
+   * herkende inkoopfactuur, dan is het vrijwel altijd een leverancier.
+   */
+  standaardSoort?: RelatieSoort;
 }
 
-export default function AddRelationDialog({ sender, onClose, onCreated }: AddRelationDialogProps) {
+export default function AddRelationDialog({ sender, onClose, onCreated, standaardSoort = "klant" }: AddRelationDialogProps) {
   const { t } = useTranslation();
 
   /* De herkenning draait één keer per afzender; verder is de dialoog gewoon
@@ -108,6 +114,8 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
   const [customerGroup, setCustomerGroup] = useState("");
   const [territory, setTerritory] = useState("");
   const [createCustomer, setCreateCustomer] = useState(parsed.createCustomer);
+  const [soort, setSoort] = useState<RelatieSoort>(standaardSoort);
+  const leverancier = soort === "leverancier";
 
   const [defaults, setDefaults] = useState<RelationDefaults | null>(null);
   /* De uitslag draagt het adres waar hij bij hoort. Zonder dat zou een
@@ -164,14 +172,16 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
       contactFirstName: firstName.trim(),
       email: email.trim(),
       createCustomer,
+      soort,
       reasons: parsed.reasons,
     };
     if (lastName.trim()) draft.contactLastName = lastName.trim();
     if (phone.trim()) draft.phone = phone.trim();
-    if (createCustomer && customerGroup) draft.customerGroup = customerGroup;
-    if (createCustomer && territory) draft.territory = territory;
+    // Klantgroep en regio horen bij een klant; een leverancier kent ze niet.
+    if (createCustomer && !leverancier && customerGroup) draft.customerGroup = customerGroup;
+    if (createCustomer && !leverancier && territory) draft.territory = territory;
     return draft;
-  }, [customerName, firstName, lastName, email, phone, createCustomer,
+  }, [customerName, firstName, lastName, email, phone, createCustomer, soort, leverancier,
     customerGroup, territory, parsed.customerType, parsed.reasons]);
 
   async function handleSubmit() {
@@ -196,7 +206,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
     }
   }
 
-  const alreadyKnown = Boolean(existing?.contact || existing?.customer || existing?.lead);
+  const alreadyKnown = Boolean(existing?.contact || existing?.customer || existing?.supplier || existing?.lead);
 
   /* ────────────────────────────── Bouwstenen ────────────────────────── */
 
@@ -253,6 +263,11 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                     {t("y_next.rel_customer")}: <DocLink doctype="Customer" name={result.customer} />
                   </li>
                 )}
+                {result.supplier && (
+                  <li>
+                    {t("y_next.rel_supplier")}: <DocLink doctype="Supplier" name={result.supplier} />
+                  </li>
+                )}
                 <li>
                   {t("y_next.rel_contact")}: <DocLink doctype="Contact" name={result.contact} />
                 </li>
@@ -279,6 +294,9 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                     )}
                     {existing?.customer && (
                       <li>{t("y_next.rel_customer")}: <DocLink doctype="Customer" name={existing.customer} /></li>
+                    )}
+                    {existing?.supplier && (
+                      <li>{t("y_next.rel_supplier")}: <DocLink doctype="Supplier" name={existing.supplier} /></li>
                     )}
                     {existing?.lead && (
                       <li>{t("y_next.rel_lead")}: {existing.lead}</li>
@@ -329,12 +347,28 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
 
               {/* ── Relatie ── */}
               <div className="rounded-lg border border-slate-200">
-                <label className="flex cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-xs font-medium text-slate-700">
-                  <input type="checkbox" checked={createCustomer} className="cursor-pointer"
-                    onChange={(e) => setCreateCustomer(e.target.checked)} />
-                  <Building2 size={13} className="text-slate-400" />
-                  {t("y_next.rel_also_customer")}
-                </label>
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-700">
+                    <input type="checkbox" checked={createCustomer} className="cursor-pointer"
+                      onChange={(e) => setCreateCustomer(e.target.checked)} />
+                    <Building2 size={13} className="text-slate-400" />
+                    {t("y_next.rel_also_as")}
+                  </label>
+                  {/* Klant of leverancier: bepaalt of er een Customer of een
+                      Supplier komt, en waar de contactpersoon aan hangt. */}
+                  <div role="radiogroup" aria-label={t("y_next.rel_also_as")}
+                    className="flex rounded-md bg-slate-100 p-0.5 text-[11px]">
+                    {(["klant", "leverancier"] as const).map((s) => (
+                      <button key={s} type="button" role="radio" aria-checked={soort === s}
+                        onClick={() => { setSoort(s); setCreateCustomer(true); }}
+                        className={`cursor-pointer rounded px-2.5 py-0.5 font-medium ${
+                          soort === s ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                        }`}>
+                        {t(s === "klant" ? "y_next.rel_kind_customer" : "y_next.rel_kind_supplier")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {createCustomer ? (
                   <div className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-2">
@@ -344,6 +378,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                         className={fieldClass("customerName")} />
                     </label>
 
+                    {!leverancier && (<>
                     <label className="block">
                       {label(t("y_next.rel_customer_group"))}
                       <select value={customerGroup} onChange={(e) => setCustomerGroup(e.target.value)}
@@ -361,6 +396,7 @@ export default function AddRelationDialog({ sender, onClose, onCreated }: AddRel
                         {(defaults?.territories ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </label>
+                    </>)}
                   </div>
                 ) : (
                   <p className="px-3 py-2 text-[11px] text-slate-500">

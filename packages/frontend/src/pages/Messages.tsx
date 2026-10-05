@@ -28,11 +28,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageSquare, Send, Search, RefreshCw, Plus, ChevronLeft, X, Loader2, AlertCircle,
-  Paperclip, ImageIcon, Smile, ThumbsUp, Trash2, Check } from "lucide-react";
+  Paperclip, ImageIcon, Smile, ThumbsUp, Trash2, Check, Users, Pencil } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ImageLightbox from "../components/ImageLightbox";
 import BerichtAvatar from "../components/berichten/BerichtAvatar";
 import EmojiKiezer from "../components/berichten/EmojiKiezer";
+import GroepDialoog from "../components/berichten/GroepDialoog";
+import {
+  groepSleutel, groepsverschil, isGroepSleutel, nieuweGroepId, ontvangersVanWijziging, schoneLeden, voornaam,
+  type Groep,
+} from "../lib/berichten-groepen";
+import { resolveSessionUser } from "../lib/session";
 import {
   aanwezigheid, haalCollegaStatus, isOnline, type CollegaStatusLijst,
 } from "../lib/berichten-aanwezigheid";
@@ -46,6 +52,7 @@ import {
   ALLOWED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
   MessageImageError,
+  GroepBezorgFout,
   checkImage,
   contactNameMap,
   countUnread,
@@ -54,6 +61,7 @@ import {
   listContacts,
   listMessages,
   markMessagesRead,
+  sendGroupMessage,
   sendMessage,
   sendReaction,
   withUsableImageName,
@@ -125,6 +133,15 @@ function formatDayHeader(value: string, todayLabel: string, yesterdayLabel: stri
 
 /* ─── Pagina ─── */
 
+/** Het rondje voor een groepsgesprek: geen foto, maar het groepsicoon. */
+function GroepAvatar() {
+  return (
+    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-y-teal/15 text-y-teal">
+      <Users size={16} />
+    </span>
+  );
+}
+
 export default function Messages() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -156,6 +173,15 @@ export default function Messages() {
   const [status, setStatus] = useState<CollegaStatusLijst>(() => ({ collegas: new Map(), serverNu: null }));
   /** Berichten waarvan de like onderweg is: twee keer klikken stuurt er geen twee. */
   const [likeBezig, setLikeBezig] = useState<Set<string>>(() => new Set());
+  /** Wie er ingelogd is: in een groep het verschil tussen "jij" en de rest. */
+  const [ik, setIk] = useState("");
+  /** Het groepsvenster: een nieuwe groep (zonder `groep`), of een bestaande bewerken. */
+  const [groepVenster, setGroepVenster] = useState<{ groep?: Groep } | null>(null);
+  /**
+   * Een net gemaakte groep, tot de volgende ophaalronde hem kent. Zonder dit
+   * zou je na "Groep maken" heel even in een leeg, naamloos gesprek staan.
+   */
+  const [nieuweGroepen, setNieuweGroepen] = useState<Record<string, Groep>>({});
 
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -199,16 +225,21 @@ export default function Messages() {
     if (!selected) return null;
     const existing = threads.find((thread) => thread.counterpart === selected);
     if (existing) return existing;
+    const nieuweGroep = isGroepSleutel(selected) ? nieuweGroepen[selected] : undefined;
     return {
       counterpart: selected,
-      counterpartName: names[selected] || selected,
+      counterpartName: nieuweGroep?.naam || names[selected] || selected,
       messages: [],
       lastBody: "",
       lastAt: "",
       lastHasImage: false,
       unread: 0,
+      ...(nieuweGroep ? { groep: nieuweGroep } : {}),
     };
-  }, [threads, selected, names]);
+  }, [threads, selected, names, nieuweGroepen]);
+
+  /** Mag ik in dit gesprek schrijven? Bij een groep alleen als ik er (nog) in zit. */
+  const groepLid = !activeThread?.groep || !ik || activeThread.groep.leden.includes(ik);
 
   const visibleThreads = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -246,6 +277,7 @@ export default function Messages() {
   // dan met de user-id als naam.
   useEffect(() => {
     void listContacts().then(setContacts).catch(() => setContacts([]));
+    void resolveSessionUser().then((u) => setIk(u || "")).catch(() => {});
   }, []);
 
   // Foto en online-status: bij openen, en daarna elke minuut.
@@ -402,12 +434,20 @@ export default function Messages() {
     setSending(true);
     setSendError(null);
     try {
-      await sendMessage(selected, text, pendingImage ?? undefined);
+      if (activeThread?.groep) await sendGroupMessage(activeThread.groep, text, pendingImage ?? undefined);
+      else await sendMessage(selected, text, pendingImage ?? undefined);
       setDraft("");
       clearPendingImage();
       await load(true);
     } catch (e) {
-      if (e instanceof MessageImageError) {
+      if (e instanceof GroepBezorgFout) {
+        // Bij de anderen is het wél aangekomen: opnieuw versturen zou hen een
+        // dubbel bericht bezorgen. Dus leegmaken, en zeggen bij wie niet.
+        setDraft("");
+        clearPendingImage();
+        await load(true);
+        setSendError(t("messages.group_partial", { namen: e.mislukt.map((u) => names[u] || u).join(", ") }));
+      } else if (e instanceof MessageImageError) {
         // De tekst ís bezorgd; alleen de foto niet. Het opstelveld wordt
         // daarom wél geleegd — nog een keer op verzenden drukken zou de
         // ontvanger een dubbel bericht bezorgen.
@@ -568,7 +608,7 @@ export default function Messages() {
       reactie: { sleutel, aan },
     }]);
     try {
-      await sendReaction(activeThread.counterpart, sleutel, aan);
+      await sendReaction(activeThread.counterpart, sleutel, aan, activeThread.groep);
     } catch {
       setSendError(t("messages.like_failed"));
     } finally {
@@ -579,6 +619,80 @@ export default function Messages() {
         return volgende;
       });
     }
+  }
+
+  /** Een groepsgebeurtenis versturen; bij een gedeeltelijke bezorging toch door, met een melding. */
+  async function stuurGebeurtenis(...args: Parameters<typeof sendGroupMessage>) {
+    try {
+      await sendGroupMessage(...args);
+    } catch (e) {
+      if (!(e instanceof GroepBezorgFout)) throw e;
+      setSendError(t("messages.group_partial", { namen: e.mislukt.map((u) => names[u] || u).join(", ") }));
+    }
+  }
+
+  async function maakGroep(naam: string, leden: string[]) {
+    if (!ik) throw new Error(t("messages.group_no_session"));
+    const groep: Groep = { id: nieuweGroepId(), naam, leden: schoneLeden([ik, ...leden]) };
+    await stuurGebeurtenis(groep, "", undefined, "aangemaakt");
+    const sleutel = groepSleutel(groep.id);
+    setNieuweGroepen((vorige) => ({ ...vorige, [sleutel]: groep }));
+    setGroepVenster(null);
+    openConversation(sleutel);
+    await load(true);
+  }
+
+  async function bewaarGroep(oud: Groep, naam: string, leden: string[]) {
+    if (!ik) throw new Error(t("messages.group_no_session"));
+    const nieuw: Groep = { id: oud.id, naam, leden: schoneLeden([ik, ...leden]) };
+    // Ook wie eruit gaat krijgt het te horen: die ziet dan dat hij geen lid meer is.
+    await stuurGebeurtenis(nieuw, "", undefined, "gewijzigd", ontvangersVanWijziging(oud, nieuw, ik));
+    setGroepVenster(null);
+    await load(true);
+  }
+
+  async function verlaatGroep(groep: Groep) {
+    // De ledenlijst mét jezelf: zo kan elk lid nagaan dat je lid was.
+    await stuurGebeurtenis(groep, "", undefined, "verlaten");
+    setGroepVenster(null);
+    await load(true);
+  }
+
+  function naamVan(user: string): string {
+    return user && user === ik ? t("messages.group_you") : (names[user] || user);
+  }
+
+  function voornaamVan(user: string): string {
+    return user && user === ik ? t("messages.group_you") : voornaam(names[user] || user);
+  }
+
+  /** De grijze regel(s) bij een groepsgebeurtenis. */
+  function gebeurtenisTekst(message: ErpMessage, vorige: Groep | undefined): string {
+    const groep = message.groep;
+    if (!groep) return "";
+    const zelf = message.afzender === ik;
+    const wie = voornaamVan(message.afzender || "");
+    const sleutel = (basis: string) => `messages.${basis}${zelf ? "_self" : ""}`;
+    if (message.gebeurtenis === "aangemaakt") return t(sleutel("group_event_created"), { wie, naam: groep.naam });
+    if (message.gebeurtenis === "verlaten") return t(sleutel("group_event_left"), { wie });
+    const verschil = groepsverschil(vorige, groep);
+    const regels: string[] = [];
+    if (verschil.hernoemd) regels.push(t(sleutel("group_event_renamed"), { wie, naam: groep.naam }));
+    if (verschil.toegevoegd.length > 0) {
+      regels.push(t(sleutel("group_event_added"), { wie, namen: verschil.toegevoegd.map(voornaamVan).join(", ") }));
+    }
+    if (verschil.verwijderd.length > 0) {
+      regels.push(t(sleutel("group_event_removed"), { wie, namen: verschil.verwijderd.map(voornaamVan).join(", ") }));
+    }
+    return regels.length > 0 ? regels.join(" · ") : t(sleutel("group_event_changed"), { wie });
+  }
+
+  /** Het regeltje onder de naam in de gesprekslijst. */
+  function lijstVoorbeeld(thread: ErpMessageThread): string {
+    const tekst = thread.lastBody || (thread.lastHasImage ? t("messages.image_label") : "");
+    if (!thread.groep) return tekst;
+    if (thread.lastGebeurtenis) return t("messages.group_event_short");
+    return thread.lastAfzender ? `${voornaamVan(thread.lastAfzender)}: ${tekst}` : tekst;
   }
 
   const pickerContacts = useMemo(() => {
@@ -606,12 +720,21 @@ export default function Messages() {
             className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal"
           />
         </div>
-        <button
-          onClick={() => setPickerOpen(true)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark cursor-pointer text-sm font-medium"
-        >
-          <Plus size={15} /> {t("messenger.new_conversation")}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-y-teal text-white rounded-lg hover:bg-y-teal-dark cursor-pointer text-sm font-medium"
+          >
+            <Plus size={15} /> {t("messenger.new_conversation")}
+          </button>
+          <button
+            onClick={() => setGroepVenster({})}
+            title={t("messages.group_new")}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-y-teal/40 text-y-teal rounded-lg hover:bg-y-teal/5 cursor-pointer text-sm font-medium"
+          >
+            <Users size={15} /> <span className="hidden sm:inline">{t("messages.group_new")}</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
@@ -632,14 +755,16 @@ export default function Messages() {
                 thread.counterpart === selected ? "bg-y-teal/5" : ""
               }`}
             >
-              <BerichtAvatar
-                key={thread.counterpart}
-                user={thread.counterpart}
-                naam={thread.counterpartName}
-                status={status.collegas.get(thread.counterpart)}
-                online={onlineVan(thread.counterpart)}
-                onlineLabel={t("messages.online")}
-              />
+              {thread.groep ? <GroepAvatar /> : (
+                <BerichtAvatar
+                  key={thread.counterpart}
+                  user={thread.counterpart}
+                  naam={thread.counterpartName}
+                  status={status.collegas.get(thread.counterpart)}
+                  online={onlineVan(thread.counterpart)}
+                  onlineLabel={t("messages.online")}
+                />
+              )}
               <span className="flex-1 min-w-0">
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-800 truncate">{thread.counterpartName}</span>
@@ -652,7 +777,7 @@ export default function Messages() {
                     {thread.lastHasImage && <ImageIcon size={12} className="flex-shrink-0" />}
                     {/* Een bericht dat alleen een foto is heeft geen tekst —
                         dan is het label de enige zinvolle samenvatting. */}
-                    {thread.lastBody || (thread.lastHasImage ? t("messages.image_label") : "")}
+                    {lijstVoorbeeld(thread)}
                   </span>
                   {thread.unread > 0 && (
                     <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-y-teal text-white text-[10px] font-semibold flex items-center justify-center">
@@ -674,6 +799,16 @@ export default function Messages() {
   // wat de lijst nodig heeft), maar een gesprek lees je van boven naar
   // beneden met het nieuwste onderaan.
   const ordered = activeThread ? [...activeThread.messages].reverse() : [];
+
+  /** Per bericht: hoe de groep er vlak daarvóór uitzag, voor wat er veranderde. */
+  const vorigeGroep = new Map<string, Groep | undefined>();
+  {
+    let laatst: Groep | undefined;
+    for (const m of ordered) {
+      vorigeGroep.set(m.name, laatst);
+      if (m.groep) laatst = m.groep;
+    }
+  }
 
   const selecteren = Boolean(selectie && activeThread && selectie.gesprek === activeThread.counterpart);
   const gekozen = selecteren && selectie ? ordered.filter((m) => selectie.namen.has(m.name)) : [];
@@ -742,24 +877,41 @@ export default function Messages() {
                 <ChevronLeft size={20} />
               </button>
             )}
-            <BerichtAvatar
-              key={activeThread.counterpart}
-              user={activeThread.counterpart}
-              naam={activeThread.counterpartName}
-              status={status.collegas.get(activeThread.counterpart)}
-              online={onlineVan(activeThread.counterpart)}
-              onlineLabel={t("messages.online")}
-            />
+            {activeThread.groep ? <GroepAvatar /> : (
+              <BerichtAvatar
+                key={activeThread.counterpart}
+                user={activeThread.counterpart}
+                naam={activeThread.counterpartName}
+                status={status.collegas.get(activeThread.counterpart)}
+                online={onlineVan(activeThread.counterpart)}
+                onlineLabel={t("messages.online")}
+              />
+            )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-800 truncate">{activeThread.counterpartName}</p>
-              {/* Online, of wanneer laatst actief. Weten we dat niet, dan het adres. */}
-              <p className={`text-xs truncate ${onlineVan(activeThread.counterpart) ? "text-emerald-600" : "text-slate-400"}`}>
-                {aanwezigheidTekst(activeThread.counterpart) || activeThread.counterpart}
-              </p>
+              {activeThread.groep ? (
+                // Bij een groep: wie erin zitten, jij eerst.
+                <p className="text-xs text-slate-400 truncate" title={activeThread.groep.leden.map(naamVan).join(", ")}>
+                  {[...activeThread.groep.leden].sort((a, b) => (a === ik ? -1 : b === ik ? 1 : 0)).map(voornaamVan).join(", ")}
+                </p>
+              ) : (
+                // Online, of wanneer laatst actief. Weten we dat niet, dan het adres.
+                <p className={`text-xs truncate ${onlineVan(activeThread.counterpart) ? "text-emerald-600" : "text-slate-400"}`}>
+                  {aanwezigheidTekst(activeThread.counterpart) || activeThread.counterpart}
+                </p>
+              )}
             </div>
+            <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+            {activeThread.groep && groepLid && !selecteren && (
+              <button type="button" onClick={() => setGroepVenster({ groep: activeThread.groep })}
+                title={t("messages.group_edit")} aria-label={t("messages.group_edit")}
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <Pencil size={15} /> <span className="hidden sm:inline">{t("messages.group_edit")}</span>
+              </button>
+            )}
             {selecteren ? (
               <button type="button" onClick={() => setSelectie(null)}
-                className="ml-auto flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer">
                 <X size={15} /> <span className="hidden sm:inline">{t("common.cancel")}</span>
               </button>
             ) : (
@@ -768,10 +920,11 @@ export default function Messages() {
                 disabled={ordered.length === 0}
                 title={t("messages.select_to_delete")}
                 aria-label={t("messages.select_to_delete")}
-                className="ml-auto flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
                 <Trash2 size={15} /> <span className="hidden sm:inline">{t("messages.select_to_delete")}</span>
               </button>
             )}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 space-y-1">
@@ -793,6 +946,16 @@ export default function Messages() {
                         </span>
                       </div>
                     )}
+                    {message.gebeurtenis ? (
+                      <div className="my-2 flex justify-center" onClick={selecteren ? () => wisselGekozen(message.name) : undefined}>
+                        <span className={`max-w-[85%] rounded-full px-3 py-1 text-center text-[11px] ${
+                          selecteren && selectie?.namen.has(message.name) ? "bg-y-teal/20 text-slate-700" : "bg-slate-100 text-slate-500"
+                        } ${selecteren ? "cursor-pointer" : ""}`}>
+                          {gebeurtenisTekst(message, vorigeGroep.get(message.name))}
+                          <span className="ml-1.5 text-slate-400">{formatTime(message.createdAt)}</span>
+                        </span>
+                      </div>
+                    ) : (
                     <div
                       onClick={selecteren ? () => wisselGekozen(message.name) : undefined}
                       className={`group flex items-center gap-1 ${message.direction === "out" ? "justify-end" : "justify-start"} ${
@@ -810,6 +973,11 @@ export default function Messages() {
                       )}
                       {!selecteren && message.direction === "out" && renderVerwijder(message)}
                       <div className={`flex max-w-[75%] flex-col ${message.direction === "out" ? "items-end" : "items-start"}`}>
+                      {/* In een groep: wie het schreef, zodra er iemand anders aan het woord is. */}
+                      {activeThread.groep && message.direction === "in" &&
+                        (showDay || previous?.afzender !== message.afzender || Boolean(previous?.gebeurtenis)) && (
+                        <span className="mb-0.5 px-1 text-[11px] font-medium text-slate-500">{naamVan(message.afzender || "")}</span>
+                      )}
                       <div
                         className={`max-w-full rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
                           message.direction === "out"
@@ -878,6 +1046,7 @@ export default function Messages() {
                       })()}
                       {!selecteren && message.direction === "in" && renderVerwijder(message)}
                     </div>
+                    )}
                   </div>
                 );
               })
@@ -944,7 +1113,13 @@ export default function Messages() {
             </div>
           )}
 
-          <div className={`p-3 bg-white border-t border-slate-200 flex items-end gap-2 ${selecteren ? "hidden" : ""}`}>
+          {!selecteren && !groepLid && (
+            <div className="p-3 bg-white border-t border-slate-200 text-center text-sm text-slate-500">
+              {t("messages.group_not_member")}
+            </div>
+          )}
+
+          <div className={`p-3 bg-white border-t border-slate-200 flex items-end gap-2 ${selecteren || !groepLid ? "hidden" : ""}`}>
             <input
               ref={fileInputRef}
               type="file"
@@ -1127,6 +1302,18 @@ export default function Messages() {
             </div>
           </div>
         </div>
+      )}
+
+      {groepVenster && (
+        <GroepDialoog
+          contacts={contacts}
+          ik={ik}
+          namen={names}
+          {...(groepVenster.groep ? { groep: groepVenster.groep } : {})}
+          onSluit={() => setGroepVenster(null)}
+          onOpslaan={(naam, leden) => (groepVenster.groep ? bewaarGroep(groepVenster.groep, naam, leden) : maakGroep(naam, leden))}
+          {...(groepVenster.groep ? { onVerlaten: () => verlaatGroep(groepVenster.groep as Groep) } : {})}
+        />
       )}
 
       {lightbox && (

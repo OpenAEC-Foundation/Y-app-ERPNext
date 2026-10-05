@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildContactPayload,
   buildCustomerPayload,
+  buildSupplierPayload,
   classifyRelationError,
   emailDomain,
   extractPhone,
@@ -387,6 +388,18 @@ test("buildContactPayload zet het adres in de child-tabel en koppelt de relatie"
   assert.equal("email_id" in payload, false);
 });
 
+test("buildSupplierPayload: naam en soort, geen groep", () => {
+  assert.deepEqual(buildSupplierPayload(draftOf({ soort: "leverancier", customerGroup: "Commercial" })), {
+    supplier_name: "Van Dorp Infra",
+    supplier_type: "Company",
+  });
+});
+
+test("buildContactPayload koppelt aan een leverancier als dat gevraagd wordt", () => {
+  const payload = buildContactPayload(draftOf(), "Drukwerkdeal.nl B.V.", "Supplier");
+  assert.deepEqual(payload.links, [{ link_doctype: "Supplier", link_name: "Drukwerkdeal.nl B.V." }]);
+});
+
 test("buildContactPayload zonder relatie laat de koppeling weg", () => {
   const payload = buildContactPayload(draftOf({ createCustomer: false }));
   assert.equal("links" in payload, false);
@@ -449,8 +462,8 @@ test("lookupExisting vindt de contactpersoon én de eraan gekoppelde relatie", a
     assert.equal(found.contact, "Arno Oerlemans-Van Dorp Infra B.V.");
     assert.equal(found.customer, "Van Dorp Infra B.V.");
     assert.equal(found.lead, undefined);
-    // Vier plekken worden bevraagd — het adres kan op elk ervan staan.
-    assert.equal(mock.urls.filter((u) => u.includes("/api/resource/")).length, 4);
+    // Vijf plekken worden bevraagd — het adres kan op elk ervan staan.
+    assert.equal(mock.urls.filter((u) => u.includes("/api/resource/")).length, 5);
   } finally {
     mock.restore();
   }
@@ -486,6 +499,36 @@ test("lookupExisting valt terug op Customer.email_id en meldt een lopende Lead",
     assert.equal(found.contact, undefined);
     assert.equal(found.customer, "AddVision BV");
     assert.equal(found.lead, "CRM-LEAD-2026-00003");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("lookupExisting herkent een leverancier, via contact én via Supplier.email_id", async () => {
+  const viaContact = freshEmail();
+  let mock = installFetchMock([
+    {
+      match: (u) => u.includes("/Contact?") && u.includes("email_id"),
+      rows: [{ name: "Info-Drukwerkdeal", link_doctype: "Supplier", link_name: "Drukwerkdeal.nl B.V." }],
+    },
+    { match: () => true, rows: [] },
+  ]);
+  try {
+    const found = await lookupExisting(viaContact);
+    assert.equal(found.supplier, "Drukwerkdeal.nl B.V.");
+    assert.equal(found.customer, undefined);
+  } finally {
+    mock.restore();
+  }
+
+  const viaVeld = freshEmail();
+  mock = installFetchMock([
+    { match: (u) => u.includes("/Supplier?"), rows: [{ name: "JBS multimedia B.V." }] },
+    { match: () => true, rows: [] },
+  ]);
+  try {
+    const found = await lookupExisting(viaVeld);
+    assert.equal(found.supplier, "JBS multimedia B.V.");
   } finally {
     mock.restore();
   }

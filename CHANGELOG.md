@@ -8,6 +8,45 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
+## v0.39.4 — 2026-09-28
+
+### Kennisbank: links naar een artikel
+- Elk artikel in de kennisbank heeft nu een eigen adres, bijvoorbeeld …/y-next#/wiki/kennisbank/procedures/algemeen/archiefonderzoek. Wie de link opent, staat meteen in het artikel.
+- Nieuwe knop "Link kopiëren" bij een artikel, om de link door te sturen.
+- Verwijzingen van het ene artikel naar het andere openen binnen de Y-app; terugbladeren brengt je naar het vorige artikel.
+- Een link naar een artikel dat verplaatst of hernoemd is, geeft een melding in plaats van een lege pagina.
+
+### Kennisbank: opmaak
+- Koppen, opsommingen, tabellen en citaten zijn in artikelen weer als zodanig te zien; bij artikelen die in de Y-app bewerkt waren, stond alles als platte tekst.
+- Tabellen in oudere artikelen blijven tabellen als je het artikel bewerkt. Tabellen die bij een eerdere bewerking uit elkaar vielen, worden weer als tabel getoond.
+- Genummerde lijsten, citaten en afbeeldingen in oudere artikelen worden goed omgezet.
+- De omzetting van markdown staat nu in `lib/wiki-markdown.ts` (met tests); de links in `lib/wiki-link.ts`.
+- Artikel-HTML gaat bij weergave door `sanitizeEditorHtml`; links naar andere artikelen worden tag voor tag herschreven (geen tekstpatronen), zodat tekst in een attribuut nooit een attribuut wordt.
+- Genummerde lijsten houden hun nummering over lege regels heen, met geneste lijsten en `start`.
+- Na inloggen via Frappe kom je terug op de link die je opende (`lib/na-inloggen.ts`).
+- Desktop-app: route `/wiki/*`; de gekopieerde link wijst naar de site.
+
+## v0.39.3 — 2026-09-28
+
+### Agenda
+- Afspraken uit je agenda tonen nu ook hun omschrijving, met klikbare links, zoals in een mailprogramma.
+- Staat er een Teams-vergadering in de omschrijving, dan krijgt de afspraak de knop "Teams-vergadering openen", net als bij Jitsi.
+- In het blok met genodigden staat nu ook de locatie van de afspraak, zodat je niet naar beneden hoeft te kijken.
+
+## v0.39.2 — 2026-09-26
+
+### Mail
+- In het opstelvenster staan vooraan in de werkbalk twee nieuwe knoppen: "Plak" en "Plak als platte tekst". Handig als je niet met Ctrl+V werkt, of als je tekst zonder opmaak wilt plakken.
+- "Plak" neemt de opmaak mee (vet, cursief, lijstjes) maar laat de rommel uit Word en Outlook weg. "Plak als platte tekst" plakt alleen de tekst, in het lettertype van je mail.
+- De browser vraagt de eerste keer of Y-Next het klembord mag lezen; kies Toestaan. Lukt het plakken niet, dan zie je waarom: geen toestemming, of niets bruikbaars op het klembord.
+
+## v0.39.1 — 2026-09-26
+
+### Mail
+- Tab in het Aan-veld springt meteen naar de tekst van de mail, in plaats van eerst langs Cc, het onderwerp en het project. De cursor staat bovenaan, boven je ondertekening.
+- Wat je in Aan getypt hebt, wordt bij die Tab een adresblokje. Staat de suggestielijst open, dan wordt de gemarkeerde suggestie gekozen.
+- Shift+Tab werkt zoals altijd, en vanuit Cc en Bcc gaat Tab gewoon naar het volgende veld.
+
 ## v0.39.0 — 2026-09-21
 
 ### Mail

@@ -205,6 +205,16 @@ export function rondAdresAf(value: string): string {
 }
 
 /**
+ * De waarde van het veld als je er met Tab uit springt. Staat er een suggestie
+ * in beeld, dan wordt die het blokje; anders wordt wat er getypt staat een
+ * blokje. Niets getypt: dan verandert er niets.
+ */
+export function waardeBijTab(value: string, gekozen?: { email: string; label?: string }): string {
+  if (gekozen) return kiesAdres(value, gekozen.email, gekozen.label);
+  return rondAdresAf(value);
+}
+
+/**
  * Ziet het adres in dit blokje eruit als een bruikbaar e-mailadres? Zo niet,
  * dan kleurt het blokje rood: een tikfout zie je dan vóór het versturen, niet
  * pas aan de foutmelding van de mailserver.

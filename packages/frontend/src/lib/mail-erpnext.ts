@@ -47,6 +47,7 @@ import {
   ApiError,
   type FileInfo,
 } from "./erpnext.ts";
+import { ontbrekendeBijlagen } from "./mail-doorsturen.ts";
 import { bewaarRegelovergangen } from "./mail-html.ts";
 import { resolvePostbustoegang, resolveSessionUser } from "./session.ts";
 import { isBelangrijk } from "./mail-belangrijk.ts";
@@ -1791,8 +1792,28 @@ export async function sendMail(input: {
   // zelf bij deed. Dubbelen eruit: dezelfde docnaam twee keer meesturen zou
   // het bestand twee keer aanhangen.
   const fileNames: string[] = [...new Set(input.bestaandeBijlagen ?? [])];
+  // Bestaan ze nog? Een bijlage van een al verstuurd concept is met dat
+  // concept opgeruimd; zonder deze controle weigert ERPNext met een fout die
+  // niemand kan lezen.
+  if (fileNames.length > 0) {
+    const gevonden = await fetchList<{ name: string }>("File", {
+      fields: ["name"],
+      filters: [["name", "in", fileNames]],
+      limit_page_length: fileNames.length,
+    });
+    const weg = ontbrekendeBijlagen(fileNames, gevonden.map((f) => f.name));
+    if (weg.length > 0) {
+      throw new Error(`Een bijlage bestaat niet meer op de server (${weg.join(", ")}). `
+        + "Haal hem weg uit het bericht en voeg het bestand opnieuw toe.");
+    }
+  }
+  // Uploaden zonder koppeling: `make` hangt het bestand daarna zelf aan de
+  // Communication. Eerst aan het gekoppelde document (project, offerte)
+  // hangen gaf dubbele bestanden daar, en liep vast op de bijlagelimiet van
+  // dat doctype: een Project mag er standaard maar vier hebben, waarna geen
+  // enkele mail met bijlage over dat project meer de deur uit kon.
   for (const file of input.attachments ?? []) {
-    const uploaded = await uploadFile(file, refDoctype, refName, true);
+    const uploaded = await uploadFile(file, "", "", true);
     if (uploaded?.name && !fileNames.includes(uploaded.name)) fileNames.push(uploaded.name);
   }
 

@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveCommand, shortcutFor, normalizeBlockValue, tabCommand, toolbarRovingIndex,
+  backspaceCommand, isInspringBlok,
   TOGGLE_STATE_COMMANDS, TEXT_COLORS,
   type EditorCommandName,
   tabelHtml,
@@ -145,6 +146,45 @@ test("tabCommand: dezelfde commando's als de werkbalkknoppen", () => {
     resolveCommand(tabCommand({ key: "Tab", shiftKey: true }, { inList: true, indented: false })!),
     [{ command: "outdent" }],
   );
+});
+
+test("backspaceCommand: aan het begin van een ingesprongen regel springt Backspace terug", () => {
+  // Zonder dit kon een Tab niet meer ongedaan worden met Backspace: de
+  // browser haalt bij Backspace tekens weg, geen inspringing.
+  assert.equal(backspaceCommand({ key: "Backspace" }, { opBeginVanInspringing: true }), "outdent");
+});
+
+test("backspaceCommand: midden in de regel of zonder inspringing doet de browser het", () => {
+  assert.equal(backspaceCommand({ key: "Backspace" }, { opBeginVanInspringing: false }), null);
+  assert.equal(backspaceCommand({ key: "Delete" }, { opBeginVanInspringing: true }), null);
+  assert.equal(backspaceCommand({ key: "Tab" }, { opBeginVanInspringing: true }), null);
+});
+
+test("backspaceCommand: met Ctrl/Cmd/Alt/Shift blijft het een gewone Backspace", () => {
+  // Ctrl+Backspace wist een woord; dat hoort niet ineens uit te springen.
+  for (const mod of ["ctrlKey", "metaKey", "altKey", "shiftKey"] as const) {
+    assert.equal(backspaceCommand({ key: "Backspace", [mod]: true }, { opBeginVanInspringing: true }), null);
+  }
+});
+
+test("isInspringBlok: het blok dat de browser van Tab maakt", () => {
+  // Chrome: <blockquote style="margin: 0 0 0 40px; border: none; padding: 0px;">
+  assert.equal(isInspringBlok({ tag: "BLOCKQUOTE", marginLeft: "40px", borderLeft: "none" }), true);
+  // Met styleWithCSS: een <div> of <p> met alleen een linkermarge.
+  assert.equal(isInspringBlok({ tag: "DIV", marginLeft: "40px" }), true);
+  assert.equal(isInspringBlok({ tag: "P", marginLeft: "2em" }), true);
+  // Firefox zonder CSS: een kale <blockquote>.
+  assert.equal(isInspringBlok({ tag: "BLOCKQUOTE" }), true);
+});
+
+test("isInspringBlok: het citaat van een antwoord telt niet mee", () => {
+  // Backspace aan het begin van een geciteerde regel mag die regel niet
+  // stilletjes uit het citaat halen.
+  assert.equal(isInspringBlok({ tag: "BLOCKQUOTE", citaat: true }), false);
+  assert.equal(isInspringBlok({ tag: "BLOCKQUOTE", marginLeft: "0px", borderLeft: "2px solid rgb(203, 213, 225)" }), false);
+  assert.equal(isInspringBlok({ tag: "DIV", marginLeft: "0px" }), false);
+  assert.equal(isInspringBlok({ tag: "DIV" }), false);
+  assert.equal(isInspringBlok({ tag: "LI", marginLeft: "40px" }), false);
 });
 
 test("tabCommand: Ctrl/Cmd/Alt+Tab blijven van de browser en het systeem", () => {

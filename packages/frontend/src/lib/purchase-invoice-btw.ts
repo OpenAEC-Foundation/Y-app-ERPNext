@@ -109,3 +109,71 @@ export function btwRegelsVoorBoeking(regels: readonly BtwRegel[], inclusief: boo
     return regel;
   });
 }
+
+/* ──────────────────────── Wat de gebruiker leest ────────────────────── */
+
+/**
+ * Keuze voor een factuur waar buitenlandse btw op staat — een hotel in
+ * Duitsland, tanken in België. Die btw haal je niet terug via de Nederlandse
+ * aangifte; het hele bedrag is kosten. Er hoort dus geen btw-regel bij, en
+ * juist daarom is het een eigen keuze en niet "geen btw": wie de factuur
+ * later terugziet, moet kunnen zien dat er wél btw op stond.
+ */
+export const BUITENLANDSE_BTW = "__buitenlandse_btw__";
+
+export type BtwGroep = "nl" | "verlegd" | "buitenland";
+
+export interface BtwKeuze {
+  waarde: string;
+  label: string;
+  groep: BtwGroep;
+}
+
+/**
+ * Van "Netherlands VAT 21% - 3" naar "21% btw". De sjabloonnamen komen uit
+ * ERPNext en zijn Engels, met de bedrijfsafkorting erachter; in de keuzelijst
+ * wil je lezen wat het doet. Wat niet te herkennen valt, houdt zijn eigen naam.
+ */
+export function btwKeuzeVoor(naam: string): BtwKeuze {
+  const tarief = tariefUitNaam(naam);
+  const pct = tarief !== undefined ? `${tarief}%` : "";
+  if (/reverse\s*charge/i.test(naam)) {
+    return { waarde: naam, label: `Reverse charge ${pct}`.trim(), groep: "verlegd" };
+  }
+  if (VERLEGD_RE.test(naam)) {
+    return { waarde: naam, label: pct ? `Btw verlegd (${pct})` : "Btw verlegd", groep: "verlegd" };
+  }
+  if (/abroad|buitenland/i.test(naam)) {
+    return { waarde: naam, label: `Buitenland, geen Nederlandse btw${pct ? ` (${pct})` : ""}`, groep: "buitenland" };
+  }
+  if (tarief !== undefined) {
+    let label = `${pct} btw`;
+    if (/included|inclusief/i.test(naam)) label += ", inbegrepen";
+    else if (/deducted/i.test(naam)) label += ", afgetrokken";
+    else if (tarief === 6) label += " (oud laag tarief)";
+    return { waarde: naam, label, groep: "nl" };
+  }
+  return { waarde: naam, label: naam, groep: "nl" };
+}
+
+const GROEP_VOLGORDE: Record<BtwGroep, number> = { nl: 0, verlegd: 1, buitenland: 2 };
+
+/**
+ * De keuzelijst: per groep, het hoogste tarief bovenaan, en de optie voor
+ * buitenlandse btw er altijd bij. Twee sjablonen die hetzelfde label zouden
+ * krijgen, houden er hun eigen naam achter — anders kies je blind.
+ */
+export function btwKeuzelijst(sjablonen: readonly BtwSjabloon[], buitenlandsLabel: string): BtwKeuze[] {
+  const keuzes = sjablonen.map((s) => btwKeuzeVoor(s.name));
+  const telling = new Map<string, number>();
+  for (const k of keuzes) telling.set(k.label, (telling.get(k.label) ?? 0) + 1);
+  for (const k of keuzes) {
+    if ((telling.get(k.label) ?? 0) > 1) k.label = `${k.label} — ${k.waarde}`;
+  }
+  keuzes.sort((a, b) =>
+    GROEP_VOLGORDE[a.groep] - GROEP_VOLGORDE[b.groep]
+    || (tariefUitNaam(b.waarde) ?? -1) - (tariefUitNaam(a.waarde) ?? -1)
+    || a.label.localeCompare(b.label));
+  keuzes.push({ waarde: BUITENLANDSE_BTW, label: buitenlandsLabel, groep: "buitenland" });
+  return keuzes;
+}

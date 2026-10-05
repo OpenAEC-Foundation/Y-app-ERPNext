@@ -14,6 +14,7 @@
 
 import { markdownNaarHtml } from "./mail-markdown.ts";
 import { plainTextToHtml } from "./mail-html.ts";
+import type { KlembordInhoud } from "./klembord-lezen.ts";
 
 /** Het attribuut waarmee het zojuist geplakte stuk gemerkt wordt. */
 export const PLAK_ATTRIBUUT = "data-plak";
@@ -64,6 +65,46 @@ export function plakHtml(vorm: Plakvorm, html: string, tekst: string): string {
   if (vorm === "opmaak") return String(html || "");
   if (vorm === "markdown") return markdownNaarHtml(tekst);
   return plainTextToHtml(tekst);
+}
+
+/** Wat er met de inhoud van het klembord gebeurt. */
+export type PlakPlan =
+  | { soort: "afbeeldingen"; bestanden: File[] }
+  | { soort: "invoegen"; html: string }
+  | { soort: "kiezen"; html: string; tekst: string; vormen: Plakvorm[] }
+  | { soort: "niets" };
+
+/**
+ * Wat er geplakt wordt: hetzelfde voor Ctrl+V en de plakknoppen.
+ * `alleenTekst` is Ctrl+Shift+V of de knop "Plak als platte tekst".
+ * `metKeuze: false` is voor de plakknoppen: wie op "Plak" of "Plak als platte
+ * tekst" klikt, heeft de vorm al gekozen, en dan komt er geen keuzeblokje
+ * achteraan maar meteen de eerste vorm.
+ */
+export function plakPlan(inhoud: KlembordInhoud, alleenTekst: boolean, metKeuze = true): PlakPlan {
+  const html = alleenTekst ? "" : inhoud.html;
+  const tekst = inhoud.tekst;
+
+  /*
+   * Een schermafdruk of een gekopieerde afbeelding staat als bestand op het
+   * klembord. Alleen als er geen HTML bij zit: wie uit Word of een webpagina
+   * kopieert krijgt naast de HTML vaak ook een plaatje van de hele selectie,
+   * en dan is de tekst wat bedoeld werd.
+   */
+  if (!alleenTekst && !html && inhoud.afbeeldingen.length > 0) {
+    return { soort: "afbeeldingen", bestanden: inhoud.afbeeldingen };
+  }
+  const vormen = alleenTekst ? [] : plakvormen(html, tekst);
+
+  // Zonder echte keuze geen markering en geen blokje: een knop die niets
+  // verandert maakt de andere knoppen ongeloofwaardig.
+  if (vormen.length === 0) {
+    if (html) return { soort: "invoegen", html };
+    if (tekst) return { soort: "invoegen", html: plainTextToHtml(tekst) };
+    return { soort: "niets" };
+  }
+  if (!metKeuze) return { soort: "invoegen", html: plakHtml(vormen[0], html, tekst) };
+  return { soort: "kiezen", html, tekst, vormen };
 }
 
 /**

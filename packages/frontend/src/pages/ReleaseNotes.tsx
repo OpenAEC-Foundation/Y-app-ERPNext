@@ -6,6 +6,76 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.39.4",
+    date: "2026-09-28",
+    url: "",
+    sections: [
+      {
+        title: "Kennisbank: links naar een artikel",
+        items: [
+          "Elk artikel in de kennisbank heeft nu een eigen adres, bijvoorbeeld …/y-next#/wiki/kennisbank/procedures/algemeen/archiefonderzoek. Wie de link opent, staat meteen in het artikel.",
+          "Nieuwe knop \"Link kopiëren\" bij een artikel, om de link door te sturen.",
+          "Verwijzingen van het ene artikel naar het andere openen binnen de Y-app; terugbladeren brengt je naar het vorige artikel.",
+          "Een link naar een artikel dat verplaatst of hernoemd is, geeft een melding in plaats van een lege pagina.",
+          "Moet je eerst inloggen, dan kom je daarna alsnog bij het artikel uit de link.",
+        ],
+      },
+      {
+        title: "Kennisbank: opmaak",
+        items: [
+          "Koppen, opsommingen, tabellen en citaten zijn in artikelen weer als zodanig te zien; bij artikelen die in de Y-app bewerkt waren, stond alles als platte tekst.",
+          "Tabellen in oudere artikelen blijven tabellen als je het artikel bewerkt. Tabellen die bij een eerdere bewerking uit elkaar vielen, worden weer als tabel getoond.",
+          "Genummerde lijsten, citaten en afbeeldingen in oudere artikelen worden goed omgezet.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.39.3",
+    date: "2026-09-28",
+    url: "",
+    sections: [
+      {
+        title: "Agenda: omschrijving en Teams-link",
+        items: [
+          "Afspraken uit je agenda tonen nu ook hun omschrijving, met klikbare links, zoals in een mailprogramma.",
+          "Staat er een Teams-vergadering in de omschrijving, dan krijgt de afspraak de knop \"Teams-vergadering openen\", net als bij Jitsi.",
+          "In het blok met genodigden staat nu ook de locatie van de afspraak, zodat je niet naar beneden hoeft te kijken.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.39.2",
+    date: "2026-09-26",
+    url: "",
+    sections: [
+      {
+        title: "Mail: knoppen om te plakken",
+        items: [
+          "In het opstelvenster staan vooraan in de werkbalk twee nieuwe knoppen: \"Plak\" en \"Plak als platte tekst\". Handig als je niet met Ctrl+V werkt, of als je tekst zonder opmaak wilt plakken.",
+          "\"Plak\" neemt de opmaak mee (vet, cursief, lijstjes) maar laat de rommel uit Word en Outlook weg. \"Plak als platte tekst\" plakt alleen de tekst, in het lettertype van je mail.",
+          "De browser vraagt de eerste keer of Y-Next het klembord mag lezen; kies Toestaan. Lukt het plakken niet, dan zie je waarom: geen toestemming, of niets bruikbaars op het klembord.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "0.39.1",
+    date: "2026-09-26",
+    url: "",
+    sections: [
+      {
+        title: "Mail: met Tab van Aan naar de tekst",
+        items: [
+          "Tab in het Aan-veld springt meteen naar de tekst van de mail, in plaats van eerst langs Cc, het onderwerp en het project. De cursor staat bovenaan, boven je ondertekening.",
+          "Wat je in Aan getypt hebt, wordt bij die Tab een adresblokje. Staat de suggestielijst open, dan wordt de gemarkeerde suggestie gekozen.",
+          "Shift+Tab werkt zoals altijd, en vanuit Cc en Bcc gaat Tab gewoon naar het volgende veld.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.39.0",
     date: "2026-09-21",
     url: "",

@@ -25,6 +25,8 @@ import {
   regelVoorKeuze, voorkomens, type HerhaalKeuze,
 } from "../lib/agenda-herhaling";
 import { COLLEGA_SLEUTEL } from "../lib/agenda-voorladen";
+import { vindVergaderlink } from "../lib/agenda-vergaderlink";
+import { splitLinks } from "../lib/linkify";
 import { kleurenVoorAgendas } from "../lib/agenda-kleuren";
 import { deelKolommenIn } from "../lib/agenda-indeling";
 import { resolveSessionUser } from "../lib/session";
@@ -1218,6 +1220,16 @@ function Uitnodiging({ event, ik, onGeantwoord }: {
         <Users size={13} className="text-slate-500" />
         <span className="text-xs font-medium text-slate-700">{t("agenda.invite_guests")}</span>
       </div>
+      {/* De locatie (vaak zelf ook een genodigde: de vergaderruimte staat dan al
+          hieronder in de lijst) staat hier nogmaals apart, want wie deze kaart
+          bekijkt om de genodigden na te lopen, wil niet ook nog naar beneden
+          scrollen voor de plek van de afspraak. */}
+      {event.location && (
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-slate-600">
+          <MapPin size={13} className="text-slate-400 flex-shrink-0" />
+          <span className="truncate">{event.location}</span>
+        </div>
+      )}
       <ul className="space-y-0.5">
         {uitnodiging.genodigden.map((g) => (
           <li key={g.email} className="flex items-center gap-1.5 text-[11px] text-slate-600">
@@ -1253,6 +1265,26 @@ function Uitnodiging({ event, ik, onGeantwoord }: {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Een knop om de videobelvergadering te openen, als er een Jitsi- of
+ * Teams-link in de omschrijving staat. Staat er geen, dan niets.
+ * `compact` is voor de kleine dagkaartjes; zonder is voor de detailweergave.
+ */
+function VergaderLinkKnop({ description, compact }: { description?: string; compact?: boolean }) {
+  const { t } = useTranslation();
+  const link = vindVergaderlink(description);
+  if (!link) return null;
+  const label = t(link.soort === "teams" ? "agenda.open_teams_meeting" : "agenda.open_jitsi_meeting");
+  return (
+    <a href={link.url} target="_blank" rel="noopener noreferrer"
+      className={compact
+        ? "flex items-center gap-1 mt-2 text-xs text-blue-600 hover:underline"
+        : "flex items-center gap-1.5 text-sm text-blue-600 hover:underline"}>
+      <Video size={compact ? 11 : 14} /> {label}
+    </a>
   );
 }
 
@@ -1686,7 +1718,18 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
           ) : event.description ? (
-            <div className="text-sm text-slate-600 whitespace-pre-wrap bg-slate-50 rounded-lg p-3">{event.description}</div>
+            // Met label en klikbare links, zoals een mailprogramma de omschrijving
+            // toont. Een Teams-uitnodiging is lang (hulp- en optieslinks); daarom
+            // een maximale hoogte met scrollen.
+            <div>
+              <div className="text-xs font-medium text-slate-600 mb-1">{t("agenda.description_label")}</div>
+              <div className="text-sm text-slate-600 whitespace-pre-wrap break-words bg-slate-50 rounded-lg p-3 max-h-64 overflow-auto">
+                {splitLinks(event.description).map((deel, i) => deel.type === "link"
+                  ? <a key={i} href={deel.href} target="_blank" rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline break-all">{deel.text}</a>
+                  : <span key={i}>{deel.text}</span>)}
+              </div>
+            </div>
           ) : null}
 
           {/* Invite emails — visible in edit mode */}
@@ -1706,14 +1749,8 @@ function EventDetailModal({ event, calendars, ik, onClose, onUpdated }: {
             </div>
           )}
 
-          {/* Jitsi link */}
-          {event.description?.includes("meet.jit.si") && !editing && (
-            <a href={event.description.match(/https:\/\/meet\.jit\.si\/\S+/)?.[0] || "#"}
-              target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
-              <Video size={14} /> {t("agenda.open_jitsi_meeting")}
-            </a>
-          )}
+          {/* Videobellink (Jitsi of Teams) */}
+          {!editing && <VergaderLinkKnop description={event.description} />}
 
           {/* Outlook link */}
           {event.webLink && !editing && (
@@ -2200,6 +2237,7 @@ export default function Agenda() {
                 && wachtOpAntwoord(a.genodigden, ikZelf),
               owner: a.gebruiker.split("@")[0],
               location: a.locatie || undefined,
+              description: a.omschrijving || undefined,
               uitnodiging: a.uid
                 ? {
                     uid: a.uid,
@@ -3158,13 +3196,7 @@ export default function Agenda() {
               <p className="text-sm font-medium text-slate-800">{e.title}</p>
               {e.location && <p className="text-xs text-slate-500 flex items-center gap-1 mt-1"><MapPin size={10} />{e.location}</p>}
               {e.owner && <p className="text-xs text-slate-500 flex items-center gap-1 mt-1"><Users size={10} />{e.owner}</p>}
-              {e.description?.includes("meet.jit.si") && (
-                <a href={e.description.match(/https:\/\/meet\.jit\.si\/\S+/)?.[0] || "#"}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 mt-2 text-xs text-blue-600 hover:underline">
-                  <Video size={11} /> {t("agenda.open_jitsi_meeting")}
-                </a>
-              )}
+              <VergaderLinkKnop description={e.description} compact />
               {e.webLink && (
                 <a href={e.webLink} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 mt-2 text-xs hover:underline" style={{ color: TYPE_COLORS.o365 }}>

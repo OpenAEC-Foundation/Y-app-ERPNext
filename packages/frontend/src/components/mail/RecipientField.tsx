@@ -26,7 +26,7 @@ import {
 import {
   nextSuggestionIndex, isSelectKey, filterCachedSuggestions, sourceLabelKey,
   splitsAdresInvoer, voegAdresInvoerSamen, kiesAdres, zonderBlokje,
-  blokjeTerugNaarTekst, rondAdresAf, isBruikbaarAdres,
+  blokjeTerugNaarTekst, rondAdresAf, isBruikbaarAdres, waardeBijTab,
 } from "../../lib/recipient-field";
 
 interface Props {
@@ -39,13 +39,19 @@ interface Props {
   /** Klassen voor het veld: de rand om de blokjes en het invoerveld samen. */
   inputClassName?: string;
   autoFocus?: boolean;
+  /**
+   * Tab (zonder Shift) gaat niet naar het volgende veld, maar hierheen. Bij
+   * het Aan-veld is dat de tekst van de mail: daar wil je na de ontvanger
+   * zijn, niet eerst langs de Cc-knop, het onderwerp en het project.
+   */
+  onTab?: () => void;
 }
 
 /** Zo lang wachten we met de ERPNext-lookup terwijl er nog getypt wordt. */
 const DEBOUNCE_MS = 200;
 
 export default function RecipientField({
-  value, onChange, instanceId, label, placeholder, inputClassName, autoFocus,
+  value, onChange, instanceId, label, placeholder, inputClassName, autoFocus, onTab,
 }: Props) {
   const { t } = useTranslation();
   const listId = useId();
@@ -72,6 +78,12 @@ export default function RecipientField({
    * weggegooid en de suggestielijst nooit verscheen.
    */
   const aliveRef = useRef(true);
+  /**
+   * Na een Tab-sprong is het adres al afgerond. De blur die daarop volgt, kan
+   * nog de waarde van vóór die afronding zien en zou dan het halfgetypte
+   * zoekwoord als blokje neerzetten over de gekozen suggestie heen.
+   */
+  const slaBlurOver = useRef(false);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -120,6 +132,18 @@ export default function RecipientField({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Escape") {
       if (open) { e.stopPropagation(); setOpen(false); }
+      return;
+    }
+    if (e.key === "Tab" && !e.shiftKey && onTab) {
+      e.preventDefault();
+      const gekozen = open && suggestions[activeIdx] ? suggestions[activeIdx] : undefined;
+      const nieuw = waardeBijTab(value, gekozen);
+      if (nieuw !== value) onChange(nieuw);
+      if (gekozen) bumpFrequency(instanceId, gekozen.email, gekozen.label);
+      setOpen(false);
+      setSuggestions([]);
+      slaBlurOver.current = true;
+      onTab();
       return;
     }
     if (open && suggestions.length > 0) {
@@ -216,8 +240,10 @@ export default function RecipientField({
             }}
             onFocus={() => refresh(bezig)}
             onBlur={() => {
-              // Wie het veld verlaat, is klaar met dit adres.
-              if (bezig.trim()) onChange(rondAdresAf(value));
+              // Wie het veld verlaat, is klaar met dit adres. Na een Tab-sprong
+              // is dat al gebeurd (zie `slaBlurOver`).
+              if (slaBlurOver.current) slaBlurOver.current = false;
+              else if (bezig.trim()) onChange(rondAdresAf(value));
               // Kort uitstel: een klik op een suggestie is óók een blur.
               setTimeout(() => { if (aliveRef.current) setOpen(false); }, 150);
             }}

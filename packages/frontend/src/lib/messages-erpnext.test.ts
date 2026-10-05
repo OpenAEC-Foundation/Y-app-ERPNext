@@ -35,6 +35,8 @@ import {
   parseImageFromLink,
   previewOf,
   rowToMessage,
+  GroepBezorgFout,
+  sendGroupMessage,
   sendMessage,
   sendReaction,
   textToHtml,
@@ -44,6 +46,7 @@ import {
   type ErpMessage,
 } from "./messages-erpnext.ts";
 import { sleutelUitLink } from "./berichten-reacties.ts";
+import { groepSleutel, groepUitLink, type Groep } from "./berichten-groepen.ts";
 
 const ME = "nino@3bm.co.nl";
 
@@ -896,4 +899,166 @@ test("verwijderBerichten: één aanroep met alle namen, en niets als er niets ge
     mock.restore();
     await resetState();
   }
+});
+
+/* ─────────────────────────────── Groepen ─────────────────────────────── */
+
+const GROEP: Groep = {
+  id: "3f2a9c1e-77aa-4b1c-9e0d-1234567890ab",
+  naam: "Projectteam Jelier",
+  leden: [ME, "lara@3bm.co.nl", "joris@3bm.co.nl"],
+};
+
+test("rowToMessage: een groepsbericht van een lid landt in het groepsgesprek", () => {
+  const m = rowToMessage({
+    name: "NL-g1", owner: "lara@3bm.co.nl", for_user: ME, document_name: "lara@3bm.co.nl",
+    link: buildMessageLink(undefined, "abcdef12-3456", GROEP), email_content: "<div>Hoi allemaal</div>",
+    creation: "2026-10-01 09:00:00", read: 0,
+  }, ME);
+  assert.ok(m);
+  assert.equal(m.counterpart, groepSleutel(GROEP.id));
+  assert.equal(m.afzender, "lara@3bm.co.nl");
+  assert.deepEqual(m.groep, GROEP);
+  assert.equal(m.body, "Hoi allemaal");
+});
+
+test("rowToMessage: een 'groepsbericht' van iemand buiten de groep is een gewoon bericht", () => {
+  const m = rowToMessage({
+    name: "NL-g2", owner: "vreemde@elders.nl", for_user: ME, document_name: "vreemde@elders.nl",
+    link: buildMessageLink(undefined, "abcdef12-3456", GROEP), email_content: "<div>Hallo</div>",
+    creation: "2026-10-01 09:00:00", read: 0,
+  }, ME);
+  assert.ok(m);
+  assert.equal(m.counterpart, "vreemde@elders.nl");
+  assert.equal(m.groep, undefined);
+});
+
+test("rowToMessage: een groepsgebeurtenis heeft geen tekst", () => {
+  const m = rowToMessage({
+    name: "NL-g3", owner: "lara@3bm.co.nl", for_user: ME, document_name: "lara@3bm.co.nl",
+    link: buildMessageLink(undefined, "abcdef12-3456", GROEP, "aangemaakt"), subject: "Nieuwe groep: Projectteam Jelier",
+    email_content: "", creation: "2026-10-01 09:00:00", read: 0,
+  }, ME);
+  assert.ok(m);
+  assert.equal(m.gebeurtenis, "aangemaakt");
+  assert.equal(m.body, "");
+});
+
+test("groupThreads: groepsberichten vormen één gesprek met de nieuwste groepsnaam", () => {
+  const oud: ErpMessage = {
+    name: "a", counterpart: groepSleutel(GROEP.id), direction: "in", body: "eerste", createdAt: "2026-10-01 09:00:00",
+    read: true, sleutel: "s1", groep: GROEP, afzender: "lara@3bm.co.nl",
+  };
+  const nieuw: ErpMessage = {
+    name: "b", counterpart: groepSleutel(GROEP.id), direction: "in", body: "tweede", createdAt: "2026-10-01 10:00:00",
+    read: false, sleutel: "s2", groep: { ...GROEP, naam: "Team Jelier" }, afzender: "joris@3bm.co.nl",
+  };
+  const een: ErpMessage = {
+    name: "c", counterpart: "lara@3bm.co.nl", direction: "in", body: "los", createdAt: "2026-10-01 08:00:00",
+    read: true, sleutel: "s3",
+  };
+  const threads = groupThreads([oud, nieuw, een], { "lara@3bm.co.nl": "Lara Nazari" });
+  assert.equal(threads.length, 2);
+  const groep = threads.find((t) => t.groep);
+  assert.ok(groep);
+  assert.equal(groep.counterpartName, "Team Jelier");
+  assert.equal(groep.lastAfzender, "joris@3bm.co.nl");
+  assert.equal(groep.unread, 1);
+  assert.equal(groep.messages.length, 2);
+});
+
+test("sendGroupMessage: één kopie per ander lid plus je eigen, allemaal met de groep erin", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) return { status: 200, body: { data: { name: "NL-new" } } };
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendGroupMessage(GROEP, "Overleg om 14:00");
+    const posts = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init));
+    assert.deepEqual(posts.map((p) => p.for_user), ["lara@3bm.co.nl", "joris@3bm.co.nl", ME]);
+    for (const p of posts) {
+      assert.equal("owner" in p, false);
+      assert.deepEqual(groepUitLink(String(p.link))?.groep, GROEP);
+    }
+    // Allemaal dezelfde sleutel, zodat een like overal op hetzelfde bericht landt.
+    assert.equal(new Set(posts.map((p) => sleutelUitLink(String(p.link)))).size, 1);
+    assert.equal(posts[2].document_name, groepSleutel(GROEP.id));
+    assert.equal(posts[2].read, 1);
+    assert.equal(posts[0].read, 0);
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendGroupMessage: lukt het bij één lid niet, dan krijgt de rest het toch en hoor je bij wie niet", async () => {
+  await resetState();
+  const mock = installFetchMock((url, init) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.for_user === "lara@3bm.co.nl") return { status: 500, body: { exception: "kapot" } };
+      return { status: 200, body: { data: { name: "NL-new" } } };
+    }
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await assert.rejects(sendGroupMessage(GROEP, "Hallo"), (err: unknown) =>
+      err instanceof GroepBezorgFout && err.mislukt.length === 1 && err.mislukt[0] === "lara@3bm.co.nl");
+    const naar = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init).for_user);
+    assert.ok(naar.includes("joris@3bm.co.nl"));
+    assert.ok(naar.includes(ME), "je eigen kopie komt er ook");
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendGroupMessage: een gebeurtenis gaat zonder tekst, met een leesbaar onderwerp voor de bel", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) return { status: 200, body: { data: { name: "NL-new" } } };
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendGroupMessage(GROEP, "", undefined, "aangemaakt");
+    const eerste = bodyOf(mock.calls.find((c) => c.init?.method === "POST")?.init);
+    assert.equal(eerste.subject, "Nieuwe groep: Projectteam Jelier");
+    assert.equal(groepUitLink(String(eerste.link))?.gebeurtenis, "aangemaakt");
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("sendReaction in een groep: bij elk lid een like", async () => {
+  await resetState();
+  const mock = installFetchMock((url) => {
+    if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
+    if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) return { status: 200, body: { data: { name: "NL-new" } } };
+    throw new Error(`unexpected url: ${url}`);
+  });
+  try {
+    await sendReaction(groepSleutel(GROEP.id), "abcdef12-3456", true, GROEP);
+    const naar = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init).for_user).sort();
+    assert.deepEqual(naar, ["joris@3bm.co.nl", "lara@3bm.co.nl", ME].sort());
+  } finally {
+    mock.restore();
+    await resetState();
+  }
+});
+
+test("rowToMessage: wie de groep verlaat, staat daarna niet meer in de groep", () => {
+  const m = rowToMessage({
+    name: "NL-g4", owner: "joris@3bm.co.nl", for_user: ME, document_name: "joris@3bm.co.nl",
+    link: buildMessageLink(undefined, "abcdef12-3456", GROEP, "verlaten"), email_content: "",
+    creation: "2026-10-01 11:00:00", read: 0,
+  }, ME);
+  assert.ok(m);
+  assert.equal(m.gebeurtenis, "verlaten");
+  assert.deepEqual(m.groep?.leden, [ME, "lara@3bm.co.nl"]);
+  assert.equal(m.afzender, "joris@3bm.co.nl");
 });

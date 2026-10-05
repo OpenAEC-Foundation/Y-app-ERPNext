@@ -4,6 +4,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../lib/useIsMobile";
+import { volgSleep } from "../lib/volg-sleep";
 import {
   Mail, Trash2, Star, Archive, FolderOpen, RefreshCw, Settings, Eye, EyeOff,
   User, PenSquare, Reply, ReplyAll, Forward, ChevronLeft, ChevronRight, Printer,
@@ -158,7 +159,7 @@ import {
   buildComposeBodyWithQuote, buildQuoteBlock, hasQuote,
   shouldCollapseQuote, splitQuoteFromBody, splitsOndertekening, voegOndertekeningIn,
 } from "../lib/mail-quote";
-import { getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
+import { fetchAttachments, getFileUrl, getErpNextLinkUrl } from "../lib/erpnext";
 import MobileMailboxDropdown from "../components/mail/MobileMailboxDropdown";
 import AddSharedMailboxDialog from "../components/mail/AddSharedMailboxDialog";
 import CreateFolderModal from "../components/mail/CreateFolderModal";
@@ -195,7 +196,7 @@ import SenderRelationAction, { type RelationSlotTone } from "../components/Sende
 import {
   lookupExistingCached, primeRelationLookup, type ExistingRelation, type RelationResult,
 } from "../lib/erp-relation";
-import { plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
+import { handmatigeFactuurGok, plainTextFromHtml, type SupplierHint } from "../lib/invoice-detect";
 import type { BookingResult } from "../lib/purchase-invoice";
 import type { GeboekteKandidaat } from "../lib/purchase-invoice-duplicates";
 import { useGeboekteFacturen } from "../lib/useGeboekteFacturen";
@@ -4353,19 +4354,13 @@ function ErpNextWebmail() {
     e.preventDefault();
     const beginY = e.clientY;
     const beginHoogte = opstelHoogte;
-    function beweeg(ev: globalThis.MouseEvent) {
-      const ruimte = window.innerHeight - 160; // kop van de app en de lijstbalk
-      const hoogte = Math.min(Math.max(beginHoogte + (ev.clientY - beginY), OPSTEL_MIN), ruimte);
-      setOpstelHoogte(hoogte);
-    }
-    function stop() {
-      window.removeEventListener("mousemove", beweeg);
-      window.removeEventListener("mouseup", stop);
-      document.body.style.userSelect = "";
-    }
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", beweeg);
-    window.addEventListener("mouseup", stop);
+    volgSleep({
+      cursor: "row-resize",
+      beweeg: (ev) => {
+        const ruimte = window.innerHeight - 160; // kop van de app en de lijstbalk
+        setOpstelHoogte(Math.min(Math.max(beginHoogte + (ev.clientY - beginY), OPSTEL_MIN), ruimte));
+      },
+    });
   }, [opstelHoogte]);
 
   /**
@@ -4389,21 +4384,16 @@ function ErpNextWebmail() {
     const ruimte = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
     const zet = kolom === "mappen" ? setMappenBreedte : setLijstBreedte;
     let laatste = begin;
-    function beweeg(ev: globalThis.MouseEvent) {
-      laatste = begrensKolom(kolom, begin + (ev.clientX - beginX), ruimte, andere);
-      zet(laatste);
-    }
-    function stop() {
-      window.removeEventListener("mousemove", beweeg);
-      window.removeEventListener("mouseup", stop);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      try { localStorage.setItem(KOLOM_SLEUTEL[kolom], String(laatste)); } catch { /* privémodus */ }
-    }
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("mousemove", beweeg);
-    window.addEventListener("mouseup", stop);
+    volgSleep({
+      cursor: "col-resize",
+      beweeg: (ev) => {
+        laatste = begrensKolom(kolom, begin + (ev.clientX - beginX), ruimte, andere);
+        zet(laatste);
+      },
+      klaar: () => {
+        try { localStorage.setItem(KOLOM_SLEUTEL[kolom], String(laatste)); } catch { /* privémodus */ }
+      },
+    });
   }, [mappenBreedte, lijstBreedte]);
 
   /**
@@ -4422,22 +4412,19 @@ function ErpNextWebmail() {
     // De rij met de mail en het voorbeeld ernaast.
     const ruimte = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
     let laatste = begin;
-    function beweeg(ev: globalThis.MouseEvent) {
-      // Naar links slepen maakt het paneel breder: het staat rechts.
-      laatste = begrensVoorbeeld(begin - (ev.clientX - beginX), ruimte);
-      setVoorbeeldBreedte(laatste);
-    }
-    function stop() {
-      window.removeEventListener("mousemove", beweeg);
-      window.removeEventListener("mouseup", stop);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      try { localStorage.setItem(VOORBEELD_SLEUTEL, String(laatste)); } catch { /* privémodus */ }
-    }
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("mousemove", beweeg);
-    window.addEventListener("mouseup", stop);
+    // Via `volgSleep`: dit paneel bevat de pdf-preview (een iframe), en een
+    // loslaten boven dat iframe kwam hier eerder nooit aan.
+    volgSleep({
+      cursor: "col-resize",
+      beweeg: (ev) => {
+        // Naar links slepen maakt het paneel breder: het staat rechts.
+        laatste = begrensVoorbeeld(begin - (ev.clientX - beginX), ruimte);
+        setVoorbeeldBreedte(laatste);
+      },
+      klaar: () => {
+        try { localStorage.setItem(VOORBEELD_SLEUTEL, String(laatste)); } catch { /* privémodus */ }
+      },
+    });
   }, [voorbeeldBreedte]);
 
   const herstelVoorbeeld = useCallback(() => {
@@ -5099,6 +5086,26 @@ function ErpNextWebmail() {
   }, [selected, body, intentCtx, dismissed, herkenningAan]);
 
   /**
+   * Een mail zelf als inkoopfactuur aanwijzen. Zelfde venster als bij een
+   * herkende factuur, gevuld met wat er uit de mail te halen viel.
+   */
+  const startHandmatigeBoeking = useCallback(() => {
+    if (!selected) return;
+    const invoice = handmatigeFactuurGok({
+      subject: selected.subject,
+      sender: selected.sender,
+      attachmentNames: (body?.attachments ?? []).map((a) => a.file_name),
+      hasAttachment: selected.hasAttachments,
+      bodyText: body?.html ? plainTextFromHtml(body.html) : undefined,
+      mailDate: selected.date,
+    }, intentCtx.suppliers as SupplierHint[]);
+    setBookingFor({
+      msg: selected,
+      intent: { kind: "purchase-invoice", confidence: invoice.confidence, reasons: invoice.reasons, invoice },
+    });
+  }, [selected, body, intentCtx]);
+
+  /**
    * Factuurmails waarvan de factuur al in ERPNext staat. Die krijgen geen
    * voorstel "inboeken?" maar een melding dat hij al ingeboekt of betaald is —
    * vaak met de hand in ERPNext geboekt, zodat de mail er niet aan hangt.
@@ -5182,6 +5189,7 @@ function ErpNextWebmail() {
   const handleRelationCreated = useCallback((email: string, result: RelationResult) => {
     const found: ExistingRelation = { contact: result.contact };
     if (result.customer) found.customer = result.customer;
+    if (result.supplier) found.supplier = result.supplier;
     primeRelationLookup(email, found);
     setSenderRelation({ email, found });
   }, []);
@@ -5435,9 +5443,17 @@ function ErpNextWebmail() {
    */
   const draftRef = useRef<ErpDraft | null>(null);
   useEffect(() => { draftRef.current = draft; }, [draft]);
+  /**
+   * Concepten die net verstuurd zijn. Het tussentijds bewaren loopt op een
+   * vertraging; drukte je binnen die pauze op Verzenden, dan schreef de
+   * vertraagde bewaaractie het concept ná het versturen opnieuw weg. Dan stond
+   * er een concept van een mail die al weg was — met bijlagen die intussen
+   * waren opgeruimd. Wat hierin staat, wordt niet meer bewaard.
+   */
+  const verzondenConcepten = useRef<Set<string>>(new Set());
 
   const persistDraft = useCallback((d: ErpDraft | null) => {
-    if (!d) return;
+    if (!d || verzondenConcepten.current.has(d.draftKey)) return;
     setDrafts(saveDraft(instanceId, {
       key: d.draftKey,
       mode: d.mode,
@@ -5514,10 +5530,14 @@ function ErpNextWebmail() {
   /** Een serverconcept openen in het opstelvenster. */
   const openServerConcept = useCallback((c: ServerConcept) => {
     persistDraft(draftRef.current);
+    const draftKey = newDraftKey();
     setDraft({
       mode: "new",
-      draftKey: newDraftKey(),
+      draftKey,
       serverConcept: c.name,
+      // Een concept dat als antwoord is klaargezet, hoort na versturen in
+      // hetzelfde gesprek te staan.
+      ...(c.inReplyTo ? { inReplyTo: c.inReplyTo } : {}),
       to: c.aan,
       cc: c.cc,
       bcc: c.bcc,
@@ -5530,6 +5550,26 @@ function ErpNextWebmail() {
     });
     setShowLinkPicker(false);
     if (isMobile) setMobilePane("message");
+    /*
+     * Bijlagen die bij het concept klaargezet zijn — een creditnota, een
+     * offerte — hangen als File aan het concept. Ze gaan mee als bestaande
+     * bijlagen, net als bij doorsturen: niets opnieuw uploaden. Pas erbij
+     * zetten als het venster nog op dit concept staat.
+     */
+    fetchAttachments("Communication", c.name)
+      .then((bestanden) => {
+        if (bestanden.length === 0) return;
+        setDraft((prev) => prev && prev.draftKey === draftKey
+          ? {
+            ...prev,
+            bestaandeBijlagen: [
+              ...(prev.bestaandeBijlagen ?? []),
+              ...bestanden.map((f) => ({ name: f.name, fileName: f.file_name })),
+            ],
+          }
+          : prev);
+      })
+      .catch(() => { /* zonder bijlagen is het concept nog steeds te openen */ });
   }, [isMobile, persistDraft]);
 
   const gooiServerConceptWeg = useCallback(async (naam: string) => {
@@ -6452,6 +6492,7 @@ function ErpNextWebmail() {
       }
       // Verstuurd = afgemaakt: het concept hoort weg, anders blijft er een
       // "Concept"-label staan bij een mail die je net beantwoord hebt.
+      verzondenConcepten.current.add(draft.draftKey);
       setDrafts(deleteDraft(instanceId, draft.draftKey));
       if (draft.serverConcept) {
         const naam = draft.serverConcept;
@@ -7680,6 +7721,20 @@ function ErpNextWebmail() {
                         klant die belt "stuur even een offerte" laat geen
                         aanvraagwoorden in zijn mail achter. Staat er wél een
                         bedoelingsbalk, dan zit de knop dáár — nooit dubbel. */}
+                    {/* Inboeken als inkoopfactuur kan ook als de herkenning
+                        hem niet zag, of als je "dit is het niet" koos en je
+                        bedacht. Staat de factuurbalk er al, dan zit de knop
+                        dáár; hangt de mail al aan een inkoopfactuur, dan is
+                        er niets meer te boeken. */}
+                    {selected && selectedIntent?.kind !== "purchase-invoice"
+                      && selected.reference?.doctype !== "Purchase Invoice" && (
+                      <button
+                        onClick={startHandmatigeBoeking}
+                        title={t("y_next.pinv_manual_title")}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-red-200 text-[11px] text-red-700 hover:bg-red-50 cursor-pointer">
+                        <ReceiptText size={11} /> {t("y_next.pinv_manual")}
+                      </button>
+                    )}
                     {!selectedIntent && selected && (
                       <QuoteActionButton
                         decision={quoteAction}
@@ -8212,6 +8267,7 @@ function ErpNextWebmail() {
             name: bookingFor.msg.name,
             subject: bookingFor.msg.subject,
             sender: bookingFor.msg.sender,
+            ...(bookingFor.msg.senderName ? { senderName: bookingFor.msg.senderName } : {}),
             date: bookingFor.msg.date,
             // Een Communication kan maar aan één document hangen; boeken
             // vervangt de projectkoppeling. Het project gaat daarom mee naar
@@ -8271,6 +8327,7 @@ function ErpNextWebmail() {
           }}
           onClose={() => setRelationFor(null)}
           onCreated={(result) => handleRelationCreated(relationFor.sender, result)}
+          standaardSoort={selectedIntent?.kind === "purchase-invoice" ? "leverancier" : "klant"}
         />
       )}
 
@@ -8527,6 +8584,13 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
   // Elk concept krijgt een eigen opsteller (`key={draft.draftKey}`), dus per
   // bericht klopt het nog steeds.
   const [startInBody] = useState(() => draft.to.trim() !== "");
+  /** Tab in het Aan-veld: verhogen zet de cursor in de tekst van de mail. */
+  const [bodyFocus, setBodyFocus] = useState(0);
+  const bronRef = useRef<HTMLTextAreaElement>(null);
+  const naarTekst = () => {
+    if (modus === "opmaak") setBodyFocus((n) => n + 1);
+    else bronRef.current?.focus();
+  };
 
   /**
    * De focus-val. Escape eerst (de uitweg), daarna de omloop.
@@ -8666,6 +8730,7 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
               placeholder={t("webmail.recipient_placeholder")}
               inputClassName={RECIPIENT_INPUT_CLASS}
               autoFocus={!startInBody}
+              onTab={naarTekst}
             />
           </div>
           <button onClick={() => setShowCcBcc((v) => !v)}
@@ -8796,12 +8861,15 @@ function ErpComposePane({ draft, sending, signature, mailboxes, projecten, onCha
           ariaLabel={t("webmail.editor_placeholder")}
           className="flex-1 min-h-0"
           autoFocus={startInBody}
+          focusSignaal={bodyFocus}
           collapseQuote={quoteInBody && !showQuote}
           basisStijl={huisstijl}
           onAfbeelding={plakAfbeelding}
+          plakKnoppen
         />
       ) : (
         <textarea
+          ref={bronRef}
           value={bron}
           onChange={(e) => zetBron(e.target.value)}
           spellCheck={modus === "markdown"}

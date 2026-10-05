@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   requiredEnv,
   parseArgs,
+  kiesMensen,
   SIGNATURE_GREETING,
   buildSignatureHtml,
   formatIban,
@@ -178,9 +179,31 @@ test("requiredEnv: gooit zonder token en normaliseert de basis-URL", () => {
 });
 
 test("parseArgs: --dry-run en --force", () => {
-  assert.deepEqual(parseArgs([]), { dryRun: false, force: false });
-  assert.deepEqual(parseArgs(["--dry-run"]), { dryRun: true, force: false });
-  assert.deepEqual(parseArgs(["--force", "--dry-run"]), { dryRun: true, force: true });
+  assert.deepEqual(parseArgs([]), { dryRun: false, force: false, bedrijf: "", zonderFunctie: false });
+  assert.deepEqual(parseArgs(["--dry-run"]), { dryRun: true, force: false, bedrijf: "", zonderFunctie: false });
+  assert.deepEqual(parseArgs(["--force", "--dry-run"]), { dryRun: true, force: true, bedrijf: "", zonderFunctie: false });
+});
+
+test("parseArgs: alleen één bedrijf, en zonder functie", () => {
+  assert.deepEqual(
+    parseArgs(["--dry-run", "--bedrijf=3BM Bouwtechniek V.O.F.", "--zonder-functie"]),
+    { dryRun: true, force: false, bedrijf: "3BM Bouwtechniek V.O.F.", zonderFunctie: true },
+  );
+});
+
+test("kiesMensen: met een bedrijf alleen de medewerkers van dat bedrijf", () => {
+  const mensen = [
+    { user: "a@x", employeeCompany: "3BM Bouwtechniek V.O.F." },
+    { user: "b@x", employeeCompany: "3BM Engineering" },
+    { user: "c@x", employeeCompany: "" }, // geen medewerkerskaart (AI-, service- of extern account)
+  ];
+  assert.deepEqual(kiesMensen(mensen, "3BM Bouwtechniek V.O.F.").map((m) => m.user), ["a@x"]);
+  assert.deepEqual(kiesMensen(mensen, "").map((m) => m.user), ["a@x", "b@x", "c@x"]);
+});
+
+test("buildSignatureHtml: zonder functie valt de functieregel weg", () => {
+  const html = buildSignatureHtml({ ...FULL_PERSON, designation: "" });
+  assert.ok(!html.includes(FULL_PERSON.designation));
 });
 
 /* ───────────────────────────── HTML-opbouw ───────────────────────────── */
@@ -303,6 +326,23 @@ test("buildSignatureHtml: de KvK/BTW/IBAN-regel toont alleen wat bekend is", () 
   // Een KvK-nummer zonder label krijgt het label erbij; mét label niet dubbel.
   assert.match(buildSignatureHtml({ fullName: "X", registration: "99480697" }), />KvK 99480697</);
   assert.match(buildSignatureHtml({ fullName: "X", taxId: "BTW NL1B01" }), />BTW NL1B01</);
+});
+
+test("buildSignatureHtml: uit een geplakt KvK-uittreksel komt alleen het KvK-nummer", () => {
+  // Zo staat het in `Company.registration_details` bij een bedrijf waar het
+  // hele uittreksel is geplakt — met een oud bezoekadres erin.
+  const uittreksel = "KvK-nummer 85083054\nSamenwerkingsverband\n    RSIN 863502052\n"
+    + "Vestiging\n    Vestigingsnummer 000011781289\n    Bezoekadres Wattstraat 17, 3335LV Zwijndrecht\n    Telefoonnummer 0787400252";
+  const html = buildSignatureHtml({ fullName: "X", registration: uittreksel });
+  assert.match(html, />KvK 85083054</);
+  assert.ok(!html.includes("Wattstraat"));
+  assert.ok(!html.includes("RSIN"));
+  assert.ok(!html.includes("000011781289"));
+  // Varianten van het label.
+  assert.match(buildSignatureHtml({ fullName: "X", registration: "KvK: 99480697" }), />KvK 99480697</);
+  assert.match(buildSignatureHtml({ fullName: "X", registration: "kvk nr. 99480697" }), />KvK 99480697</);
+  // Tekst zonder herkenbaar KvK-nummer: dan liever geen KvK-regel dan een lap tekst.
+  assert.ok(!buildSignatureHtml({ fullName: "X", registration: "Ingeschreven bij de Kamer van Koophandel" }).includes("KvK"));
 });
 
 test("buildSignatureHtml: escapet naam en adres — geen HTML-injectie via ERPNext-data", () => {

@@ -138,6 +138,17 @@ import {
   reactieQuery,
   reactieUitLink,
 } from "./berichten-reacties.ts";
+import {
+  geldigVoorAfzender,
+  groepSleutel,
+  groepUitLink,
+  ontvangersVan,
+  schoneLeden,
+  schoneNaam,
+  zetGroepInQuery,
+  type Gebeurtenis,
+  type Groep,
+} from "./berichten-groepen.ts";
 
 /** Het doctype waar alles op draait. Eén constante zodat tests niet gokken. */
 export const MESSAGE_DOCTYPE = "Notification Log";
@@ -238,6 +249,16 @@ export interface ErpMessage {
   sleutel: string;
   /** Gezet als dit geen bericht is maar een like, of het intrekken ervan. */
   reactie?: { sleutel: string; aan: boolean };
+  /**
+   * Gezet bij een groepsbericht: de groep zoals dit bericht hem beschrijft.
+   * `counterpart` is dan de groepssleutel (`groep:<id>`) en niet een persoon;
+   * wie het schreef staat in `afzender`. Zie `lib/berichten-groepen.ts`.
+   */
+  groep?: Groep;
+  /** Een groepsbericht zonder tekst dat iets aan de groep verandert. */
+  gebeurtenis?: Gebeurtenis;
+  /** Bij een groepsbericht: wie het schreef (jij, of een ander lid). */
+  afzender?: string;
 }
 
 /** Alle berichten met één collega, plus wat de gesprekslijst moet tonen. */
@@ -260,6 +281,12 @@ export interface ErpMessageThread {
   lastHasImage: boolean;
   /** Aantal ongelezen ontvangen berichten in dit gesprek. */
   unread: number;
+  /** Bij een groepsgesprek: de groep zoals het nieuwste bericht hem beschrijft. */
+  groep?: Groep;
+  /** Bij een groepsgesprek: wie het nieuwste bericht schreef. */
+  lastAfzender?: string;
+  /** Bij een groepsgesprek: of het nieuwste bericht een groepsgebeurtenis is. */
+  lastGebeurtenis?: Gebeurtenis;
 }
 
 /** Een collega die als ontvanger gekozen kan worden. */
@@ -368,12 +395,19 @@ export function isSafeFileUrl(url: string): boolean {
 }
 
 /** Bouwt de `link`-waarde: het merk, plus optioneel het pad naar de afbeelding. */
-export function buildMessageLink(fileUrl?: string, sleutel?: string): string {
+export function buildMessageLink(
+  fileUrl?: string,
+  sleutel?: string,
+  groep?: Groep,
+  gebeurtenis?: Gebeurtenis,
+): string {
   const query = new URLSearchParams();
   if (fileUrl) query.set(MESSAGE_IMAGE_PARAM, fileUrl);
   // De gedeelde sleutel staat in beide kopieën, zodat een like van de één bij
   // de ander op hetzelfde bericht landt.
   if (sleutel) query.set(SLEUTEL_PARAM, sleutel);
+  // Een groepsbericht draagt de groep zelf mee; zie `lib/berichten-groepen.ts`.
+  if (groep) zetGroepInQuery(query, groep, gebeurtenis);
   const rest = query.toString();
   return rest ? `${MESSAGE_LINK}?${rest}` : MESSAGE_LINK;
 }
@@ -452,8 +486,23 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
   }
 
   const html = toStr(row.email_content);
-  const body = html ? htmlToText(html) : toStr(row.subject);
   const image = parseImageFromLink(link);
+
+  // Een groepsbericht telt alleen als de afzender zelf in de groep staat. De
+  // afzender is `owner` en dus niet te vervalsen; klopt het niet, dan is het
+  // gewoon een bericht van die persoon aan jou.
+  const groepInfo = groepUitLink(link);
+  const geldig = groepInfo && (outgoing || geldigVoorAfzender(groepInfo.groep, owner)) ? groepInfo : null;
+  const gebeurtenis = geldig?.gebeurtenis;
+  // Wie de groep verlaat, stuurt de ledenlijst mét zichzelf mee — zo kan elke
+  // ontvanger nagaan dat hij lid was. Na het verlaten hoort hij er niet meer in.
+  const groep = geldig && gebeurtenis === "verlaten"
+    ? { ...geldig, groep: { ...geldig.groep, leden: geldig.groep.leden.filter((l) => l !== (outgoing ? me : owner)) } }
+    : geldig;
+  // Een gebeurtenis heeft geen eigen tekst; wat er in `subject` staat is
+  // alleen voor de bel in ERPNext.
+  const body = gebeurtenis ? "" : html ? htmlToText(html) : toStr(row.subject);
+
   const sleutel = berichtSleutel({
     link,
     afzender: outgoing ? me : counterpart,
@@ -465,13 +514,15 @@ export function rowToMessage(row: NotificationLogRow, me: string): ErpMessage | 
 
   return {
     name,
-    counterpart,
+    counterpart: groep ? groepSleutel(groep.groep.id) : counterpart,
     direction: outgoing ? "out" : "in",
     body,
     createdAt,
     read: Number(row.read) === 1,
     sleutel,
     ...(image ? { image } : {}),
+    ...(groep ? { groep: groep.groep, afzender: outgoing ? me : owner } : {}),
+    ...(gebeurtenis ? { gebeurtenis } : {}),
   };
 }
 
@@ -554,14 +605,21 @@ export function groupThreads(
   const threads: ErpMessageThread[] = [];
   for (const [counterpart, bucket] of byCounterpart) {
     const sorted = [...bucket].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // De groep is wat het nieuwste bericht erover zegt: een naamswijziging of
+    // een nieuw lid staat daarmee meteen goed in de lijst.
+    const groep = sorted.find((m) => m.groep)?.groep;
+    const nieuwste = sorted[0];
     threads.push({
       counterpart,
-      counterpartName: displayNames[counterpart] || counterpart,
+      counterpartName: groep?.naam || displayNames[counterpart] || counterpart,
       messages: sorted,
-      lastBody: previewOf(sorted[0]?.body || ""),
-      lastAt: sorted[0]?.createdAt || "",
-      lastHasImage: Boolean(sorted[0]?.image),
+      lastBody: previewOf(nieuwste?.body || ""),
+      lastAt: nieuwste?.createdAt || "",
+      lastHasImage: Boolean(nieuwste?.image),
       unread: sorted.filter((m) => m.direction === "in" && !m.read).length,
+      ...(groep ? { groep } : {}),
+      ...(groep && nieuwste?.afzender ? { lastAfzender: nieuwste.afzender } : {}),
+      ...(groep && nieuwste?.gebeurtenis ? { lastGebeurtenis: nieuwste.gebeurtenis } : {}),
     });
   }
 
@@ -837,6 +895,126 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
   invalidateCache(MESSAGE_DOCTYPE);
 }
 
+/** Niet bij iedereen in de groep bezorgd; `mislukt` zegt bij wie niet. */
+export class GroepBezorgFout extends Error {
+  mislukt: string[];
+  constructor(mislukt: string[]) {
+    super(`Niet bezorgd bij: ${mislukt.join(", ")}`);
+    this.name = "GroepBezorgFout";
+    this.mislukt = mislukt;
+  }
+}
+
+/** Wat een groepsgebeurtenis in de bel van ERPNext laat zien. */
+function gebeurtenisOnderwerp(groep: Groep, gebeurtenis: Gebeurtenis): string {
+  const naam = schoneNaam(groep.naam);
+  if (gebeurtenis === "aangemaakt") return `Nieuwe groep: ${naam}`;
+  if (gebeurtenis === "verlaten") return `Iemand heeft de groep ${naam} verlaten`;
+  return `Groep ${naam} is gewijzigd`;
+}
+
+/**
+ * Een bericht aan een groep: één kopie per lid, plus je eigen verzonden kopie.
+ *
+ * Werkt als `sendMessage`, maar dan voor meerdere ontvangers. Elke kopie
+ * draagt de groep mee in zijn `link`, zodat hij bij elk lid in hetzelfde
+ * gesprek belandt. Een afbeelding wordt per ontvanger geüpload: een bestand in
+ * Frappe hangt aan één document, en alleen wie dat document mag lezen, mag het
+ * bestand zien. Frappe bewaart gelijke inhoud maar één keer op schijf.
+ *
+ * `gebeurtenis` maakt er een groepsgebeurtenis van (aangemaakt, gewijzigd,
+ * verlaten) — zonder tekst. `ontvangers` overschrijft wie het krijgt: bij een
+ * wijziging ook de mensen die eruit gaan.
+ *
+ * Lukt het bij één of meer leden niet, dan gaat de rest gewoon door en volgt
+ * er daarna een `GroepBezorgFout` met de namen. Opnieuw versturen zou de
+ * anderen een dubbel bericht bezorgen.
+ */
+export async function sendGroupMessage(
+  groep: Groep,
+  text: string,
+  image?: File,
+  gebeurtenis?: Gebeurtenis,
+  ontvangers?: string[],
+): Promise<void> {
+  const me = await resolveSessionUser();
+  if (!me) throw new Error("Geen ERPNext-sessie");
+
+  const body = gebeurtenis ? "" : text.trim();
+  if (!gebeurtenis && !body && !image) return;
+  if (image && checkImage(image)) throw new Error("Afbeelding is niet toegestaan");
+
+  const schoon: Groep = { id: groep.id, naam: schoneNaam(groep.naam), leden: schoneLeden(groep.leden) };
+  const aan = schoneLeden(ontvangers ?? ontvangersVan(schoon, me)).filter((lid) => lid !== me);
+  if (aan.length === 0) throw new Error("De groep heeft geen andere leden");
+
+  const shared = {
+    type: MESSAGE_TYPE,
+    document_type: MESSAGE_DOCUMENT_TYPE,
+    subject: gebeurtenis ? gebeurtenisOnderwerp(schoon, gebeurtenis) : previewOf(body),
+    email_content: textToHtml(body),
+    from_user: me,
+  };
+  const sleutel = nieuweSleutel();
+  const mislukt: string[] = [];
+  let beeldMislukt = false;
+  let eigenBeeld: string | undefined;
+
+  for (const lid of aan) {
+    let kopie: { name?: string } | null = null;
+    try {
+      kopie = await createDocument<{ name?: string }>(MESSAGE_DOCTYPE, {
+        ...shared,
+        for_user: lid,
+        document_name: me,
+        read: 0,
+        link: buildMessageLink(undefined, sleutel, schoon, gebeurtenis),
+      });
+    } catch {
+      mislukt.push(lid);
+      continue;
+    }
+    if (!image) continue;
+    try {
+      const kopieNaam = toStr(kopie?.name);
+      if (!kopieNaam) throw new Error("Geen docname teruggekregen");
+      const uploaded = await uploadFile(image, MESSAGE_DOCTYPE, kopieNaam, true, {
+        optimize: true,
+        maxWidth: IMAGE_MAX_DIMENSION,
+        maxHeight: IMAGE_MAX_DIMENSION,
+      });
+      const fileUrl = toStr(uploaded?.file_url);
+      if (!isSafeFileUrl(fileUrl)) throw new Error(`Onverwachte bestands-URL: ${fileUrl}`);
+      await updateDocument(MESSAGE_DOCTYPE, kopieNaam, {
+        link: buildMessageLink(fileUrl, sleutel, schoon, gebeurtenis),
+      });
+      // Jij bent de eigenaar van elk van deze bestanden; één ervan is genoeg
+      // voor je eigen kopie.
+      eigenBeeld ??= fileUrl;
+    } catch {
+      beeldMislukt = true;
+    }
+  }
+
+  if (mislukt.length < aan.length) {
+    try {
+      await createDocument(MESSAGE_DOCTYPE, {
+        ...shared,
+        for_user: me,
+        document_name: groepSleutel(schoon.id),
+        read: 1,
+        link: buildMessageLink(eigenBeeld, sleutel, schoon, gebeurtenis),
+      });
+    } catch {
+      // Bewust stil, net als bij `sendMessage`: bezorgd is bezorgd.
+    }
+  }
+
+  invalidateCache(MESSAGE_DOCTYPE);
+  if (mislukt.length > 0) throw new GroepBezorgFout(mislukt);
+  if (beeldMislukt) throw new MessageImageError("Afbeelding niet bij iedereen aangekomen");
+}
+
 /**
  * Een bericht liken, of de like intrekken.
  *
@@ -846,10 +1024,11 @@ export async function sendMessage(to: string, text: string, image?: File): Promi
  * een nieuwe like met stand "uit": `Notification Log` geeft de rol `Employee`
  * geen `delete`, en per persoon telt de laatste stand (zie `likesPerBericht`).
  */
-export async function sendReaction(to: string, sleutel: string, aan: boolean): Promise<void> {
+export async function sendReaction(to: string, sleutel: string, aan: boolean, groep?: Groep): Promise<void> {
   const me = await resolveSessionUser();
   if (!me) throw new Error("Geen ERPNext-sessie");
   if (!to || !sleutel) return;
+  if (groep) return sendGroepReactie(me, groep, sleutel, aan);
 
   const shared = {
     type: MESSAGE_TYPE,
@@ -863,6 +1042,29 @@ export async function sendReaction(to: string, sleutel: string, aan: boolean): P
 
   await createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: to, document_name: me });
   await createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: me, document_name: to });
+  invalidateCache(MESSAGE_DOCTYPE);
+}
+
+/**
+ * Een like in een groep: bij elk lid een kopie, zodat iedereen hem ziet.
+ * Geen groepsgegevens in de link — een like hoort bij een bericht, niet bij
+ * een gesprek, en `likesPerBericht` telt per persoon.
+ */
+async function sendGroepReactie(me: string, groep: Groep, sleutel: string, aan: boolean): Promise<void> {
+  const shared = {
+    type: MESSAGE_TYPE,
+    document_type: MESSAGE_DOCUMENT_TYPE,
+    subject: aan ? "👍" : "👍 ingetrokken",
+    email_content: "",
+    from_user: me,
+    link: `${MESSAGE_LINK}?${reactieQuery(sleutel, aan)}`,
+    read: 1,
+  };
+  await Promise.allSettled(
+    ontvangersVan(groep, me).map((lid) =>
+      createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: lid, document_name: me })),
+  );
+  await createDocument(MESSAGE_DOCTYPE, { ...shared, for_user: me, document_name: groepSleutel(groep.id) });
   invalidateCache(MESSAGE_DOCTYPE);
 }
 
