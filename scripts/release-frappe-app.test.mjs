@@ -28,11 +28,12 @@ test("de app gaat naar de eigen repository, op de branch van ERPNext 16", () => 
 
 test("parseArgs: doel, en publiceren alleen met de vlag", () => {
   assert.deepEqual(parseArgs(["--doel", "../y_next"]), {
-    doel: "../y_next", publiceer: false, zonderTests: false, zonderBouw: false, trailer: "",
+    doel: "../y_next", publiceer: false, zonderTests: false, zonderBouw: false, trailer: "", notities: "",
   });
-  assert.deepEqual(parseArgs(["--doel=uit", "--publiceer", "--zonder-tests", "--zonder-bouw", "--trailer", "Regel"]), {
-    doel: "uit", publiceer: true, zonderTests: true, zonderBouw: true, trailer: "Regel",
+  assert.deepEqual(parseArgs(["--doel=uit", "--publiceer", "--zonder-tests", "--zonder-bouw", "--trailer", "Regel", "--notities", "n.md"]), {
+    doel: "uit", publiceer: true, zonderTests: true, zonderBouw: true, trailer: "Regel", notities: "n.md",
   });
+  assert.equal(parseArgs(["--doel", "uit", "--notities=uit/n.md"]).notities, "uit/n.md");
 });
 
 test("parseArgs: zonder doel is er niets om samen te stellen", () => {

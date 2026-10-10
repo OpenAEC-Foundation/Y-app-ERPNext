@@ -458,7 +458,7 @@ export default function InstanceTabBar({
           <div className="relative bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg space-y-4">
             <h3 className="text-lg font-semibold text-slate-800">{t("instance_bar.feedback_title", { defaultValue: "Send feedback" })}</h3>
             <p className="text-xs text-slate-500">
-              {t("instance_bar.feedback_description_prefix", { defaultValue: "Opens a new issue on" })} <span className="font-mono">OpenAEC-Foundation/y-app</span>.
+              {t("instance_bar.feedback_description_prefix", { defaultValue: "Opens a new issue on" })} <span className="font-mono">OpenAEC-Foundation/Y-app-ERPNext</span>.
               {" "}{t("instance_bar.feedback_github_needed", { defaultValue: "You need a GitHub account." })}
             </p>
 
@@ -514,7 +514,7 @@ export default function InstanceTabBar({
                   const prefix = fbType === "bug" ? "[Bug] " : fbType === "feature" ? "[Feature] " : t("instance_bar.github_prefix_question", { defaultValue: "[Question] " });
                   const meta = `\n\n---\n*${new Date().toLocaleDateString("nl-NL")}*`;
                   const body = (fbBody || "") + meta;
-                  const url = new URL("https://github.com/OpenAEC-Foundation/y-app/issues/new");
+                  const url = new URL("https://github.com/OpenAEC-Foundation/Y-app-ERPNext/issues/new");
                   url.searchParams.set("title", prefix + fbTitle);
                   url.searchParams.set("body", body);
                   url.searchParams.set("labels", labels);

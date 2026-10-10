@@ -27,6 +27,8 @@
  *   --zonder-tests   slaat stap 1 over (alleen om het samenstellen te proeven)
  *   --zonder-bouw    gebruikt de bundel die er al staat
  *   --trailer <r>    extra regel onder het commitbericht
+ *   --notities <b>   bestand met de tekst van de GitHub-release; zonder maakt
+ *                    GitHub de tekst uit de commits
  *
  * De Python-tests draaien op een bench en niet vanuit dit script; zie
  * docs/frappe-app.md.
@@ -43,7 +45,7 @@ export const DOELBRANCH = "version-16";
 
 /** Leest de vlaggen. `--doel` is verplicht. */
 export function parseArgs(argv) {
-  const uit = { doel: "", publiceer: false, zonderTests: false, zonderBouw: false, trailer: "" };
+  const uit = { doel: "", publiceer: false, zonderTests: false, zonderBouw: false, trailer: "", notities: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--publiceer") uit.publiceer = true;
@@ -53,6 +55,8 @@ export function parseArgs(argv) {
     else if (arg.startsWith("--doel=")) uit.doel = arg.slice("--doel=".length);
     else if (arg === "--trailer") uit.trailer = argv[(i += 1)] || "";
     else if (arg.startsWith("--trailer=")) uit.trailer = arg.slice("--trailer=".length);
+    else if (arg === "--notities") uit.notities = argv[(i += 1)] || "";
+    else if (arg.startsWith("--notities=")) uit.notities = arg.slice("--notities=".length);
   }
   if (!uit.doel) {
     throw new Error("Geef met --doel de checkout van de distributierepository op.");
@@ -142,6 +146,10 @@ function main() {
   const doel = resolvePath(args.doel);
   const versie = leesVersie();
   const tag = `v${versie}`;
+  const notities = args.notities ? resolvePath(args.notities) : "";
+  if (notities && !existsSync(notities)) {
+    throw new Error(`Het bestand met de releasetekst bestaat niet: ${notities}`);
+  }
 
   if (draai("git", ["status", "--porcelain"], ROOT, { stil: true }).trim()) {
     throw new Error("De werkmap is niet schoon. Leg eerst alles vast; een release komt uit een vastgelegde stand.");
@@ -192,7 +200,8 @@ function main() {
     return;
   }
   draai("git", ["push", "origin", DOELBRANCH, tag], doel);
-  draai("gh", ["release", "create", tag, "--repo", DOELREPO, "--title", `Y-next ${versie}`, "--generate-notes"], doel);
+  const tekst = notities ? ["--notes-file", notities] : ["--generate-notes"];
+  draai("gh", ["release", "create", tag, "--repo", DOELREPO, "--title", `Y-next ${versie}`, ...tekst], doel);
   console.log(`Gepubliceerd: ${DOELREPO} ${tag}.`);
 }
 

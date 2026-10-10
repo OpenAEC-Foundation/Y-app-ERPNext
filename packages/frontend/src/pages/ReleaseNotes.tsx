@@ -6,6 +6,38 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.40.0",
+    date: "2026-10-10",
+    url: "",
+    sections: [
+      {
+        title: "Y-next als app voor ERPNext",
+        items: [
+          "Y-next is nu een app die je op een eigen ERPNext 16-site installeert. De app brengt haar eigen velden, rechten en instellingen mee; er hoeft niets met de hand te worden ingericht.",
+          "Op een site met alleen ERPNext werkt alles wat geen extra app nodig heeft. Verlof, declaraties en de kennisbank verschijnen vanzelf zodra HRMS of Wiki is geïnstalleerd.",
+          "Agenda, afwezigheid, uitnodigingen en het verwijderen van mail lopen via de mailserver zodra de beheerder die heeft ingesteld.",
+        ],
+      },
+      {
+        title: "Ondertekening met de huisstijl van je bedrijf",
+        items: [
+          "De ondertekening onder je mail komt uit ERPNext: naam, telefoon en foto van jou, en logo, website en adres van het bedrijf.",
+          "Bij het bedrijf vult de beheerder de huisstijl in: handelsnaam, groet, kleuren en LinkedIn. Zonder huisstijl is de ondertekening neutraal en gaat je eigen handtekening voor.",
+          "Een postbus kan aan een bedrijf gekoppeld worden. Wie vanuit die postbus schrijft, ondertekent met dat bedrijf.",
+        ],
+      },
+      {
+        title: "Verbeterd",
+        items: [
+          "Bij een factuur kies je uit de afdrukformaten van je eigen site; het ingestelde formaat staat vooraan.",
+          "Welke postbussen gedeeld zijn, stelt de beheerder in.",
+          "Een afspraak die je in de agenda maakt, draagt het adres van je eigen site.",
+          "Feedback en de lijst met wijzigingen verwijzen naar de juiste plek op GitHub.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.39.5",
     date: "2026-10-09",
     url: "",

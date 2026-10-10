@@ -1210,7 +1210,7 @@ export default function SettingsPage() {
                   </button>
                 )}
                 <a
-                  href="https://github.com/rickd/y-app/blob/main/CHANGELOG.md"
+                  href="https://github.com/OpenAEC-Foundation/y_next/releases"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700"

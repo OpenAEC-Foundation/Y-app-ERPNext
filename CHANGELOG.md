@@ -8,6 +8,25 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
+## v0.40.0 — 2026-10-10
+
+### Y-next als installeerbare Frappe-app
+- Y-next is nu een Frappe-app (`y_next`) voor ERPNext 16. De app staat in `frappe-app/`; `scripts/release-frappe-app.mjs` stelt de distributierepository samen.
+- De app brengt haar eigen doctypes, velden, rechten en stamgegevens mee (`frappe-app/y_next/setup/`) en werkt op een site met alleen ERPNext. HRMS en Wiki gaan aan zodra ze geïnstalleerd zijn.
+- De serverfuncties staan in `frappe-app/y_next/api/`: postbussen, mail, agenda, berichten, mailserver (agenda, afwezigheid, uitnodigingen, verwijderen, iCal-abonnement) en kilometers via de reisaanvraag.
+- De pagina geeft mee wat de site heeft (`window.y_next_mogelijkheden`); onderdelen zonder hun voorwaarde blijven verborgen en geven geen mislukt verzoek.
+
+### Ondertekening uit ERPNext
+- De huisstijl komt uit velden op `Company` (handelsnaam, groet, kleuren, LinkedIn) plus logo en website. Zonder huisstijl een neutrale ondertekening; de eigen handtekening van de gebruiker gaat dan voor.
+- `Email Account.custom_company` bepaalt met welk bedrijf een postbus ondertekent.
+- Serverfunctie `ondertekening_gegevens` geeft bedrijf, vestigingsadres en de handtekening van een toegewezen postbus.
+
+### Generiek
+- Geen vaste gegevens van één organisatie meer: afdrukformaten komen van de site, gedeelde postbussen uit de instelling `gedeelde-postbussen`, de extensiecatalogus is leeg.
+- `scripts/lib/generiek-check.mjs` bewaakt dit in `npm test` en bij een release.
+- De scripts van de publicatieroute hebben geen standaardsite meer: `YNEXT_BASE_URL` is verplicht.
+- Feedback en de lijst met wijzigingen verwijzen naar de bronrepository en naar de releases van de app.
+
 ## v0.39.5 — 2026-10-09
 
 ### Mail: afbeeldingen bekijken

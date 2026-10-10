@@ -1233,7 +1233,7 @@ export function getAutocompleteSuggestions(input: string): MatchResult[] {
 
 /** Build the GitHub issue URL for an unmatched prompt */
 export function buildUnmatchedIssueUrl(prompt: string): string {
-  const url = new URL("https://github.com/OpenAEC-Foundation/y-app/issues/new");
+  const url = new URL("https://github.com/OpenAEC-Foundation/Y-app-ERPNext/issues/new");
   url.searchParams.set("title", `[Intent] Onherkenbaar commando: "${prompt.slice(0, 80)}"`);
   url.searchParams.set("body", `## Onherkend commando\n\n\`\`\`\n${prompt}\n\`\`\`\n\nDit commando werd niet herkend door de Open AEC Assistent.\n\n**Verwachte actie:** _Beschrijf wat je verwachtte dat er zou gebeuren_\n\n---\n*Automatisch aangemaakt vanuit Y-app*`);
   url.searchParams.set("labels", "enhancement,intent-request");
