@@ -14,6 +14,21 @@ required_apps = ["erpnext"]
 after_install = "y_next.setup.install.after_install"
 after_migrate = "y_next.setup.install.after_migrate"
 
+# De frontend roept de serverfuncties aan onder een korte naam
+# (/api/method/mijn_postbussen). Frappe past deze tabel toe vóórdat het naar
+# Server Scripts kijkt, dus de app-code gaat voor op een script met dezelfde
+# naam.
+override_whitelisted_methods = {
+	"mijn_postbussen": "y_next.api.postbussen.mijn_postbussen",
+	"mail_bijwerken": "y_next.api.mail.mail_bijwerken",
+	"mail_ophalen": "y_next.api.mail.mail_ophalen",
+	"agenda_collegas": "y_next.api.agenda.agenda_collegas",
+	"berichten_collegas": "y_next.api.berichten.berichten_collegas",
+	"berichten_foto": "y_next.api.berichten.berichten_foto",
+	"berichten_verwijderen": "y_next.api.berichten.berichten_verwijderen",
+	"y_next_mogelijkheden": "y_next.api.mogelijkheden.y_next_mogelijkheden",
+}
+
 add_to_apps_screen = [
 	{
 		"name": "y_next",
