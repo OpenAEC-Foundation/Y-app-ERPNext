@@ -1,0 +1,114 @@
+[
+ {
+  "doctype": "Communication",
+  "role": "Projects User",
+  "permlevel": 0,
+  "ptype": "write",
+  "value": 1
+ },
+ {
+  "doctype": "Communication",
+  "role": "System Manager",
+  "permlevel": 0,
+  "ptype": "write",
+  "value": 1
+ },
+ {
+  "doctype": "Communication",
+  "role": "Projects User",
+  "permlevel": 0,
+  "ptype": "delete",
+  "value": 1
+ },
+ {
+  "doctype": "Communication",
+  "role": "System Manager",
+  "permlevel": 0,
+  "ptype": "delete",
+  "value": 1
+ },
+ {
+  "doctype": "ToDo",
+  "role": "Projects User",
+  "permlevel": 0,
+  "ptype": "delete",
+  "value": 1
+ },
+ {
+  "doctype": "ToDo",
+  "role": "System Manager",
+  "permlevel": 0,
+  "ptype": "delete",
+  "value": 1
+ },
+ {
+  "doctype": "Travel Request",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "read",
+  "value": 1
+ },
+ {
+  "doctype": "Travel Request",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "write",
+  "value": 1
+ },
+ {
+  "doctype": "Travel Request",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "create",
+  "value": 1
+ },
+ {
+  "doctype": "Leave Application",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "read",
+  "value": 1
+ },
+ {
+  "doctype": "Leave Application",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "write",
+  "value": 1
+ },
+ {
+  "doctype": "Leave Application",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "create",
+  "value": 1
+ },
+ {
+  "doctype": "Leave Allocation",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "read",
+  "value": 1
+ },
+ {
+  "doctype": "Expense Claim",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "read",
+  "value": 1
+ },
+ {
+  "doctype": "Expense Claim",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "write",
+  "value": 1
+ },
+ {
+  "doctype": "Expense Claim",
+  "role": "Employee",
+  "permlevel": 0,
+  "ptype": "create",
+  "value": 1
+ }
+]

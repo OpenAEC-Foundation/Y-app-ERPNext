@@ -65,3 +65,107 @@ class TestEigenDoctypes(IntegrationTestCase):
 		)
 		self.assertEqual(meta.get_field("service_password").fieldtype, "Password")
 		self.assertEqual({rij.role for rij in meta.permissions}, {"System Manager"})
+
+
+class TestInrichting(IntegrationTestCase):
+	"""Wat de app naast de eigen doctypes op een site inricht."""
+
+	def test_eigen_velden_bestaan(self):
+		from y_next.setup import install
+
+		aantal = 0
+		for doctype, velden in install.load("custom_fields.json").items():
+			meta = frappe.get_meta(doctype)
+			for veld in velden:
+				with self.subTest(veld=f"{doctype}.{veld['fieldname']}"):
+					gevonden = meta.get_field(veld["fieldname"])
+					self.assertIsNotNone(gevonden)
+					self.assertEqual(gevonden.fieldtype, veld["fieldtype"])
+					# Het is een veld van de app en geen veld dat ERPNext zelf al had.
+					self.assertTrue(
+						frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": veld["fieldname"]})
+					)
+					aantal += 1
+		self.assertEqual(aantal, 15)
+
+	def test_velden_staan_achter_een_bestaand_veld(self):
+		from y_next.setup import install
+
+		for doctype, velden in install.load("custom_fields.json").items():
+			meta = frappe.get_meta(doctype)
+			for veld in velden:
+				with self.subTest(veld=f"{doctype}.{veld['fieldname']}"):
+					self.assertTrue(meta.has_field(veld["insert_after"]))
+
+	def test_rechten_op_bestaande_doctypes(self):
+		from y_next.setup import install
+
+		toegepast = 0
+		for regel in install.load("permissions.json"):
+			if not frappe.db.exists("DocType", regel["doctype"]):
+				continue
+			with self.subTest(regel=regel):
+				waarde = frappe.db.get_value(
+					"Custom DocPerm",
+					{
+						"parent": regel["doctype"],
+						"role": regel["role"],
+						"permlevel": regel["permlevel"],
+						"if_owner": 0,
+					},
+					regel["ptype"],
+				)
+				self.assertEqual(waarde, regel["value"])
+				toegepast += 1
+		# Communication en ToDo bestaan altijd; de regels voor HRMS alleen met die app.
+		self.assertGreaterEqual(toegepast, 6)
+
+	def test_stamgegevens(self):
+		from y_next.setup import install
+
+		for record in install.load("master_records.json"):
+			if not frappe.db.exists("DocType", record["doctype"]):
+				continue
+			with self.subTest(record=record["name"]):
+				self.assertTrue(frappe.db.exists(record["doctype"], record["name"]))
+		self.assertEqual(frappe.db.get_value("Y Next Setting", "km-tarief", "setting_value"), "0.23")
+
+	def test_aangepast_tarief_overleeft_een_migratie(self):
+		from y_next.setup import install
+
+		self.addCleanup(frappe.db.rollback)
+		frappe.db.set_value("Y Next Setting", "km-tarief", "setting_value", "0.25")
+		install.sync_master_records()
+		self.assertEqual(frappe.db.get_value("Y Next Setting", "km-tarief", "setting_value"), "0.25")
+
+	def test_opnieuw_toepassen_verandert_niets(self):
+		from y_next.setup import install
+
+		def tel():
+			return (
+				frappe.db.count("Custom Field"),
+				frappe.db.count("Custom DocPerm"),
+				frappe.db.count("Y Onkostensoort"),
+				frappe.db.count("Y Next Setting"),
+			)
+
+		voor = tel()
+		install.sync_all()
+		install.sync_all()
+		self.assertEqual(tel(), voor)
+
+	def test_onbekend_doctype_of_onbekende_rol_wordt_overgeslagen(self):
+		from y_next.setup import install
+
+		install.sync_custom_fields(
+			{"Bestaat Niet": [{"fieldname": "custom_x", "label": "X", "fieldtype": "Data", "insert_after": "y"}]}
+		)
+		install.sync_permissions(
+			[
+				{"doctype": "Bestaat Niet", "role": "Employee", "permlevel": 0, "ptype": "read", "value": 1},
+				{"doctype": "ToDo", "role": "Bestaat Niet", "permlevel": 0, "ptype": "read", "value": 1},
+			]
+		)
+		install.sync_master_records([{"doctype": "Bestaat Niet", "name": "x", "payload": {"name": "x"}}])
+		self.assertFalse(frappe.db.exists("Custom Field", {"dt": "Bestaat Niet"}))
+		self.assertFalse(frappe.db.exists("Custom DocPerm", {"parent": "ToDo", "role": "Bestaat Niet"}))

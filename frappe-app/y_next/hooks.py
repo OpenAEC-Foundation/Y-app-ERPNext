@@ -9,6 +9,11 @@ app_license = "mit"
 # wat deze app zelf meebrengt; al het andere is een optionele koppeling.
 required_apps = ["erpnext"]
 
+# Velden, rechten en stamgegevens. Ook na elke migratie, zodat een definitie
+# voor een later geïnstalleerde app alsnog wordt toegepast.
+after_install = "y_next.setup.install.after_install"
+after_migrate = "y_next.setup.install.after_migrate"
+
 add_to_apps_screen = [
 	{
 		"name": "y_next",

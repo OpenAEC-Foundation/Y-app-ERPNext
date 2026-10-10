@@ -1,0 +1,60 @@
+[
+ {
+  "doctype": "UTM Source",
+  "name": "Email",
+  "payload": {
+   "name": "Email",
+   "source_name": "Email",
+   "details": "Binnengekomen via e-mail (Y-next mailherkenning).",
+   "description": "Binnengekomen via e-mail (Y-next mailherkenning)."
+  }
+ },
+ {
+  "doctype": "Y Onkostensoort",
+  "name": "Reiskosten",
+  "payload": {
+   "soort_naam": "Reiskosten",
+   "actief": 1
+  }
+ },
+ {
+  "doctype": "Y Onkostensoort",
+  "name": "Parkeren",
+  "payload": {
+   "soort_naam": "Parkeren",
+   "actief": 1
+  }
+ },
+ {
+  "doctype": "Y Onkostensoort",
+  "name": "Materiaal",
+  "payload": {
+   "soort_naam": "Materiaal",
+   "actief": 1
+  }
+ },
+ {
+  "doctype": "Y Onkostensoort",
+  "name": "Verblijf",
+  "payload": {
+   "soort_naam": "Verblijf",
+   "actief": 1
+  }
+ },
+ {
+  "doctype": "Y Onkostensoort",
+  "name": "Overig",
+  "payload": {
+   "soort_naam": "Overig",
+   "actief": 1
+  }
+ },
+ {
+  "doctype": "Y Next Setting",
+  "name": "km-tarief",
+  "payload": {
+   "setting_key": "km-tarief",
+   "setting_value": "0.23"
+  }
+ }
+]

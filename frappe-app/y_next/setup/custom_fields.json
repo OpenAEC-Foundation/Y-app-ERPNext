@@ -1,0 +1,135 @@
+{
+ "Project": [
+  {
+   "fieldname": "custom_customer_reference",
+   "label": "Customer Reference",
+   "fieldtype": "Data",
+   "insert_after": "customer"
+  },
+  {
+   "fieldname": "custom_project_manager",
+   "label": "Project Manager",
+   "fieldtype": "Link",
+   "options": "Employee",
+   "insert_after": "company",
+   "ignore_user_permissions": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "custom_project_manager_company",
+   "label": "Project Manager Company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "insert_after": "custom_project_manager"
+  },
+  {
+   "fieldname": "custom_address",
+   "label": "Address",
+   "fieldtype": "Link",
+   "options": "Address",
+   "insert_after": "column_break_14"
+  }
+ ],
+ "Task": [
+  {
+   "fieldname": "custom_billing_type",
+   "label": "Billing Type",
+   "fieldtype": "Select",
+   "options": "Fixed Price\nTimesheet based\nMilestone based\nProgress based",
+   "insert_after": "is_template"
+  },
+  {
+   "fieldname": "custom_project_manager",
+   "label": "Project Manager",
+   "fieldtype": "Link",
+   "options": "Employee",
+   "insert_after": "closing_date",
+   "fetch_from": "project.custom_project_manager",
+   "ignore_user_permissions": 1
+  }
+ ],
+ "Timesheet Detail": [
+  {
+   "fieldname": "custom_is_billed",
+   "label": "Is Billed",
+   "fieldtype": "Check",
+   "default": "0",
+   "insert_after": "is_billable",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "custom_subject",
+   "label": "Subject",
+   "fieldtype": "Data",
+   "insert_after": "task",
+   "fetch_from": "task.subject",
+   "fetch_if_empty": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_project_manager",
+   "label": "Project Manager",
+   "fieldtype": "Link",
+   "options": "Employee",
+   "insert_after": "custom_subject",
+   "fetch_from": "project.custom_project_manager",
+   "ignore_user_permissions": 1
+  },
+  {
+   "fieldname": "custom_project_manager_company",
+   "label": "Project Manager Company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "insert_after": "custom_project_manager",
+   "fetch_from": "project.custom_project_manager_company"
+  }
+ ],
+ "Sales Invoice": [
+  {
+   "fieldname": "custom_customer_reference",
+   "label": "Customer Reference",
+   "fieldtype": "Data",
+   "insert_after": "company_tax_id",
+   "fetch_from": "project.custom_customer_reference",
+   "fetch_if_empty": 1
+  },
+  {
+   "fieldname": "custom_date_paid",
+   "label": "Date Paid",
+   "fieldtype": "Date",
+   "insert_after": "due_date",
+   "hidden": 1,
+   "allow_on_submit": 1
+  }
+ ],
+ "Quotation": [
+  {
+   "fieldname": "custom_description",
+   "label": "Description",
+   "fieldtype": "Data",
+   "insert_after": "customer_section",
+   "allow_on_submit": 1
+  }
+ ],
+ "Sales Order": [
+  {
+   "fieldname": "custom_description",
+   "label": "Description",
+   "fieldtype": "Data",
+   "insert_after": "column_break0",
+   "allow_on_submit": 1
+  }
+ ],
+ "Company": [
+  {
+   "fieldname": "disabled",
+   "label": "Disabled",
+   "fieldtype": "Check",
+   "default": "0",
+   "insert_after": "abbr",
+   "in_standard_filter": 1,
+   "description": "Hides this company from the pick lists in Y-next. Existing transactions stay."
+  }
+ ]
+}
