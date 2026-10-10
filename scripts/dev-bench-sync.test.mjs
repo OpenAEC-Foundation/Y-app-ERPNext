@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { APP_NAME, benchConfig, prepareScript, ownScript, installScript, migrateScript, isInstalled } from "./dev-bench-sync.mjs";
+import { APP_NAME, benchConfig, prepareScript, ownScript, installScript, migrateScript, isInstalled, pullSource } from "./dev-bench-sync.mjs";
 
 test("benchConfig eist de map van de bench en de site", () => {
   assert.throws(() => benchConfig({}), /YNEXT_BENCH_DIR/);
@@ -39,4 +39,11 @@ test("isInstalled herkent de app in de uitvoer van list-apps", () => {
   assert.equal(isInstalled("frappe  16.51.0\nerpnext 16.50.0\ny_next  0.39.4\n"), true);
   assert.equal(isInstalled("frappe\nerpnext\ny_next_extra 1.0\n"), false);
   assert.equal(APP_NAME, "y_next");
+});
+
+test("pullSource wijst naar de doctypemap van de app op de bench", () => {
+  assert.equal(
+    pullSource({ service: "frappe", benchPath: "/workspace/frappe-bench" }),
+    "frappe:/workspace/frappe-bench/apps/y_next/y_next/y_next/doctype/."
+  );
 });

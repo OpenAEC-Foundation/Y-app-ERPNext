@@ -16,8 +16,14 @@
  * Gebruik:
  *   node scripts/dev-bench-sync.mjs            kopiëren; installeren als dat nog niet gebeurd is
  *   node scripts/dev-bench-sync.mjs --migrate  kopiëren en daarna `bench migrate`
+ *   node scripts/dev-bench-sync.mjs --pull     doctypes van de bench terughalen naar de repository
+ *
+ * `--pull` is er omdat Frappe in ontwikkelmodus een doctype dat je in de Desk
+ * aanmaakt of wijzigt als bestanden in de app op de bench schrijft. Zonder
+ * terughalen gooit de volgende run die bestanden weer weg.
  */
 import { spawnSync } from "node:child_process";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +84,11 @@ export function listAppsScript({ benchPath, site }) {
   return `cd ${benchPath} && bench --site ${site} list-apps`;
 }
 
+/** Waar Frappe in ontwikkelmodus de doctypes van de app neerzet, als bron voor `docker compose cp`. */
+export function pullSource({ service, benchPath }) {
+  return `${service}:${benchPath}/apps/${APP_NAME}/${APP_NAME}/${APP_NAME}/doctype/.`;
+}
+
 /** Staat de app in de uitvoer van `bench list-apps`? */
 export function isInstalled(listAppsOutput) {
   return String(listAppsOutput)
@@ -102,10 +113,29 @@ function inBench(config, script, { root = false, capture = false } = {}) {
   return compose(config, ["exec", "-T", ...user, config.service, "bash", "-lc", script], { capture });
 }
 
+/** Verwijdert de bytecode-mappen die Python op de bench heeft aangemaakt. */
+function removePycache(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const path = join(dir, entry.name);
+    if (entry.name === "__pycache__") rmSync(path, { recursive: true, force: true });
+    else removePycache(path);
+  }
+}
+
 function main() {
   const config = benchConfig(process.env);
   const migrate = process.argv.includes("--migrate");
   const appDir = join(ROOT, "frappe-app");
+
+  if (process.argv.includes("--pull")) {
+    const target = join(appDir, APP_NAME, APP_NAME, "doctype");
+    mkdirSync(target, { recursive: true });
+    compose(config, ["cp", pullSource(config), target]);
+    removePycache(target);
+    console.log(`Doctypes van de bench staan in ${target}.`);
+    return;
+  }
 
   inBench(config, prepareScript(config), { root: true });
   compose(config, ["cp", `${appDir}/.`, `${config.service}:${config.benchPath}/apps/${APP_NAME}`]);

@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "creation": "2026-10-10 13:46:24.406111",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "server_url",
+  "service_account",
+  "service_password"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "Address of the JMAP and CalDAV service of the mail server, for example https://mail.example.com.",
+   "fieldname": "server_url",
+   "fieldtype": "Data",
+   "label": "Mail server URL"
+  },
+  {
+   "description": "Account on the mail server that is allowed to act on behalf of users.",
+   "fieldname": "service_account",
+   "fieldtype": "Data",
+   "label": "Service account"
+  },
+  {
+   "fieldname": "service_password",
+   "fieldtype": "Password",
+   "label": "Service account password"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-10 13:46:24.406111",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Agenda Koppeling",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

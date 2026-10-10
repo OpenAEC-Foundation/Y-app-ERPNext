@@ -1,0 +1,184 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "format:YON-{YYYY}-{#####}",
+ "creation": "2026-10-10 13:46:24.242875",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "datum",
+  "soort",
+  "bedrag",
+  "btw_bedrag",
+  "omschrijving",
+  "project",
+  "leverancier",
+  "status",
+  "goedgekeurd_door",
+  "goedgekeurd_op"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Medewerker",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "datum",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Datum",
+   "reqd": 1
+  },
+  {
+   "fieldname": "soort",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Soort",
+   "options": "Y Onkostensoort",
+   "reqd": 1
+  },
+  {
+   "fieldname": "bedrag",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Bedrag",
+   "reqd": 1
+  },
+  {
+   "fieldname": "btw_bedrag",
+   "fieldtype": "Currency",
+   "label": "Btw-bedrag"
+  },
+  {
+   "fieldname": "omschrijving",
+   "fieldtype": "Small Text",
+   "label": "Omschrijving"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project"
+  },
+  {
+   "fieldname": "leverancier",
+   "fieldtype": "Data",
+   "label": "Leverancier"
+  },
+  {
+   "default": "Concept",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Concept\nIngediend\nGoedgekeurd\nAfgewezen"
+  },
+  {
+   "fieldname": "goedgekeurd_door",
+   "fieldtype": "Link",
+   "label": "Goedgekeurd door",
+   "options": "User",
+   "permlevel": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "goedgekeurd_op",
+   "fieldtype": "Datetime",
+   "label": "Goedgekeurd op",
+   "permlevel": 1,
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-10 13:46:24.242875",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Y Onkosten",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "permlevel": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "permlevel": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "permlevel": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects User",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
