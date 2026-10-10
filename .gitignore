@@ -22,6 +22,7 @@ node_modules/
 **/dist
 dist-ssr
 dist_bak
+frappe-app/y_next/public/app/
 *.local
 
 # Env files (never commit — may contain secrets)
