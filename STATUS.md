@@ -22,7 +22,7 @@ Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwi
 | 5 | Mailserver (6 functies, instelling, testmailserver) | de zes functies staan en zijn getoetst tegen een nagespeelde mailserver; de proef tegen een echte testmailserver is open |
 | 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | `km_rit_boeken` klaar en getest op een site met HRMS; Wiki, rooster en CAD-viewer gaan via de bestaande afhandeling van ontbrekende doctypes, nog niet getest op een site waar ze wél staan |
 | 7 | Generiek maken, ondertekening, generiek-controle | klaar — huisstijl uit `Company`, afdrukformaten van de site, lege extensiecatalogus, gedeelde postbussen als instelling; `scripts/lib/generiek-check.mjs` bewaakt de frontendbron en de app in `npm test` |
-| 8 | Release naar `OpenAEC-Foundation/y_next` | open |
+| 8 | Release naar `OpenAEC-Foundation/y_next` | het releasescript (`scripts/release-frappe-app.mjs`) staat en is als proef gedraaid zonder publiceren; open: versie 0.40.0 met release-notes, de repository aanmaken (eerst privé) en publiceren — op teken van de eigenaar |
 
 Testsites op de lokale bench: `kaal.localhost` (alleen ERPNext + de app) en `proef.localhost` (ook HRMS).
 
