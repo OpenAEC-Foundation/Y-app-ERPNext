@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="nl">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+		<meta name="theme-color" content="#0f172a" />
+		<title>Y-next</title>
+		{%- if entry_js %}
+		<link rel="icon" type="image/svg+xml" href="{{ base_url }}y-logo.svg" />
+		{%- for css in entry_css %}
+		<link rel="stylesheet" href="{{ base_url }}{{ css }}" />
+		{%- endfor %}
+		{%- endif %}
+	</head>
+	<body>
+		{%- if entry_js %}
+		<div id="root" data-y-next-router="hash"></div>
+		<script>
+			window.csrf_token = "{{ csrf_token }}";
+		</script>
+		<script type="module" src="{{ base_url }}{{ entry_js }}"></script>
+		{%- else %}
+		<p>De bundel van Y-next ontbreekt in deze installatie. Installeer de app opnieuw of neem contact op met beheer.</p>
+		{%- endif %}
+	</body>
+</html>
