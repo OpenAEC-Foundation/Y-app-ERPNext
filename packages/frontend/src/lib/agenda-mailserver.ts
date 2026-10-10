@@ -531,12 +531,22 @@ async function schrijf(
  * neergelegd, liggen op een bestandspad dat we kunnen terugrekenen uit de UID.
  * Bij een afspraak uit een ander agendaprogramma weten we dat pad niet, en
  * daarom bieden we daar geen accepteren aan. Zie `isEigenAfspraak`.
+ *
+ * Achter de apenstaart staat de site waar de afspraak gemaakt is, zoals de
+ * norm aanraadt om een UID wereldwijd uniek te houden.
+ *
+ * @param host de hostnaam van de site; standaard die van de huidige pagina
  */
-export function nieuweAfspraakUid(): string {
+export function nieuweAfspraakUid(host: string = huidigeHost()): string {
   const willekeurig = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  return `ynext-${willekeurig}@3bm.co.nl`;
+  const domein = host.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "");
+  return domein ? `ynext-${willekeurig}@${domein}` : `ynext-${willekeurig}`;
+}
+
+function huidigeHost(): string {
+  return typeof window !== "undefined" ? window.location.hostname : "";
 }
 
 /** Heeft Y-Next deze afspraak zelf neergelegd? Dan kunnen we hem bijwerken. */

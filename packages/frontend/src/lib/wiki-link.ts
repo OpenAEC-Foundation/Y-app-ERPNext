@@ -59,7 +59,7 @@ export function urlVoorArtikel(artikel: ArtikelAdres): string {
 /**
  * De link om door te sturen: de Y-app op de site, met het artikel achter `#`.
  * `appAdres` is het adres van de Y-app zelf, bijvoorbeeld
- * `https://3bm.prilk.cloud/y-next` — in de browser de huidige pagina, in de
+ * `https://erp.voorbeeld.nl/y-next` — in de browser de huidige pagina, in de
  * desktop-app de site (daar is het eigen adres een lokaal adres dat bij een
  * collega niets opent).
  */

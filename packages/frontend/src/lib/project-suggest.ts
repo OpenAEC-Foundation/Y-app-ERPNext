@@ -38,8 +38,8 @@
  * Verzonden mail, mail die al aan een document hangt, en mail waarvoor al een
  * andere bedoeling is herkend (inkoopfactuur, lead, offerteaanvraag). Dat
  * laatste is de "hooguit één voorstel per mail"-regel uit `mail-intent.ts`:
- * een factuurmail van 3BM krijgt geen projectvoorstel eronder, ook al staat
- * "3BM" in het onderwerp en heet één project "Implementatie 3BM Zwijndrecht".
+ * een factuurmail van een leverancier krijgt geen projectvoorstel eronder, ook al staat
+ * zijn naam in het onderwerp en heet één project "Implementatie <naam> Zwijndrecht".
  */
 
 import { tokenizeForMatch } from "./project-folder-match.ts";

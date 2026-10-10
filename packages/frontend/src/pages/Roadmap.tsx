@@ -84,7 +84,7 @@ export default function Roadmap() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <MapIcon className="text-3bm-teal" size={24} />
+          <MapIcon className="text-y-teal" size={24} />
           <div>
             <h1 className="text-xl font-semibold text-slate-900">Roadmap</h1>
             <p className="text-sm text-slate-500">
@@ -116,7 +116,7 @@ export default function Roadmap() {
                     <span className="text-xs text-slate-500">{v.klaar} / {v.totaal}</span>
                   </div>
                   <div className="h-1.5 mt-2 rounded-full bg-slate-200 overflow-hidden">
-                    <div className="h-full bg-3bm-teal" style={{ width: v.totaal ? `${(100 * v.klaar) / v.totaal}%` : "0%" }} />
+                    <div className="h-full bg-y-teal" style={{ width: v.totaal ? `${(100 * v.klaar) / v.totaal}%` : "0%" }} />
                   </div>
                 </header>
                 <div className="px-3 pb-3 space-y-2 flex-1">
@@ -202,7 +202,7 @@ function GeenRoadmap({ onGemaakt }: { onGemaakt: () => void }) {
     <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
       <p className="text-slate-600">Er is nog geen roadmap. Een roadmap is een project waarvan de naam met &ldquo;Roadmap&rdquo; begint.</p>
       <button onClick={() => void maak()} disabled={bezig}
-        className="inline-flex items-center gap-2 rounded-lg bg-3bm-teal text-white px-4 py-2 text-sm disabled:opacity-50">
+        className="inline-flex items-center gap-2 rounded-lg bg-y-teal text-white px-4 py-2 text-sm disabled:opacity-50">
         <Plus size={16} /> Roadmap {jaar} aanmaken
       </button>
       {fout && <p className="text-sm text-red-600">{fout}</p>}
@@ -258,7 +258,7 @@ function NieuweMijlpaal(props: {
         <div className="flex justify-end gap-2">
           <button onClick={props.onSluit} className="px-3 py-2 text-sm text-slate-600">Annuleren</button>
           <button onClick={() => void opslaan()} disabled={bezig || !subject.trim()}
-            className="rounded-lg bg-3bm-teal text-white px-4 py-2 text-sm disabled:opacity-50">Toevoegen</button>
+            className="rounded-lg bg-y-teal text-white px-4 py-2 text-sm disabled:opacity-50">Toevoegen</button>
         </div>
       </div>
     </div>

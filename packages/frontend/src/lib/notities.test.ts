@@ -30,9 +30,9 @@ test("acties lezen uit wat er ook in het veld staat", () => {
 });
 
 test("acties lezen behoudt wie, wanneer en of het af is", () => {
-  const uit = leesActies('[{"id":"a9","tekst":"Bellen","wie":"nino@3bm.co.nl","datum":"2026-10-01","gedaan":true,"todo":"TODO-1"}]');
+  const uit = leesActies('[{"id":"a9","tekst":"Bellen","wie":"nino@3xz.co.nl","datum":"2026-10-01","gedaan":true,"todo":"TODO-1"}]');
   assert.deepEqual(uit, [{
-    id: "a9", tekst: "Bellen", wie: "nino@3bm.co.nl", datum: "2026-10-01", gedaan: true, todo: "TODO-1",
+    id: "a9", tekst: "Bellen", wie: "nino@3xz.co.nl", datum: "2026-10-01", gedaan: true, todo: "TODO-1",
   }]);
 });
 
@@ -48,14 +48,14 @@ test("de oude vorm van de vergadernotities wordt ook gelezen", () => {
 
 test("schrijven en teruglezen levert hetzelfde op", () => {
   const acties = [
-    actie({ id: "a1", tekst: "  Bestek nalopen  ", wie: " Nino@3bm.co.nl ", datum: "2026-10-01" }),
+    actie({ id: "a1", tekst: "  Bestek nalopen  ", wie: " Nino@3xz.co.nl ", datum: "2026-10-01" }),
     actie({ id: "a2", tekst: "", wie: "x@y.nl" }),
     actie({ id: "a3", tekst: "Klaar", gedaan: true, todo: "TODO-7" }),
   ];
   const terug = leesActies(schrijfActies(acties));
   assert.equal(terug.length, 2);
   assert.equal(terug[0].tekst, "Bestek nalopen");
-  assert.equal(terug[0].wie, "Nino@3bm.co.nl");
+  assert.equal(terug[0].wie, "Nino@3xz.co.nl");
   assert.equal(terug[1].todo, "TODO-7");
 });
 
@@ -72,7 +72,7 @@ test("een rij uit ERPNext wordt een notitie", () => {
 });
 
 test("een notitie draagt het merkje en het project", () => {
-  const doc = naarDoc(notitie({ titel: "  ", acties: [actie({ wie: "nino@3bm.co.nl" })] }));
+  const doc = naarDoc(notitie({ titel: "  ", acties: [actie({ wie: "nino@3xz.co.nl" })] }));
   assert.equal(doc.linked_doctype, NOTITIE_MERK);
   assert.equal(doc.linked_name, "808");
   assert.equal(doc.title, "Notitie");
@@ -120,7 +120,7 @@ test("een taak draagt de titel van de notitie mee", () => {
 });
 
 test("een actie met een naam erbij wordt een taak", () => {
-  const plan = todoPlan([actie({ wie: "nino@3bm.co.nl" })], []);
+  const plan = todoPlan([actie({ wie: "nino@3xz.co.nl" })], []);
   assert.equal(plan.maken.length, 1);
   assert.deepEqual(plan.bijwerken, []);
   assert.deepEqual(plan.opruimen, []);
@@ -131,14 +131,14 @@ test("een actie zonder naam wordt geen taak", () => {
 });
 
 test("een bestaande taak wordt bijgewerkt, ook als de actie af is", () => {
-  const a = actie({ wie: "nino@3bm.co.nl", todo: "TODO-1", gedaan: true });
+  const a = actie({ wie: "nino@3xz.co.nl", todo: "TODO-1", gedaan: true });
   const plan = todoPlan([a], [a]);
   assert.deepEqual(plan.bijwerken.map((x) => x.todo), ["TODO-1"]);
   assert.deepEqual(plan.opruimen, []);
 });
 
 test("de naam weghalen laat de taak verdwijnen", () => {
-  const oud = [actie({ id: "a1", wie: "nino@3bm.co.nl", todo: "TODO-1" })];
+  const oud = [actie({ id: "a1", wie: "nino@3xz.co.nl", todo: "TODO-1" })];
   const plan = todoPlan([actie({ id: "a1", wie: "", todo: "TODO-1" })], oud);
   assert.deepEqual(plan.opruimen, ["TODO-1"]);
   assert.deepEqual(plan.maken, []);
@@ -146,7 +146,7 @@ test("de naam weghalen laat de taak verdwijnen", () => {
 
 test("een weggegooide actie neemt zijn taak mee", () => {
   const oud = [
-    actie({ id: "a1", wie: "nino@3bm.co.nl", todo: "TODO-1" }),
+    actie({ id: "a1", wie: "nino@3xz.co.nl", todo: "TODO-1" }),
     actie({ id: "a2", wie: "anna@zinkweg.nl", todo: "TODO-2" }),
   ];
   const plan = todoPlan([oud[1]], oud);
@@ -155,7 +155,7 @@ test("een weggegooide actie neemt zijn taak mee", () => {
 });
 
 test("een taak komt niet twee keer in de opruimlijst", () => {
-  const oud = [actie({ id: "a1", wie: "nino@3bm.co.nl", todo: "TODO-1" })];
+  const oud = [actie({ id: "a1", wie: "nino@3xz.co.nl", todo: "TODO-1" })];
   const plan = todoPlan([actie({ id: "a1", wie: "", todo: "TODO-1" })], oud);
   assert.deepEqual(plan.opruimen, ["TODO-1"]);
 });

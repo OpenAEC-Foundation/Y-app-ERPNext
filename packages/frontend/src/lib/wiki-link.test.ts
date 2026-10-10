@@ -8,9 +8,9 @@ const artikelen = [
   { name: "1l1g8v2vah", route: "wiki/kennisbank/procedures/algemeen/archiefonderzoek" },
   { name: "3bb6lp2kkn", route: "wiki/kennisbank/procedures/algemeen/archieftekeningen" },
   { name: "90n3lhc9nr", route: "wiki/kennisbank/procedures" },
-  { name: "56e9gmktj4", route: "wiki/3bm-bouwtechniek" },
+  { name: "56e9gmktj4", route: "wiki/3xz-bouwadvies" },
 ];
-const SITE = "https://3bm.prilk.cloud";
+const SITE = "https://3xz.erphost.cloud";
 
 test("het pad van een artikel: de route zonder wiki/ en zonder schuine strepen eromheen", () => {
   assert.equal(artikelPad("wiki/kennisbank/procedures/algemeen/archiefonderzoek"), "kennisbank/procedures/algemeen/archiefonderzoek");
@@ -27,7 +27,7 @@ test("artikel zoeken op het pad uit het adres", () => {
   assert.equal(zoekArtikelOpPad(artikelen, "wiki/kennisbank/procedures/")?.name, "90n3lhc9nr");
   assert.equal(zoekArtikelOpPad(artikelen, "Kennisbank/Procedures")?.name, "90n3lhc9nr");
   // Gecodeerde tekens in het adres.
-  assert.equal(zoekArtikelOpPad(artikelen, "3bm%2Dbouwtechniek")?.name, "56e9gmktj4");
+  assert.equal(zoekArtikelOpPad(artikelen, "3xz%2Dbouwadvies")?.name, "56e9gmktj4");
   // Een ERPNext-naam werkt ook, voor wie die heeft.
   assert.equal(zoekArtikelOpPad(artikelen, "3bb6lp2kkn")?.name, "3bb6lp2kkn");
   assert.equal(zoekArtikelOpPad(artikelen, "kennisbank/bestaat-niet"), undefined);
@@ -46,10 +46,10 @@ test("adres in de app voor een pad en voor een artikel", () => {
 
 test("een deelbare link wijst naar de Y-app, met het artikel achter #", () => {
   assert.equal(
-    deelbareLink(artikelen[0], "https://3bm.prilk.cloud/y-next"),
-    "https://3bm.prilk.cloud/y-next#/wiki/kennisbank/procedures/algemeen/archiefonderzoek",
+    deelbareLink(artikelen[0], "https://3xz.erphost.cloud/y-next"),
+    "https://3xz.erphost.cloud/y-next#/wiki/kennisbank/procedures/algemeen/archiefonderzoek",
   );
-  assert.equal(deelbareLink(artikelen[2], "https://3bm.prilk.cloud/y-next/"), "https://3bm.prilk.cloud/y-next#/wiki/kennisbank/procedures");
+  assert.equal(deelbareLink(artikelen[2], "https://3xz.erphost.cloud/y-next/"), "https://3xz.erphost.cloud/y-next#/wiki/kennisbank/procedures");
 });
 
 test("een link naar een sectie opent het overzichtsartikel van die sectie", () => {
@@ -66,16 +66,16 @@ test("verwijzingen naar andere artikelen herkennen", () => {
   assert.equal(pad("/wiki/kennisbank/procedures/bouwregelgeving"), "kennisbank/procedures/bouwregelgeving");
   // Een link uit de Y-app zelf, kort of volledig.
   assert.equal(pad("#/wiki/kennisbank/procedures"), "kennisbank/procedures");
-  assert.equal(pad("https://3bm.prilk.cloud/y-next#/wiki/kennisbank/procedures"), "kennisbank/procedures");
+  assert.equal(pad("https://3xz.erphost.cloud/y-next#/wiki/kennisbank/procedures"), "kennisbank/procedures");
   // Een link naar de ERPNext-wiki op dezelfde site.
-  assert.equal(pad("https://3bm.prilk.cloud/wiki/kennisbank/procedures?x=1#kop"), "kennisbank/procedures");
+  assert.equal(pad("https://3xz.erphost.cloud/wiki/kennisbank/procedures?x=1#kop"), "kennisbank/procedures");
   // Naar het overzicht van de kennisbank.
   assert.equal(pad("/wiki"), "");
   assert.equal(pad("#/wiki"), "");
   // Geen verwijzing naar een artikel.
   assert.equal(pad("https://nl.wikipedia.org/wiki/Paal_(fundering)"), null);
   assert.equal(pad("https://bagviewer.kadaster.nl"), null);
-  assert.equal(pad("mailto:info@3bm.co.nl"), null);
+  assert.equal(pad("mailto:info@3xz.co.nl"), null);
   assert.equal(pad("/y-next#/projects"), null);
   assert.equal(pad("wikipedia/iets"), null);
   assert.equal(pad("#kop"), null);
@@ -98,7 +98,7 @@ test("links in een artikel die naar een ander artikel wijzen, openen in de Y-app
 
 test("herschrijven maakt van tekst in een attribuut nooit een echt attribuut", () => {
   // "rel=x" staat in de title en " style=… onmouseover=…" in lang: gewone tekst.
-  const payload = '<a href="https://3bm.prilk.cloud/wiki/x" title="a rel=x" lang=" style=position:fixed onmouseover=alert(1) x"'
+  const payload = '<a href="https://3xz.erphost.cloud/wiki/x" title="a rel=x" lang=" style=position:fixed onmouseover=alert(1) x"'
     + ' target="_blank" rel="noopener noreferrer">link</a>';
   const uit = herschrijfWikiLinks(payload, SITE);
   assert.equal(uit, '<a href="#/wiki/x" title="a rel=x" lang=" style=position:fixed onmouseover=alert(1) x">link</a>');

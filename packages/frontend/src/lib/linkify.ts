@@ -2,7 +2,7 @@
  * Links in platte tekst herkennen, zodat ze aanklikbaar worden.
  *
  * Herkent `http(s)://…`, `www.…` en e-mailadressen. Leestekens direct achter
- * een link ("zie https://3bm.nl.", "(www.3bm.co.nl)") horen bij de zin, niet
+ * een link ("zie https://voorbeeld.nl.", "(www.voorbeeld.nl)") horen bij de zin, niet
  * bij de link, en vallen er dus af. Alleen `http(s)` en `mailto` worden ooit
  * een link: een `javascript:`-adres in een bericht blijft gewone tekst.
  *

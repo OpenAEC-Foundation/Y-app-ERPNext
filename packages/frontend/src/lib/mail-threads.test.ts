@@ -73,10 +73,10 @@ test("normalizeSubject: een onderwerp dát met 'Reactie' begint blijft heel", ()
 
 test("extractAddresses: haalt adressen uit display-name-notatie en gevouwen cc", () => {
   assert.deepEqual(
-    extractAddresses("Maarten <maarten@impertio.nl>, Mark Wieringa <mark.wieringa@gaf.eu>, Danny\r\n Werensteijn <danny.werensteijn@gaf.eu>"),
-    ["maarten@impertio.nl", "mark.wieringa@gaf.eu", "danny.werensteijn@gaf.eu"],
+    extractAddresses("Maarten <maarten@imperia.nl>, Mark Wieringa <mark.wieringa@gaf.eu>, Danny\r\n Werensteijn <danny.werensteijn@gaf.eu>"),
+    ["maarten@imperia.nl", "mark.wieringa@gaf.eu", "danny.werensteijn@gaf.eu"],
   );
-  assert.deepEqual(extractAddresses("\"albert@impertio.nl\" <albert@impertio.nl>"), ["albert@impertio.nl"]);
+  assert.deepEqual(extractAddresses("\"albert@imperia.nl\" <albert@imperia.nl>"), ["albert@imperia.nl"]);
   assert.deepEqual(extractAddresses(""), []);
   assert.deepEqual(extractAddresses(undefined), []);
 });
@@ -85,23 +85,23 @@ test("participantsOf: afzender + geadresseerden + cc, kleingeschreven", () => {
   const people = participantsOf(msg({
     name: "x",
     sender: "Martjan.DenHoed@gaf.eu",
-    recipients: "\"albert@impertio.nl\" <albert@impertio.nl>",
-    cc: "Maarten <maarten@impertio.nl>",
+    recipients: "\"albert@imperia.nl\" <albert@imperia.nl>",
+    cc: "Maarten <maarten@imperia.nl>",
   }));
-  assert.deepEqual([...people].sort(), ["albert@impertio.nl", "maarten@impertio.nl", "martjan.denhoed@gaf.eu"]);
+  assert.deepEqual([...people].sort(), ["albert@imperia.nl", "maarten@imperia.nl", "martjan.denhoed@gaf.eu"]);
 });
 
 /* ─── De echte SAL-QTN-thread: 6 mails, één gesprek ─── */
 
 const QTN = "Offerte MPG-berekening & Bestekschrijven — SAL-QTN-2026-00013";
 const GAF = "martjan.denhoed@gaf.eu";
-const ALB = "albert@impertio.nl";
-const CC = "Maarten <maarten@impertio.nl>, Mark Wieringa <mark.wieringa@gaf.eu>";
+const ALB = "albert@imperia.nl";
+const CC = "Maarten <maarten@imperia.nl>, Mark Wieringa <mark.wieringa@gaf.eu>";
 
 /** Nieuwste eerst, precies zoals de lijstquery ze aanlevert. */
 const qtnThread: ThreadableMessage[] = [
-  msg({ name: "ag6q4pllvv", subject: `Re: ${QTN}`, sender: GAF, recipients: "Maarten <maarten@impertio.nl>, Maarten Vroegindeweij <maarten@3bm.co.nl>", cc: CC, date: "2026-06-11 12:25:25", inReplyTo: "ag68fp1lod" }),
-  msg({ name: "ag6gpovjr4", subject: `Fw: Re: ${QTN}`, sender: "maarten@3bm.co.nl", recipients: "Maarten <maarten@impertio.nl>", date: "2026-05-26 08:48:10" }),
+  msg({ name: "ag6q4pllvv", subject: `Re: ${QTN}`, sender: GAF, recipients: "Maarten <maarten@imperia.nl>, Maarten Vroman <maarten@3xz.co.nl>", cc: CC, date: "2026-06-11 12:25:25", inReplyTo: "ag68fp1lod" }),
+  msg({ name: "ag6gpovjr4", subject: `Fw: Re: ${QTN}`, sender: "maarten@3xz.co.nl", recipients: "Maarten <maarten@imperia.nl>", date: "2026-05-26 08:48:10" }),
   msg({ name: "ag6dca9ub8", subject: `Re: ${QTN}`, sender: ALB, recipients: `Martjan den Hoed <${GAF}>`, cc: CC, date: "2026-05-26 08:41:13", inReplyTo: "ag68fp1lod" }),
   msg({ name: "ag68fp1lod", subject: `Re: ${QTN}`, sender: GAF, recipients: `"${ALB}" <${ALB}>`, cc: CC, date: "2026-05-22 13:39:39", inReplyTo: "ag679r79qp" }),
   msg({ name: "ag679r79qp", subject: `Re: ${QTN}`, sender: ALB, recipients: `Martjan den Hoed <${GAF}>`, cc: CC, date: "2026-05-13 09:12:46", inReplyTo: "ag5fe0p6oc" }),
@@ -125,7 +125,7 @@ test("groupThreads: de zes SAL-QTN-mails vormen één gesprek", () => {
 
 test("groupThreads: de doorgestuurde mail zonder in_reply_to hoort er toch bij", () => {
   // Alleen de ketting zou "Fw: Re: …" (geen in_reply_to, andere afzender) als
-  // losse regel laten staan. Onderwerp + gedeelde deelnemer (maarten@impertio.nl)
+  // losse regel laten staan. Onderwerp + gedeelde deelnemer (maarten@imperia.nl)
   // + de Fw-markering trekken hem alsnog in het gesprek.
   const chainOnly = qtnThread.filter((m) => m.name === "ag6gpovjr4" || m.name === "ag6q4pllvv");
   const threads = groupThreads(chainOnly);
@@ -156,8 +156,8 @@ test("groupThreads: twee losse mails met exact hetzelfde onderwerp blijven gesch
   // zelfde onderwerp, géén Re:/Fwd: en géén in_reply_to. Dat zijn herhalingen,
   // geen gesprek — ze onder één kop schuiven zou er één verstoppen.
   const rows = [
-    msg({ name: "2m8fnofht9", subject: "Factuur Castellum Rosarum B.V. 26CRB-00007", sender: "maarten@3bm.co.nl", recipients: "info@open-aec.com", date: "2026-08-03 23:20:38" }),
-    msg({ name: "8butimlndp", subject: "Factuur Castellum Rosarum B.V. 26CRB-00007", sender: "maarten@3bm.co.nl", recipients: "info@open-aec.com", date: "2026-08-03 22:12:29" }),
+    msg({ name: "2m8fnofht9", subject: "Factuur Castellum Rosarum B.V. 26CRB-00007", sender: "maarten@3xz.co.nl", recipients: "info@open-aec.com", date: "2026-08-03 23:20:38" }),
+    msg({ name: "8butimlndp", subject: "Factuur Castellum Rosarum B.V. 26CRB-00007", sender: "maarten@3xz.co.nl", recipients: "info@open-aec.com", date: "2026-08-03 22:12:29" }),
   ];
   assert.equal(groupThreads(rows).length, 2);
 });
@@ -174,8 +174,8 @@ test("groupThreads: losse facturen met opeenvolgende nummers blijven losse regel
   const rows = ["263-05192", "263-05191", "263-05186", "263-05179", "263-05177"].map((nr, i) =>
     msg({
       name: `c${i}`,
-      subject: `Factuur 3BM Bouwtechniek V.O.F. ${nr}`,
-      sender: "maarten@3bm.co.nl",
+      subject: `Factuur 3XZ Bouwadvies V.O.F. ${nr}`,
+      sender: "maarten@3xz.co.nl",
       recipients: "info@open-aec.com",
       date: `2026-08-03 21:5${i}:00`,
     }));
@@ -344,10 +344,10 @@ test("neighbourInOrder begint bovenaan wanneer er nog niets openstaat", () => {
 /** Twee gesprekken: A met drie berichten, B met één. */
 function ordeVoorbeeld() {
   return groupThreads([
-    msg({ name: "a1", subject: "Offerte", sender: "klant@x.nl", recipients: "info@3bm.co.nl", date: "2026-01-01 09:00:00" }),
-    msg({ name: "a2", subject: "Re: Offerte", sender: "info@3bm.co.nl", recipients: "klant@x.nl", date: "2026-01-02 09:00:00", inReplyTo: "a1" }),
-    msg({ name: "a3", subject: "Re: Offerte", sender: "klant@x.nl", recipients: "info@3bm.co.nl", date: "2026-01-03 09:00:00", inReplyTo: "a2" }),
-    msg({ name: "b1", subject: "Factuur", sender: "leverancier@y.nl", recipients: "info@3bm.co.nl", date: "2026-01-04 09:00:00" }),
+    msg({ name: "a1", subject: "Offerte", sender: "klant@x.nl", recipients: "info@3xz.co.nl", date: "2026-01-01 09:00:00" }),
+    msg({ name: "a2", subject: "Re: Offerte", sender: "info@3xz.co.nl", recipients: "klant@x.nl", date: "2026-01-02 09:00:00", inReplyTo: "a1" }),
+    msg({ name: "a3", subject: "Re: Offerte", sender: "klant@x.nl", recipients: "info@3xz.co.nl", date: "2026-01-03 09:00:00", inReplyTo: "a2" }),
+    msg({ name: "b1", subject: "Factuur", sender: "leverancier@y.nl", recipients: "info@3xz.co.nl", date: "2026-01-04 09:00:00" }),
   ], []);
 }
 

@@ -76,8 +76,8 @@ export function getInstances(): ERPInstance[] {
  * Every page that filters on "default company" / "default employee" must read
  * through these helpers, NOT through a global localStorage key. Previously
  * pages read `erpnext_default_company` which is shared across all tabs — so
- * switching from 3BM to Domera left 3BM's company name as the filter for
- * Domera's data. That global key has been removed; pages must use these
+ * switching from one instance to another left the first one's company name as the filter for
+ * the other's data. That global key has been removed; pages must use these
  * accessors so each instance has its own isolated preference. */
 
 export function getActiveCompany(): string {

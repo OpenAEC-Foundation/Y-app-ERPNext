@@ -228,8 +228,8 @@ export default function SettingsPage() {
   function handleSave() {
     const id = getActiveInstanceId();
     // Per-instance prefs only — global keys are gone. Each instance tab keeps
-    // its own company/employee/activity-type so switching between Domera and
-    // 3BM doesn't leak filters across tenants.
+    // its own company/employee/activity-type so switching between instances
+    // doesn't leak filters across tenants.
     if (defaultCompany) {
       localStorage.setItem(`pref_${id}_company`, defaultCompany);
     } else {
@@ -246,7 +246,7 @@ export default function SettingsPage() {
       localStorage.removeItem(`pref_${id}_employee`);
     }
     // NextCloud — strip trailing slashes en zorg dat protocol aanwezig is.
-    // Gebruikers vullen vaak alleen "nextcloud.3bm.cloud" in; zonder
+    // Gebruikers vullen vaak alleen "nextcloud.voorbeeld.nl" in; zonder
     // protocol gooit server-side fetch een DNS/parse-fout (timeout).
     const normalizeUrl = (raw: string): string => {
       const trimmed = raw.trim().replace(/\/+$/, "");

@@ -229,7 +229,7 @@ export default function ImapSetup({ config, onSave, onCancel, folders = [] }: { 
           <label className="block text-xs font-medium text-slate-600 mb-1">{t("webmail.your_email")}</label>
           <input type="email" value={form.user}
             onChange={(e) => setForm({ ...form, user: e.target.value })}
-            placeholder="maarten@3bm.co.nl"
+            placeholder="naam@voorbeeld.nl"
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 

@@ -89,8 +89,8 @@ class TestInrichting(IntegrationTestCase):
 						frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": veld["fieldname"]})
 					)
 					aantal += 1
-		# 15 velden op doctypes van ERPNext zelf; 7 erbij op een site met HRMS.
-		self.assertEqual(aantal, 22 if frappe.db.exists("DocType", "Travel Request") else 15)
+		# 23 velden op doctypes van Frappe en ERPNext zelf; 7 erbij op een site met HRMS.
+		self.assertEqual(aantal, 30 if frappe.db.exists("DocType", "Travel Request") else 23)
 
 	def test_velden_staan_achter_een_bestaand_veld(self):
 		from y_next.setup import install

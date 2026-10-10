@@ -44,7 +44,7 @@
  * Dezelfde reden als bij de factuurherkenning: op deze mailbox zit het bewijs
  * verspreid. "Kennismaking" staat in het onderwerp, maar "we zijn op zoek naar
  * een betaalbaar alternatief" staat alleen in de body van een mail waarvan het
- * onderwerp ("CAD software voor de gemeente Haacht.") niets verraadt. Eén
+ * onderwerp ("CAD software voor de gemeente.") niets verraadt. Eén
  * regexje op het onderwerp zou de tweede missen; één regexje op de body zou
  * elke handtekening met het woord "informatie" binnenhalen. Onderwerp-treffers
  * wegen daarom zwaarder dan body-treffers, en er zijn drie sterktes.

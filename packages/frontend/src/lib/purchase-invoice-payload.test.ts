@@ -11,14 +11,14 @@ import {
 /** De invoer zoals de dialoog hem oplevert voor een echte factuur uit de instance. */
 function input(overrides: Partial<PurchaseInvoiceInput> = {}): PurchaseInvoiceInput {
   return {
-    supplier: "3BM Bouwtechniek V.O.F.",
+    supplier: "3XZ Bouwadvies V.O.F.",
     company: "OpenAEC Studio BV",
     creditTo: "Crediteuren - OSB",
     expenseAccount: "Kostprijs omzet grondstoffen - OSB",
     postingDate: "2026-08-27",
     billNo: "263-05192",
     billDate: "2026-08-03",
-    description: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
+    description: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
     amount: 1998,
     ...overrides,
   };
@@ -28,7 +28,7 @@ const NOW = new Date("2026-08-27T10:00:00");
 
 test("payload heeft exact de velden die ERPNext v16 verplicht stelt", () => {
   const payload = buildPurchaseInvoicePayload(input(), NOW);
-  assert.equal(payload.supplier, "3BM Bouwtechniek V.O.F.");
+  assert.equal(payload.supplier, "3XZ Bouwadvies V.O.F.");
   assert.equal(payload.company, "OpenAEC Studio BV");
   assert.equal(payload.posting_date, "2026-08-27");
   assert.equal(payload.credit_to, "Crediteuren - OSB");

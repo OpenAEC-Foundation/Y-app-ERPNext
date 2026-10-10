@@ -31,26 +31,11 @@ export interface CatalogEntry {
   author?: string;
 }
 
-export const CATALOG: CatalogEntry[] = [
-  {
-    id: "kg-planning",
-    name: "KG Planning",
-    description:
-      "Planning grid with team, Gantt, and table views, plus Financial / Projects / HR dashboards. Built for KG.",
-    url: "https://impertio-studio.github.io/Y_App-extension-kg-planning/",
-    sidebarSection: "",
-    author: "Impertio",
-  },
-  {
-    id: "projectplanning",
-    name: "Projectplanning",
-    description:
-      "Fase-timeline dashboard voor CLT/VL projecten met overgangen tussen fases (Controle vorige + Startinformatie volgende). Compact overzicht + carousel-detail per fase of overgang. Ontwikkeld voor 3BM Engineering.",
-    url: "https://piyton.github.io/yapp-ext-3BMEng-projectplanning/",
-    sidebarSection: "Taken & Planning",
-    author: "3BM Engineering",
-  },
-];
+/**
+ * Empty on purpose: the app ships no extension that was built for one
+ * organisation. A site adds its own through the Advanced / Developer panel.
+ */
+export const CATALOG: CatalogEntry[] = [];
 
 export function findCatalogEntry(id: string): CatalogEntry | undefined {
   return CATALOG.find((c) => c.id === id);

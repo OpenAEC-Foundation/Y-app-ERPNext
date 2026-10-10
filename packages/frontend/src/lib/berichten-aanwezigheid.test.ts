@@ -32,25 +32,25 @@ test("aanwezigheid: gisteren over een maandgrens heen", () => {
 test("leesCollegaStatus: onvolledige rijen vallen af of krijgen een veilige invulling", () => {
   const lijst = leesCollegaStatus({
     collegas: [
-      { user: "lara@3bm.co.nl", naam: "Lara Nazari", foto: 1, laatst_actief: "2026-09-15 10:00:00" },
+      { user: "lara@3xz.co.nl", naam: "Lara Nazari", foto: 1, laatst_actief: "2026-09-15 10:00:00" },
       { user: "", naam: "zonder adres" },
-      { user: "nino@3bm.co.nl" },
+      { user: "nino@3xz.co.nl" },
       "onzin",
     ],
     nu: NU,
   });
   assert.equal(lijst.serverNu, NU);
   assert.equal(lijst.collegas.size, 2);
-  assert.deepEqual(lijst.collegas.get("lara@3bm.co.nl"), {
-    user: "lara@3bm.co.nl", naam: "Lara Nazari", foto: true, laatstActief: "2026-09-15 10:00:00",
+  assert.deepEqual(lijst.collegas.get("lara@3xz.co.nl"), {
+    user: "lara@3xz.co.nl", naam: "Lara Nazari", foto: true, laatstActief: "2026-09-15 10:00:00",
   });
-  assert.deepEqual(lijst.collegas.get("nino@3bm.co.nl"), {
-    user: "nino@3bm.co.nl", naam: "nino@3bm.co.nl", foto: false, laatstActief: null,
+  assert.deepEqual(lijst.collegas.get("nino@3xz.co.nl"), {
+    user: "nino@3xz.co.nl", naam: "nino@3xz.co.nl", foto: false, laatstActief: null,
   });
   assert.equal(leesCollegaStatus(null).collegas.size, 0);
   assert.equal(leesCollegaStatus(null).serverNu, null);
 });
 
 test("fotoUrl: het adres gaat gecodeerd mee", () => {
-  assert.equal(fotoUrl("maarten@3bm.co.nl"), "/api/method/berichten_foto?gebruiker=maarten%403bm.co.nl");
+  assert.equal(fotoUrl("maarten@3xz.co.nl"), "/api/method/berichten_foto?gebruiker=maarten%403xz.co.nl");
 });

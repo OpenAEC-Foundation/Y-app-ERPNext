@@ -1631,8 +1631,8 @@ export default function ToInvoice({ company, fromDate, toDate, onFromChange, onT
         <div>
           <h4 className="font-semibold text-slate-800 mb-1">Print: alleen Timesheet-based uren in de urenstaat</h4>
           <p>
-            De Print Format <strong>"3BM Factuur+Smart Urenstaat"</strong>
-            heeft een Jinja-filter dat per timesheet-rij de Task ophaalt
+            Een Print Format met <strong>"Smart Urenstaat"</strong> in de naam
+            hoort een Jinja-filter te hebben dat per timesheet-rij de Task ophaalt
             en alleen de rijen toont waarvan
             <code className="text-xs"> custom_billing_type ==
             "Timesheet based"</code>. Vaste-prijs uren worden

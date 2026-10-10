@@ -49,7 +49,7 @@ export interface GevondenMap {
 
 /**
  * Zoekt de map van dit project onder `root`, hoogstens `diepte` lagen diep.
- * Twee lagen is genoeg voor "50_projecten / 3_3BM_bouwtechniek / 2892 …".
+ * Twee lagen is genoeg voor "50_projecten / 3_bedrijfsnaam / 2892 …".
  */
 export async function zoekProjectmap(
   root: FileSystemDirectoryHandle,

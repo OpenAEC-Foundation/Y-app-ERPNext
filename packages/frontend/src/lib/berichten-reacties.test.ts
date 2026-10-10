@@ -41,7 +41,7 @@ test("reactieQuery en reactieUitLink: heen en terug, aan en uit", () => {
 
 test("berichtSleutel: beide kopieën van een bericht komen op dezelfde sleutel uit", () => {
   const nieuw = {
-    link: `${BASIS}?k=abc12345`, afzender: "lara@3bm.co.nl", ontvanger: "nino@3bm.co.nl",
+    link: `${BASIS}?k=abc12345`, afzender: "lara@3xz.co.nl", ontvanger: "nino@3xz.co.nl",
     body: "Hoi", createdAt: "2026-09-15 10:00:01",
   };
   // Nieuw: de gedeelde sleutel wint van alles.
@@ -50,7 +50,7 @@ test("berichtSleutel: beide kopieën van een bericht komen op dezelfde sleutel u
   assert.equal(berichtSleutel({ ...nieuw, link: BASIS, imageUrl: "/private/files/a.jpg" }), "img:/private/files/a.jpg");
   // Oud, alleen tekst: ontvangerskopie en eigen kopie liggen een seconde uit elkaar.
   const ontvangen = berichtSleutel({ ...nieuw, link: BASIS, createdAt: "2026-09-15 10:00:01.123456" });
-  const verzonden = berichtSleutel({ ...nieuw, link: BASIS, createdAt: "2026-09-15 10:00:02.654321", afzender: "Lara@3bm.co.nl" });
+  const verzonden = berichtSleutel({ ...nieuw, link: BASIS, createdAt: "2026-09-15 10:00:02.654321", afzender: "Lara@3xz.co.nl" });
   assert.equal(ontvangen, verzonden);
   // Andere inhoud, andere sleutel.
   assert.notEqual(berichtSleutel({ ...nieuw, link: BASIS, body: "Doei" }), ontvangen);
@@ -63,7 +63,7 @@ test("korteHash: stabiel, en verschillend voor verschillende tekst", () => {
 });
 
 function like(direction: "in" | "out", createdAt: string, sleutel: string, aan: boolean): ReactieDrager {
-  return { direction, counterpart: "lara@3bm.co.nl", createdAt, reactie: { sleutel, aan } };
+  return { direction, counterpart: "lara@3xz.co.nl", createdAt, reactie: { sleutel, aan } };
 }
 
 test("likesPerBericht: per persoon telt de laatste stand, en je eigen like wordt herkend", () => {
@@ -74,7 +74,7 @@ test("likesPerBericht: per persoon telt de laatste stand, en je eigen like wordt
     like("out", "2026-09-15 10:02:00", "s1", false),
     like("out", "2026-09-15 10:03:00", "s2", true),
     // Een gewoon bericht telt niet.
-    { direction: "in", counterpart: "lara@3bm.co.nl", createdAt: "2026-09-15 10:04:00" },
+    { direction: "in", counterpart: "lara@3xz.co.nl", createdAt: "2026-09-15 10:04:00" },
   ]);
   assert.deepEqual(stand.get("s1"), { aantal: 1, ikVindLeuk: false });
   assert.deepEqual(stand.get("s2"), { aantal: 1, ikVindLeuk: true });

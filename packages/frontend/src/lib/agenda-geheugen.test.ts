@@ -26,19 +26,19 @@ test("tweede keer uit het geheugen, collega erbij haalt alleen die op", async ()
       mislukt: [] as string[],
     };
   };
-  const een = await geheugen.lees("2026-09-21", "2026-10-11", ["maarten@3bm.co.nl"], haal);
+  const een = await geheugen.lees("2026-09-21", "2026-10-11", ["maarten@3xz.co.nl"], haal);
   assert.equal(een.afspraken.length, 1);
-  assert.deepEqual(vragen, ["2026-09-21..2026-10-11:maarten@3bm.co.nl"]);
+  assert.deepEqual(vragen, ["2026-09-21..2026-10-11:maarten@3xz.co.nl"]);
 
-  await geheugen.lees("2026-09-28", "2026-10-04", ["maarten@3bm.co.nl"], haal);
+  await geheugen.lees("2026-09-28", "2026-10-04", ["maarten@3xz.co.nl"], haal);
   assert.equal(vragen.length, 1, "volgende week stond al klaar");
 
-  const twee = await geheugen.lees("2026-09-21", "2026-09-27", ["maarten@3bm.co.nl", "nino@3bm.co.nl"], haal);
-  assert.equal(vragen[1], "2026-09-21..2026-09-27:nino@3bm.co.nl");
+  const twee = await geheugen.lees("2026-09-21", "2026-09-27", ["maarten@3xz.co.nl", "nino@3xz.co.nl"], haal);
+  assert.equal(vragen[1], "2026-09-21..2026-09-27:nino@3xz.co.nl");
   assert.equal(twee.afspraken.length, 2);
 
   klok += GEHEUGEN_MS + 1;
-  await geheugen.lees("2026-09-21", "2026-09-27", ["maarten@3bm.co.nl"], haal);
+  await geheugen.lees("2026-09-21", "2026-09-27", ["maarten@3xz.co.nl"], haal);
   assert.equal(vragen.length, 3, "verlopen week wordt opnieuw gehaald");
 });
 

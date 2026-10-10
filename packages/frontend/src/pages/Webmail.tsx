@@ -4658,7 +4658,7 @@ function ErpNextWebmail() {
     // namens info@ antwoordt ondertekent nog steeds met zijn eigen naam.
     // De postbus telt alleen mee als terugval wanneer er geen persoon achter
     // het adres zit.
-    void ondertekeningVoor(selfEmail || adresVan(box), box || undefined, adresVan(box) || undefined)
+    void ondertekeningVoor(selfEmail || adresVan(box), box || undefined)
       .then(setSignature)
       .catch(() => { /* zonder handtekening kun je nog steeds mailen */ });
   }, [adresVan, mailbox, selfEmail]);

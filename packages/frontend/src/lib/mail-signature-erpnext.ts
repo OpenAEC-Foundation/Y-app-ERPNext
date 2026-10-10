@@ -6,98 +6,63 @@
  * wijzigt in zijn User- of Employee-record, verwacht dat de volgende mail het
  * nieuwe nummer draagt — niet dat iemand ergens ook nog een blok HTML
  * bijwerkt. Daarom bouwen we hem bij elke keer opstellen opnieuw op uit de
- * bron: User (naam, telefoon, foto), Employee (mobiel, bedrijf) en
- * Address (het vestigingsadres van dat bedrijf).
+ * bron: User (naam, telefoon, foto), Employee (mobiel, bedrijf), Company
+ * (naam, logo, website, huisstijl) en Address (het vestigingsadres).
  *
- * Voor gedeelde postbussen (info@, cooperatie@) bestaat geen persoon; die
- * vallen terug op de handtekening die op het Email Account zelf staat.
+ * Hoe de ondertekening eruitziet staat nergens in de code. Logo en website
+ * zijn gewone velden van het bedrijf; handelsnaam, kleuren, LinkedIn en de
+ * groet zijn velden die de app aan Company toevoegt. Een bedrijf dat niets
+ * invult krijgt een neutrale ondertekening.
+ *
+ * Voor gedeelde postbussen bestaat geen persoon; die vallen terug op de
+ * handtekening die op het Email Account zelf staat.
  */
-import { fetchList, fetchDocument } from "./erpnext.ts";
+import { callMethod, fetchList, fetchDocument } from "./erpnext.ts";
 
-/** Merkkleuren en vaste beeldmerken; die staan nergens in de database. */
-const KLEUR_DONKER = "#350E35";
-const KLEUR_ACCENT = "#44B6A8";
-const LOGO_URL = "/files/ROkg9UQ.png";
-const LINKEDIN_URL = "/files/vm179Zv.png";
-const LINKEDIN_PAGINA = "https://nl.linkedin.com/company/3bm-ingenieursbureau";
-const WEBSITE = "https://www.3bm.co.nl";
-const WEBSITE_LABEL = "3bm.co.nl";
-
-/** Handelsnaam per company; de doctype-naam is niet altijd hoe het bedrijf zich schrijft. */
-const HANDELSNAAM: Record<string, string> = {
-  "3BM Bouwtechniek V.O.F.": "3BM Bouwtechniek",
-  "Vroughindeweij Industries B.V.": "Vroughindeweij Industries",
-};
+/** De kleur van een ondertekening zonder ingevulde huisstijl. */
+export const STANDAARD_KLEUR = "#1f2937";
+/** De groet van een ondertekening als het bedrijf er geen heeft ingesteld. */
+export const STANDAARD_GROET = "Met vriendelijke groet,";
 
 /**
- * De opmaak van de ondertekening hangt aan de postbus waarvandaan je
- * schrijft, niet aan het bedrijf op je medewerkerskaart. Wie vanuit
- * info@vindus.nl antwoordt, hoort niet met het beeldmerk van 3BM te
- * ondertekenen — en andersom net zo goed.
+ * Wat een ondertekening eruit laat zien als van één bedrijf. Komt uit het
+ * bedrijf waar de postbus bij hoort — zie `huisstijlUitBedrijf`.
  */
 export interface Huisstijl {
   /** Company in ERPNext; bepaalt ook welk vestigingsadres eronder komt. */
   company: string;
+  /** Hoe het bedrijf zich schrijft; de documentnaam is dat niet altijd. */
+  handelsnaam: string;
   kleurDonker: string;
   kleurAccent: string;
+  /** Adres van het logo, of "" als er geen bruikbaar logo is. */
   logo: string;
-  logoBreedte: number;
-  logoHoogte: number;
-  website?: string;
-  websiteLabel?: string;
-  linkedin?: string;
-  linkedinLogo?: string;
+  /** Volledig webadres, of "". */
+  website: string;
+  linkedin: string;
+  groet: string;
+  /** Of het bedrijf zelf iets aan de huisstijl heeft ingevuld. */
+  ingevuld: boolean;
 }
 
-const HUISSTIJL_3BM: Huisstijl = {
-  company: "3BM Bouwtechniek V.O.F.",
-  kleurDonker: KLEUR_DONKER,
-  kleurAccent: KLEUR_ACCENT,
-  logo: LOGO_URL,
-  logoBreedte: 215,
-  logoHoogte: 56,
-  website: WEBSITE,
-  websiteLabel: WEBSITE_LABEL,
-  linkedin: LINKEDIN_PAGINA,
-  linkedinLogo: LINKEDIN_URL,
-};
-
-/** Vroughindeweij Industries (Vindus): eigen beeldmerk, zwart-grijs, geen socials. */
-const HUISSTIJL_VINDUS: Huisstijl = {
-  company: "Vroughindeweij Industries B.V.",
-  kleurDonker: "#1c1c1c",
-  kleurAccent: "#555555",
-  logo: "/files/vindus-logo.png",
-  logoBreedte: 64,
-  logoHoogte: 64,
-};
-
-/** Postbus-domein → huisstijl. Alles wat er niet in staat, krijgt die van 3BM. */
-const HUISSTIJL_PER_DOMEIN: Record<string, Huisstijl> = {
-  "vindus.nl": HUISSTIJL_VINDUS,
-};
-
-/** De huisstijl die hoort bij het adres waarvandaan verstuurd wordt. */
-export function huisstijlVoor(afzender: string): Huisstijl {
-  const domein = s(afzender).toLowerCase().split("@")[1] || "";
-  return HUISSTIJL_PER_DOMEIN[domein] ?? HUISSTIJL_3BM;
+/** De velden van Company waar de huisstijl uit komt. */
+export interface ErpCompany {
+  name: string;
+  company_name?: string | null;
+  company_logo?: string | null;
+  website?: string | null;
+  custom_trade_name?: string | null;
+  custom_brand_color_dark?: string | null;
+  custom_brand_color_accent?: string | null;
+  custom_linkedin_url?: string | null;
+  custom_signature_greeting?: string | null;
 }
 
-/**
- * Of de vaste beeldmerken hierboven bij dit bedrijf horen. Ze zijn voor één
- * huisstijl gemaakt; bij een ander bedrijf kwam dat merk onder elke mail.
- */
-export function heeftEigenHuisstijl(bedrijf: string): boolean {
-  return Object.prototype.hasOwnProperty.call(HANDELSNAAM, s(bedrijf));
-}
-
-/**
- * De eigen handtekening van de persoon (`User.email_signature`) gaat voor,
- * behalve bij het bedrijf waarvoor de opgebouwde ondertekening gemaakt is.
- */
-export function gebruikOpgeslagenOndertekening(bedrijf: string, opgeslagen: string): boolean {
-  return Boolean(s(opgeslagen)) && !heeftEigenHuisstijl(bedrijf);
-}
+const COMPANY_VELDEN = [
+  "name", "company_name", "company_logo", "website",
+  "custom_trade_name", "custom_brand_color_dark", "custom_brand_color_accent",
+  "custom_linkedin_url", "custom_signature_greeting",
+];
 
 interface ErpUser {
   name: string;
@@ -138,9 +103,71 @@ function esc(v: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Een kleurcode (`#rgb` of `#rrggbb`), of "". De waarde gaat in een style-attribuut. */
+function kleurcode(waarde: unknown): string {
+  const kleur = s(waarde);
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(kleur) ? kleur : "";
+}
+
+/**
+ * Een webadres dat in een link mag staan, of "". Alleen http en https; een
+ * kaal domein ("www.voorbeeld.nl") krijgt https ervoor.
+ */
+export function webadres(waarde: unknown): string {
+  const ruw = s(waarde);
+  if (!ruw || /["'<>\s]/.test(ruw)) return "";
+  if (/^https?:\/\//i.test(ruw)) return ruw;
+  // Iets met een ander schema (mailto:, javascript:) is geen webadres.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(ruw)) return "";
+  return /^[^/]+\.[^/]+/.test(ruw) ? `https://${ruw}` : "";
+}
+
+/**
+ * Het adres van een logo dat de ontvanger van de mail kan laden, of "".
+ *
+ * Een openbaar bestand op deze site (`/files/…`) of een volledig https-adres.
+ * Een afgeschermd bestand (`/private/files/…`) niet: de ontvanger kan niet
+ * inloggen en ziet dan een gebroken plaatje.
+ */
+export function logoAdres(waarde: unknown): string {
+  const pad = s(waarde);
+  if (!pad || /["'<>]/.test(pad)) return "";
+  if (pad.startsWith("/files/")) return pad;
+  return /^https:\/\//i.test(pad) ? pad : "";
+}
+
+/** De huisstijl van een bedrijf. Zonder bedrijf, of zonder ingevulde velden, een neutrale. */
+export function huisstijlUitBedrijf(bedrijf: ErpCompany | null): Huisstijl {
+  const handelsnaam = s(bedrijf?.custom_trade_name);
+  const donker = kleurcode(bedrijf?.custom_brand_color_dark);
+  const accent = kleurcode(bedrijf?.custom_brand_color_accent);
+  const logo = logoAdres(bedrijf?.company_logo);
+  const linkedin = webadres(bedrijf?.custom_linkedin_url);
+  return {
+    company: s(bedrijf?.name),
+    handelsnaam: handelsnaam || s(bedrijf?.company_name) || s(bedrijf?.name),
+    kleurDonker: donker || STANDAARD_KLEUR,
+    kleurAccent: accent || donker || STANDAARD_KLEUR,
+    logo,
+    website: webadres(bedrijf?.website),
+    linkedin,
+    groet: s(bedrijf?.custom_signature_greeting) || STANDAARD_GROET,
+    ingevuld: Boolean(handelsnaam || donker || accent || logo || linkedin),
+  };
+}
+
+/**
+ * De eigen handtekening van de persoon (`User.email_signature`) gaat voor,
+ * behalve bij een bedrijf dat zijn huisstijl heeft ingevuld: dat wil juist
+ * dat iedereen op dezelfde manier ondertekent.
+ */
+export function gebruikOpgeslagenOndertekening(stijl: Huisstijl, opgeslagen: string): boolean {
+  return Boolean(s(opgeslagen)) && !stijl.ingevuld;
+}
+
 /**
  * Splitst een volledige naam in voornaam en de rest. De voornaam krijgt de
- * accentkleur, zoals in de bestaande huisstijl-ondertekeningen.
+ * accentkleur.
  */
 export function splitsNaam(user: ErpUser | null, employee: ErpEmployee | null): { voor: string; rest: string } {
   const voor = s(user?.first_name);
@@ -197,8 +224,8 @@ function ophaalAdres(bron: string): string {
  * De foto stond in de handtekening als pad naar een privé bestand op deze
  * server ("/private/files/..."). In het opstelvenster ben je ingelogd en zag
  * hij er goed uit; de ontvanger kreeg een gebroken plaatje. Als base64 zit hij
- * in de mail zelf. Verkleind tot 112 px: een pasfoto van een halve megabyte in
- * elke mail die je verstuurt, zou elke mail een halve megabyte zwaarder maken.
+ * in de mail zelf. Verkleind: een pasfoto van een halve megabyte in elke mail
+ * die je verstuurt, zou elke mail een halve megabyte zwaarder maken.
  *
  * Lukt het niet, dan "" — liever geen foto dan een gebroken plaatje.
  */
@@ -226,19 +253,34 @@ export async function fotoAlsBase64(pad: string): Promise<string> {
   }
 }
 
+/** Kleiner dan dit is een afbeelding een pictogram (een sociaal netwerk, een vlaggetje) en geen foto. */
+const PICTOGRAM_GRENS = 40;
+
+/** De opgegeven breedte of hoogte van een img-tag in pixels, of 0 als die er niet staat. */
+function maat(tag: string, attribuut: "width" | "height"): number {
+  const gevonden = new RegExp(`\\b${attribuut}\\s*=\\s*["']?(\\d+)`, "i").exec(tag);
+  return gevonden ? Number(gevonden[1]) : 0;
+}
+
 /**
  * De persoonlijke foto uit een handmatig ingestelde handtekening: de eerste
- * afbeelding die niet het logo of het LinkedIn-icoon is.
+ * afbeelding die niet het logo is en ook geen pictogram.
  *
- * Zo stond hij in de oudere mails: alleen het hoofd, apart uitgesneden. De
+ * In zo'n handtekening staat vaak alleen het hoofd, apart uitgesneden. De
  * profielfoto in ERPNext is vaak een staande foto van het hele lichaam, en die
  * hoort niet onder een mail.
+ *
+ * @param overslaan adressen (of het eind daarvan) van afbeeldingen die geen
+ *   foto zijn, zoals het logo van het bedrijf.
  */
-export function fotoUitOpgeslagen(html: string): string {
-  const vast = [LOGO_URL, LINKEDIN_URL].map((u) => u.split("/").pop() || u);
+export function fotoUitOpgeslagen(html: string, overslaan: string[] = []): string {
+  const namen = overslaan.map((adres) => s(adres).split("/").pop() || "").filter(Boolean);
   for (const m of (html || "").matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     const bron = m[1].trim();
-    if (!bron || vast.some((naam) => bron.endsWith(naam))) continue;
+    if (!bron || namen.some((naam) => bron.endsWith(naam))) continue;
+    const breedte = maat(m[0], "width");
+    const hoogte = maat(m[0], "height");
+    if ((breedte && breedte < PICTOGRAM_GRENS) || (hoogte && hoogte < PICTOGRAM_GRENS)) continue;
     return bron;
   }
   return "";
@@ -247,6 +289,15 @@ export function fotoUitOpgeslagen(html: string): string {
 /** De profielfoto van deze persoon, of "" als er geen is. */
 export function kiesFoto(user: ErpUser | null, employee: ErpEmployee | null): string {
   return s(employee?.image) || s(user?.user_image);
+}
+
+/** "www.voorbeeld.nl" uit "https://www.voorbeeld.nl/contact": zo staat de website onder de mail. */
+function websiteLabel(website: string): string {
+  try {
+    return new URL(website).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -258,25 +309,23 @@ export function opmaakOndertekening(input: {
   user: ErpUser | null;
   employee: ErpEmployee | null;
   adres: ErpAdres | null;
-  bedrijf: string;
+  huisstijl: Huisstijl;
   /**
    * De foto zoals hij in de mail moet: een base64-bron uit `fotoAlsBase64`.
    * Leeg betekent geen foto. Niet opgegeven: het pad uit ERPNext, zoals vroeger.
    */
   fotoBron?: string;
-  /** Welke huisstijl; standaard die van 3BM. */
-  huisstijl?: Huisstijl;
 }): string {
   const { voor, rest } = splitsNaam(input.user, input.employee);
   const telefoon = kiesTelefoon(input.user, input.employee);
   const foto = input.fotoBron !== undefined ? input.fotoBron : kiesFoto(input.user, input.employee);
-  const stijl = input.huisstijl ?? HUISSTIJL_3BM;
+  const stijl = input.huisstijl;
   const donker = stijl.kleurDonker;
   const accent = stijl.kleurAccent;
-  const bedrijf = HANDELSNAAM[input.bedrijf] || input.bedrijf;
+  const bedrijf = stijl.handelsnaam;
 
   const regels: string[] = [];
-  regels.push(`<p style="margin:0 0 10px 0">Met vriendelijke groet,</p>`);
+  regels.push(`<p style="margin:0 0 10px 0">${esc(stijl.groet)}</p>`);
 
   if (voor || rest) {
     const naam = `<strong style="color:${accent}">${esc(voor)}</strong>`
@@ -286,10 +335,14 @@ export function opmaakOndertekening(input: {
         + ` style="border-radius:50%;vertical-align:middle;margin-right:8px" alt=""> ${naam}</p>`
       : `<p style="margin:0 0 10px 0">${naam}</p>`);
   }
-  const logoTag = `<img src="${stijl.logo}" width="${stijl.logoBreedte}" height="${stijl.logoHoogte}" alt="${esc(bedrijf)}">`;
-  regels.push(`<p style="margin:0 0 8px 0">${
-    stijl.website ? `<a href="${stijl.website}" rel="noopener noreferrer">${logoTag}</a>` : logoTag
-  }</p>`);
+
+  if (stijl.logo) {
+    // Alleen de hoogte: het logo van elk bedrijf heeft een andere verhouding.
+    const logoTag = `<img src="${esc(stijl.logo)}" height="56" alt="${esc(bedrijf)}">`;
+    regels.push(`<p style="margin:0 0 8px 0">${
+      stijl.website ? `<a href="${esc(stijl.website)}" rel="noopener noreferrer">${logoTag}</a>` : logoTag
+    }</p>`);
+  }
 
   const blok: string[] = [];
   if (bedrijf) blok.push(`<strong style="color:${donker}">${esc(bedrijf)}</strong>`);
@@ -298,14 +351,17 @@ export function opmaakOndertekening(input: {
   const plaats = [s(input.adres?.pincode), s(input.adres?.city)].filter(Boolean).join(" ");
   if (plaats) blok.push(`<span style="color:${donker}">${esc(plaats)}</span>`);
   if (telefoon) blok.push(`<span style="color:${donker}">${esc(telefoon)}</span>`);
-  if (stijl.website && stijl.websiteLabel) {
-    blok.push(`<a href="${stijl.website}" style="color:${accent};text-decoration:none" rel="noopener noreferrer">${stijl.websiteLabel}</a>`);
+  const label = stijl.website ? websiteLabel(stijl.website) : "";
+  if (label) {
+    blok.push(`<a href="${esc(stijl.website)}" style="color:${accent};text-decoration:none" rel="noopener noreferrer">${esc(label)}</a>`);
   }
-  regels.push(`<p style="margin:0 0 8px 0;line-height:1.5">${blok.join("<br>")}</p>`);
+  if (blok.length > 0) {
+    regels.push(`<p style="margin:0 0 8px 0;line-height:1.5">${blok.join("<br>")}</p>`);
+  }
 
-  if (stijl.linkedin && stijl.linkedinLogo) {
-    regels.push(`<p style="margin:0"><a href="${stijl.linkedin}" rel="noopener noreferrer">`
-      + `<img src="${stijl.linkedinLogo}" width="23" height="23" alt="LinkedIn"></a></p>`);
+  if (stijl.linkedin) {
+    regels.push(`<p style="margin:0"><a href="${esc(stijl.linkedin)}" style="color:${accent};text-decoration:none"`
+      + ` rel="noopener noreferrer">LinkedIn</a></p>`);
   }
 
   return `<div style="font-family:'Segoe UI',Tahoma,Calibri,sans-serif;font-size:14px;color:${donker}">`
@@ -316,18 +372,17 @@ export function opmaakOndertekening(input: {
  * Haalt de gegevens op en levert de ondertekening voor één adres.
  *
  * Bewust zonder cache: het hele punt is dat een gewijzigd telefoonnummer of
- * een nieuwe profielfoto meteen meekomt. Het zijn drie kleine lijstqueries,
+ * een nieuwe profielfoto meteen meekomt. Het zijn een paar kleine verzoeken,
  * eenmalig bij het openen van een concept.
+ *
+ * @param emailId het adres van de persoon die schrijft
+ * @param emailAccount de postbus waarvandaan verstuurd wordt (naam van het
+ *   Email Account). Die bepaalt de huisstijl: wie vanuit de postbus van een
+ *   ander bedrijf schrijft, ondertekent met dat bedrijf.
  */
-export async function ondertekeningVoor(
-  emailId: string,
-  emailAccount?: string,
-  afzender?: string,
-): Promise<string> {
+export async function ondertekeningVoor(emailId: string, emailAccount?: string): Promise<string> {
   const adres = s(emailId).toLowerCase();
   if (!adres) return "";
-  // De postbus bepaalt de huisstijl; zonder opgave die van het eigen adres.
-  const stijl = huisstijlVoor(afzender || emailAccount || adres);
 
   let user: ErpUser | null = null;
   let employee: ErpEmployee | null = null;
@@ -350,18 +405,83 @@ export async function ondertekeningVoor(
     employee = employees[0] ?? null;
   } catch { /* idem */ }
 
+  const bron = (await bronVanServer(emailAccount))
+    ?? (await bronRechtstreeks(emailAccount, s(employee?.company)));
+
   // Zonder persoon achter dit adres (gedeelde postbus) is er niets te
   // genereren: dan geldt wat er op het Email Account is ingesteld.
-  if (!user && !employee) return emailAccount ? await opgeslagenOndertekening(emailAccount) : "";
+  if (!user && !employee) return bron.postbusOndertekening;
 
-  // Schrijf je vanuit een postbus met een eigen huisstijl, dan hoort dát
-  // bedrijf eronder — ook als je medewerkerskaart een ander bedrijf noemt.
-  const bedrijf = stijl !== HUISSTIJL_3BM ? stijl.company : s(employee?.company);
-  if (!heeftEigenHuisstijl(bedrijf)) {
+  const stijl = huisstijlUitBedrijf(bron.bedrijf);
+  if (!stijl.ingevuld) {
     const eigen = await eigenOndertekening(adres);
-    if (gebruikOpgeslagenOndertekening(bedrijf, eigen)) return eigen;
+    if (gebruikOpgeslagenOndertekening(stijl, eigen)) return eigen;
   }
-  let adresRij: ErpAdres | null = null;
+
+  // Eerst de foto uit de handtekening van de postbus: vaak een apart
+  // uitgesneden hoofdfoto. Pas als die er niet is, of niet laadt, de
+  // profielfoto uit ERPNext.
+  const opgeslagen = fotoUitOpgeslagen(bron.postbusOndertekening, stijl.logo ? [stijl.logo] : []);
+  let fotoBron = opgeslagen ? await fotoAlsBase64(opgeslagen) : "";
+  if (!fotoBron) {
+    const pad = kiesFoto(user, employee);
+    fotoBron = pad ? await fotoAlsBase64(pad) : "";
+  }
+  return opmaakOndertekening({ user, employee, adres: bron.adres, fotoBron, huisstijl: stijl });
+}
+
+/** Wat er naast de persoon in de ondertekening komt. */
+export interface OndertekeningBron {
+  /** Het bedrijf van de postbus, anders dat van de medewerkerskaart. */
+  bedrijf: ErpCompany | null;
+  /** Het vestigingsadres van dat bedrijf. */
+  adres: ErpAdres | null;
+  /** De handmatig ingestelde handtekening van de postbus, of "". */
+  postbusOndertekening: string;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+/**
+ * Het antwoord van de serverfunctie `ondertekening_gegevens`, of `null` als
+ * het dat antwoord niet is.
+ */
+export function bronUitAntwoord(antwoord: unknown): OndertekeningBron | null {
+  if (!isObject(antwoord) || !("bedrijf" in antwoord)) return null;
+  const { bedrijf, adres, postbus } = antwoord;
+  if (bedrijf !== null && !(isObject(bedrijf) && typeof bedrijf.name === "string")) return null;
+  return {
+    bedrijf: bedrijf as ErpCompany | null,
+    adres: isObject(adres) ? (adres as ErpAdres) : null,
+    postbusOndertekening: isObject(postbus) ? s(postbus.signature) : "",
+  };
+}
+
+/**
+ * De gegevens via de serverfunctie van de app. Die leest wat een gewone
+ * medewerker zelf niet mag lezen maar wel onder zijn mail hoort: het adres
+ * van zijn bedrijf, en het bedrijf en de handtekening van de postbus waaruit
+ * hij schrijft. Zie `y_next.api.ondertekening`.
+ */
+async function bronVanServer(emailAccount?: string): Promise<OndertekeningBron | null> {
+  try {
+    return bronUitAntwoord(await callMethod("ondertekening_gegevens", { postbus: emailAccount || "" }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dezelfde gegevens met gewone leesacties, voor wie de serverfunctie niet mag
+ * of kan gebruiken. Wat de gebruiker niet mag lezen, valt dan weg.
+ */
+async function bronRechtstreeks(emailAccount: string | undefined, bedrijfVanKaart: string): Promise<OndertekeningBron> {
+  const postbus = emailAccount ? await leesPostbus(emailAccount) : { signature: "", company: "" };
+  // Het bedrijf van de postbus gaat voor op dat van de medewerkerskaart.
+  const bedrijfsnaam = postbus.company || bedrijfVanKaart;
+  const bedrijf = bedrijfsnaam ? await leesBedrijf(bedrijfsnaam) : null;
+
+  let adres: ErpAdres | null = null;
   if (bedrijf) {
     try {
       const rijen = await fetchList<ErpAdres>("Address", {
@@ -369,20 +489,11 @@ export async function ondertekeningVoor(
         filters: [["is_your_company_address", "=", 1]],
         limit_page_length: 20,
       });
-      adresRij = rijen.find((r) => s(r.address_title) === bedrijf) ?? null;
+      const titels = [bedrijfsnaam, s(bedrijf.custom_trade_name), s(bedrijf.company_name)].filter(Boolean);
+      adres = rijen.find((r) => titels.includes(s(r.address_title))) ?? null;
     } catch { /* zonder adres blijft de rest van de ondertekening staan */ }
   }
-
-  // Eerst de foto uit de handtekening van de postbus: de uitgesneden hoofdfoto
-  // uit de oudere mails. Pas als die er niet is, of niet laadt, de profielfoto
-  // uit ERPNext.
-  const opgeslagen = emailAccount ? fotoUitOpgeslagen(await opgeslagenOndertekening(emailAccount)) : "";
-  let fotoBron = opgeslagen ? await fotoAlsBase64(opgeslagen) : "";
-  if (!fotoBron) {
-    const pad = kiesFoto(user, employee);
-    fotoBron = pad ? await fotoAlsBase64(pad) : "";
-  }
-  return opmaakOndertekening({ user, employee, adres: adresRij, bedrijf, fotoBron, huisstijl: stijl });
+  return { bedrijf, adres, postbusOndertekening: postbus.signature };
 }
 
 /**
@@ -399,12 +510,28 @@ async function eigenOndertekening(adres: string): Promise<string> {
   }
 }
 
-/** De handmatig ingestelde handtekening van een Email Account. */
-async function opgeslagenOndertekening(emailAccount: string): Promise<string> {
+/** De handmatig ingestelde handtekening van een Email Account, en het bedrijf waar de postbus bij hoort. */
+async function leesPostbus(emailAccount: string): Promise<{ signature: string; company: string }> {
   try {
-    const doc = await fetchDocument<{ signature?: string }>("Email Account", emailAccount);
-    return s(doc?.signature);
+    // `custom_company` is een veld dat de app aan Email Account toevoegt;
+    // ERPNext kent zelf geen bedrijf per postbus.
+    const doc = await fetchDocument<{ signature?: string; custom_company?: string }>("Email Account", emailAccount);
+    return { signature: s(doc?.signature), company: s(doc?.custom_company) };
   } catch {
-    return "";
+    return { signature: "", company: "" };
+  }
+}
+
+/** Het bedrijf met de velden waar de huisstijl uit komt. Lukt het lezen niet, dan alleen de naam. */
+async function leesBedrijf(naam: string): Promise<ErpCompany> {
+  try {
+    const rijen = await fetchList<ErpCompany>("Company", {
+      fields: COMPANY_VELDEN,
+      filters: [["name", "=", naam]],
+      limit_page_length: 1,
+    });
+    return rijen[0] ?? { name: naam };
+  } catch {
+    return { name: naam };
   }
 }

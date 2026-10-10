@@ -289,7 +289,7 @@ const LOCAL_RELEASES = [
       {
         title: "Adressen als blokjes",
         items: [
-          "In Aan, Cc en Bcc staat elk adres nu als blokje, met naam en adres: Maarten Vroegindeweij <maarten@3bm.co.nl>. Een gekozen contact komt er met naam in.",
+          "In Aan, Cc en Bcc staat elk adres nu als blokje, met naam en adres: Jan de Vries <jan@voorbeeld.nl>. Een gekozen contact komt er met naam in.",
           "Het kruisje haalt een adres weg, dubbelklikken maakt het weer tekst om aan te passen, en Backspace in een leeg veld haalt het laatste adres weg.",
           "Een adres dat geen geldig e-mailadres lijkt, kleurt rood. Een tikfout zie je dan vóór het versturen.",
           "Een lijst plakken met komma's of puntkomma's werkt nog steeds: elk adres wordt een blokje.",
@@ -353,7 +353,7 @@ const LOCAL_RELEASES = [
         title: "Agenda: verwijderen werkt",
         items: [
           "Een afspraak verwijderen deed niets. Het venster sloot alsof het gelukt was, maar na het verversen stond de afspraak er gewoon weer. Voor afspraken in de agenda op de mailserver was er geen verwijderpad; sinds nieuwe afspraken standaard daar komen, gold dat voor bijna alles.",
-          "Verwijder je een afspraak die jij organiseert, dan verdwijnt hij ook uit de agenda van collega's die uitgenodigd waren. Genodigden van buiten 3BM krijgen een afzegging per mail, zodat de afspraak niet bij hen blijft staan.",
+          "Verwijder je een afspraak die jij organiseert, dan verdwijnt hij ook uit de agenda van collega's die uitgenodigd waren. Genodigden van buiten de organisatie krijgen een afzegging per mail, zodat de afspraak niet bij hen blijft staan.",
           "Bij een herhalende afspraak zegt de bevestiging dat de hele reeks weggaat.",
         ],
       },
@@ -447,7 +447,7 @@ const LOCAL_RELEASES = [
         title: "E-mail — je postbussen",
         items: [
           "Wie een gedeelde postbus mocht inzien, zag het tabblad wel maar de berichten niet. Dat zat op drie plekken tegelijk vast: het leesrecht op de mail zelf, het recht om de postbus te mogen opvragen, en het veld waarin staat welke postbussen bij je horen. Alle drie zijn losgemaakt; een toegevoegde postbus laat nu ook echt zijn post zien.",
-          "Info, Water-lijn en de postbussen van collega's staan als extra tabblad naast je eigen mail voor wie ze toegewezen heeft gekregen.",
+          "Gedeelde postbussen en de postbussen van collega's staan als extra tabblad naast je eigen mail voor wie ze toegewezen heeft gekregen.",
         ],
       },
       {
@@ -473,7 +473,7 @@ const LOCAL_RELEASES = [
         items: [
           "Schrijven in Markdown of HTML: typ je tekst met sterretjes en streepjes en hij komt als opmaak aan.",
           "Plakken met keuze: met opmaak, als platte tekst, of als Markdown. Wat je uit Word of van een website plakt sleept niet langer vreemde lettertypen en kaders mee.",
-          "Eén lettertype-instelling voor heel 3BM. De beheerder zet lettertype, grootte en kleur; iedereen schrijft daarna in dezelfde huisstijl.",
+          "Eén lettertype-instelling voor de hele organisatie. De beheerder zet lettertype, grootte en kleur; iedereen schrijft daarna in dezelfde huisstijl.",
           "Bij doorsturen gaan de bijlagen mee — dat ging stil mis. De cursor staat meteen in het Aan-veld, zodat je kunt beginnen met typen.",
         ],
       },
@@ -518,7 +518,7 @@ const LOCAL_RELEASES = [
         title: "Uitnodigen",
         items: [
           "Zodra er iemand in het genodigdenveld staat, gaat de afspraak via de mailserver. Dat is de enige weg waarlangs de uitnodiging aankomt; stond de agenda op ERPNext, dan ging er stil niets uit en merkte je het pas als er niemand kwam opdagen.",
-          "Een genodigde van buiten 3BM leverde de waarschuwing op dat het bij hem niet gelukt was, terwijl de uitnodiging gewoon verstuurd was. Buitenstaanders hebben hier geen agenda om in te schrijven — ze krijgen hun uitnodiging per e-mail en tellen niet langer als mislukking.",
+          "Een genodigde van buiten de organisatie leverde de waarschuwing op dat het bij hem niet gelukt was, terwijl de uitnodiging gewoon verstuurd was. Buitenstaanders hebben hier geen agenda om in te schrijven — ze krijgen hun uitnodiging per e-mail en tellen niet langer als mislukking.",
         ],
       },
       {
@@ -955,7 +955,7 @@ const LOCAL_RELEASES = [
         items: [
           "Eigen berichten kun je nu bewerken en verwijderen via een 3-punten menu naast 👍 en reply (hover-strip). Bewerkte berichten krijgen '(bewerkt)' naast de tijd; verwijderde tonen 'Bericht verwijderd' (grijs cursief) op de oorspronkelijke plek zodat replies-naar-verwijderd-bericht blijven werken.",
           "👍-regressie opgelost: 👍 vanaf de NextCloud Talk desktop app verscheen in Y-app als nieuw bericht in de chat i.p.v. als reactie. Server filtert nu emoji-only quoted replies + 'X verwijderde een bericht' system-noise weg.",
-          "Eigen berichten worden weer correct herkend: NC Talk's actorId (`piet.mol`) wordt nu live ge-resolved tegen je user (`piet@3bm.co.nl`) zodat alle eigen messages weer een 3-dot menu krijgen.",
+          "Eigen berichten worden weer correct herkend: NC Talk's actorId (`jan.devries`) wordt nu live ge-resolved tegen je user (`jan@voorbeeld.nl`) zodat alle eigen messages weer een 3-dot menu krijgen.",
         ],
       },
       {
@@ -976,7 +976,7 @@ const LOCAL_RELEASES = [
       {
         title: "Print Format slimmer — credit-conditionals",
         items: [
-          "Print Format '3BM Factuur+Smart Urenstaat' herkent nu credit-nota's automatisch. Titel wisselt naar CREDIT-FACTUUR, intro-zin naar 'Bijgaand sturen we u een credit-nota...', en de betaal-instructie naar 'We zullen dit bedrag overmaken op uw rekening ofwel verrekenen met een openstaande post.' — overgenomen uit de bestaande '3BM Credit Nieuw'-template zodat dezelfde bewoording wordt gebruikt.",
+          "Het Print Format met de slimme urenstaat herkent nu credit-nota's automatisch. Titel wisselt naar CREDIT-FACTUUR, intro-zin naar 'Bijgaand sturen we u een credit-nota...', en de betaal-instructie naar 'We zullen dit bedrag overmaken op uw rekening ofwel verrekenen met een openstaande post.' — dezelfde bewoording als de bestaande creditnota-template.",
         ],
       },
       {
@@ -993,7 +993,7 @@ const LOCAL_RELEASES = [
       {
         title: "Bekend issue",
         items: [
-          "Bewerken & opslaan van een BESTAANDE credit-nota draft faalt met een ERPNext-validatiefout (`Invoice Total Incl VAT must be >= 0.0`). Aanmaken van credit-nota's werkt wél. Oplossing vereist een patch in de 3BM-ERPNext-app aan de server-zijde; buiten Y-app scope.",
+          "Bewerken & opslaan van een BESTAANDE credit-nota draft faalt met een ERPNext-validatiefout (`Invoice Total Incl VAT must be >= 0.0`). Aanmaken van credit-nota's werkt wél. Oplossing vereist een patch aan de server-zijde; buiten Y-app scope.",
         ],
       },
     ],
@@ -1015,7 +1015,7 @@ const LOCAL_RELEASES = [
       {
         title: "Instellingen — per device, per company",
         items: [
-          "Settings → Project instellingen → 'NAS opslag': voor elk bedrijf eenmalig de base-folder kiezen (bv. C:/3BM/50_projecten/5_3BM_engineering/). Configuratie blijft lokaal — verschillende werkstations kunnen andere drive-letters / share-paden gebruiken.",
+          "Settings → Project instellingen → 'NAS opslag': voor elk bedrijf eenmalig de base-folder kiezen (bv. C:/Bedrijf/50_projecten/). Configuratie blijft lokaal — verschillende werkstations kunnen andere drive-letters / share-paden gebruiken.",
           "Correspondentie-submap (default '01 Correspondentie') en de naam-template voor de submap per mail zijn aanpasbaar. Placeholders: {nr}, {nr:03d}, {dd-mm-yyyy}, {yyyy-mm-dd}, {subject}, {from}.",
           "Naam-conflict op bestand-niveau: krijgt automatisch suffix ' (1)', ' (2)'. Bestaande bestanden worden nooit overschreven.",
         ],
@@ -1253,7 +1253,7 @@ const LOCAL_RELEASES = [
         title: "Opgelost — Tenant-isolatie (Chinese walls)",
         items: [
           "Filters (bedrijf/medewerker/activity type) lekken niet meer tussen instance-tabs — alles per-instance opgeslagen (pref_${id}_*)",
-          "Messenger op Impertio toont niet meer berichten van 3BM: per-instance NextCloud Talk creds zowel client- als server-side",
+          "Messenger toont niet meer berichten van een andere instance: per-instance NextCloud Talk creds zowel client- als server-side",
           "Server resolveNcTalkCreds/resolveNextcloudCreds: per-request credentials gaan voor env-var fallback (was omgekeerd)",
           "Convo-cache nu per-instance (Map keyed by instanceId) i.p.v. één gedeelde — geen cache-poisoning bij tab-wissel",
           "Eenmalige migratie wist legacy globale erpnext_default_* keys uit localStorage bij startup",

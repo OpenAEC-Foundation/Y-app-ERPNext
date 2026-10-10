@@ -15,15 +15,15 @@ import { ontvouw } from "./ical.ts";
 
 const ICS = [
   "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT",
-  "UID:u-1@3bm.co.nl", "SUMMARY:Archipel Oudewater",
-  "ORGANIZER;CN=Lance Post:mailto:lance@3bm.co.nl",
-  "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:maarten@3bm.co.nl",
+  "UID:u-1@3xz.co.nl", "SUMMARY:Archipel Oudewater",
+  "ORGANIZER;CN=Lance Post:mailto:lance@3xz.co.nl",
+  "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:maarten@3xz.co.nl",
   "END:VEVENT", "END:VCALENDAR",
 ].join("\r\n") + "\r\n";
 
 const BASIS = {
-  organisator: "lance@3bm.co.nl",
-  ik: "maarten@3bm.co.nl",
+  organisator: "lance@3xz.co.nl",
+  ik: "maarten@3xz.co.nl",
   titel: "Archipel Oudewater",
   ics: ICS,
   voorvoegsel: VOORVOEGSEL_NL,
@@ -31,7 +31,7 @@ const BASIS = {
 
 test("het antwoord gaat naar de organisator, met zijn onderwerp ervoor", () => {
   const mail = maakAntwoordMail({ ...BASIS, stand: "accepted" });
-  assert.equal(mail?.aan, "lance@3bm.co.nl");
+  assert.equal(mail?.aan, "lance@3xz.co.nl");
   assert.equal(mail?.onderwerp, "Geaccepteerd: Archipel Oudewater");
 });
 
@@ -46,7 +46,7 @@ test("het meegestuurde bestand is een antwoord, geen nieuwe uitnodiging", () => 
   const mail = maakAntwoordMail({ ...BASIS, stand: "accepted" });
   const regels = ontvouw(mail!.ics);
   assert.ok(regels.includes("METHOD:REPLY"), "METHOD moet REPLY zijn");
-  const mijn = regels.find((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:maarten@3bm.co.nl"));
+  const mijn = regels.find((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:maarten@3xz.co.nl"));
   assert.match(mijn || "", /PARTSTAT=ACCEPTED/);
   // Zonder RSVP: de vraag is beantwoord.
   assert.equal(/RSVP=TRUE/.test(mijn || ""), false);
@@ -59,7 +59,7 @@ test("zonder organisator valt er niemand te antwoorden", () => {
 
 test("aan jezelf antwoorden hoeft niet", () => {
   // Je eigen afspraak: dan is er geen ander die op bericht zit te wachten.
-  assert.equal(maakAntwoordMail({ ...BASIS, organisator: "Maarten@3BM.co.nl", stand: "accepted" }), null);
+  assert.equal(maakAntwoordMail({ ...BASIS, organisator: "Maarten@3XZ.co.nl", stand: "accepted" }), null);
 });
 
 test("zonder bestand gaat er niets de deur uit", () => {

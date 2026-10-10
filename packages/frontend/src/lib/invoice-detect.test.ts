@@ -19,8 +19,8 @@ import {
  * domeinmatching stuk zou gaan en exacte adresmatching moet werken.
  */
 const SUPPLIERS: SupplierHint[] = [
-  { name: "3BM Bouwkunde" },
-  { name: "3BM Bouwtechniek V.O.F." },
+  { name: "3XZ Bouwkunde" },
+  { name: "3XZ Bouwadvies V.O.F." },
   { name: "Castellum Rosarum BV" },
   { name: "Digidentity" },
   { name: "Drukwerkdeal.nl B.V.", emails: ["info@drukwerkdeal.nl"] },
@@ -66,7 +66,7 @@ test("een percentage zonder btw, of een tarief dat hier niet bestaat, telt niet"
 /* ─────────────────────────── Losse bouwstenen ────────────────────────── */
 
 test("normalizeCompanyName snoeit de juridische staart weg", () => {
-  assert.equal(normalizeCompanyName("3BM Bouwtechniek V.O.F."), "3bm bouwtechniek");
+  assert.equal(normalizeCompanyName("3XZ Bouwadvies V.O.F."), "3xz bouwadvies");
   assert.equal(normalizeCompanyName("Castellum Rosarum BV"), "castellum rosarum");
   assert.equal(normalizeCompanyName("Castellum Rosarum B.V."), "castellum rosarum");
   assert.equal(normalizeCompanyName("JBS multimedia B.V."), "jbs multimedia");
@@ -107,20 +107,20 @@ test("parseDateish begrijpt ISO, dd-mm-jjjj en maandnamen", () => {
 
 test("hoge zekerheid: leveranciersnaam in onderwerp + factuur-PDF", () => {
   const guess = detectPurchaseInvoice(signals({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["263-05192.pdf"],
     mailDate: "2026-08-03 21:56:28",
-    bodyText: "Factuur 3BM Bouwtechniek V.O.F. 263-05192 Beste heer/mevrouw, Bij deze stuur ik u de factuur "
+    bodyText: "Factuur 3XZ Bouwadvies V.O.F. 263-05192 Beste heer/mevrouw, Bij deze stuur ik u de factuur "
       + "voor onze advieswerkzaamheden voor het project: 3273 Open Pile Plan Studio Het totale bedrag bedraagt "
       + "€ 2 417.58 (inclusief BTW). € 1 998.00 (excl. BTW). Wij verzoeken u vriendelijk dit voor "
-      + "2026-08-21 te voldoen op rekeningnummer NL95RABO0152787410 t.n.v. 3BM Bouwtechniek V.O.F. onder "
+      + "2026-08-21 te voldoen op rekeningnummer NL95RABO0152787410 t.n.v. 3XZ Bouwadvies V.O.F. onder "
       + "vermelding van factuurnummer 263-05192 .",
   }), SUPPLIERS);
 
   assert.equal(guess.isLikely, true);
   assert.equal(guess.confidence, "high");
-  assert.equal(guess.supplier, "3BM Bouwtechniek V.O.F.");
+  assert.equal(guess.supplier, "3XZ Bouwadvies V.O.F.");
   assert.equal(guess.invoiceNo, "263-05192");
   // Netto, niet bruto: dat is wat als regelbedrag geboekt moet worden.
   assert.equal(guess.amount, 1998);
@@ -133,10 +133,10 @@ test("hoge zekerheid: leveranciersnaam in onderwerp + factuur-PDF", () => {
 });
 
 test("de langste leveranciersnaam wint van de kortere naamgenoot", () => {
-  // "3BM Bouwkunde" en "3BM Bouwtechniek V.O.F." bestaan allebei.
+  // "3XZ Bouwkunde" en "3XZ Bouwadvies V.O.F." bestaan allebei.
   const guess = detectPurchaseInvoice(signals({
     subject: "Factuur Castellum Rosarum B.V. 26CRB-00007",
-    sender: "maarten@3bm.co.nl",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["26CRB-00007.pdf"],
     mailDate: "2026-08-03 23:20:38",
     bodyText: "Het totale bedrag bedraagt € 2 409.41 (inclusief BTW). € 1 991.25 (excl. BTW).",
@@ -169,15 +169,15 @@ test("leverancier via een gmail-contactadres, factuurnummer uit de body", () => 
 test("doorgestuurde factuurthread zonder PDF blijft medium", () => {
   // Echte mail: alleen inline PNG's uit de handtekening, geen factuur-PDF.
   const guess = detectPurchaseInvoice(signals({
-    subject: "Fwd: Factuur 3BM Bouwtechniek V.O.F. 263-05163",
-    sender: "maarten@3bm.co.nl",
+    subject: "Fwd: Factuur 3XZ Bouwadvies V.O.F. 263-05163",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["Outlook-kzymgmpg.png", "bDdmi9EVxqEirblI.png"],
     mailDate: "2026-08-24 14:25:21",
   }), SUPPLIERS);
 
   assert.equal(guess.isLikely, true);
   assert.equal(guess.confidence, "medium");
-  assert.equal(guess.supplier, "3BM Bouwtechniek V.O.F.");
+  assert.equal(guess.supplier, "3XZ Bouwadvies V.O.F.");
   assert.equal(guess.invoiceNo, "263-05163");
   assert.equal(guess.amount, undefined, "niets verzinnen wat er niet staat");
 });
@@ -187,15 +187,15 @@ test("lijstweergave kent alleen has_attachment en komt tot medium", () => {
   // wat de berichtenlijst weet. Het labeltje verschijnt, de zekerheid is
   // lager, en na openen wordt het vanzelf high.
   const guess = detectPurchaseInvoice(signals({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
     hasAttachment: true,
     mailDate: "2026-08-03 21:56:28",
   }), SUPPLIERS);
 
   assert.equal(guess.isLikely, true);
   assert.equal(guess.confidence, "medium");
-  assert.equal(guess.supplier, "3BM Bouwtechniek V.O.F.");
+  assert.equal(guess.supplier, "3XZ Bouwadvies V.O.F.");
 });
 
 /* ───────────────────────── Negatieve gevallen ────────────────────────── */
@@ -248,8 +248,8 @@ test("nieuwsbrief met factuurwoord en PDF wordt onderdrukt", () => {
 
 test("verzonden mail wordt nooit als inkoopfactuur aangeboden", () => {
   const guess = detectPurchaseInvoice(signals({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["263-05192.pdf"],
     direction: "sent",
   }), SUPPLIERS);
@@ -258,16 +258,16 @@ test("verzonden mail wordt nooit als inkoopfactuur aangeboden", () => {
 });
 
 test("de handtekening van de afzender maakt van 'test' geen factuur", () => {
-  // Echte mail uit de instance. Elke mail van dit adres draagt "3BM
-  // Bouwtechniek V.O.F." in de handtekening; zonder de factuurwoord-eis
+  // Echte mail uit de instance. Elke mail van dit adres draagt "3XZ
+  // Bouwadvies V.O.F." in de handtekening; zonder de factuurwoord-eis
   // haalde deze mail `medium` op leveranciersnaam + bijlage alleen.
   const guess = detectPurchaseInvoice(signals({
     subject: "test",
-    sender: "maarten@3bm.co.nl",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["Outlook-kzymgmpg.png"],
     mailDate: "2026-08-24 10:27:20",
-    bodyText: "Met vriendelijke groet, Maarten Vroegindeweij 3BM Bouwtechniek V.O.F. "
-      + "Burgemeester de Raadtsingel 31 3311 JG Dordrecht 3bm.co.nl",
+    bodyText: "Met vriendelijke groet, Maarten Vroman 3XZ Bouwadvies V.O.F. "
+      + "Burgemeester de Raadtsingel 31 3311 JG Dordrecht 3xz.co.nl",
   }), SUPPLIERS);
   assert.equal(guess.isLikely, false);
   assert.equal(guess.confidence, "low");
@@ -278,11 +278,11 @@ test("doorgestuurde loonstroken zijn geen factuur, ook niet met PDF", () => {
   // lijken, en de handtekening levert een leverancier. Alleen het ontbreken
   // van élk factuurwoord houdt dit tegen.
   const guess = detectPurchaseInvoice(signals({
-    subject: "Fwd: Impertio Studio B.V., Periodeverslagen Maandelijks 2026-7/2",
-    sender: "maarten@3bm.co.nl",
+    subject: "Fwd: Imperia Studio B.V., Periodeverslagen Maandelijks 2026-7/2",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["Loonstroken_Maandelijks_2026_7_2.pdf"],
     mailDate: "2026-08-04 01:21:07",
-    bodyText: "Met vriendelijke groet, Maarten Vroegindeweij 3BM Bouwtechniek V.O.F.",
+    bodyText: "Met vriendelijke groet, Maarten Vroman 3XZ Bouwadvies V.O.F.",
   }), SUPPLIERS);
   assert.equal(guess.isLikely, false);
   assert.equal(guess.confidence, "low");
@@ -406,8 +406,8 @@ const NL = String.fromCharCode(10);
 
 const ANWB_PDF = [
   "Factuur",
-  "MAARTEN VROEGINDEWEIJ Klantnummer: EV-a4115451-2469-45eb-",
-  "3BM Bouwtechniek VOF b641-018c97d57ff1",
+  "MAARTEN VROMAN Klantnummer: EV-a4115451-2469-45eb-",
+  "3XZ Bouwadvies VOF b641-018c97d57ff1",
   "Wattstraat 17 Factuurdatum: 30-09-2026",
   "3335LV Zwijndrecht Vervaldatum: 30-09-2026",
   "NL Factuurnummer: 1705154431",

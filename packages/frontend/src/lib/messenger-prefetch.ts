@@ -38,7 +38,7 @@ export interface Conversation {
  * Earlier this was a single shared `{ data, ts }` object — meaning whatever
  * conversations were loaded on instance A would surface on instance B as soon
  * as the user opened Messenger there (the cache TTL hadn't expired). That was
- * the "Bij Impertio bij berichten zie ik berichten van 3BM" leak.
+ * the leak of one instance's messages into another.
  *
  * Now keyed by instance id: each tab has its own slot. Callers MUST go
  * through `getConvoCache()` / `setConvoCache()` instead of accessing module

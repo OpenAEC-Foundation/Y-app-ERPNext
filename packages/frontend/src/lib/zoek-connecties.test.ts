@@ -20,7 +20,7 @@ test("projectkeuzes krijgen nummer en naam als label", () => {
 test("klanten alfabetisch op naam, lege rijen vallen weg", () => {
   const uit = naarKeuzes(
     { category: "customer", doctype: "Customer", naamveld: "customer_name", zoekvelden: [] },
-    [{ name: "Zettex Group", customer_name: "Zettex Group" }, { name: "" }, { name: "Domera B.V.", customer_name: "Domera B.V." }],
+    [{ name: "Zettex Group", customer_name: "Zettex Group" }, { name: "" }, { name: "Domara B.V.", customer_name: "Domara B.V." }],
   );
-  assert.deepEqual(uit.map((k) => k.name), ["Domera B.V.", "Zettex Group"]);
+  assert.deepEqual(uit.map((k) => k.name), ["Domara B.V.", "Zettex Group"]);
 });

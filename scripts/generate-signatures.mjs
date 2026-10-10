@@ -43,18 +43,16 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL (default de productiesite).
+ * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite.
  *
  * Gebruik:
  *   node scripts/generate-signatures.mjs --dry-run
  *   node scripts/generate-signatures.mjs
  *   node scripts/generate-signatures.mjs --force
- *   node scripts/generate-signatures.mjs --dry-run "--bedrijf=3BM Bouwtechniek V.O.F." --zonder-functie
+ *   node scripts/generate-signatures.mjs --dry-run "--bedrijf=Voorbeeld Bouw B.V." --zonder-functie
  */
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
-
-const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 
 /** Marker die een door dit script gegenereerde handtekening herkenbaar maakt. */
 export const SIGNATURE_MARKER = "<!-- y-next-signature v3 -->";
@@ -123,7 +121,13 @@ export function requiredEnv(env) {
         "voordat je dit script draait — zie docs/deployment.md."
     );
   }
-  const rawBase = env.YNEXT_BASE_URL || DEFAULT_BASE_URL;
+  const rawBase = env.YNEXT_BASE_URL;
+  if (!rawBase) {
+    throw new Error(
+      "YNEXT_BASE_URL ontbreekt. Zet de omgevingsvariabele op het adres van de site " +
+        "(bijvoorbeeld https://erp.voorbeeld.nl) — er is geen standaardsite."
+    );
+  }
   const baseUrl = rawBase.replace(/\/+$/, "");
   return { baseUrl, token };
 }

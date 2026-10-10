@@ -8,7 +8,7 @@
  * calls naar endpoints die in Y-next niet meer bestaan (Express-only).
  *
  * Gebruik:
- *   YNEXT_API_TOKEN=key:secret node scripts/visual-check-y-next.mjs [route ...]
+ *   YNEXT_BASE_URL=https://erp.voorbeeld.nl YNEXT_API_TOKEN=key:secret node scripts/visual-check-y-next.mjs [route ...]
  *   (geen routes => standaardset)
  *
  * Output: temp/screens/<naam>.png + temp/screens/report.json
@@ -18,7 +18,11 @@ import { chromium } from "playwright-core";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const BASE_URL = (process.env.YNEXT_BASE_URL || "https://open-aec-studio-erp.prilk.cloud").replace(/\/+$/, "");
+const BASE_URL = (process.env.YNEXT_BASE_URL || "").replace(/\/+$/, "");
+if (!BASE_URL) {
+  console.error("YNEXT_BASE_URL is vereist: het adres van de site");
+  process.exit(1);
+}
 const TOKEN = process.env.YNEXT_API_TOKEN;
 if (!TOKEN) {
   console.error("YNEXT_API_TOKEN is vereist");

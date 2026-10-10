@@ -37,7 +37,7 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL (default de productiesite). Op een bench met
+ * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite. Op een bench met
  * meer sites wijst YNEXT_SITE_NAME de site aan (zie `withSiteName`).
  *
  * Gebruik: zie docs/deployment.md.
@@ -46,8 +46,6 @@
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import { readAppDoctype, readSetup, toCustomDoctype } from "./lib/app-definities.mjs";
-
-const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 
 /** Redigeert eventuele Authorization/token-fragmenten uit een string vóór logging. */
 function redact(text) {
@@ -69,7 +67,13 @@ export function requiredEnv(env) {
         "voordat je dit script draait — zie docs/deployment.md."
     );
   }
-  const rawBase = env.YNEXT_BASE_URL || DEFAULT_BASE_URL;
+  const rawBase = env.YNEXT_BASE_URL;
+  if (!rawBase) {
+    throw new Error(
+      "YNEXT_BASE_URL ontbreekt. Zet de omgevingsvariabele op het adres van de site " +
+        "(bijvoorbeeld https://erp.voorbeeld.nl) — er is geen standaardsite."
+    );
+  }
   const baseUrl = rawBase.replace(/\/+$/, "");
   return { baseUrl, token };
 }

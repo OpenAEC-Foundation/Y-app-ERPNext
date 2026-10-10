@@ -52,7 +52,10 @@ import { onderwerpVoorVerzenden } from "./mail-erpnext-compose.ts";
 import { bewaarRegelovergangen } from "./mail-html.ts";
 import { resolvePostbustoegang, resolveSessionUser } from "./session.ts";
 import { isBelangrijk } from "./mail-belangrijk.ts";
-import { kiesPostbussen, type Postbus } from "./mail-postbussen.ts";
+import {
+  GEDEELDE_POSTBUSSEN_INSTELLING, kiesPostbussen, leesAdreslijst, type Postbus,
+} from "./mail-postbussen.ts";
+import { leesInstelling } from "./instelling.ts";
 import { schrijfCommunicatieVelden } from "./communication-write.ts";
 import {
   CONNECTION_GROUP_BY,
@@ -1040,8 +1043,17 @@ export async function listVirtualFolders(mailbox?: string): Promise<ErpMailFolde
  * het lezen van `Communication` is beperkt tot de Email Accounts in de User
  * Email-tabel van de gebruiker. Een bus tonen zonder die rij levert een tab
  * op die altijd leeg blijft.
+ *
+ * Welke bussen dat zijn staat in de instelling `gedeelde-postbussen`: een
+ * lijst adressen. Zonder die instelling zijn het er geen.
  */
-const SHARED_MAILBOXES = ["info@3bm.co.nl", "cooperatie@3bm.co.nl"];
+async function gedeeldePostbussen(): Promise<string[]> {
+  try {
+    return leesAdreslijst(await leesInstelling(GEDEELDE_POSTBUSSEN_INSTELLING));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Eén kiesbare postbus in de mailmodule.
@@ -1054,7 +1066,7 @@ export type ErpMailbox = Postbus;
 
 /**
  * De postbussen die de ingelogde gebruiker mag kiezen: zijn eigen account
- * plus de gedeelde uit `SHARED_MAILBOXES`.
+ * plus de gedeelde uit de instelling (zie `gedeeldePostbussen`).
  *
  * Waarom dit kán: ERPNext vult `Communication.email_account` wél betrouwbaar
  * (in tegenstelling tot `imap_folder`, dat altijd leeg blijft — zie
@@ -1104,7 +1116,9 @@ export async function listMailboxes(): Promise<ErpMailbox[]> {
       })),
       toStr(user),
       toegang,
-      SHARED_MAILBOXES,
+      // De gedeelde lijst telt alleen voor wie alles mag lezen, en als
+      // terugval wanneer de eigen toegang onbekend is.
+      !toegang || toegang.alles ? await gedeeldePostbussen() : [],
     );
   } catch {
     return [];

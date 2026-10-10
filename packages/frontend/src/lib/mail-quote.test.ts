@@ -282,11 +282,11 @@ test("zonderOnbereikbarePlaatjes: privé-plaatjes en leesbevestigingen gaan uit 
   const html = '<p>Ik zou deze doen</p>'
     + '<img src="/private/files/umlPhehM5vzBC0D0.png?fid=185902edd4" width="70" alt="">'
     + '<img src="https://erp.voorbeeld.nl/private/files/GSuaf.png?fid=2" alt="">'
-    + '<img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3BM Bouwtechniek">'
+    + '<img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3XZ Bouwadvies">'
     + '<img src="https://erp.voorbeeld.nl/api/method/frappe.core.doctype.communication.email.mark_email_as_seen?name=2ta582cn33">';
   assert.equal(
     zonderOnbereikbarePlaatjes(html),
-    '<p>Ik zou deze doen</p><img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3BM Bouwtechniek">',
+    '<p>Ik zou deze doen</p><img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3XZ Bouwadvies">',
   );
 });
 

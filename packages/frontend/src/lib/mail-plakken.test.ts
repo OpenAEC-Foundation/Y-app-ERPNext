@@ -47,7 +47,7 @@ test("de Markdown-herkenning is streng genoeg voor gewone post", () => {
   assert.equal(lijktMarkdown("# Offerte"), true);
   assert.equal(lijktMarkdown("- een\n- twee"), true);
   assert.equal(lijktMarkdown("1. een\n2. twee"), true);
-  assert.equal(lijktMarkdown("zie [de site](https://3bm.co.nl)"), true);
+  assert.equal(lijktMarkdown("zie [de site](https://3xz.co.nl)"), true);
   assert.equal(lijktMarkdown("dit is **belangrijk**"), true);
 });
 

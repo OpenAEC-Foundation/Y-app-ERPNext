@@ -19,7 +19,7 @@ import {
 const COMPANIES = [
   { name: "Castellum Rosarum" },
   { name: "OpenAEC Studio BV" },
-  { name: "Vroughindeweij Industries BV" },
+  { name: "Vroon Industries BV" },
   { name: "Waterlijn BV i.o." },
   { name: "Zera Investments BV" },
 ];

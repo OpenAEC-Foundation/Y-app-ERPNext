@@ -6,7 +6,7 @@ import {
 } from "./mail-format.ts";
 
 test("formatSender: name, fallback to local-part, empty", () => {
-  assert.deepEqual(formatSender([{ name: "Piet", address: "piet@3bm.co.nl" }]), { name: "Piet", email: "piet@3bm.co.nl" });
+  assert.deepEqual(formatSender([{ name: "Piet", address: "piet@3xz.co.nl" }]), { name: "Piet", email: "piet@3xz.co.nl" });
   assert.deepEqual(formatSender([{ name: "", address: "info@klant.nl" }]), { name: "info", email: "info@klant.nl" });
   assert.deepEqual(formatSender([]), { name: "", email: "" });
 });

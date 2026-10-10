@@ -31,10 +31,11 @@ Deze vier regels gaan voor alles wat hieronder staat.
 3. **Eén bron.** Alle broncode staat in deze repository. De repository
    `y_next` wordt door een releasescript samengesteld en is geen plek om te
    ontwikkelen.
-4. **De bestaande productiesite blijft werken.** Die draait op ERPNext 15 en
-   krijgt Y-next via de publicatieroute (File-documenten plus een Web Page).
-   Dezelfde frontend bedient beide routes. Op die site verandert niets zonder
-   een aparte, vooraf afgestemde stap.
+4. **Alleen ERPNext 16.** De nieuwe versie hoeft alleen op ERPNext 16 met de
+   app te werken; met ERPNext 15 wordt geen rekening gehouden. De bestaande
+   productiesite draait op ERPNext 15 en blijft op de laatste versie van de
+   publicatieroute (0.39.5) tot zij naar ERPNext 16 gaat. Op die site
+   verandert niets zonder een aparte, vooraf afgestemde stap.
 
 ## Opbouw
 
@@ -111,7 +112,7 @@ iCal-abonnement; zie onderdeel 5).
 | Sales Order | `custom_description` | Data |
 | Company | `disabled` | Check |
 | Company | huisstijlvelden, zie onderdeel 6 | |
-| Email Account | `company` | Link → Company |
+| Email Account | `custom_company` | Link → Company |
 
 De lijst is af wanneer het acceptatiecriterium onder *Testen* slaagt: op een
 kale site vraagt geen enkel scherm een veld op dat niet bestaat.
@@ -203,15 +204,23 @@ geen vaste huisstijl meer.
 |---|---|
 | naam, telefoon, foto | `User`, `Employee` |
 | bedrijfsnaam, logo, website | `Company` (`company_name`, `company_logo`, `website`) |
-| vestigingsadres | `Address` gekoppeld aan het bedrijf |
+| vestigingsadres | het eigen adres van het bedrijf: `Address` met `is_your_company_address`, gekoppeld aan het bedrijf |
 | handelsnaam | `Company.custom_trade_name` (nieuw) |
 | kleuren | `Company.custom_brand_color_dark`, `Company.custom_brand_color_accent` (nieuw) |
 | LinkedIn | `Company.custom_linkedin_url` (nieuw) |
-| welk bedrijf bij een postbus hoort | `Email Account.company`, anders het bedrijf van de medewerker |
+| groet | `Company.custom_signature_greeting` (nieuw); leeg = de standaardgroet |
+| welk bedrijf bij een postbus hoort | `Email Account.custom_company` (nieuw), anders het bedrijf van de medewerker |
 
-Zonder ingevulde huisstijl komt er een neutrale ondertekening (naam, functie,
-telefoon, bedrijfsnaam, adres). Gedeelde postbussen blijven de ondertekening
-van het Email Account zelf gebruiken.
+Zonder ingevulde huisstijl komt er een neutrale ondertekening (naam,
+telefoon, bedrijfsnaam, adres), en gaat de eigen handtekening van de persoon
+(`User.email_signature`) voor als die er is. Gedeelde postbussen blijven de
+ondertekening van het Email Account zelf gebruiken.
+
+Een gewone medewerker mag in ERPNext alleen adressen lezen die hij zelf heeft
+aangemaakt, en een Email Account alleen met de rol Inbox User. De app heeft
+daarom de serverfunctie `ondertekening_gegevens`: zij geeft het bedrijf, het
+vestigingsadres en de handtekening van de postbus terug, en telt een postbus
+alleen mee als die aan de gebruiker is toegewezen.
 
 ### 7. Generiek maken
 
@@ -220,6 +229,7 @@ van het Email Account zelf gebruiken.
 | huisstijl in de ondertekening | velden op `Company` (onderdeel 6) |
 | namen van factuuropmaken | keuze uit de Print Formats van de site, standaard de standaardopmaak |
 | vaste extensies in de catalogus | lege catalogus; installeren via een adres blijft |
+| vaste lijst gedeelde postbussen | instelling `gedeelde-postbussen` in `Y Next Setting`; zonder = geen |
 | adres van het weekplanning-dashboard | instelling `weekplanning-pad` in `Y Next Setting`; zonder = onderdeel verborgen |
 | maildomein en `PRODID` in agenda-uitnodigingen | domein van de site, neutrale productnaam |
 | voorbeeldteksten, plaatsaanduidingen, organisatielogo in `public/` | neutrale tekst; logo van het bedrijf uit ERPNext |
@@ -228,7 +238,9 @@ van het Email Account zelf gebruiken.
 
 Een controle (`scripts/lib/generiek-check.mjs`) doorzoekt de samengestelde app
 op een lijst met organisatienamen en vaste adressen. Een treffer keurt de
-release af. De controle draait ook in `npm test` op de frontendbron.
+release af. De controle draait ook in `npm test` op de frontendbron. De lijst
+staat als vingerafdrukken in de controle, zodat de namen zelf niet in de
+repository staan.
 
 ### 8. Optionele koppelingen
 
@@ -249,11 +261,14 @@ ERPNext. De app installeert zelf geen workflow.
 
 ## Bestaande sites
 
-- **Publicatieroute (productiesite, ERPNext 15).** Blijft bestaan. Het
-  provisioneringsscript leest de gedeelde definities en maakt daar dezelfde
-  velden aan. Een generieke build bevat de huisstijl, de factuuropmaken en de
-  extensielijst van die site niet meer; die moeten daar vóór de overstap als
-  gegevens zijn ingevuld. Dat is een aparte stap met een lijst vooraf.
+- **Productiesite (ERPNext 15).** Blijft op versie 0.39.5 van de
+  publicatieroute; de nieuwe versie wordt daar niet uitgebracht. De scripts
+  van die route staan nog in deze repository maar hebben geen standaardsite
+  meer.
+- **Overstap naar ERPNext 16 en de app.** Een generieke build bevat de
+  huisstijl, de factuuropmaken, de extensielijst en de gedeelde postbussen
+  van die site niet meer; die moeten bij de overstap als gegevens worden
+  ingevuld. Dat is een aparte stap met een lijst vooraf.
 - **Overstap van zo'n site naar de app.** Buiten dit ontwerp. Aandachtspunt
   voor later: de `Y …`-doctypes bestaan daar als maatwerk-doctypes en moeten
   bij de overstap eigendom van de app worden.

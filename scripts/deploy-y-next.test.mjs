@@ -18,10 +18,11 @@ test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
   assert.throws(() => requiredEnv({}), /YNEXT_API_TOKEN/);
 });
 
-test("requiredEnv: gebruikt de default base-URL en strip trailing slashes", () => {
-  const { baseUrl, token } = requiredEnv({ YNEXT_API_TOKEN: "key:secret" });
+test("requiredEnv: er is geen standaardsite, het adres moet opgegeven zijn", () => {
+  assert.throws(() => requiredEnv({ YNEXT_API_TOKEN: "key:secret" }), /YNEXT_BASE_URL/);
+  const { baseUrl, token } = requiredEnv({ YNEXT_API_TOKEN: "key:secret", YNEXT_BASE_URL: "https://erp.example.com" });
   assert.equal(token, "key:secret");
-  assert.equal(baseUrl, "https://open-aec-studio-erp.prilk.cloud");
+  assert.equal(baseUrl, "https://erp.example.com");
 });
 
 test("requiredEnv: strip trailing slash(es) van een expliciete YNEXT_BASE_URL", () => {
@@ -119,7 +120,7 @@ test("extractBuildTag: haalt de tag uit een geprefixte bestandsnaam", () => {
 });
 
 test("extractBuildTag: geeft null zonder herkenbare prefix", () => {
-  assert.equal(extractBuildTag("3BM-Logo.svg"), null);
+  assert.equal(extractBuildTag("y-logo.svg"), null);
   assert.equal(extractBuildTag("manifest.json"), null);
   assert.equal(extractBuildTag("index.html"), null);
 });

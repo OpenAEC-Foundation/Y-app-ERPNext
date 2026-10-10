@@ -305,7 +305,7 @@ test("een project toont zijn nummer voor de naam", () => {
 
 test("bij een klant blijft de naam alleen staan", () => {
   // Daar is de docname de naam zelf; hem ervoor zetten verdubbelt hem.
-  assert.equal(toonLabel("Customer", "Domera B.V.", "Domera B.V."), "Domera B.V.");
+  assert.equal(toonLabel("Customer", "Domara B.V.", "Domara B.V."), "Domara B.V.");
   assert.equal(toonLabel("Lead", "CRM-LEAD-0001", "Jan de Vries"), "Jan de Vries");
 });
 

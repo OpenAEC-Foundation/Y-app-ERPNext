@@ -3,7 +3,7 @@
  * extensions and brokers their ERPNext calls through a postMessage RPC.
  *
  * Threat model: the iframe is served from a third-party origin (e.g.
- * github.io). It has no cookies for y-app.impertio.app, so it cannot call
+ * github.io). It has no cookies for the Y-next site, so it cannot call
  * /api/* directly. Everything the extension does against ERPNext goes
  * through this bridge, which runs in the parent Y-app tab and therefore
  * uses the user's authenticated session. The iframe never sees credentials.

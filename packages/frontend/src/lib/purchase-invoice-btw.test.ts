@@ -9,8 +9,8 @@ import {
   type BtwSjabloon,
 } from "./purchase-invoice-btw.ts";
 
-/** De sjablonen van 3BM Bouwtechniek zoals ze op de instance staan. */
-const BOUWTECHNIEK: BtwSjabloon[] = [
+/** De sjablonen van 3XZ Bouwadvies zoals ze op de instance staan. */
+const BOUWADVIES: BtwSjabloon[] = [
   { name: "Abroad VAT - 0% - 3" },
   { name: "Netherlands VAT 0% - 3" },
   { name: "Netherlands VAT 21% - 3", is_default: 1 },
@@ -27,19 +27,19 @@ const REGEL_21: BtwRegel = {
 };
 
 test("kiesBtwSjabloon: het herkende tarief wint, zonder de inbegrepen- of buitenlandvariant", () => {
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, { tarief: 9 }), "Netherlands VAT 9% - 3");
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, { tarief: 21 }), "Netherlands VAT 21% - 3");
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, { tarief: 0 }), "Netherlands VAT 0% - 3");
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, { tarief: 9 }), "Netherlands VAT 9% - 3");
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, { tarief: 21 }), "Netherlands VAT 21% - 3");
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, { tarief: 0 }), "Netherlands VAT 0% - 3");
 });
 
 test("kiesBtwSjabloon: btw verlegd kiest het verleggingssjabloon", () => {
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, { verlegd: true }), "Netherlands VAT shifted 21% - 3");
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, { verlegd: true }), "Netherlands VAT shifted 21% - 3");
 });
 
 test("kiesBtwSjabloon: niets herkend, of geen passend sjabloon, geeft het standaardsjabloon", () => {
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, undefined), "Netherlands VAT 21% - 3");
-  assert.equal(kiesBtwSjabloon(BOUWTECHNIEK, { tarief: 6 }), "Netherlands VAT 21% - 3");
-  const zonderVerlegd = BOUWTECHNIEK.filter((s) => !/shifted|reverse/i.test(s.name));
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, undefined), "Netherlands VAT 21% - 3");
+  assert.equal(kiesBtwSjabloon(BOUWADVIES, { tarief: 6 }), "Netherlands VAT 21% - 3");
+  const zonderVerlegd = BOUWADVIES.filter((s) => !/shifted|reverse/i.test(s.name));
   assert.equal(kiesBtwSjabloon(zonderVerlegd, { verlegd: true }), "Netherlands VAT 21% - 3");
   assert.equal(kiesBtwSjabloon([], { tarief: 21 }), undefined);
 });

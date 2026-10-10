@@ -122,8 +122,8 @@ function getTeamsEmail(): string {
 /**
  * Resolve NextCloud Talk credentials with proper Chinese-walls priority:
  * per-instance prefs first, server-wide env-var fallback last. The reverse
- * order leaks credentials across instance tabs (the bug that made Impertio
- * show 3BM's messages). Always go through this helper instead of inlining
+ * order leaks credentials across instance tabs (the bug that made one
+ * instance show another's messages). Always go through this helper instead of inlining
  * the chain so a future regression can't reintroduce the leak.
  */
 function getNextcloudCreds(backend: BackendServices = {}): { url: string; user: string; pass: string } {
@@ -618,7 +618,7 @@ export default function Messenger() {
     if (!isPlatformConfigured(activePlatform, backendServices)) return;
 
     // Use prefetch cache on first load for "all" platform.
-    // NB: read PER-INSTANCE so 3BM's cache never surfaces on Impertio.
+    // NB: read PER-INSTANCE so one instance's cache never surfaces on another.
     const cacheSnapshot = getConvoCache();
     if (!silent && activePlatform === "all" && cacheSnapshot.data && Date.now() - cacheSnapshot.ts < CONVO_CACHE_TTL) {
       setConversations(cacheSnapshot.data);
@@ -1025,7 +1025,7 @@ export default function Messenger() {
     if (replyTo) body.replyTo = replyTo;
     // Use the Chinese-walls helpers so per-instance prefs always win over
     // server-wide env-var fallback. Reverting to the inline chain (env-var
-    // first) is what made Impertio see 3BM's messages — don't undo this.
+    // first) is what made one instance see another's messages — don't undo this.
     if (selectedConvo.platform === "nextcloud-talk") {
       const creds = getNextcloudCreds(backendServices);
       body.url = creds.url;

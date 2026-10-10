@@ -97,7 +97,7 @@ function getAccessiblePages(roles: string[]): Set<Page> | "all" {
  * "Administrator", or any of the "<Module> Manager" roles already used by
  * `ROLE_PAGE_MAP` above)? These are standard roles created by ERPNext's own
  * module fixtures (System / HR / Projects / Accounts / Sales) — present on
- * every ERPNext instance and version, not a 3BM-specific role. Used to
+ * every ERPNext instance and version, not a site-specific role. Used to
  * decide whether a user is allowed to switch into the employer view (see
  * App.tsx `isEmployeeOnly`) — single source of truth so that logic isn't
  * duplicated with a separate role list.

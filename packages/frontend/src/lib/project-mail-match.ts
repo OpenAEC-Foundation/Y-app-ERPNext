@@ -11,7 +11,7 @@
  *  - de projectnaam (`project_name`).
  *
  * Bewust GEEN afzender/klantnaam-weging: veel projecten delen dezelfde klant
- * (zie [[project_erpnext_data_facts_3bm]]) → te zwak, zou vals-zekere
+ * → te zwak, zou vals-zekere
  * voorstellen geven. Het bedrijf komt terug in het geleerde folder-profiel
  * (signaal C, IDF-gewogen), niet hier.
  *

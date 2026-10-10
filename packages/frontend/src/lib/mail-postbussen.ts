@@ -17,6 +17,22 @@
  * erbij te kunnen zetten zonder alle accounts van het bedrijf te tonen.
  */
 
+/**
+ * De instelling (`Y Next Setting`) met de adressen van de gedeelde
+ * postbussen. Welke bussen gedeeld zijn verschilt per organisatie; zonder
+ * instelling zijn het er geen.
+ */
+export const GEDEELDE_POSTBUSSEN_INSTELLING = "gedeelde-postbussen";
+
+/** De adressen uit de instelling: gescheiden door komma, puntkomma of regeleinde. */
+export function leesAdreslijst(waarde: string | null | undefined): string[] {
+  const adressen = (waarde || "")
+    .split(/[,;\s]+/)
+    .map((adres) => adres.trim().toLowerCase())
+    .filter((adres) => /^[^@]+@[^@]+$/.test(adres));
+  return [...new Set(adressen)];
+}
+
 /** Eén Email Account zoals ERPNext hem teruggeeft. */
 export interface PostbusKandidaat {
   /** Docnaam van het Email Account — hierop filtert `Communication`. */

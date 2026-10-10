@@ -1,6 +1,6 @@
 /**
- * Het standaard lettertype voor uitgaande e-mail — één instelling voor heel
- * 3BM.
+ * Het standaard lettertype voor uitgaande e-mail — één instelling voor de
+ * hele organisatie.
  *
  * Opgeslagen als rij in het sleutel/waarde-doctype `Y Next Setting` onder
  * `mail-opmaak`, net als het kilometertarief. Schrijven op dat doctype is

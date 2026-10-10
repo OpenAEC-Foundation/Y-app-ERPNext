@@ -125,10 +125,11 @@ test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
   assert.throws(() => requiredEnv({}), /YNEXT_API_TOKEN/);
 });
 
-test("requiredEnv: gebruikt de default base-URL en strip trailing slashes", () => {
-  const { baseUrl, token } = requiredEnv({ YNEXT_API_TOKEN: "key:secret" });
+test("requiredEnv: er is geen standaardsite, het adres moet opgegeven zijn", () => {
+  assert.throws(() => requiredEnv({ YNEXT_API_TOKEN: "key:secret" }), /YNEXT_BASE_URL/);
+  const { baseUrl, token } = requiredEnv({ YNEXT_API_TOKEN: "key:secret", YNEXT_BASE_URL: "https://erp.example.com" });
   assert.equal(token, "key:secret");
-  assert.equal(baseUrl, "https://open-aec-studio-erp.prilk.cloud");
+  assert.equal(baseUrl, "https://erp.example.com");
 });
 
 test("requiredEnv: strip trailing slash(es) van een expliciete YNEXT_BASE_URL", () => {
@@ -1278,7 +1279,7 @@ test("ensureCustomFields: de standaardlijst is die van de app", async () => {
   });
   try {
     const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret" });
-    assert.equal(result.existing.length, 22);
+    assert.equal(result.existing.length, 30);
     assert.ok(result.existing.includes("Project.custom_address"));
     assert.ok(result.existing.includes("Company.disabled"));
     assert.deepEqual(result.created, []);
@@ -1385,7 +1386,7 @@ test("provision: de veldenfase komt na de doctypes en vóór de rechten", async 
   });
   try {
     const result = await provision({ baseUrl: BASIS, token: "key:secret" });
-    assert.equal(result.customFields.existing.length, 22);
+    assert.equal(result.customFields.existing.length, 30);
     assert.ok(order.indexOf("doctype") < order.indexOf("veld"));
     assert.ok(order.lastIndexOf("veld") < order.indexOf("perm"));
   } finally {

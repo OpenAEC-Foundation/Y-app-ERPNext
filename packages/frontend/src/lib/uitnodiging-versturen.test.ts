@@ -15,8 +15,8 @@ const BASIS = {
   titel: "Planningsoverleg",
   start: "2026-09-28T10:00:00",
   eind: "2026-09-28T11:00:00",
-  organisator: "maarten@3bm.co.nl",
-  genodigden: ["anna@zinkweg.nl", "Nino@3BM.co.nl"],
+  organisator: "maarten@3xz.co.nl",
+  genodigden: ["anna@zinkweg.nl", "Nino@3XZ.co.nl"],
   woorden: WOORDEN,
 };
 
@@ -29,17 +29,17 @@ test("datum en tijd in gewone woorden", () => {
 test("de uitnodiging noemt wanneer, waar en wie", () => {
   const mail = maakUitnodigingMail({ ...BASIS, locatie: "Burgemeester de Raadtsingel 31" })!;
   assert.equal(mail.onderwerp, "Uitnodiging: Planningsoverleg");
-  assert.equal(mail.aan, "anna@zinkweg.nl, nino@3bm.co.nl");
+  assert.equal(mail.aan, "anna@zinkweg.nl, nino@3xz.co.nl");
   assert.match(mail.html, /maandag 28 september 2026, 10:00 – 11:00/);
   assert.match(mail.html, /Burgemeester de Raadtsingel 31/);
-  assert.match(mail.html, /maarten@3bm\.co\.nl, anna@zinkweg\.nl/);
+  assert.match(mail.html, /maarten@3xz\.co\.nl, anna@zinkweg\.nl/);
   assert.match(mail.html, /knoppen in je mailprogramma/);
 });
 
 test("de organisator krijgt zijn eigen uitnodiging niet", () => {
-  const mail = maakUitnodigingMail({ ...BASIS, genodigden: ["maarten@3bm.co.nl", "anna@zinkweg.nl"] })!;
+  const mail = maakUitnodigingMail({ ...BASIS, genodigden: ["maarten@3xz.co.nl", "anna@zinkweg.nl"] })!;
   assert.equal(mail.aan, "anna@zinkweg.nl");
-  assert.equal(maakUitnodigingMail({ ...BASIS, genodigden: ["maarten@3bm.co.nl"] }), null);
+  assert.equal(maakUitnodigingMail({ ...BASIS, genodigden: ["maarten@3xz.co.nl"] }), null);
   assert.equal(maakUitnodigingMail({ ...BASIS, genodigden: [] }), null);
 });
 

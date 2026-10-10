@@ -400,7 +400,7 @@ const NL = "\n";
 test("een mail zonder tags maar met regelovergangen is platte tekst", () => {
   // Precies wat ERPNext bewaart voor een text/plain-bericht: geen tags, wel
   // regelovergangen, en de punthaken al ge-escaped.
-  const inhoud = "Beste Maarten," + NL + NL + "Van: Piet Mol &lt;piet@3bm.co.nl&gt;" + NL + "Onderwerp: test";
+  const inhoud = "Beste Maarten," + NL + NL + "Van: Piet Mol &lt;piet@3xz.co.nl&gt;" + NL + "Onderwerp: test";
   assert.equal(lijktPlatteTekst(inhoud), true);
   assert.match(bewaarRegelovergangen(inhoud), /white-space:pre-wrap/);
 });

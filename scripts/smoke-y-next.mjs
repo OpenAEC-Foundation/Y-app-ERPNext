@@ -15,11 +15,13 @@
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 
-const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 const WEB_PAGE_ROUTE = "y-next";
 
 function baseUrlFrom(env) {
-  const raw = env.YNEXT_BASE_URL || DEFAULT_BASE_URL;
+  const raw = env.YNEXT_BASE_URL;
+  if (!raw) {
+    throw new Error("YNEXT_BASE_URL ontbreekt: zet het adres van de site, er is geen standaardsite.");
+  }
   return raw.replace(/\/+$/, "");
 }
 

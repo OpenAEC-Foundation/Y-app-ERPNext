@@ -12,7 +12,7 @@ import {
 } from "../../lib/mailOpmaak";
 
 /**
- * Het lettertype voor uitgaande e-mail — één instelling voor heel 3BM.
+ * Het lettertype voor uitgaande e-mail — één instelling voor de hele organisatie.
  *
  * Opslaan kan alleen een System Manager; dat is geen beperking die hier wordt
  * afgedwongen maar een die ERPNext zelf stelt op `Y Next Setting`. Daarom

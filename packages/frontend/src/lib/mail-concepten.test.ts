@@ -5,7 +5,7 @@ import { CONCEPT_MARKERING, conceptenVoorGesprek, naarConcept } from "./mail-con
 test("een rij uit ERPNext wordt een concept", () => {
   const c = naarConcept({
     name: "abc123", subject: "Offerte 3070", content: "<p>Hoi</p>",
-    recipients: "august@innovias.nl", cc: "", bcc: null, sender: "maarten@3bm.co.nl",
+    recipients: "august@innovias.nl", cc: "", bcc: null, sender: "maarten@3xz.co.nl",
     modified: "2026-09-22 15:00:00", reference_doctype: "Project", reference_name: "3070",
   });
   assert.equal(c.name, "abc123");

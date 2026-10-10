@@ -170,6 +170,7 @@ const FULL_USER = {
 
 test("requiredEnv: gooit zonder token en normaliseert de basis-URL", () => {
   assert.throws(() => requiredEnv({}), /YNEXT_API_TOKEN/);
+  assert.throws(() => requiredEnv({ YNEXT_API_TOKEN: "key:secret" }), /YNEXT_BASE_URL/);
   const { baseUrl, token } = requiredEnv({
     YNEXT_API_TOKEN: "key:secret",
     YNEXT_BASE_URL: "https://erp.example.com///",
@@ -186,18 +187,18 @@ test("parseArgs: --dry-run en --force", () => {
 
 test("parseArgs: alleen één bedrijf, en zonder functie", () => {
   assert.deepEqual(
-    parseArgs(["--dry-run", "--bedrijf=3BM Bouwtechniek V.O.F.", "--zonder-functie"]),
-    { dryRun: true, force: false, bedrijf: "3BM Bouwtechniek V.O.F.", zonderFunctie: true },
+    parseArgs(["--dry-run", "--bedrijf=Voorbeeld Bouw B.V.", "--zonder-functie"]),
+    { dryRun: true, force: false, bedrijf: "Voorbeeld Bouw B.V.", zonderFunctie: true },
   );
 });
 
 test("kiesMensen: met een bedrijf alleen de medewerkers van dat bedrijf", () => {
   const mensen = [
-    { user: "a@x", employeeCompany: "3BM Bouwtechniek V.O.F." },
-    { user: "b@x", employeeCompany: "3BM Engineering" },
+    { user: "a@x", employeeCompany: "Voorbeeld Bouw B.V." },
+    { user: "b@x", employeeCompany: "Voorbeeld Engineering" },
     { user: "c@x", employeeCompany: "" }, // geen medewerkerskaart (AI-, service- of extern account)
   ];
-  assert.deepEqual(kiesMensen(mensen, "3BM Bouwtechniek V.O.F.").map((m) => m.user), ["a@x"]);
+  assert.deepEqual(kiesMensen(mensen, "Voorbeeld Bouw B.V.").map((m) => m.user), ["a@x"]);
   assert.deepEqual(kiesMensen(mensen, "").map((m) => m.user), ["a@x", "b@x", "c@x"]);
 });
 

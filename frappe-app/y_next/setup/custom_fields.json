@@ -130,6 +130,63 @@
    "insert_after": "abbr",
    "in_standard_filter": 1,
    "description": "Hides this company from the pick lists in Y-next. Existing transactions stay."
+  },
+  {
+   "fieldname": "custom_signature_section",
+   "label": "E-mail Signature",
+   "fieldtype": "Section Break",
+   "insert_after": "website",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "custom_trade_name",
+   "label": "Trade Name",
+   "fieldtype": "Data",
+   "insert_after": "custom_signature_section",
+   "description": "How the company writes its name in the e-mail signature. Empty: the company name."
+  },
+  {
+   "fieldname": "custom_signature_greeting",
+   "label": "Signature Greeting",
+   "fieldtype": "Data",
+   "insert_after": "custom_trade_name",
+   "description": "The closing line above the name. Empty: the default greeting."
+  },
+  {
+   "fieldname": "custom_linkedin_url",
+   "label": "LinkedIn URL",
+   "fieldtype": "Data",
+   "options": "URL",
+   "insert_after": "custom_signature_greeting"
+  },
+  {
+   "fieldname": "custom_signature_column",
+   "fieldtype": "Column Break",
+   "insert_after": "custom_linkedin_url"
+  },
+  {
+   "fieldname": "custom_brand_color_dark",
+   "label": "Brand Color (Text)",
+   "fieldtype": "Color",
+   "insert_after": "custom_signature_column",
+   "description": "The colour of the text in the e-mail signature."
+  },
+  {
+   "fieldname": "custom_brand_color_accent",
+   "label": "Brand Color (Accent)",
+   "fieldtype": "Color",
+   "insert_after": "custom_brand_color_dark",
+   "description": "The colour of the first name and the links in the e-mail signature."
+  }
+ ],
+ "Email Account": [
+  {
+   "fieldname": "custom_company",
+   "label": "Company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "insert_after": "email_account_name",
+   "description": "Mail sent from this mailbox is signed with the house style of this company. Empty: the company of the sender."
   }
  ],
  "Travel Request": [

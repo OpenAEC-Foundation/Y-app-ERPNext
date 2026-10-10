@@ -50,8 +50,8 @@ test("afgeronde adressen worden blokjes, wat nog getypt wordt blijft tekst", () 
 });
 
 test("een komma in een naam tussen aanhalingstekens splitst het adres niet", () => {
-  const { klaar, bezig } = splitsAdresInvoer('"Vroegindeweij, Maarten" <maarten@3bm.co.nl>, ');
-  assert.deepEqual(klaar, ['"Vroegindeweij, Maarten" <maarten@3bm.co.nl>']);
+  const { klaar, bezig } = splitsAdresInvoer('"Vroman, Maarten" <maarten@3xz.co.nl>, ');
+  assert.deepEqual(klaar, ['"Vroman, Maarten" <maarten@3xz.co.nl>']);
   assert.equal(bezig, "");
 });
 
@@ -59,24 +59,24 @@ test("samenvoegen geeft de waarde terug die het verzendpad kent", () => {
   assert.equal(voegAdresInvoerSamen(["a@b.nl", "Piet <piet@x.nl>"], ""), "a@b.nl, Piet <piet@x.nl>, ");
   assert.equal(voegAdresInvoerSamen([], "ja"), "ja");
   // Heen en terug verandert niets aan een veld dat al zo stond.
-  const waarde = "Maarten Vroegindeweij <maarten@3bm.co.nl>, jan";
+  const waarde = "Maarten Vroman <maarten@3xz.co.nl>, jan";
   const { klaar, bezig } = splitsAdresInvoer(waarde);
   assert.equal(voegAdresInvoerSamen(klaar, bezig), waarde);
 });
 
 test("een gekozen suggestie komt er met naam in, zonder tekens die het adres breken", () => {
-  assert.equal(adresMetNaam("maarten@3bm.co.nl", "Maarten Vroegindeweij"),
-    "Maarten Vroegindeweij <maarten@3bm.co.nl>");
+  assert.equal(adresMetNaam("maarten@3xz.co.nl", "Maarten Vroman"),
+    "Maarten Vroman <maarten@3xz.co.nl>");
   assert.equal(adresMetNaam("a@b.nl", "a@b.nl"), "a@b.nl");
   assert.equal(adresMetNaam("a@b.nl", ""), "a@b.nl");
-  assert.equal(adresMetNaam("m@x.nl", 'Vroegindeweij, "Maarten"'), "Vroegindeweij Maarten <m@x.nl>");
+  assert.equal(adresMetNaam("m@x.nl", 'Vroman, "Maarten"'), "Vroman Maarten <m@x.nl>");
 });
 
 test("kiezen vervangt het zoekwoord door een blokje en zet een adres er geen twee keer in", () => {
-  assert.equal(kiesAdres("a@b.nl, maar", "maarten@3bm.co.nl", "Maarten"),
-    "a@b.nl, Maarten <maarten@3bm.co.nl>, ");
-  assert.equal(kiesAdres("Maarten <MAARTEN@3bm.co.nl>, maar", "maarten@3bm.co.nl", "Maarten"),
-    "Maarten <MAARTEN@3bm.co.nl>, ");
+  assert.equal(kiesAdres("a@b.nl, maar", "maarten@3xz.co.nl", "Maarten"),
+    "a@b.nl, Maarten <maarten@3xz.co.nl>, ");
+  assert.equal(kiesAdres("Maarten <MAARTEN@3xz.co.nl>, maar", "maarten@3xz.co.nl", "Maarten"),
+    "Maarten <MAARTEN@3xz.co.nl>, ");
 });
 
 test("een blokje weghalen laat de andere en de lopende tekst staan", () => {
@@ -98,8 +98,8 @@ test("afronden maakt van getypte tekst een blokje; zonder getypte tekst verander
 
 test("Tab neemt de gekozen suggestie mee, of maakt een blokje van wat er getypt staat", () => {
   // Met een suggestie in beeld: die wordt het blokje, niet het halve zoekwoord.
-  assert.equal(waardeBijTab("a@b.nl, maar", { email: "maarten@3bm.co.nl", label: "Maarten" }),
-    "a@b.nl, Maarten <maarten@3bm.co.nl>, ");
+  assert.equal(waardeBijTab("a@b.nl, maar", { email: "maarten@3xz.co.nl", label: "Maarten" }),
+    "a@b.nl, Maarten <maarten@3xz.co.nl>, ");
   // Zonder suggestie: het getypte adres wordt een blokje.
   assert.equal(waardeBijTab("a@b.nl, piet@x.nl"), "a@b.nl, piet@x.nl, ");
   // Niets getypt: er verandert niets, Tab springt alleen verder.
@@ -108,8 +108,8 @@ test("Tab neemt de gekozen suggestie mee, of maakt een blokje van wat er getypt 
 });
 
 test("een blokje zonder bruikbaar adres valt op", () => {
-  assert.equal(isBruikbaarAdres("Maarten <maarten@3bm.co.nl>"), true);
-  assert.equal(isBruikbaarAdres("maarten@3bm.co.nl"), true);
+  assert.equal(isBruikbaarAdres("Maarten <maarten@3xz.co.nl>"), true);
+  assert.equal(isBruikbaarAdres("maarten@3xz.co.nl"), true);
   assert.equal(isBruikbaarAdres("jan"), false);
   assert.equal(isBruikbaarAdres("jan@"), false);
   assert.equal(isBruikbaarAdres("jan@klant"), false);

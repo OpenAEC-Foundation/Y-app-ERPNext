@@ -9,7 +9,7 @@ import {
 const GROEP: Groep = {
   id: "3f2a9c1e-77aa-4b1c-9e0d-1234567890ab",
   naam: "Projectteam Jelier",
-  leden: ["maarten@3bm.co.nl", "nino@3bm.co.nl", "lance@3bm.co.nl"],
+  leden: ["maarten@3xz.co.nl", "nino@3xz.co.nl", "lance@3xz.co.nl"],
 };
 
 function linkMet(groep: Groep, gebeurtenis?: "aangemaakt" | "gewijzigd" | "verlaten"): string {
@@ -23,7 +23,7 @@ test("een groepskenmerk is elke keer anders en herkenbaar als gesprek", () => {
   assert.notEqual(nieuweGroepId(), nieuweGroepId());
   assert.equal(groepSleutel("abc"), `${GROEP_PREFIX}abc`);
   assert.ok(isGroepSleutel(groepSleutel("abc")));
-  assert.ok(!isGroepSleutel("nino@3bm.co.nl"));
+  assert.ok(!isGroepSleutel("nino@3xz.co.nl"));
 });
 
 test("heen en terug door de link levert dezelfde groep op", () => {
@@ -37,7 +37,7 @@ test("een link zonder of met een kapotte groep is geen groep", () => {
   assert.equal(groepUitLink("/y-next#/messenger?k=abcdef12"), null);
   assert.equal(groepUitLink(linkMet({ ...GROEP, id: "kort" })), null);
   assert.equal(groepUitLink(linkMet({ ...GROEP, naam: "   " })), null);
-  assert.equal(groepUitLink(linkMet({ ...GROEP, leden: ["maarten@3bm.co.nl"] })), null);
+  assert.equal(groepUitLink(linkMet({ ...GROEP, leden: ["maarten@3xz.co.nl"] })), null);
 });
 
 test("een onbekende gebeurtenis wordt genegeerd, de groep blijft", () => {
@@ -46,7 +46,7 @@ test("een onbekende gebeurtenis wordt genegeerd, de groep blijft", () => {
 });
 
 test("te veel leden is geen groep", () => {
-  const leden = Array.from({ length: MAX_LEDEN + 1 }, (_, i) => `lid${i}@3bm.co.nl`);
+  const leden = Array.from({ length: MAX_LEDEN + 1 }, (_, i) => `lid${i}@3xz.co.nl`);
   const q = new URLSearchParams({ g: GROEP.id, gn: "Groot", gl: leden.join(",") });
   assert.equal(groepUitLink(`/y-next#/messenger?${q}`), null);
 });
@@ -58,30 +58,30 @@ test("leden worden opgeschoond: geen dubbelen, geen rommel", () => {
 });
 
 test("alleen een lid kan in de groep schrijven", () => {
-  assert.ok(geldigVoorAfzender(GROEP, "nino@3bm.co.nl"));
+  assert.ok(geldigVoorAfzender(GROEP, "nino@3xz.co.nl"));
   assert.ok(!geldigVoorAfzender(GROEP, "vreemde@elders.nl"));
 });
 
 test("een bericht gaat naar iedereen behalve jezelf", () => {
-  assert.deepEqual(ontvangersVan(GROEP, "maarten@3bm.co.nl"), ["nino@3bm.co.nl", "lance@3bm.co.nl"]);
+  assert.deepEqual(ontvangersVan(GROEP, "maarten@3xz.co.nl"), ["nino@3xz.co.nl", "lance@3xz.co.nl"]);
 });
 
 test("het verschil tussen twee versies van de groep", () => {
-  const nieuw: Groep = { ...GROEP, naam: "Team Jelier", leden: ["maarten@3bm.co.nl", "nino@3bm.co.nl", "joris@3bm.co.nl"] };
+  const nieuw: Groep = { ...GROEP, naam: "Team Jelier", leden: ["maarten@3xz.co.nl", "nino@3xz.co.nl", "joris@3xz.co.nl"] };
   assert.deepEqual(groepsverschil(GROEP, nieuw), {
-    toegevoegd: ["joris@3bm.co.nl"], verwijderd: ["lance@3bm.co.nl"], hernoemd: true,
+    toegevoegd: ["joris@3xz.co.nl"], verwijderd: ["lance@3xz.co.nl"], hernoemd: true,
   });
   assert.deepEqual(groepsverschil(null, nieuw), { toegevoegd: [], verwijderd: [], hernoemd: false });
 });
 
 test("wie eruit gaat, hoort het ook", () => {
-  const nieuw: Groep = { ...GROEP, leden: ["maarten@3bm.co.nl", "nino@3bm.co.nl", "joris@3bm.co.nl"] };
-  assert.deepEqual(ontvangersVanWijziging(GROEP, nieuw, "maarten@3bm.co.nl"),
-    ["nino@3bm.co.nl", "lance@3bm.co.nl", "joris@3bm.co.nl"]);
+  const nieuw: Groep = { ...GROEP, leden: ["maarten@3xz.co.nl", "nino@3xz.co.nl", "joris@3xz.co.nl"] };
+  assert.deepEqual(ontvangersVanWijziging(GROEP, nieuw, "maarten@3xz.co.nl"),
+    ["nino@3xz.co.nl", "lance@3xz.co.nl", "joris@3xz.co.nl"]);
 });
 
 test("voornaam uit een naam of een adres", () => {
   assert.equal(voornaam("Nino van Kleef"), "Nino");
-  assert.equal(voornaam("nino@3bm.co.nl"), "nino");
+  assert.equal(voornaam("nino@3xz.co.nl"), "nino");
   assert.equal(voornaam(""), "");
 });

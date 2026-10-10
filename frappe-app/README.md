@@ -23,6 +23,13 @@ Then open `/y-next` on your site.
 
 Everything below is optional; Y-next works without it.
 
+- **E-mail signature** (`Company` → *E-mail Signature*): trade name, greeting,
+  brand colours and LinkedIn address. Together with the company logo, website
+  and the company's own address they make up the signature under every mail.
+  Left empty, the signature is plain, and a user's own e-mail signature takes
+  precedence. Set *Company* on an `Email Account` to sign mail from that
+  mailbox with another company's house style.
+
 - **Mail server** (`Agenda Koppeling`): address, service account and password
   of a mail server that speaks JMAP and CalDAV and lets a service account act
   on behalf of users (Stalwart). Switches on calendars from the mail server,
@@ -35,6 +42,11 @@ Everything below is optional; Y-next works without it.
     monthly travel request instead of in Y-next's own mileage records.
   - `weekplanning-pad`: path of a dashboard page on the same site, shown under
     "Weekplanning".
+  - `gedeelde-postbussen`: addresses of shared mailboxes, separated by commas.
+    A System Manager sees these as extra tabs in Mail; everyone else sees the
+    mailboxes assigned to them in ERPNext.
+- **Invoice print formats**: Y-next offers the Print Formats of your site. The
+  default one is chosen under Settings → Project settings.
 
 ## Source
 

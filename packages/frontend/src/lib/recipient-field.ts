@@ -106,7 +106,7 @@ export function tokenAt(value: string, caretPos: number): string {
  * wordt, blijft tekst.
  *
  * Een komma binnen aanhalingstekens of punthaken scheidt niets:
- * `"Vroegindeweij, Maarten" <maarten@3bm.co.nl>` is één adres.
+ * `"de Vries, Jan" <jan@voorbeeld.nl>` is één adres.
  */
 export function splitsAdresInvoer(value: string): { klaar: string[]; bezig: string } {
   const klaar: string[] = [];
@@ -149,7 +149,7 @@ function adresUitBlokje(blokje: string): string {
 
 /**
  * Hoe een gekozen suggestie in het veld komt: met naam, zoals een
- * mailprogramma hem toont — `Maarten Vroegindeweij <maarten@3bm.co.nl>`.
+ * mailprogramma hem toont — `Jan de Vries <jan@voorbeeld.nl>`.
  * Tekens die in een adresregel iets betekenen (komma, puntkomma,
  * aanhalingstekens, punthaken) gaan uit de naam; anders valt het adres bij het
  * versturen in stukken.

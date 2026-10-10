@@ -916,7 +916,7 @@ function LeaveRequestModal({ employees, allocations, company, onClose, onCreated
   }, [employee]);
 
   // Weekdag-namen die volgens het rooster een halve dag zijn: uren ≈ helft van
-  // de volledige werkdag (bv. 4u bij een 8u-dag). "3BM: alleen halve dagen."
+  // de volledige werkdag (bv. 4u bij een 8u-dag).
   const halfDayNames = useMemo(() => {
     const vals = Object.values(dayHours);
     const s = new Set<string>();

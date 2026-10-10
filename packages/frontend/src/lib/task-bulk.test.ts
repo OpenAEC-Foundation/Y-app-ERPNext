@@ -126,19 +126,19 @@ test("velden gaan in één PUT naar /api/resource/Task/<naam>", async () => {
 });
 
 test("toewijzen loopt via assign_to.add en NIET via het _assign-veld", async () => {
-  await applyTaskEdit("TASK-0001", { assignAdd: ["piet@3bm.co.nl"] });
+  await applyTaskEdit("TASK-0001", { assignAdd: ["piet@3xz.co.nl"] });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "/api/method/frappe.desk.form.assign_to.add");
   assert.deepEqual(calls[0].body, {
     doctype: "Task",
     name: "TASK-0001",
-    assign_to: ["piet@3bm.co.nl"],
+    assign_to: ["piet@3xz.co.nl"],
   });
   assert.equal(calls.some((c) => JSON.stringify(c.body ?? {}).includes("_assign")), false);
 });
 
 test("een al toegewezen medewerker levert geen tweede assign-call op", async () => {
-  await applyTaskEdit("TASK-0001", { assignAdd: ["piet@3bm.co.nl"] }, ["piet@3bm.co.nl"]);
+  await applyTaskEdit("TASK-0001", { assignAdd: ["piet@3xz.co.nl"] }, ["piet@3xz.co.nl"]);
   assert.deepEqual(calls, []);
 });
 

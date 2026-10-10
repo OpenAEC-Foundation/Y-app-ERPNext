@@ -33,7 +33,7 @@ function fmtIso(d: Date): string {
  *
  * De werkgever-Holiday-List (ERPNext) is **autoritair zodra die bestaat** —
  * dan NIET ook de generieke NL-lijst OR'en. Anders zou bv. Goede Vrijdag
- * (wél in lib/holidays.ts, niet in de 3BM-lijst) onterecht als feestdag
+ * (wél in lib/holidays.ts, niet in de lijst van de werkgever) onterecht als feestdag
  * gelden terwijl de medewerker die dag verlof opnam. Alleen als er géén
  * werkgever-lijst is (lege set) valt het terug op de generieke NL-lijst.
  */

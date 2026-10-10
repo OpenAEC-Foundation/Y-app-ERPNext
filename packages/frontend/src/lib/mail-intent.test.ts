@@ -17,10 +17,10 @@ import {
  *
  * Twee dingen zijn met opzet meegenomen omdat ze de valkuilen zijn:
  *
- * - **"Domera"** is een verzamel-klant met contacten van tientallen
+ * - **"Domara"** is een verzamel-klant met contacten van tientallen
  *   verschillende domeinen, inclusief gratis-mail en notificatie-afzenders.
  *   Wie op domein zou matchen zonder gratis-mailfilter, hangt elke
- *   gmail-afzender aan Domera.
+ *   gmail-afzender aan Domara.
  * - **Moso Engineering** is een *leverancier* met een gmail-adres. Een
  *   leverancier die iets vraagt is inkoop, geen verkoopkans — dus die tak moet
  *   `none` opleveren en niet "lead".
@@ -31,7 +31,7 @@ const CTX: MailIntentContext = {
     { name: "JBS multimedia B.V.", emails: ["info@jbs-multimedia.nl"] },
     { name: "Moso Engineering", emails: ["mojtaba.karimi1984@gmail.com"] },
     { name: "Cubic Colors B.V.", emails: ["service@cubic-colors.nl"] },
-    { name: "3BM Bouwtechniek V.O.F." },
+    { name: "3XZ Bouwadvies V.O.F." },
     { name: "Castellum Rosarum BV" },
   ],
   customers: [
@@ -40,7 +40,7 @@ const CTX: MailIntentContext = {
     { name: "Groothandel Egg-sellent B.V.", emails: ["facturen@egg-sellent.nl", "dylan@egg-sellent.nl"] },
     { name: "AddVision BV", emails: ["info@addvision.nl"] },
     {
-      name: "Domera",
+      name: "Domara",
       emails: [
         "admin@nade.es", "eelkedollee@gmail.com", "notifications@frappecloud.com",
         "azure-noreply@microsoft.com", "joris@krieke.nl", "peter@fieldworks.nl",
@@ -216,9 +216,9 @@ test("lopend gesprek met een klant zonder aanvraag levert niets op", () => {
 
 test("inkoopfactuur wint van het verkoopspoor", () => {
   const intent = classifyMailIntent(mail({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
-    senderName: "Maarten Vroegindeweij",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
+    senderName: "Maarten Vroman",
     attachmentNames: ["263-05192.pdf"],
     hasAttachment: true,
     mailDate: "2026-08-03 08:00:00",
@@ -259,7 +259,7 @@ test("leverancier die om iets vraagt is inkoop, geen lead", () => {
 test("mail zonder aanvraagwoorden levert niets op", () => {
   const intent = classifyMailIntent(mail({
     subject: "test",
-    sender: "maarten@3bm.co.nl",
+    sender: "maarten@3xz.co.nl",
     hasAttachment: true,
   }), CTX);
   assert.equal(intent.kind, "none");
@@ -283,7 +283,7 @@ test("al gekoppelde mail krijgt geen nieuw voorstel", () => {
 /* ──────────────────────────── Afzenderfeiten ─────────────────────────── */
 
 test("gratis-mailadres van een klantcontact hangt de afzender niet aan die klant", () => {
-  // `eelkedollee@gmail.com` staat als contact bij Domera; een wíllekeurige
+  // `eelkedollee@gmail.com` staat als contact bij Domara; een wíllekeurige
   // andere gmail-afzender mag daar niet op meeliften.
   assert.equal(classifySender("iemand.anders@gmail.com", CTX).relation, "unknown");
   assert.equal(classifySender("eelkedollee@gmail.com", CTX).relation, "customer");

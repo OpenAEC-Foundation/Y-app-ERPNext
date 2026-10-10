@@ -12,7 +12,7 @@
 
 /** Eén adres uit een `To`/`Cc`-string, met en zonder weergavenaam. */
 export interface MailAddress {
-  /** Zoals het in de header stond, bv. `Piet <piet@3bm.co.nl>`. */
+  /** Zoals het in de header stond, bv. `Jan <jan@voorbeeld.nl>`. */
   raw: string;
   /** Alleen het adres, lowercase — de sleutel waarop ontdubbeld wordt. */
   email: string;
@@ -34,9 +34,9 @@ export function extractEmail(entry: string): string {
  * Splitst een komma-gescheiden adressenveld; lege entries vallen weg.
  *
  * Een komma binnen aanhalingstekens of punthaken scheidt niets: Outlook zet
- * namen als `"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>` in de
+ * namen als `"Berg, Jan van den" <j.vanden.berg@Voorbeeld.nl>` in de
  * Cc. Op elke komma knippen maakte daar twee "adressen" van, waarvan één
- * (`"Hoeven`) geen adres was. Wat geen @ heeft, telt daarom ook niet mee.
+ * (`"Berg`) geen adres was. Wat geen @ heeft, telt daarom ook niet mee.
  */
 export function splitAddresses(raw: string): MailAddress[] {
   const parts: string[] = [];

@@ -11,14 +11,14 @@ test("adresregel en locatietekst", () => {
 });
 
 test("lege stukken vallen weg", () => {
-  assert.equal(locatieTekst(adres({ titel: "Domera", plaats: "Dordrecht" })), "Domera, Dordrecht");
+  assert.equal(locatieTekst(adres({ titel: "Domara", plaats: "Dordrecht" })), "Domara, Dordrecht");
 });
 
 test("dubbele adressen één keer, eigen bedrijven eerst", () => {
   const lijst = ordenLocaties([
     adres({ name: "1", titel: "Klant", straat: "A 1" }),
     adres({ name: "2", titel: "Klant", straat: "A 1" }),
-    adres({ name: "3", titel: "3BM Bouwtechniek V.O.F.", straat: "Burgemeester de Raadtsingel 31", eigen: true }),
+    adres({ name: "3", titel: "3XZ Bouwadvies V.O.F.", straat: "Burgemeester de Raadtsingel 31", eigen: true }),
     adres({ name: "4" }),
   ]);
   assert.deepEqual(lijst.map((a) => a.name), ["3", "1"]);
@@ -28,10 +28,10 @@ test("standaardLocatie: het adres van het eigen bedrijf, anders het eerste", () 
   const adres = (name: string, titel: string, bedrijf?: string): LocatieAdres =>
     ({ name, titel, straat: "Burgemeester de Raadtsingel 31", postcode: "", plaats: "Dordrecht", eigen: true, bedrijf });
   const eigen = [
-    adres("a", "Vroughindeweij Industries B.V.", "Vroughindeweij Industries B.V."),
-    adres("b", "3BM Bouwtechniek V.O.F.", "3BM Bouwtechniek V.O.F."),
+    adres("a", "Vroon Industries B.V.", "Vroon Industries B.V."),
+    adres("b", "3XZ Bouwadvies V.O.F.", "3XZ Bouwadvies V.O.F."),
   ];
-  assert.equal(standaardLocatie(eigen, "3BM Bouwtechniek V.O.F.")?.name, "b");
+  assert.equal(standaardLocatie(eigen, "3XZ Bouwadvies V.O.F.")?.name, "b");
   assert.equal(standaardLocatie(eigen, "Onbekend B.V.")?.name, "a");
-  assert.equal(standaardLocatie([], "3BM Bouwtechniek V.O.F."), undefined);
+  assert.equal(standaardLocatie([], "3XZ Bouwadvies V.O.F."), undefined);
 });

@@ -371,7 +371,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
   // data) escape into the employer view — issue #104. An allowlist of
   // manager-tier roles is the correct check: these role names are created
   // by ERPNext's own module fixtures and exist on every ERPNext instance/
-  // version, independent of any 3BM-specific setup. A user with no roles
+  // version, independent of any site-specific setup. A user with no roles
   // (or none of these) safely defaults to `isEmployeeOnly = true` — never
   // a crash, never an accidental employer unlock.
   const isEmployeeOnly = useMemo(() => !isEmployerRole(user.roles), [user.roles]);

@@ -1,7 +1,7 @@
 # Y-next deployment
 
 Y-next draait single-tenant direct op ERPNext v16
-(`https://open-aec-studio-erp.prilk.cloud`). Er is geen aparte backend meer:
+(`https://erp.voorbeeld.nl`). Er is geen aparte backend meer:
 de gebouwde SPA wordt gepubliceerd als ERPNext **Web Page** (route `y-next`),
 en de statische assets (JS/CSS) als publieke **File**-documenten onder
 `/files/<naam>`.
@@ -18,14 +18,14 @@ en de statische assets (JS/CSS) als publieke **File**-documenten onder
 ## Deployen
 
 ```powershell
-$env:YNEXT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud"
+$env:YNEXT_BASE_URL = "https://erp.voorbeeld.nl"
 $env:YNEXT_API_TOKEN = "<API key>:<API secret>"
 npm run deploy
 npm run smoke
 Remove-Item Env:\YNEXT_API_TOKEN
 ```
 
-- `YNEXT_BASE_URL` is optioneel; de default is de site hierboven.
+- `YNEXT_BASE_URL` is **verplicht**: het adres van de site. Er is geen standaardsite.
 - `YNEXT_API_TOKEN` is **verplicht** en heeft het formaat `key:secret`
   (zoals ERPNext het toont bij het aanmaken van een API-key). Zet 'm alleen
   in je eigen shell-sessie — nooit in `.env` in de repo, nooit in commits,
@@ -81,7 +81,7 @@ terug — er is een test die dat bewaakt.
 **Verifiëren na een deploy** (geen auth nodig):
 
 ```powershell
-curl.exe -sI https://open-aec-studio-erp.prilk.cloud/y-next | Select-String -Pattern "cache-control|x-from-cache"
+curl.exe -sI https://erp.voorbeeld.nl/y-next | Select-String -Pattern "cache-control|x-from-cache"
 ```
 
 Verwacht: `cache-control: no-store,no-cache,must-revalidate,max-age=0` en
@@ -112,7 +112,7 @@ Voor lokale ontwikkeling proxyt Vite rechtstreeks naar de ERPNext-site, zodat
 cookies/CSRF zich hetzelfde gedragen als in productie:
 
 ```powershell
-$env:VITE_ERPNEXT_URL = "https://open-aec-studio-erp.prilk.cloud"   # optioneel, dit is de default
+$env:VITE_ERPNEXT_URL = "https://erp.voorbeeld.nl"   # optioneel; standaard http://localhost:8000
 $env:YNEXT_DEV_TOKEN = "<API key>:<API secret>"                      # optioneel
 npm run dev
 ```
@@ -140,7 +140,7 @@ npm run dev
 ## Eerste geverifieerde deployment
 
 - **Datum:** 2026-07-31
-- **Route:** `/y-next` op `https://open-aec-studio-erp.prilk.cloud`
+- **Route:** `/y-next` op `https://erp.voorbeeld.nl`
 - **Site-versie:** Frappe 16.19.0 / ERPNext 16.16.0
 - **Assets:** 146 bestanden geüpload als publieke Files, met een gedeeld
   build-tag-prefix zodat elke deploy zijn eigen assetset heeft en oudere

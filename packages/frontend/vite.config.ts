@@ -9,9 +9,10 @@ import pkg from './package.json' with { type: 'json' }
 // met assets als publieke File-documenten onder /files/. In dev proxyt Vite
 // rechtstreeks naar de ERPNext-site zodat cookies/CSRF hetzelfde gedrag
 // vertonen als in productie.
-//   PowerShell:  $env:VITE_ERPNEXT_URL = "https://open-aec-studio-erp.prilk.cloud"; npm run dev
-//   bash:        VITE_ERPNEXT_URL=https://open-aec-studio-erp.prilk.cloud npm run dev
-const erpnextTarget = process.env.VITE_ERPNEXT_URL || "https://open-aec-studio-erp.prilk.cloud";
+//   PowerShell:  $env:VITE_ERPNEXT_URL = "https://erp.voorbeeld.nl"; npm run dev
+//   bash:        VITE_ERPNEXT_URL=https://erp.voorbeeld.nl npm run dev
+// Zonder die variabele: een lokale bench op poort 8000.
+const erpnextTarget = process.env.VITE_ERPNEXT_URL || "http://localhost:8000";
 // Optioneel, alleen voor lokale dev: injecteert een Authorization-header
 // server-side in de Vite-proxy zodat de dev-server als ingelogde gebruiker
 // tegen ERPNext praat. Komt nooit in client-code of de bundle terecht.

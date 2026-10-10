@@ -15,8 +15,8 @@
  *   het veld gewoon weggelaten in plaats van de hele aanmaak te laten
  *   struikelen op een ontbrekend stamgegeven. `scripts/provision-y-next.mjs`
  *   legt hem idempotent aan.
- * - **De klantenlijst is rommelig.** Op deze instance hangt een verzamel-klant
- *   ("Domera") aan tientallen contacten van totaal verschillende domeinen,
+ * - **De klantenlijst is rommelig.** Soms hangt een verzamel-klant
+ *   aan tientallen contacten van totaal verschillende domeinen,
  *   inclusief gratis-mailadressen en notificatie-afzenders. De matchlogica in
  *   `mail-intent.ts` vangt dat op (gratis-mailproviders tellen niet mee voor
  *   domeinmatching), maar het blijft de reden dat de gekozen klant in de

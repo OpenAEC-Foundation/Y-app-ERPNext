@@ -21,12 +21,14 @@ Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwi
 | 4 | Serverfuncties die alleen ERPNext nodig hebben (7) | klaar |
 | 5 | Mailserver (6 functies, instelling, testmailserver) | de zes functies staan en zijn getoetst tegen een nagespeelde mailserver; de proef tegen een echte testmailserver is open |
 | 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | `km_rit_boeken` klaar en getest op een site met HRMS; Wiki, rooster en CAD-viewer gaan via de bestaande afhandeling van ontbrekende doctypes, nog niet getest op een site waar ze wél staan |
-| 7 | Generiek maken, ondertekening, generiek-controle | open — alleen het pad van de weekplanning is al een instelling (`weekplanning-pad`) |
+| 7 | Generiek maken, ondertekening, generiek-controle | klaar — huisstijl uit `Company`, afdrukformaten van de site, lege extensiecatalogus, gedeelde postbussen als instelling; `scripts/lib/generiek-check.mjs` bewaakt de frontendbron en de app in `npm test` |
 | 8 | Release naar `OpenAEC-Foundation/y_next` | open |
 
 Testsites op de lokale bench: `kaal.localhost` (alleen ERPNext + de app) en `proef.localhost` (ook HRMS).
 
-De frontendwijzigingen op deze branch zijn gemaakt op versie 0.39.4. De bundel van de app wordt nu uit deze branch gebouwd.
+De branch staat op versie 0.39.5. De nieuwe versie hoeft alleen op ERPNext 16 met de app te werken; de productiesite (ERPNext 15) blijft op 0.39.5 van de publicatieroute. De scripts van die route hebben geen standaardsite meer: `YNEXT_BASE_URL` is verplicht.
+
+Open punt buiten de app: de testgegevens in `packages/frontend/src/**/*.test.ts` bevatten nog namen en adressen van echte relaties (klanten, leveranciers). Die komen niet in de app terecht, maar staan wel in deze openbare repository.
 
 
 ### 2026-07-02 — Codebase-herstructurering: god-files splitsen, tests-eerst (gedrag-behoudend)
@@ -67,7 +69,7 @@ Verbatim geverifieerd (regel-set-vergelijking oud↔nieuw); `tsc -b` + `vite bui
 ## Backlog (los van de herstructurering)
 
 - **Echte in-app updater** (Tauri) i.p.v. de "ga naar Releases"-banner: `tauri-plugin-updater` + updater-signing-keypair (private key = repo-secret, public in `tauri.conf.json`) + VPS-gehost gesigneerd `latest.json` + installers. Doel: update-in-place met user-confirm, geen volledige re-install. Operator-stappen eerst uitschrijven.
-- **iMIP via de ERPNext-relay** — accounts die via de relay versturen (bv. piet@3bm.co.nl) sturen de `.ics`-uitnodiging nog niet mee (alleen het directe-SMTP-pad doet dat).
+- **iMIP via de ERPNext-relay** — accounts die via de relay versturen sturen de `.ics`-uitnodiging nog niet mee (alleen het directe-SMTP-pad doet dat).
 - **Popouts op desktop** (Tauri multi-window) — losgekoppelde mail-/messenger-vensters, analoog aan de web-popouts; hangt af van de auto-unlock.
 - **Dependabot** — GitHub meldt 47 kwetsbaarheden op de default branch (1 critical / 16 high). Los van de refactor; apart oppakken.
 

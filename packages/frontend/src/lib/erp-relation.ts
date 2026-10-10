@@ -53,7 +53,7 @@ import { isPermissionError } from "./permission-error.ts";
 /* ────────────────────────────── Types ────────────────────────────────── */
 
 export interface SenderInfo {
-  /** Het bare adres van de afzender, bv. "oerlemans@vandorp.eu". */
+  /** Het bare adres van de afzender, bv. "jansen@voorbeeld.eu". */
   email: string;
   /** De weergavenaam uit de From-regel, bv. "Arno Oerlemans". */
   displayName?: string;
@@ -177,7 +177,7 @@ export function isFreemailDomain(domain: string): boolean {
 }
 
 /**
- * "vandorp.eu" → "Vandorp", "egg-sellent.nl" → "Egg-Sellent".
+ * "voorbeeld.eu" → "Voorbeeld", "kort-en-goed.nl" → "Kort-En-Goed".
  * Bewust alleen het hoofdlabel: "mail.instagram.com" → "Instagram".
  */
 export function humanizeDomain(domain: string): string {
@@ -332,10 +332,10 @@ export interface CompanyGuess {
 /**
  * Raadt de bedrijfsnaam, in aflopende betrouwbaarheid:
  *
- *   1. de weergavenaam zélf draagt een juridische staart ("Sympraxis B.V.");
+ *   1. de weergavenaam zélf draagt een juridische staart ("Voorbeeld B.V.");
  *   2. een handtekeningregel "Voornaam Achternaam - Bedrijf";
  *   3. een korte handtekeningregel die het maildomein bevestigt
- *      ("Van Dorp Infra" bij `@vandorp.eu`) — corroboratie, geen gok;
+ *      ("Voor Beeld Infra" bij `@voorbeeld.eu`) — corroboratie, geen gok;
  *   4. een korte handtekeningregel met een juridische staart;
  *   5. het maildomein zelf, maar nooit bij een publieke mailprovider.
  *
@@ -370,7 +370,7 @@ export function guessCompanyName(info: SenderInfo, person: PersonName): CompanyG
     }
   }
 
-  // 3. Korte regel die het domein bevestigt: "Van Dorp Infra" bij vandorp.eu.
+  // 3. Korte regel die het domein bevestigt: "Voor Beeld Infra" bij voorbeeld.eu.
   if (!freemail && domainLabel.length >= 4) {
     for (const line of tail) {
       if (line.length > 45 || isUrlLine(line)) continue;

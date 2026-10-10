@@ -21,14 +21,14 @@ test("een drukke ochtend maakt de middag niet smal", () => {
   // Zo was het: drie naast elkaar om 10:00 gaf elke afspraak die dag een derde.
   const uit = deelKolommenIn([
     blok("stout", 10, 12), blok("overleg", 10, 12), blok("bouwsoos", 10, 17),
-    blok("domera", 14, 16),
+    blok("domara", 14, 16),
   ]);
   // De langste (Bouwsoos, tot 17:00) staat links.
   assert.deepEqual(plek(uit, "bouwsoos"), { left: 0, width: 0.333 });
   assert.deepEqual(plek(uit, "stout"), { left: 0.333, width: 0.333 });
   assert.deepEqual(plek(uit, "overleg"), { left: 0.667, width: 0.333 });
-  // Domera raakt alleen Bouwsoos: twee kolommen, en de vrije ruimte links is voor hem.
-  assert.equal(plek(uit, "domera").width >= 0.5, true);
+  // Domara raakt alleen Bouwsoos: twee kolommen, en de vrije ruimte links is voor hem.
+  assert.equal(plek(uit, "domara").width >= 0.5, true);
 });
 
 test("een afspraak die later helemaal los staat, krijgt weer de hele breedte", () => {

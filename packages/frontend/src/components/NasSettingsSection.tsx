@@ -414,7 +414,7 @@ export function NasSharedSection({
               value={pf.masterPath}
               onChange={(e) => savePf({ ...pf, masterPath: e.target.value })}
               disabled={readOnly}
-              placeholder="\\NAS\3bm\_TEMPLATES\Projectmap"
+              placeholder="\\NAS\bedrijf\_TEMPLATES\Projectmap"
               className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:bg-slate-50 disabled:text-slate-500"
             />
             {isDesktopApp() && !readOnly && (
@@ -452,7 +452,7 @@ export function NasSharedSection({
               value={pf.targetRoot}
               onChange={(e) => savePf({ ...pf, targetRoot: e.target.value })}
               disabled={readOnly}
-              placeholder="\\NAS\3bm\Projecten"
+              placeholder="\\NAS\bedrijf\Projecten"
               className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:bg-slate-50 disabled:text-slate-500"
             />
             {isDesktopApp() && !readOnly && (

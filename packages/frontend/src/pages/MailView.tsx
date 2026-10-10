@@ -908,7 +908,7 @@ function ImapMailView() {
           draft={compose}
           // De reply-From MOET de eigen mailbox-identiteit van deze popout zijn,
           // niet zomaar de eerste To-header van de ontvangen mail. Was de mail
-          // aan een gedeeld adres (cooperatie@) gericht met piet@ in Cc of via
+          // aan een gedeeld adres (info@) gericht met jan@ in Cc of via
           // alias, dan zou `msg.to[0]` de From op het verkeerde adres zetten.
           // Volgorde: shared mailbox (acct) → eigen primary mailbox (email) →
           // pas dan terugval op de To-header.

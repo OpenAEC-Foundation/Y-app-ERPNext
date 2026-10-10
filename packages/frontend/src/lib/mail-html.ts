@@ -211,7 +211,7 @@ export function isSafeUrl(raw: string, options: { allowDataImage?: boolean } = {
  * Maakt van wat een gebruiker in het link-dialoogvenster tikt een bruikbare
  * URL, of `null` als het geen link kan zijn.
  *
- * `open-aec.com` → `https://open-aec.com`, `piet@x.nl` → `mailto:piet@x.nl`.
+ * `voorbeeld.nl` → `https://voorbeeld.nl`, `piet@x.nl` → `mailto:piet@x.nl`.
  * Een `javascript:`-URL komt er nooit uit: dat is geen typefout die je voor de
  * gebruiker "repareert", dat is een aanval.
  */

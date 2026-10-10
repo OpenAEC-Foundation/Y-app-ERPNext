@@ -21,8 +21,8 @@ function afspraak(over: Partial<GelezenAfspraak> = {}): GelezenAfspraak {
     titel: "Overleg",
     start: "2026-09-15T10:00:00",
     eind: "2026-09-15T11:00:00",
-    organisator: "lance@3bm.co.nl",
-    genodigden: [{ email: "maarten@3bm.co.nl", status: "needs-action" }],
+    organisator: "lance@3xz.co.nl",
+    genodigden: [{ email: "maarten@3xz.co.nl", status: "needs-action" }],
     volgnummer: 0,
     methode: "REQUEST",
     ...over,
@@ -33,10 +33,10 @@ function mail(over: Partial<GelezenAfspraak> = {}, communication = "c1"): MailUi
   return { communication, afspraak: afspraak(over) };
 }
 
-const IK = "maarten@3bm.co.nl";
+const IK = "maarten@3xz.co.nl";
 
 test("een uitnodiging zonder antwoord wacht op jou", () => {
-  const lance = { email: "lance@3bm.co.nl", organisator: true };
+  const lance = { email: "lance@3xz.co.nl", organisator: true };
   assert.equal(wachtOpAntwoord([lance, { email: IK, status: "needs-action" }], IK), true);
   // Outlook laat PARTSTAT vaak weg; dat betekent hetzelfde.
   assert.equal(wachtOpAntwoord([lance, { email: IK }], IK), true);
@@ -55,14 +55,14 @@ test("een afspraak die je zelf belegt is geen uitnodiging aan jezelf", () => {
 });
 
 test("staat je eigen adres er niet bij, dan valt er niets te beantwoorden", () => {
-  assert.equal(wachtOpAntwoord([{ email: "martin@3bm.co.nl" }], IK), false);
+  assert.equal(wachtOpAntwoord([{ email: "martin@3xz.co.nl" }], IK), false);
   assert.equal(wachtOpAntwoord([], IK), false);
   assert.equal(wachtOpAntwoord(undefined, IK), false);
 });
 
 test("hoofdletters en spaties in adressen doen er niet toe", () => {
   assert.equal(wachtOpAntwoord(
-    [{ email: " Maarten@3BM.co.nl " }], "maarten@3bm.co.nl", "lance@3bm.co.nl"), true);
+    [{ email: " Maarten@3XZ.co.nl " }], "maarten@3xz.co.nl", "lance@3xz.co.nl"), true);
 });
 
 test("zonder eigen adres wordt er niets gestippeld", () => {
@@ -114,7 +114,7 @@ test("uitnodigingen van collega's blijven buiten je eigen agenda", () => {
   // Wie de postbus van een collega mag inzien, krijgt diens uitnodigingen ook
   // te zien. Die horen niet in jouw agenda.
   const uit = kiesUitnodigingen(
-    [mail({ genodigden: [{ email: "martin@3bm.co.nl", status: "needs-action" }] })], [], IK);
+    [mail({ genodigden: [{ email: "martin@3xz.co.nl", status: "needs-action" }] })], [], IK);
   assert.deepEqual(uit, []);
 });
 
@@ -147,15 +147,15 @@ test("in je eentje in de deelnemerslijst is geen uitnodiging", () => {
 
 test("met een organisator erbij is het wél een uitnodiging", () => {
   assert.equal(wachtOpAntwoord(
-    [{ email: "lance@3bm.co.nl", organisator: true }, { email: IK }], IK), true);
-  assert.equal(wachtOpAntwoord([{ email: IK }], IK, "lance@3bm.co.nl"), true);
+    [{ email: "lance@3xz.co.nl", organisator: true }, { email: IK }], IK), true);
+  assert.equal(wachtOpAntwoord([{ email: IK }], IK, "lance@3xz.co.nl"), true);
 });
 
 test("een afspraak met collega's erbij blijft een uitnodiging", () => {
   // Twee genodigden zonder dat iemand als organisator gemarkeerd staat: dan is
   // er iemand anders in het spel en hoort de vraag gewoon gesteld te worden.
   assert.equal(wachtOpAntwoord(
-    [{ email: IK }, { email: "mattias@3bm.co.nl" }], IK), true);
+    [{ email: IK }, { email: "mattias@3xz.co.nl" }], IK), true);
 });
 
 test("een uitnodiging uit de mail met alleen jou erin blijft staan", () => {

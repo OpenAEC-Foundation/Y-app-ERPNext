@@ -17,7 +17,7 @@ function regel(overrides: Partial<UrenRegel> = {}): UrenRegel {
   return {
     urenstaat: "TS-HR-EMP-00003-2026-WN38-V01",
     medewerker: "HR-EMP-00003",
-    medewerkerNaam: "Maarten Vroegindeweij",
+    medewerkerNaam: "Maarten Vroman",
     datum: "2026-09-18",
     van: "2026-09-18 00:00:00",
     project: "2022",
@@ -61,16 +61,16 @@ test("verschuif: een periode verder of terug, ook over maand- en jaargrenzen", (
 
 test("regelsUitRijen: velden omzetten en alleen regels binnen de periode", () => {
   const regels = regelsUitRijen([
-    { name: "TS-1", employee: "HR-EMP-00003", employee_name: "Maarten Vroegindeweij", from_time: "2026-09-18 00:15:00",
+    { name: "TS-1", employee: "HR-EMP-00003", employee_name: "Maarten Vroman", from_time: "2026-09-18 00:15:00",
       hours: 0.75, project: "2639", activity_type: "Execution", is_billable: 1, description: "Nijmegen" },
     // Een onmogelijke datum uit een oude import: valt buiten elke periode.
     { name: "TS-2", employee: "HR-EMP-00015", employee_name: "Joris Bongers", from_time: "2106-10-27 07:30:00", hours: 4.5, project: "0413" },
-    { name: "TS-3", employee: "HR-EMP-00003", employee_name: "Maarten Vroegindeweij", from_time: "2026-09-13 23:00:00", hours: 1 },
-    { name: "TS-4", employee: "HR-EMP-00003", employee_name: "Maarten Vroegindeweij", from_time: "2026-09-16 10:00:00", hours: 0 },
+    { name: "TS-3", employee: "HR-EMP-00003", employee_name: "Maarten Vroman", from_time: "2026-09-13 23:00:00", hours: 1 },
+    { name: "TS-4", employee: "HR-EMP-00003", employee_name: "Maarten Vroman", from_time: "2026-09-16 10:00:00", hours: 0 },
   ], "2026-09-14", "2026-09-20");
   assert.equal(regels.length, 1);
   assert.deepEqual(regels[0], {
-    urenstaat: "TS-1", medewerker: "HR-EMP-00003", medewerkerNaam: "Maarten Vroegindeweij",
+    urenstaat: "TS-1", medewerker: "HR-EMP-00003", medewerkerNaam: "Maarten Vroman",
     datum: "2026-09-18", van: "2026-09-18 00:15:00", project: "2639", activiteit: "Execution",
     uren: 0.75, declarabel: true, omschrijving: "Nijmegen",
   });

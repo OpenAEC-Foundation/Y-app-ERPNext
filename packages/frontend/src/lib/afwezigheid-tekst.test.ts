@@ -19,18 +19,18 @@ test("de zin past zich aan aan wat ingevuld is", () => {
 test("standaardtekst met collega en ondertekening", () => {
   const tekst = standaardTekst({
     van: "2026-09-28", tot: "2026-10-05",
-    collega: "Nino van Kleef", collegaEmail: "nino@3bm.co.nl",
-    ondertekening: "Maarten Vroegindeweij\n3BM Bouwtechniek",
+    collega: "Nino van Kleef", collegaEmail: "nino@3xz.co.nl",
+    ondertekening: "Maarten Vroman\n3XZ Bouwadvies",
   });
   assert.equal(tekst, [
     "Geachte heer, mevrouw,",
     "",
     "Ik ben afwezig van 28 september 2026 tot en met 5 oktober 2026.",
-    "Bij vragen kunt u contact opnemen met mijn collega Nino van Kleef (nino@3bm.co.nl).",
+    "Bij vragen kunt u contact opnemen met mijn collega Nino van Kleef (nino@3xz.co.nl).",
     "",
     "Met vriendelijke groet,",
     "",
-    "Maarten Vroegindeweij\n3BM Bouwtechniek",
+    "Maarten Vroman\n3XZ Bouwadvies",
   ].join("\n"));
 });
 

@@ -15,7 +15,7 @@ import { beantwoordUitnodiging, handeltMailAf, magInAgenda } from "./uitnodiging
 function ok() { return Promise.resolve({ gelukt: true }); }
 function nietGelukt(reden: string) { return () => Promise.resolve({ gelukt: false, reden }); }
 function gooit(bericht: string) { return () => Promise.reject(new Error(bericht)); }
-function neergelegd() { return Promise.resolve({ geschreven: ["maarten@3bm.co.nl"], mislukt: [] }); }
+function neergelegd() { return Promise.resolve({ geschreven: ["maarten@3xz.co.nl"], mislukt: [] }); }
 
 test("staat de afspraak al in je agenda, dan is bijwerken genoeg", async () => {
   let tweede = 0;
@@ -94,7 +94,7 @@ test("voorlopig is nog geen antwoord", () => {
 });
 
 test("magInAgenda: alleen als er een afspraak is waarin jij niet als genodigde staat", () => {
-  const basis = { heeftAfspraak: true, genodigd: false, ruweIcs: "BEGIN:VCALENDAR", ik: "maarten@3bm.co.nl" };
+  const basis = { heeftAfspraak: true, genodigd: false, ruweIcs: "BEGIN:VCALENDAR", ik: "maarten@3xz.co.nl" };
   assert.equal(magInAgenda(basis), true);
   assert.equal(magInAgenda({ ...basis, genodigd: true }), false, "genodigd: dan beantwoord je hem");
   assert.equal(magInAgenda({ ...basis, heeftAfspraak: false }), false);

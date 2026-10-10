@@ -62,7 +62,7 @@ export function bouwAfspraakIcs(afspraak: AfspraakInvoer, nu: Date = new Date())
   const regels: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//3BM//Y-Next//NL",
+    "PRODID:-//Y-next//Agenda//NL",
     "CALSCALE:GREGORIAN",
   ];
   if (genodigden.length > 0) regels.push("METHOD:REQUEST");
@@ -155,7 +155,7 @@ export function zetDeelname(ics: string, email: string, status: Deelnamestatus):
  * en een volgnummer dat hoger is dan dat van de uitnodiging.
  *
  * Een afspraak met genodigden intrekken hoort volgens de norm zo'n bericht te
- * zijn en geen stille verwijdering. Wie van buiten 3BM komt heeft hier geen
+ * zijn en geen stille verwijdering. Wie van buiten de organisatie komt heeft hier geen
  * agenda die wij kunnen bijwerken; zonder afzegging blijft de afspraak bij hem
  * gewoon staan. Het hogere volgnummer is geen detail: een agendaprogramma
  * negeert een bericht dat niet nieuwer is dan wat het al heeft.

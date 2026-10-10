@@ -324,8 +324,9 @@ export default function InvoiceModal({
   // Schaduw-state van het in InvoicePreview geselecteerde Print Format —
   // alleen nodig zodat isRowPrintedOnInvoice (edit-mode badges op uren-
   // rijen) weet welk format actief is. InvoicePreview pusht updates via
-  // de onFormatChange callback.
-  const [printFormat, setPrintFormat] = useState<string>("3BM Factuur+Smart Urenstaat");
+  // de onFormatChange callback, ook het eerste formaat zodra de formaten
+  // van de site geladen zijn.
+  const [printFormat, setPrintFormat] = useState<string>("");
   // New-mode only: customer picked via CustomerSearchSelect; mirrors into
   // doc.customer / doc.customer_name on change.
   const [pickedCustomer, setPickedCustomer] = useState<Customer | null>(null);
@@ -794,7 +795,7 @@ export default function InvoiceModal({
     : (doc?.net_total ?? 0);
 
   // Load Sales Taxes and Charges Templates for the active company. Filters
-  // op company zodat 3BM Engineering alleen z'n eigen templates ziet en
+  // op company zodat een bedrijf alleen z'n eigen templates ziet en
   // niet die van andere bedrijven in dezelfde ERPNext-tenant. Default-
   // selectie zoekt een template waarvan de naam "VAT 21" of "21%" bevat
   // (case-insensitive) zodat NL-tarief automatisch klopt.
@@ -928,7 +929,7 @@ export default function InvoiceModal({
   }
 
   // Build the enriched child rows for an item. We show ALL invoice
-  // timesheets — most 3BM invoices have one item per project so the simple
+  // timesheets — most invoices have one item per project so the simple
   // "show everything per item" model works in practice.
   function getEnrichedRows(_item: SalesInvoiceItem): EnrichedTimesheetRow[] {
     return timesheets.map((ts) => {

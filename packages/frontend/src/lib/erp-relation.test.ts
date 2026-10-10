@@ -107,13 +107,13 @@ test("splitPersonName strip titels en draait 'Achternaam, Voornaam' om", () => {
 test("nameFromLocalPart maakt van het mailboxdeel iets leesbaars", () => {
   assert.deepEqual(nameFromLocalPart("linhaigui@ewpt.com"), { first: "Linhaigui" });
   assert.deepEqual(nameFromLocalPart("mojtaba.karimi1984@gmail.com"), { first: "Mojtaba", last: "Karimi" });
-  assert.deepEqual(nameFromLocalPart("info@vindus.nl"), { first: "Info" });
+  assert.deepEqual(nameFromLocalPart("info@vindor.nl"), { first: "Info" });
 });
 
 test("looksLikeCompanyName kent de juridische staarten uit deze instance", () => {
   for (const yes of [
-    "3BM Bouwtechniek V.O.F.", "Sympraxis B.V.", "Castellum Rosarum BV",
-    "Groothandel Egg-sellent B.V.", "3BM Cooperatie U.A.", "Van Dorp Infra B.V.",
+    "3XZ Bouwadvies V.O.F.", "Sympraxis B.V.", "Castellum Rosarum BV",
+    "Groothandel Egg-sellent B.V.", "3XZ Cooperatie U.A.", "Van Dorp Infra B.V.",
     "Ekster Groep",
   ]) {
     assert.equal(looksLikeCompanyName(yes), true, yes);
@@ -141,7 +141,7 @@ test("isFreemailDomain herkent de providers waar geen bedrijf achter zit", () =>
   for (const yes of ["gmail.com", "outlook.com", "ziggo.nl", "telenet.be", "icloud.com"]) {
     assert.equal(isFreemailDomain(yes), true, yes);
   }
-  for (const no of ["vandorp.eu", "haacht.be", "3bm.co.nl", "ramboll.com"]) {
+  for (const no of ["vandorp.eu", "haacht.be", "3xz.co.nl", "ramboll.com"]) {
     assert.equal(isFreemailDomain(no), false, no);
   }
   assert.equal(emailDomain("Oerlemans@VanDorp.eu"), "vandorp.eu");
@@ -153,7 +153,7 @@ test("isNoReplyAddress / isRoleAddress scheiden mensen van mailboxen", () => {
   assert.equal(isNoReplyAddress("postmaster@vandorp.eu"), true);
   assert.equal(isNoReplyAddress("oerlemans@vandorp.eu"), false);
   assert.equal(isRoleAddress("facturen@egg-sellent.nl"), true);
-  assert.equal(isRoleAddress("info@vindus.nl"), true);
+  assert.equal(isRoleAddress("info@vindor.nl"), true);
   assert.equal(isRoleAddress("piebevdstorm@gmail.com"), false);
 });
 
@@ -474,14 +474,14 @@ test("lookupExisting vindt een secundair adres uit de Contact Email-child", asyn
   const mock = installFetchMock([
     {
       match: (u) => u.includes("Contact%20Email") || u.includes("Contact+Email"),
-      rows: [{ name: "Administratie Symitech-Symitech B.V.", link_doctype: "Customer", link_name: "Symitech B.V." }],
+      rows: [{ name: "Administratie Symatec-Symatec B.V.", link_doctype: "Customer", link_name: "Symatec B.V." }],
     },
     { match: () => true, rows: [] },
   ]);
   try {
     const found = await lookupExisting(email);
-    assert.equal(found.contact, "Administratie Symitech-Symitech B.V.");
-    assert.equal(found.customer, "Symitech B.V.");
+    assert.equal(found.contact, "Administratie Symatec-Symatec B.V.");
+    assert.equal(found.customer, "Symatec B.V.");
   } finally {
     mock.restore();
   }

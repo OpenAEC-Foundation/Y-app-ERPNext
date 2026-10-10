@@ -21,8 +21,8 @@ test("een e-mailadres wordt mailto", () => {
 });
 
 test("leestekens aan het eind horen bij de zin", () => {
-  assert.deepEqual(links("Zie https://3bm.co.nl."), [["https://3bm.co.nl", "https://3bm.co.nl"]]);
-  assert.deepEqual(links("(www.3bm.co.nl), en verder"), [["www.3bm.co.nl", "https://www.3bm.co.nl"]]);
+  assert.deepEqual(links("Zie https://3xz.co.nl."), [["https://3xz.co.nl", "https://3xz.co.nl"]]);
+  assert.deepEqual(links("(www.3xz.co.nl), en verder"), [["www.3xz.co.nl", "https://www.3xz.co.nl"]]);
 });
 
 test("een haakje dat bij de link hoort blijft staan", () => {
@@ -42,8 +42,8 @@ test("javascript: wordt nooit een link", () => {
 
 test("HTML-versie is ge-escaped en houdt de link", () => {
   assert.equal(
-    linkifyEscapedHtml("<b>zie</b> https://3bm.co.nl?a=1&b=2"),
-    '&lt;b&gt;zie&lt;/b&gt; <a href="https://3bm.co.nl?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://3bm.co.nl?a=1&amp;b=2</a>',
+    linkifyEscapedHtml("<b>zie</b> https://3xz.co.nl?a=1&b=2"),
+    '&lt;b&gt;zie&lt;/b&gt; <a href="https://3xz.co.nl?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://3xz.co.nl?a=1&amp;b=2</a>',
   );
 });
 
@@ -57,7 +57,7 @@ test("linkAanEind: webadres vlak voor de cursor", () => {
 });
 
 test("linkAanEind: afsluitende punt hoort niet bij de link", () => {
-  assert.deepEqual(linkAanEind("kijk op www.3bm.co.nl."), { start: 8, eind: 21, href: "https://www.3bm.co.nl" });
+  assert.deepEqual(linkAanEind("kijk op www.3xz.co.nl."), { start: 8, eind: 21, href: "https://www.3xz.co.nl" });
 });
 
 test("linkAanEind: gewoon woord of lege tekst geeft niets", () => {

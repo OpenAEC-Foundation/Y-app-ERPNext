@@ -12,9 +12,9 @@ import { nummersInOnderwerp, suggestProject, type ProjectHint, type ProjectSugge
  *   projectnamen). Zo'n token moet voor nul meetellen.
  */
 const PROJECTS: ProjectHint[] = [
-  { name: "PROJ-0001", projectName: "Implementatie 3BM Zwijndrecht", customer: "3BM Bouwtechniek V.O.F." },
-  { name: "PROJ-0004", projectName: "Implementatie Domera Gouda", customer: "Domera" },
-  { name: "PROJ-0030", projectName: "3BM-PyRevit-WayOfWork", customer: "OpenAEC Foundation" },
+  { name: "PROJ-0001", projectName: "Implementatie 3XZ Zwijndrecht", customer: "3XZ Bouwadvies V.O.F." },
+  { name: "PROJ-0004", projectName: "Implementatie Domara Gouda", customer: "Domara" },
+  { name: "PROJ-0030", projectName: "3XZ-Modelleren-Werkwijze", customer: "OpenAEC Foundation" },
   { name: "PROJ-0043", projectName: "OpenAEC-Website", customer: "OpenAEC Foundation" },
   { name: "PROJ-0057", projectName: "Open Energy Studio" },
   { name: "PROJ-0059", projectName: "Open 3D Viewer" },
@@ -81,22 +81,22 @@ test("een alledaags woord uit de projectnaam levert niets op", () => {
   assert.equal(hit, null);
 });
 
-test("factuurmail van 3BM wordt niet aan een 3BM-project gehangen", () => {
+test("factuurmail van 3XZ wordt niet aan een 3XZ-project gehangen", () => {
   // Twee remmen tegelijk: de intent is al "inkoopfactuur" (één voorstel per
-  // mail), én "3bm" alleen haalt de drempel niet.
+  // mail), én "3xz" alleen haalt de drempel niet.
   const asInvoice = suggestProject(mail({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["263-05192.pdf"],
     intentKind: "purchase-invoice",
   }), PROJECTS);
   assert.equal(asInvoice, null);
 
   const withoutIntent = suggestProject(mail({
-    subject: "Factuur 3BM Bouwtechniek V.O.F. 263-05192",
-    sender: "maarten@3bm.co.nl",
+    subject: "Factuur 3XZ Bouwadvies V.O.F. 263-05192",
+    sender: "maarten@3xz.co.nl",
     attachmentNames: ["263-05192.pdf"],
-    senderCustomer: "3BM Bouwtechniek V.O.F.",
+    senderCustomer: "3XZ Bouwadvies V.O.F.",
   }), PROJECTS);
   assert.equal(withoutIntent, null);
 });
@@ -141,7 +141,7 @@ test("geciteerde staart van de mail telt niet mee", () => {
   assert.equal(hit, null);
 });
 
-/* ── 3BM: vierciferige projectnummers in het onderwerp ── */
+/* ── 3XZ: vierciferige projectnummers in het onderwerp ── */
 
 const BM: ProjectHint[] = [
   { name: "3201", projectName: "Controle Sparingen Pauluskerk", customer: "Bouwgroep Schrijver B.V." },
@@ -153,18 +153,18 @@ const BM: ProjectHint[] = [
   { name: "1654", projectName: "Aanbouw Alblasserdam" },
 ];
 
-test("3BM: nummer met leesteken in het onderwerp", () => {
+test("3XZ: nummer met leesteken in het onderwerp", () => {
   const hit = suggestProject(mail({ subject: "RE: 3201, detailtekeningen balk", sender: "kees@x.nl" }), BM);
   assert.equal(hit?.project, "3201");
   assert.equal(hit?.confidence, "high");
 });
 
-test("3BM: nummer tussen haakjes of voor een tekeningcode", () => {
+test("3XZ: nummer tussen haakjes of voor een tekeningcode", () => {
   assert.equal(suggestProject(mail({ subject: "Opmerkingen (3215)" }), BM)?.project, "3215");
   assert.equal(suggestProject(mail({ subject: "3201-CP-21 rev A" }), BM)?.project, "3201");
 });
 
-test("3BM: nummer in het onderwerp wint van afzendergeschiedenis en klant", () => {
+test("3XZ: nummer in het onderwerp wint van afzendergeschiedenis en klant", () => {
   const hit = suggestProject(mail({
     subject: "Vraag over 2619",
     senderProjects: ["2618"],
@@ -173,23 +173,23 @@ test("3BM: nummer in het onderwerp wint van afzendergeschiedenis en klant", () =
   assert.equal(hit?.project, "2619");
 });
 
-test("3BM: een datum in het onderwerp is geen projectnummer", () => {
+test("3XZ: een datum in het onderwerp is geen projectnummer", () => {
   assert.equal(suggestProject(mail({ subject: "Overleg 15-09-2026" }), BM), null);
   assert.equal(suggestProject(mail({ subject: "Planning 2026-09-15" }), BM), null);
 });
 
-test("3BM: een bedrag is geen projectnummer", () => {
+test("3XZ: een bedrag is geen projectnummer", () => {
   assert.equal(suggestProject(mail({ subject: "Factuur € 1654,00" }), BM), null);
   assert.equal(suggestProject(mail({ subject: "Totaal 1654.00" }), BM), null);
 });
 
-test("3BM: jaarachtig projectnummer telt licht, maar wel", () => {
+test("3XZ: jaarachtig projectnummer telt licht, maar wel", () => {
   const hit = suggestProject(mail({ subject: "2022 Herindeling" }), BM);
   assert.equal(hit?.project, "2022");
   assert.equal(hit?.confidence, "medium");
 });
 
-test("3BM: jaarachtig nummer verliest van een sterker signaal", () => {
+test("3XZ: jaarachtig nummer verliest van een sterker signaal", () => {
   const hit = suggestProject(mail({ subject: "Jaarplanning 2026", senderProjects: ["2618"], senderCustomer: "Zettex Group" }), BM);
   assert.equal(hit?.project, "2618");
 });

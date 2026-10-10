@@ -16,13 +16,13 @@ const NU = new Date("2026-09-03T12:00:00Z");
 
 function afspraak(over: Partial<AfspraakInvoer> = {}): AfspraakInvoer {
   return {
-    uid: "abc-123@3bm.co.nl",
+    uid: "abc-123@3xz.co.nl",
     titel: "Planningsoverleg",
     start: "2026-09-10T10:00:00",
     eind: "2026-09-10T11:00:00",
     tijdzone: "Europe/Amsterdam",
-    organisator: { email: "maarten@3bm.co.nl", naam: "Maarten Vroegindeweij" },
-    genodigden: [{ email: "martin@3bm.co.nl", naam: "Martin" }],
+    organisator: { email: "maarten@3xz.co.nl", naam: "Maarten Vroman" },
+    genodigden: [{ email: "martin@3xz.co.nl", naam: "Martin" }],
     ...over,
   };
 }
@@ -44,7 +44,7 @@ test("bouwAfspraakIcs zet tijd en tijdzone zoals de agenda hem verwacht", () => 
   const r = regels(bouwAfspraakIcs(afspraak(), NU));
   assert.ok(r.includes("DTSTART;TZID=Europe/Amsterdam:20260910T100000"));
   assert.ok(r.includes("DTEND;TZID=Europe/Amsterdam:20260910T110000"));
-  assert.ok(r.includes("UID:abc-123@3bm.co.nl"));
+  assert.ok(r.includes("UID:abc-123@3xz.co.nl"));
   assert.ok(r.includes("DTSTAMP:20260903T120000Z"));
 });
 
@@ -118,7 +118,7 @@ test("maakAfzegging vult een ontbrekende VTIMEZONE aan, en verdubbelt er geen", 
   // Afspraken die al zonder VTIMEZONE op de mailserver staan: zonder dit krijgt
   // de afzegging dezelfde verschuiving als de uitnodiging.
   const zonder = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT", "UID:x@3bm.co.nl", "SEQUENCE:0",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT", "UID:x@3xz.co.nl", "SEQUENCE:0",
     "DTSTART;TZID=Europe/Amsterdam:20260923T090000", "DTEND;TZID=Europe/Amsterdam:20260923T113000",
     "END:VEVENT", "END:VCALENDAR", "",
   ].join("\r\n");
@@ -152,11 +152,11 @@ test("bouwAfspraakIcs vraagt om een reactie zolang die er niet is", () => {
   const genodigde = r.find((x) => x.startsWith("ATTENDEE"));
   assert.ok(genodigde?.includes("PARTSTAT=NEEDS-ACTION"));
   assert.ok(genodigde?.includes("RSVP=TRUE"));
-  assert.ok(genodigde?.endsWith(":mailto:martin@3bm.co.nl"));
+  assert.ok(genodigde?.endsWith(":mailto:martin@3xz.co.nl"));
 
   // Wie al geantwoord heeft, hoeft niet opnieuw gevraagd te worden.
   const beantwoord = regels(bouwAfspraakIcs(afspraak({
-    genodigden: [{ email: "martin@3bm.co.nl", status: "accepted" }],
+    genodigden: [{ email: "martin@3xz.co.nl", status: "accepted" }],
   }), NU)).find((x) => x.startsWith("ATTENDEE"));
   assert.ok(beantwoord?.includes("PARTSTAT=ACCEPTED"));
   assert.equal(beantwoord?.includes("RSVP"), false);
@@ -185,14 +185,14 @@ test("bouwAfspraakIcs zet een naam met een komma tussen aanhalingstekens", () =>
 test("zetDeelname verandert één regel en laat de rest ongemoeid", () => {
   const ics = bouwAfspraakIcs(afspraak({
     genodigden: [
-      { email: "martin@3bm.co.nl", naam: "Martin" },
-      { email: "lance@3bm.co.nl", naam: "Lance" },
+      { email: "martin@3xz.co.nl", naam: "Martin" },
+      { email: "lance@3xz.co.nl", naam: "Lance" },
     ],
   }), NU);
-  const na = zetDeelname(ics, "MARTIN@3bm.co.nl", "accepted");
+  const na = zetDeelname(ics, "MARTIN@3xz.co.nl", "accepted");
   const r = regels(na);
-  const martin = r.find((x) => x.includes("martin@3bm.co.nl"));
-  const lance = r.find((x) => x.includes("lance@3bm.co.nl"));
+  const martin = r.find((x) => x.includes("martin@3xz.co.nl"));
+  const lance = r.find((x) => x.includes("lance@3xz.co.nl"));
   assert.ok(martin?.includes("PARTSTAT=ACCEPTED"));
   assert.equal(martin?.includes("RSVP"), false);
   // De andere genodigde blijft staan zoals hij stond.
@@ -202,12 +202,12 @@ test("zetDeelname verandert één regel en laat de rest ongemoeid", () => {
   assert.ok(r.includes("METHOD:REPLY"));
   // En de afspraak zelf verandert niet.
   assert.ok(r.includes("DTSTART;TZID=Europe/Amsterdam:20260910T100000"));
-  assert.ok(r.includes("UID:abc-123@3bm.co.nl"));
+  assert.ok(r.includes("UID:abc-123@3xz.co.nl"));
 });
 
 test("zetDeelname raakt niets aan wanneer het adres er niet tussen staat", () => {
   const ics = bouwAfspraakIcs(afspraak(), NU);
-  const na = zetDeelname(ics, "iemand.anders@3bm.co.nl", "declined");
+  const na = zetDeelname(ics, "iemand.anders@3xz.co.nl", "declined");
   assert.equal(regels(na).some((r) => r.includes("DECLINED")), false);
 });
 
@@ -216,12 +216,12 @@ test("zetDeelname bewaart velden die wij niet kennen", () => {
   // mogen niet sneuvelen op een klik "accepteren".
   const ics = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST", "BEGIN:VEVENT",
-    "UID:x@3bm.co.nl", "RRULE:FREQ=WEEKLY;BYDAY=MO", "X-APPLE-TRAVEL-DURATION:PT15M",
-    "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:martin@3bm.co.nl",
+    "UID:x@3xz.co.nl", "RRULE:FREQ=WEEKLY;BYDAY=MO", "X-APPLE-TRAVEL-DURATION:PT15M",
+    "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:martin@3xz.co.nl",
     "BEGIN:VALARM", "TRIGGER:-PT15M", "ACTION:DISPLAY", "END:VALARM",
     "END:VEVENT", "END:VCALENDAR",
   ].join("\r\n");
-  const r = regels(zetDeelname(ics, "martin@3bm.co.nl", "tentative"));
+  const r = regels(zetDeelname(ics, "martin@3xz.co.nl", "tentative"));
   assert.ok(r.includes("RRULE:FREQ=WEEKLY;BYDAY=MO"));
   assert.ok(r.includes("X-APPLE-TRAVEL-DURATION:PT15M"));
   assert.ok(r.includes("TRIGGER:-PT15M"));
@@ -233,18 +233,18 @@ test("leesAfspraakIcs haalt eruit wat een uitnodiging nodig heeft", () => {
     titel: "Overleg: offerte, tekening",
     volgnummer: 2,
     genodigden: [
-      { email: "martin@3bm.co.nl", naam: "Martin", status: "accepted" },
-      { email: "lance@3bm.co.nl", naam: "Lance" },
+      { email: "martin@3xz.co.nl", naam: "Martin", status: "accepted" },
+      { email: "lance@3xz.co.nl", naam: "Lance" },
     ],
   }), NU));
-  assert.equal(gelezen.uid, "abc-123@3bm.co.nl");
+  assert.equal(gelezen.uid, "abc-123@3xz.co.nl");
   assert.equal(gelezen.titel, "Overleg: offerte, tekening");
   assert.equal(gelezen.methode, "REQUEST");
   assert.equal(gelezen.volgnummer, 2);
-  assert.equal(gelezen.organisator, "maarten@3bm.co.nl");
+  assert.equal(gelezen.organisator, "maarten@3xz.co.nl");
   assert.deepEqual(gelezen.genodigden.map((g) => [g.email, g.status]), [
-    ["martin@3bm.co.nl", "accepted"],
-    ["lance@3bm.co.nl", "needs-action"],
+    ["martin@3xz.co.nl", "accepted"],
+    ["lance@3xz.co.nl", "needs-action"],
   ]);
   assert.equal(gelezen.genodigden[0].naam, "Martin");
 });
@@ -338,10 +338,10 @@ test("zonder genodigden komt er geen ORGANIZER in het bestand", () => {
 test("met genodigden staat de organisator er gewoon in", () => {
   // Ontvouwen: een ATTENDEE-regel is langer dan 75 tekens en wordt afgebroken.
   const regels = ontvouw(bouwAfspraakIcs(afspraak({
-    genodigden: [{ email: "lance@3bm.co.nl" }],
+    genodigden: [{ email: "lance@3xz.co.nl" }],
   }), NU));
-  assert.equal(regels.some((r) => r.startsWith("ORGANIZER") && r.endsWith("mailto:maarten@3bm.co.nl")), true);
-  assert.equal(regels.some((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:lance@3bm.co.nl")), true);
+  assert.equal(regels.some((r) => r.startsWith("ORGANIZER") && r.endsWith("mailto:maarten@3xz.co.nl")), true);
+  assert.equal(regels.some((r) => r.startsWith("ATTENDEE") && r.endsWith("mailto:lance@3xz.co.nl")), true);
 });
 
 /* ── Afzeggen ── */
@@ -370,7 +370,7 @@ test("maakAfzegging: een bestaande STATUS wordt vervangen, niet verdubbeld", () 
 });
 
 test("maakAfzegging: zonder METHOD of SEQUENCE komen ze erbij", () => {
-  const kaal = ["BEGIN:VCALENDAR", "VERSION:2.0", "BEGIN:VEVENT", "UID:x@3bm.co.nl",
+  const kaal = ["BEGIN:VCALENDAR", "VERSION:2.0", "BEGIN:VEVENT", "UID:x@3xz.co.nl",
     "DTSTART:20260922T083000", "SUMMARY:Johan ABC", "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
   const regels = ontvouw(maakAfzegging(kaal));
   assert.ok(regels.includes("METHOD:CANCEL"));
@@ -383,7 +383,7 @@ test("maakAfzegging: zonder METHOD of SEQUENCE komen ze erbij", () => {
 test("bouwAfspraakIcs zet een herhaling als RRULE in de afspraak", () => {
   const ics = bouwAfspraakIcs({
     uid: "y-next-herhaal", titel: "Planningsoverleg", start: "2026-09-21T09:00:00", eind: "2026-09-21T10:00:00",
-    tijdzone: "Europe/Amsterdam", organisator: { email: "maarten@3bm.co.nl" },
+    tijdzone: "Europe/Amsterdam", organisator: { email: "maarten@3xz.co.nl" },
     herhaling: { frequency: "weekly", interval: 1, byDay: [{ day: "mo" }] },
   });
   assert.match(ics, /\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n/);

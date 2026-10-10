@@ -9,7 +9,7 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL (default de productiesite).
+ * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite.
  *
  * Gebruik: zie docs/deployment.md.
  *   npm run deploy
@@ -18,7 +18,6 @@ import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 const WEB_PAGE_ROUTE = "y-next";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -42,7 +41,13 @@ export function requiredEnv(env) {
         "voordat je dit script draait — zie docs/deployment.md."
     );
   }
-  const rawBase = env.YNEXT_BASE_URL || DEFAULT_BASE_URL;
+  const rawBase = env.YNEXT_BASE_URL;
+  if (!rawBase) {
+    throw new Error(
+      "YNEXT_BASE_URL ontbreekt. Zet de omgevingsvariabele op het adres van de site " +
+        "(bijvoorbeeld https://erp.voorbeeld.nl) — er is geen standaardsite."
+    );
+  }
   const baseUrl = rawBase.replace(/\/+$/, "");
   return { baseUrl, token };
 }
@@ -213,7 +218,7 @@ export function extractBuildTag(name) {
  * URL van de vorige upload terug — met een ANDERE naam dan deze build
  * verwacht — wat de hard-abort in de upload-loop triggert.
  *
- * public/-bestanden zonder prefix (3BM-Logo.svg, y-logo.svg, manifest.json,
+ * public/-bestanden zonder prefix (y-logo.svg, manifest.json,
  * vite.svg, ...) worden NIET aangepast: die moeten juist dedupliceren naar
  * hun bestaande /files/-URL (zelfde naam, geen probleem).
  *

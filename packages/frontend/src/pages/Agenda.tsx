@@ -185,7 +185,7 @@ interface CustomCalendar {
   enabled: boolean;
   // Optioneel: id van een Y-app vault-mailaccount. Als gezet, gebruikt de
   // server diens (server-side ontsleutelde) creds voor CalDAV Basic-Auth —
-  // zodat privé-agenda's achter inlog (bv. mail.3bm.co.nl/dav/cal/) werken
+  // zodat privé-agenda's achter inlog (bv. mail.voorbeeld.nl/dav/cal/) werken
   // zonder wachtwoord in localStorage. Leeg = publieke iCal-feed.
   accountId?: string;
 }

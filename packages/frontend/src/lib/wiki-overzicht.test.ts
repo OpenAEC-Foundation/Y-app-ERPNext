@@ -5,17 +5,18 @@ import {
 } from "./wiki-overzicht.ts";
 
 const artikelen = [
-  { name: "a", title: "Revit Steel", route: "wiki/kennisbank/procedures/detail-engineering/revit-steel", modified: "2026-01-19 23:21:12" },
+  { name: "a", title: "Staalverbindingen", route: "wiki/kennisbank/procedures/detail-engineering/staalverbindingen", modified: "2026-01-19 23:21:12" },
   { name: "b", title: "Nieuw project aanmaken", route: "wiki/kennisbank/procedures/algemeen/nieuw-project", modified: "2026-02-07 15:37:36" },
   { name: "c", title: "Sebastiaan AI - Instructies", route: "wiki/kennisbank/procedures/algemeen/sebastiaan-ai-instructies", modified: "2026-06-16 16:02:02" },
-  { name: "d", title: "Beleid ERP-Next binnen 3BM", route: "wiki/beleid-erp-next-binnen-3bm", modified: "2026-01-26 06:07:35" },
+  { name: "d", title: "Beleid ERP-Next", route: "wiki/beleid-erp-next", modified: "2026-01-26 06:07:35" },
 ];
 
 test("pad en leesbare naam", () => {
   assert.equal(sectiePad("wiki/kennisbank/procedures/algemeen/nieuw-project"), "kennisbank/procedures/algemeen");
-  assert.equal(sectiePad("wiki/beleid-erp-next-binnen-3bm"), "");
+  assert.equal(sectiePad("wiki/beleid-erp-next"), "");
   assert.equal(leesbaar("detail-engineering"), "Detail engineering");
-  assert.equal(leesbaar("3bm-bouwtechniek"), "3BM bouwtechniek");
+  // Een bekende afkorting krijgt hoofdletters.
+  assert.equal(leesbaar("bim-protocol"), "BIM protocol");
 });
 
 test("groeperen per sectie, artikelen alfabetisch", () => {
@@ -30,7 +31,7 @@ test("groeperen per sectie, artikelen alfabetisch", () => {
 
 test("laatst gewijzigd en zoeken", () => {
   assert.deepEqual(laatstGewijzigd(artikelen, 2).map((a) => a.name), ["c", "b"]);
-  assert.deepEqual(zoekArtikelen(artikelen, "revit").map((a) => a.name), ["a"]);
+  assert.deepEqual(zoekArtikelen(artikelen, "staal").map((a) => a.name), ["a"]);
   assert.deepEqual(zoekArtikelen(artikelen, "algemeen").map((a) => a.name), ["b", "c"]);
   assert.equal(zoekArtikelen(artikelen, "").length, 4);
 });

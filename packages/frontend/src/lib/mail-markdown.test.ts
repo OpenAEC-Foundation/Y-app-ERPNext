@@ -38,8 +38,8 @@ test("een underscore in een bestandsnaam blijft staan", () => {
 });
 
 test("een link wordt een link, een eng schema niet", () => {
-  assert.equal(markdownNaarHtml("[onze site](https://3bm.co.nl)"),
-    '<p><a href="https://3bm.co.nl">onze site</a></p>');
+  assert.equal(markdownNaarHtml("[onze site](https://3xz.co.nl)"),
+    '<p><a href="https://3xz.co.nl">onze site</a></p>');
   // Een javascript-link hoort gewone tekst te worden, geen klikbare val.
   assert.equal(markdownNaarHtml("[klik](javascript:alert(1))"), "<p>klik</p>");
 });
@@ -92,13 +92,13 @@ test("lijsten komen terug als lijsten", () => {
 });
 
 test("een link houdt zijn adres", () => {
-  assert.equal(htmlNaarMarkdown('<p>zie <a href="https://3bm.co.nl">de site</a></p>'),
-    "zie [de site](https://3bm.co.nl)");
+  assert.equal(htmlNaarMarkdown('<p>zie <a href="https://3xz.co.nl">de site</a></p>'),
+    "zie [de site](https://3xz.co.nl)");
 });
 
 test("heen en weer laat de tekst heel", () => {
   // Niet byte-voor-byte gelijk — dat kan niet — maar wat er staat moet blijven.
-  const bron = "# Kop\n\nTekst met **vet**, *cursief* en een [link](https://3bm.co.nl).\n\n- een\n- twee";
+  const bron = "# Kop\n\nTekst met **vet**, *cursief* en een [link](https://3xz.co.nl).\n\n- een\n- twee";
   const terug = htmlNaarMarkdown(markdownNaarHtml(bron));
   assert.equal(terug, bron);
 });

@@ -19,8 +19,8 @@ test("gewone tekst zonder link", () => {
 });
 
 test("Jitsi-link wordt herkend", () => {
-  const omschr = "Bel in via https://meet.jit.si/3bm-2892-overleg als je zover bent.";
-  assert.deepEqual(vindVergaderlink(omschr), { url: "https://meet.jit.si/3bm-2892-overleg", soort: "jitsi" });
+  const omschr = "Bel in via https://meet.jit.si/3xz-2892-overleg als je zover bent.";
+  assert.deepEqual(vindVergaderlink(omschr), { url: "https://meet.jit.si/3xz-2892-overleg", soort: "jitsi" });
 });
 
 test("Teams-link wordt herkend, tussen de rest van de uitnodigingstekst", () => {

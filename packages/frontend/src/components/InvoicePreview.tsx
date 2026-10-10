@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { fetchAll } from "../lib/erpnext";
-import { fetchPrintPreviewHtml } from "../lib/invoiceEmail";
-
-/** Print Formats we use most often op de 3BM-instance. De toggle laadt
- *  alle Print Formats voor het doctype en zet deze drie vooraan; de
- *  hardcoded lijst is alleen de fallback wanneer de discovery-call faalt. */
-const PRINT_FORMATS = [
-  "3BM Factuur+Smart Urenstaat",
-  "3BM Factuur Nieuw",
-  "3BM Factuur+Urenstaat Nieuw",
-] as const;
+import { fetchPrintPreviewHtml, loadInvoiceEmailDefaults } from "../lib/invoiceEmail";
+import { kiesAfdrukformaten } from "../lib/afdrukformaat";
 
 interface Props {
   doctype: string;
@@ -43,38 +35,35 @@ interface Props {
  * centraal blijven.
  */
 export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", onFormatChange, refreshToken }: Props) {
-  const [printFormat, setPrintFormatState] = useState<string>(PRINT_FORMATS[0]);
+  // Leeg zolang de formaten van de site nog geladen worden; er staat geen
+  // naam van een formaat in de code.
+  const [printFormat, setPrintFormatState] = useState<string>("");
   const setPrintFormat = (f: string) => {
     setPrintFormatState(f);
     onFormatChange?.(f);
   };
-  const [availableFormats, setAvailableFormats] = useState<string[]>(PRINT_FORMATS as unknown as string[]);
+  const [availableFormats, setAvailableFormats] = useState<string[]>([]);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  // Print Format discovery per doctype.
+  // De Print Formats van de site voor dit doctype; het formaat uit de
+  // instellingen staat vooraan en is de eerste keuze.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const list = await fetchAll<{ name: string }>(
-          "Print Format",
-          ["name"],
-          [["doc_type", "=", doctype]],
-        );
-        if (cancelled) return;
-        const names = list.map((p) => p.name);
-        const ordered = [
-          ...(PRINT_FORMATS as readonly string[]).filter((n) => names.includes(n)),
-          ...names.filter((n) => !(PRINT_FORMATS as readonly string[]).includes(n)),
-        ];
-        if (ordered.length > 0) {
-          setAvailableFormats(ordered);
-          if (!names.includes(printFormat) && ordered[0]) setPrintFormat(ordered[0]);
-        }
-      } catch { /* fallback naar hardcoded lijst */ }
+      const [names, voorkeur] = await Promise.all([
+        fetchAll<{ name: string }>("Print Format", ["name"], [["doc_type", "=", doctype]])
+          .then((list) => list.map((p) => p.name))
+          // Lukt het ophalen niet, dan blijft het standaardformaat over.
+          .catch(() => [] as string[]),
+        loadInvoiceEmailDefaults().then((d) => d.default_print_format).catch(() => ""),
+      ]);
+      if (cancelled) return;
+      const ordered = kiesAfdrukformaten(names, voorkeur);
+      setAvailableFormats(ordered);
+      if (!ordered.includes(printFormat)) setPrintFormat(ordered[0]);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,7 +72,7 @@ export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", o
   // HTML preview ophalen via de gedeelde helper. Same-origin met ERPNext,
   // dus logo's/letterhead-assets laden direct (zelfde mechanisme als email).
   useEffect(() => {
-    if (!name) {
+    if (!name || !printFormat) {
       setPreviewHtml(null);
       setPdfError(null);
       setPdfLoading(false);
@@ -117,7 +106,7 @@ export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", o
   // van HTML preview) omdat wkhtmltopdf soms blank renders op draft-facturen;
   // we proberen meerdere endpoints en pakken de eerste niet-lege %PDF binary.
   useEffect(() => {
-    if (!name) {
+    if (!name || !printFormat) {
       setPdfBlobUrl(null);
       return;
     }
@@ -219,7 +208,7 @@ export default function InvoicePreview({ doctype, name, iframeHeight = "75vh", o
           <div className="p-8 text-center text-sm text-red-600">
             Preview kon niet geladen worden: {pdfError}
           </div>
-        ) : pdfLoading && !previewHtml && !pdfBlobUrl ? (
+        ) : (pdfLoading || !printFormat) && !previewHtml && !pdfBlobUrl ? (
           <div className="p-8 text-center text-sm text-slate-400" style={{ height: iframeHeight }}>
             Preview laden…
           </div>

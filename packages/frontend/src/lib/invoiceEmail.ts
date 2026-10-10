@@ -176,8 +176,8 @@ const accountSignatureSourceCache = new Map<string, SignatureSource>();
  *   2. Else: use the Email Account's own `signature` field.
  *   3. Else: empty.
  *
- * So when sending from `administratie@3bm.co.nl`, we look up the User
- * named `administratie@3bm.co.nl` (if it exists) and use ITS signature —
+ * So when sending from `administratie@voorbeeld.nl`, we look up the User
+ * named `administratie@voorbeeld.nl` (if it exists) and use ITS signature —
  * NOT the currently-logged-in user's signature.
  */
 export async function loadAccountSignature(accountName: string): Promise<SignatureResult> {
@@ -202,7 +202,7 @@ export async function loadAccountSignature(accountName: string): Promise<Signatu
   } catch { /* ignore — both will stay empty */ }
 
   // 1. User matching the account's email_id wins (e.g. account
-  //    `administratie@3bm.co.nl` → User `administratie@3bm.co.nl`).
+  //    `administratie@voorbeeld.nl` → User `administratie@voorbeeld.nl`).
   if (acctEmailId) {
     const userSig = await loadSignatureForUser(acctEmailId);
     if (userSig && !isEffectivelyEmpty(userSig)) {
@@ -463,7 +463,7 @@ export async function renderEmailTemplate(
  *
  * @param doctype  ERPNext doctype, bv "Sales Invoice"
  * @param name     Doc name
- * @param printFormat  Print Format naam (bv "3BM Factuur Nieuw")
+ * @param printFormat  Print Format naam (bv "Factuur")
  * @param includeLetterhead  `false` zet `no_letterhead=1` (blanco header)
  * @param cacheBuster  Optionele waarde die als `_t` query-param wordt
  *                     toegevoegd. Gebruik `doc.modified` of een save-counter

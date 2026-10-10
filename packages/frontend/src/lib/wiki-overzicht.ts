@@ -28,7 +28,6 @@ export interface WikiSectie {
 }
 
 const WOORDEN: Record<string, string> = {
-  "3bm": "3BM",
   ai: "AI",
   so: "SO",
   uo: "UO",

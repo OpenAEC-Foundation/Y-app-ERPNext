@@ -25,8 +25,8 @@ import {
 } from "./mail-erpnext-compose.ts";
 
 test("extractEmail: kaal adres, adres met naam, hoofdletters", () => {
-  assert.equal(extractEmail("piet@3bm.co.nl"), "piet@3bm.co.nl");
-  assert.equal(extractEmail("Piet Mol <Piet@3BM.co.nl>"), "piet@3bm.co.nl");
+  assert.equal(extractEmail("piet@3xz.co.nl"), "piet@3xz.co.nl");
+  assert.equal(extractEmail("Piet Mol <Piet@3XZ.co.nl>"), "piet@3xz.co.nl");
   assert.equal(extractEmail("  "), "");
 });
 
@@ -38,8 +38,8 @@ test("splitAddresses/joinAddresses: lege entries vallen weg, vorm blijft", () =>
 
 test("splitAddresses: een komma in een naam tussen aanhalingstekens splitst niet", () => {
   // Zo zet Outlook een achternaam-eerst-naam in de Cc.
-  const parsed = splitAddresses('"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>, jan@3bm.co.nl');
-  assert.deepEqual(parsed.map((a) => a.email), ["m.vander.hoeven@vanwijnen.nl", "jan@3bm.co.nl"]);
+  const parsed = splitAddresses('"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>, jan@3xz.co.nl');
+  assert.deepEqual(parsed.map((a) => a.email), ["m.vander.hoeven@vanwijnen.nl", "jan@3xz.co.nl"]);
   assert.equal(parsed[0].raw, '"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>');
 });
 
@@ -51,10 +51,10 @@ test("buildReplyRecipients: allen beantwoorden houdt een Cc met komma in de naam
   const out = buildReplyRecipients(
     {
       sender: "Frank Rutten <frank@frankarchitect.nl>",
-      recipients: "maarten@3bm.co.nl",
+      recipients: "maarten@3xz.co.nl",
       cc: '"Hoeven, Maarten van der" <m.vander.hoeven@vanWijnen.nl>',
     },
-    "maarten@3bm.co.nl",
+    "maarten@3xz.co.nl",
     true,
   );
   assert.deepEqual(out, {
@@ -65,8 +65,8 @@ test("buildReplyRecipients: allen beantwoorden houdt een Cc met komma in de naam
 
 test("buildReplyRecipients: gewoon antwoord gaat alleen naar de afzender", () => {
   const out = buildReplyRecipients(
-    { sender: "klant@extern.nl", recipients: "piet@3bm.co.nl, jan@3bm.co.nl", cc: "baas@3bm.co.nl" },
-    "piet@3bm.co.nl",
+    { sender: "klant@extern.nl", recipients: "piet@3xz.co.nl, jan@3xz.co.nl", cc: "baas@3xz.co.nl" },
+    "piet@3xz.co.nl",
     false,
   );
   assert.deepEqual(out, { to: "klant@extern.nl", cc: "" });
@@ -76,39 +76,39 @@ test("buildReplyRecipients: allen beantwoorden laat het eigen adres weg", () => 
   const out = buildReplyRecipients(
     {
       sender: "Klant <klant@extern.nl>",
-      recipients: "Piet <PIET@3bm.co.nl>, jan@3bm.co.nl",
-      cc: "baas@3bm.co.nl, piet@3bm.co.nl",
+      recipients: "Piet <PIET@3xz.co.nl>, jan@3xz.co.nl",
+      cc: "baas@3xz.co.nl, piet@3xz.co.nl",
     },
-    "piet@3bm.co.nl",
+    "piet@3xz.co.nl",
     true,
   );
-  assert.equal(out.to, "Klant <klant@extern.nl>, jan@3bm.co.nl");
-  assert.equal(out.cc, "baas@3bm.co.nl");
+  assert.equal(out.to, "Klant <klant@extern.nl>, jan@3xz.co.nl");
+  assert.equal(out.cc, "baas@3xz.co.nl");
 });
 
 test("buildReplyRecipients: een adres dat al in To staat komt niet ook in Cc", () => {
   const out = buildReplyRecipients(
-    { sender: "klant@extern.nl", recipients: "jan@3bm.co.nl", cc: "jan@3bm.co.nl, klant@extern.nl" },
-    "piet@3bm.co.nl",
+    { sender: "klant@extern.nl", recipients: "jan@3xz.co.nl", cc: "jan@3xz.co.nl, klant@extern.nl" },
+    "piet@3xz.co.nl",
     true,
   );
-  assert.equal(out.to, "klant@extern.nl, jan@3bm.co.nl");
+  assert.equal(out.to, "klant@extern.nl, jan@3xz.co.nl");
   assert.equal(out.cc, "");
 });
 
 test("buildReplyRecipients: zonder bekend eigen adres wordt niets weggefilterd", () => {
   const out = buildReplyRecipients(
-    { sender: "klant@extern.nl", recipients: "piet@3bm.co.nl", cc: "baas@3bm.co.nl" },
+    { sender: "klant@extern.nl", recipients: "piet@3xz.co.nl", cc: "baas@3xz.co.nl" },
     "",
     true,
   );
-  assert.equal(out.to, "klant@extern.nl, piet@3bm.co.nl");
-  assert.equal(out.cc, "baas@3bm.co.nl");
+  assert.equal(out.to, "klant@extern.nl, piet@3xz.co.nl");
+  assert.equal(out.cc, "baas@3xz.co.nl");
 });
 
 test("buildReplyRecipients: antwoord op je eigen mail houdt de afzender staan", () => {
-  const out = buildReplyRecipients({ sender: "piet@3bm.co.nl" }, "piet@3bm.co.nl", false);
-  assert.equal(out.to, "piet@3bm.co.nl");
+  const out = buildReplyRecipients({ sender: "piet@3xz.co.nl" }, "piet@3xz.co.nl", false);
+  assert.equal(out.to, "piet@3xz.co.nl");
 });
 
 test("prefixSubject: stapelt niet, ook niet over talen heen", () => {

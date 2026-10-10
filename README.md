@@ -88,7 +88,7 @@ Optional environment variables for local development:
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_ERPNEXT_URL` | `https://open-aec-studio-erp.prilk.cloud` | The site the Vite dev proxy talks to |
+| `VITE_ERPNEXT_URL` | `http://localhost:8000` | The site the Vite dev proxy talks to |
 | `YNEXT_DEV_TOKEN` | — | Optional `key:secret` API token, added server-side by the dev proxy as an `Authorization` header only; it never reaches client code or the bundle |
 
 Without `YNEXT_DEV_TOKEN`, ordinary cookie-based login through the site works

@@ -13,7 +13,7 @@
  * 1. **Geen enkel signaal beslist alleen.** Afzenderdomein, factuurwoord,
  *    PDF-bijlage, leveranciersnaam, factuurnummer en bedrag tellen samen op.
  *    Dat is nodig omdat de praktijk op deze instance rommelig is: facturen
- *    worden dóórgestuurd vanaf een privé-adres (`maarten@3bm.co.nl` stuurt
+ *    worden dóórgestuurd vanaf een privé-adres (`jan@voorbeeld.nl` stuurt
  *    facturen van vier verschillende leveranciers), en een gratis-mailadres
  *    (`gmail.com`) zegt niets over een leverancier. Eén hard signaal zou dus
  *    of te veel of te weinig herkennen.
@@ -210,7 +210,7 @@ export function isFreemailDomain(domain: string): boolean {
   return FREEMAIL_DOMAINS.has((domain || "").trim().toLowerCase());
 }
 
-/** `mail.3bm.co.nl` en `3bm.co.nl` horen bij elkaar; `3bm.nl` niet. */
+/** `mail.voorbeeld.co.nl` en `voorbeeld.co.nl` horen bij elkaar; `voorbeeld.nl` niet. */
 export function domainsRelated(a: string, b: string): boolean {
   if (!a || !b) return false;
   return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
@@ -297,7 +297,7 @@ function findInvoiceNo(signals: InvoiceSignals): { value: string; reason: string
     if (looksLikeInvoiceNumber(stem)) return { value: cleanToken(stem), reason: "invoice-no:attachment" };
   }
   // Laatste kandidaat uit het onderwerp: daar staat het nummer achteraan
-  // ("Factuur 3BM Bouwtechniek V.O.F. 263-05192").
+  // ("Factuur Voorbeeld Bouw V.O.F. 263-05192").
   const subjectTokens = signals.subject.split(/\s+/).filter(looksLikeInvoiceNumber);
   if (subjectTokens.length > 0) {
     return { value: cleanToken(subjectTokens[subjectTokens.length - 1]), reason: "invoice-no:subject" };
@@ -478,7 +478,7 @@ function matchSupplier(signals: InvoiceSignals, suppliers: SupplierHint[]): Supp
       consider({ supplier: hint.name, score: 70 + needle.length, reason: "supplier:subject" });
       continue;
     }
-    // 4. Naam in het afzenderdomein ("info@drukwerkdeal.nl").
+    // 4. Naam in het afzenderdomein ("info@drukkerij-voorbeeld.nl").
     if (domainWords.length > 0 && needle.split(" ").every((w) => domainWords.includes(w))) {
       consider({ supplier: hint.name, score: 65, reason: "supplier:sender-domain" });
       continue;

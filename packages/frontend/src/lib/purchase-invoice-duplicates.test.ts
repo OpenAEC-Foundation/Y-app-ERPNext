@@ -73,7 +73,7 @@ test("een kort nummer bij een andere leverancier telt niet", () => {
 test("een lang nummer telt ook als de herkende leverancier ernaast zit", () => {
   // De herkenning las het adresblok van de factuur en gokte de eigen coöperatie.
   const uit = vindDubbeleInkoopfacturen(
-    { supplier: "3BM Coöperatie U.A.", billNo: "2018284392", billDate: "2026-08-03", amount: 89.21 },
+    { supplier: "3XZ Coöperatie U.A.", billNo: "2018284392", billDate: "2026-08-03", amount: 89.21 },
     [VERBONDEN],
   );
   assert.deepEqual(uit.map((d) => [d.factuur.name, d.redenen]), [["PI-267-00109", ["factuurnummer"]]]);
@@ -171,9 +171,9 @@ test("koppelGeboekteFacturen: mail zonder herkende leverancier vindt de betaalde
 });
 
 test("koppelGeboekteFacturen: een verkeerd gegokte leverancier verbergt de betaalde factuur niet", () => {
-  // De losse mailweergave las "3BM Coöperatie U.A." uit het adresblok van de pdf.
+  // De losse mailweergave las "3XZ Coöperatie U.A." uit het adresblok van de pdf.
   const uit = koppelGeboekteFacturen(
-    [{ naam: "4g3t7n84af", billNo: "2018284392", supplier: "3BM Coöperatie U.A." }],
+    [{ naam: "4g3t7n84af", billNo: "2018284392", supplier: "3XZ Coöperatie U.A." }],
     [VERBONDEN],
   );
   assert.equal(uit.get("4g3t7n84af")?.name, "PI-267-00109");

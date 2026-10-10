@@ -48,7 +48,7 @@ import {
 import { sleutelUitLink } from "./berichten-reacties.ts";
 import { groepSleutel, groepUitLink, type Groep } from "./berichten-groepen.ts";
 
-const ME = "nino@3bm.co.nl";
+const ME = "nino@3xz.co.nl";
 
 interface RecordedCall {
   url: string;
@@ -111,8 +111,8 @@ function row(overrides: Record<string, unknown> = {}) {
     subject: "Hallo",
     email_content: "<div>Hallo</div>",
     for_user: ME,
-    document_name: "lara@3bm.co.nl",
-    owner: "lara@3bm.co.nl",
+    document_name: "lara@3xz.co.nl",
+    owner: "lara@3xz.co.nl",
     creation: "2026-09-03 10:00:00.000000",
     link: MESSAGE_LINK,
     read: 0,
@@ -290,28 +290,28 @@ test("rowToMessage: een rij van een ander is een ONTVANGEN bericht met owner als
   const message = rowToMessage(row(), ME);
   assert.ok(message);
   assert.equal(message.direction, "in");
-  assert.equal(message.counterpart, "lara@3bm.co.nl");
+  assert.equal(message.counterpart, "lara@3xz.co.nl");
   assert.equal(message.body, "Hallo");
   assert.equal(message.read, false);
 });
 
 test("rowToMessage: een rij die je zelf bezit is je VERZONDEN kopie; de tegenpartij komt uit document_name", () => {
   const message = rowToMessage(
-    row({ owner: ME, document_name: "lara@3bm.co.nl", read: 1 }),
+    row({ owner: ME, document_name: "lara@3xz.co.nl", read: 1 }),
     ME,
   );
   assert.ok(message);
   assert.equal(message.direction, "out");
-  assert.equal(message.counterpart, "lara@3bm.co.nl");
+  assert.equal(message.counterpart, "lara@3xz.co.nl");
   assert.equal(message.read, true);
 });
 
 test("rowToMessage: document_name wordt NIET gebruikt om de afzender van inkomende post te bepalen", () => {
   // Zou iemand `document_name` vervalsen, dan verandert er niets aan wie er
   // als afzender getoond wordt — dat blijft `owner`, en die zet Frappe zelf.
-  const message = rowToMessage(row({ document_name: "directie@3bm.co.nl" }), ME);
+  const message = rowToMessage(row({ document_name: "directie@3xz.co.nl" }), ME);
   assert.ok(message);
-  assert.equal(message.counterpart, "lara@3bm.co.nl");
+  assert.equal(message.counterpart, "lara@3xz.co.nl");
 });
 
 test("rowToMessage: rijen zonder ons link-merk of voor iemand anders vallen af", () => {
@@ -354,7 +354,7 @@ test("rowToMessage: een bericht met een externe afbeeldings-URL blijft een beric
 function msg(overrides: Partial<ErpMessage>): ErpMessage {
   return {
     name: "NL-x",
-    counterpart: "lara@3bm.co.nl",
+    counterpart: "lara@3xz.co.nl",
     direction: "in",
     body: "tekst",
     createdAt: "2026-09-03 10:00:00.000000",
@@ -367,17 +367,17 @@ function msg(overrides: Partial<ErpMessage>): ErpMessage {
 test("groupThreads: groepeert per collega, nieuwste gesprek bovenaan, met naam uit de contactmap", () => {
   const threads = groupThreads(
     [
-      msg({ name: "a", counterpart: "lara@3bm.co.nl", createdAt: "2026-09-03 10:00:00" }),
-      msg({ name: "b", counterpart: "nino2@3bm.co.nl", createdAt: "2026-09-03 12:00:00", body: "later" }),
-      msg({ name: "c", counterpart: "lara@3bm.co.nl", createdAt: "2026-09-03 09:00:00" }),
+      msg({ name: "a", counterpart: "lara@3xz.co.nl", createdAt: "2026-09-03 10:00:00" }),
+      msg({ name: "b", counterpart: "nino2@3xz.co.nl", createdAt: "2026-09-03 12:00:00", body: "later" }),
+      msg({ name: "c", counterpart: "lara@3xz.co.nl", createdAt: "2026-09-03 09:00:00" }),
     ],
-    { "lara@3bm.co.nl": "Lara Nazari" },
+    { "lara@3xz.co.nl": "Lara Nazari" },
   );
 
   assert.equal(threads.length, 2);
-  assert.equal(threads[0].counterpart, "nino2@3bm.co.nl");
+  assert.equal(threads[0].counterpart, "nino2@3xz.co.nl");
   // Zonder naam in de map blijft de user-id staan — beter dan een leeg vakje.
-  assert.equal(threads[0].counterpartName, "nino2@3bm.co.nl");
+  assert.equal(threads[0].counterpartName, "nino2@3xz.co.nl");
   assert.equal(threads[0].lastBody, "later");
   assert.equal(threads[1].counterpartName, "Lara Nazari");
   // Binnen een gesprek: nieuwste eerst.
@@ -419,10 +419,10 @@ test("rowToMessage: beide kopieën van een oud bericht krijgen dezelfde sleutel"
   // De verzonden kopie in het postvak van Lara zelf: owner = for_user = Lara.
   const bijLara = rowToMessage(
     row({
-      for_user: "lara@3bm.co.nl", owner: "lara@3bm.co.nl", document_name: ME,
+      for_user: "lara@3xz.co.nl", owner: "lara@3xz.co.nl", document_name: ME,
       creation: "2026-09-03 10:00:02.000000", read: 1,
     }),
-    "lara@3bm.co.nl",
+    "lara@3xz.co.nl",
   );
   assert.ok(bijMij && bijLara);
   assert.equal(bijMij.sleutel, bijLara.sleutel);
@@ -452,7 +452,7 @@ test("listMessages: filtert server-side op eigen postvak + ons type-merk en sort
         body: {
           data: [
             row({ name: "NL-nieuw", creation: "2026-09-03 12:00:00.000000", email_content: "<div>nieuw</div>" }),
-            row({ name: "NL-oud", creation: "2026-09-01 08:00:00.000000", owner: ME, document_name: "lara@3bm.co.nl", read: 1 }),
+            row({ name: "NL-oud", creation: "2026-09-01 08:00:00.000000", owner: ME, document_name: "lara@3xz.co.nl", read: 1 }),
           ],
         },
       };
@@ -510,7 +510,7 @@ test("sendMessage: schrijft twee documenten en stuurt NOOIT een owner mee", asyn
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendMessage("lara@3bm.co.nl", "Hoi Lara");
+    await sendMessage("lara@3xz.co.nl", "Hoi Lara");
 
     const posts = mock.calls.filter((c) => c.init?.method === "POST");
     assert.equal(posts.length, 2);
@@ -518,14 +518,14 @@ test("sendMessage: schrijft twee documenten en stuurt NOOIT een owner mee", asyn
     const [recipientCopy, sentCopy] = posts.map((c) => bodyOf(c.init));
 
     // Ontvangerskopie: in háár postvak, ongelezen.
-    assert.equal(recipientCopy.for_user, "lara@3bm.co.nl");
+    assert.equal(recipientCopy.for_user, "lara@3xz.co.nl");
     assert.equal(recipientCopy.document_name, ME);
     assert.equal(recipientCopy.read, 0);
 
     // Eigen verzonden kopie: in mijn postvak, meteen gelezen zodat hij niet
     // als ongelezen bericht in de bel/teller belandt.
     assert.equal(sentCopy.for_user, ME);
-    assert.equal(sentCopy.document_name, "lara@3bm.co.nl");
+    assert.equal(sentCopy.document_name, "lara@3xz.co.nl");
     assert.equal(sentCopy.read, 1);
 
     for (const payload of [recipientCopy, sentCopy]) {
@@ -559,7 +559,7 @@ test("sendMessage: een mislukte eigen kopie maakt de aflevering niet ongedaan", 
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendMessage("lara@3bm.co.nl", "Hoi");
+    await sendMessage("lara@3xz.co.nl", "Hoi");
     assert.equal(posts, 2);
   } finally {
     mock.restore();
@@ -594,7 +594,7 @@ test("sendMessage met afbeelding: privé-upload aan het bericht van de ONTVANGER
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendMessage("lara@3bm.co.nl", "Kijk", jpeg());
+    await sendMessage("lara@3xz.co.nl", "Kijk", jpeg());
 
     const upload = mock.calls.find((c) => c.url.startsWith("/api/method/upload_file"));
     assert.ok(upload);
@@ -638,7 +638,7 @@ test("sendMessage: een mislukte upload meldt zich apart — de tekst is namelijk
   });
   try {
     await assert.rejects(
-      () => sendMessage("lara@3bm.co.nl", "Kijk", jpeg()),
+      () => sendMessage("lara@3xz.co.nl", "Kijk", jpeg()),
       (err: unknown) => err instanceof MessageImageError,
     );
   } finally {
@@ -660,7 +660,7 @@ test("sendMessage: een server-URL die de veiligheidscheck niet haalt wordt niet 
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await assert.rejects(() => sendMessage("lara@3bm.co.nl", "Kijk", jpeg()), MessageImageError);
+    await assert.rejects(() => sendMessage("lara@3xz.co.nl", "Kijk", jpeg()), MessageImageError);
     assert.ok(!mock.calls.some((c) => c.init?.method === "PUT"));
   } finally {
     mock.restore();
@@ -677,7 +677,7 @@ test("sendMessage: een te groot of verkeerd bestand wordt geweigerd vóór er ie
   try {
     const tooBig = new File([new Uint8Array(10)], "groot.png", { type: "image/png" });
     Object.defineProperty(tooBig, "size", { value: MAX_IMAGE_BYTES + 1 });
-    await assert.rejects(() => sendMessage("lara@3bm.co.nl", "", tooBig));
+    await assert.rejects(() => sendMessage("lara@3xz.co.nl", "", tooBig));
     assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
   } finally {
     mock.restore();
@@ -698,7 +698,7 @@ test("sendMessage: alleen een afbeelding, zonder tekst, is een geldig bericht", 
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendMessage("lara@3bm.co.nl", "", jpeg());
+    await sendMessage("lara@3xz.co.nl", "", jpeg());
     assert.ok(mock.calls.some((c) => c.url.startsWith("/api/method/upload_file")));
   } finally {
     mock.restore();
@@ -713,7 +713,7 @@ test("sendMessage: lege tekst of lege ontvanger doet niets", async () => {
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendMessage("lara@3bm.co.nl", "   ");
+    await sendMessage("lara@3xz.co.nl", "   ");
     await sendMessage("", "iets");
     assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
   } finally {
@@ -732,12 +732,12 @@ test("sendReaction: twee gelezen kopieën met de verwijzing, en nooit een owner"
     throw new Error(`unexpected url: ${url}`);
   });
   try {
-    await sendReaction("lara@3bm.co.nl", "abc12345", false);
+    await sendReaction("lara@3xz.co.nl", "abc12345", false);
     const posts = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init));
     assert.equal(posts.length, 2);
     assert.deepEqual(
       posts.map((p) => [p.for_user, p.document_name]),
-      [["lara@3bm.co.nl", ME], [ME, "lara@3bm.co.nl"]],
+      [["lara@3xz.co.nl", ME], [ME, "lara@3xz.co.nl"]],
     );
     for (const payload of posts) {
       assert.equal("owner" in payload, false);
@@ -812,7 +812,7 @@ test("listContacts: voegt Employee en User samen, zonder jezelf en zonder Admini
         status: 200,
         body: {
           data: [
-            { user_id: "lara@3bm.co.nl", employee_name: "Lara N." },
+            { user_id: "lara@3xz.co.nl", employee_name: "Lara N." },
             { user_id: ME, employee_name: "Nino van Kleef" },
           ],
         },
@@ -823,9 +823,9 @@ test("listContacts: voegt Employee en User samen, zonder jezelf en zonder Admini
         status: 200,
         body: {
           data: [
-            { name: "lara@3bm.co.nl", full_name: "Lara Nazari" },
+            { name: "lara@3xz.co.nl", full_name: "Lara Nazari" },
             { name: "Administrator", full_name: "Administrator" },
-            { name: "jeroen@3bm.co.nl", full_name: "Jeroen Daane" },
+            { name: "jeroen@3xz.co.nl", full_name: "Jeroen Daane" },
           ],
         },
       };
@@ -834,10 +834,10 @@ test("listContacts: voegt Employee en User samen, zonder jezelf en zonder Admini
   });
   try {
     const contacts = await listContacts();
-    assert.deepEqual(contacts.map((c) => c.user), ["jeroen@3bm.co.nl", "lara@3bm.co.nl"]);
+    assert.deepEqual(contacts.map((c) => c.user), ["jeroen@3xz.co.nl", "lara@3xz.co.nl"]);
     // User.full_name wint van Employee.employee_name.
     assert.equal(contacts[1].fullName, "Lara Nazari");
-    assert.deepEqual(contactNameMap(contacts)["jeroen@3bm.co.nl"], "Jeroen Daane");
+    assert.deepEqual(contactNameMap(contacts)["jeroen@3xz.co.nl"], "Jeroen Daane");
   } finally {
     mock.restore();
     await resetState();
@@ -849,7 +849,7 @@ test("listContacts: een 403 op User (de normale situatie voor een medewerker) la
   const mock = installFetchMock((url) => {
     if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
     if (url.startsWith("/api/resource/Employee")) {
-      return { status: 200, body: { data: [{ user_id: "lara@3bm.co.nl", employee_name: "Lara N." }] } };
+      return { status: 200, body: { data: [{ user_id: "lara@3xz.co.nl", employee_name: "Lara N." }] } };
     }
     if (url.startsWith("/api/resource/User")) {
       return { status: 403, body: { exception: "PermissionError" } };
@@ -858,7 +858,7 @@ test("listContacts: een 403 op User (de normale situatie voor een medewerker) la
   });
   try {
     const contacts = await listContacts();
-    assert.deepEqual(contacts, [{ user: "lara@3bm.co.nl", fullName: "Lara N." }]);
+    assert.deepEqual(contacts, [{ user: "lara@3xz.co.nl", fullName: "Lara N." }]);
   } finally {
     mock.restore();
     await resetState();
@@ -869,7 +869,7 @@ test("listContacts: een 403 op User (de normale situatie voor een medewerker) la
 
 function bericht(overrides: Partial<ErpMessage> = {}): ErpMessage {
   return {
-    name: "NL-1", counterpart: "lance@3bm.co.nl", direction: "out", body: "hoi",
+    name: "NL-1", counterpart: "lance@3xz.co.nl", direction: "out", body: "hoi",
     createdAt: "2026-09-19 09:00:00", read: true, sleutel: "k1", ...overrides,
   };
 }
@@ -906,18 +906,18 @@ test("verwijderBerichten: één aanroep met alle namen, en niets als er niets ge
 const GROEP: Groep = {
   id: "3f2a9c1e-77aa-4b1c-9e0d-1234567890ab",
   naam: "Projectteam Jelier",
-  leden: [ME, "lara@3bm.co.nl", "joris@3bm.co.nl"],
+  leden: [ME, "lara@3xz.co.nl", "joris@3xz.co.nl"],
 };
 
 test("rowToMessage: een groepsbericht van een lid landt in het groepsgesprek", () => {
   const m = rowToMessage({
-    name: "NL-g1", owner: "lara@3bm.co.nl", for_user: ME, document_name: "lara@3bm.co.nl",
+    name: "NL-g1", owner: "lara@3xz.co.nl", for_user: ME, document_name: "lara@3xz.co.nl",
     link: buildMessageLink(undefined, "abcdef12-3456", GROEP), email_content: "<div>Hoi allemaal</div>",
     creation: "2026-10-01 09:00:00", read: 0,
   }, ME);
   assert.ok(m);
   assert.equal(m.counterpart, groepSleutel(GROEP.id));
-  assert.equal(m.afzender, "lara@3bm.co.nl");
+  assert.equal(m.afzender, "lara@3xz.co.nl");
   assert.deepEqual(m.groep, GROEP);
   assert.equal(m.body, "Hoi allemaal");
 });
@@ -935,7 +935,7 @@ test("rowToMessage: een 'groepsbericht' van iemand buiten de groep is een gewoon
 
 test("rowToMessage: een groepsgebeurtenis heeft geen tekst", () => {
   const m = rowToMessage({
-    name: "NL-g3", owner: "lara@3bm.co.nl", for_user: ME, document_name: "lara@3bm.co.nl",
+    name: "NL-g3", owner: "lara@3xz.co.nl", for_user: ME, document_name: "lara@3xz.co.nl",
     link: buildMessageLink(undefined, "abcdef12-3456", GROEP, "aangemaakt"), subject: "Nieuwe groep: Projectteam Jelier",
     email_content: "", creation: "2026-10-01 09:00:00", read: 0,
   }, ME);
@@ -947,22 +947,22 @@ test("rowToMessage: een groepsgebeurtenis heeft geen tekst", () => {
 test("groupThreads: groepsberichten vormen één gesprek met de nieuwste groepsnaam", () => {
   const oud: ErpMessage = {
     name: "a", counterpart: groepSleutel(GROEP.id), direction: "in", body: "eerste", createdAt: "2026-10-01 09:00:00",
-    read: true, sleutel: "s1", groep: GROEP, afzender: "lara@3bm.co.nl",
+    read: true, sleutel: "s1", groep: GROEP, afzender: "lara@3xz.co.nl",
   };
   const nieuw: ErpMessage = {
     name: "b", counterpart: groepSleutel(GROEP.id), direction: "in", body: "tweede", createdAt: "2026-10-01 10:00:00",
-    read: false, sleutel: "s2", groep: { ...GROEP, naam: "Team Jelier" }, afzender: "joris@3bm.co.nl",
+    read: false, sleutel: "s2", groep: { ...GROEP, naam: "Team Jelier" }, afzender: "joris@3xz.co.nl",
   };
   const een: ErpMessage = {
-    name: "c", counterpart: "lara@3bm.co.nl", direction: "in", body: "los", createdAt: "2026-10-01 08:00:00",
+    name: "c", counterpart: "lara@3xz.co.nl", direction: "in", body: "los", createdAt: "2026-10-01 08:00:00",
     read: true, sleutel: "s3",
   };
-  const threads = groupThreads([oud, nieuw, een], { "lara@3bm.co.nl": "Lara Nazari" });
+  const threads = groupThreads([oud, nieuw, een], { "lara@3xz.co.nl": "Lara Nazari" });
   assert.equal(threads.length, 2);
   const groep = threads.find((t) => t.groep);
   assert.ok(groep);
   assert.equal(groep.counterpartName, "Team Jelier");
-  assert.equal(groep.lastAfzender, "joris@3bm.co.nl");
+  assert.equal(groep.lastAfzender, "joris@3xz.co.nl");
   assert.equal(groep.unread, 1);
   assert.equal(groep.messages.length, 2);
 });
@@ -977,7 +977,7 @@ test("sendGroupMessage: één kopie per ander lid plus je eigen, allemaal met de
   try {
     await sendGroupMessage(GROEP, "Overleg om 14:00");
     const posts = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init));
-    assert.deepEqual(posts.map((p) => p.for_user), ["lara@3bm.co.nl", "joris@3bm.co.nl", ME]);
+    assert.deepEqual(posts.map((p) => p.for_user), ["lara@3xz.co.nl", "joris@3xz.co.nl", ME]);
     for (const p of posts) {
       assert.equal("owner" in p, false);
       assert.deepEqual(groepUitLink(String(p.link))?.groep, GROEP);
@@ -999,16 +999,16 @@ test("sendGroupMessage: lukt het bij één lid niet, dan krijgt de rest het toch
     if (url.startsWith("/api/method/frappe.auth.get_logged_user")) return loggedUserBody();
     if (url.startsWith(`/api/resource/${MESSAGE_DOCTYPE}`)) {
       const body = JSON.parse(String(init?.body ?? "{}"));
-      if (body.for_user === "lara@3bm.co.nl") return { status: 500, body: { exception: "kapot" } };
+      if (body.for_user === "lara@3xz.co.nl") return { status: 500, body: { exception: "kapot" } };
       return { status: 200, body: { data: { name: "NL-new" } } };
     }
     throw new Error(`unexpected url: ${url}`);
   });
   try {
     await assert.rejects(sendGroupMessage(GROEP, "Hallo"), (err: unknown) =>
-      err instanceof GroepBezorgFout && err.mislukt.length === 1 && err.mislukt[0] === "lara@3bm.co.nl");
+      err instanceof GroepBezorgFout && err.mislukt.length === 1 && err.mislukt[0] === "lara@3xz.co.nl");
     const naar = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init).for_user);
-    assert.ok(naar.includes("joris@3bm.co.nl"));
+    assert.ok(naar.includes("joris@3xz.co.nl"));
     assert.ok(naar.includes(ME), "je eigen kopie komt er ook");
   } finally {
     mock.restore();
@@ -1044,7 +1044,7 @@ test("sendReaction in een groep: bij elk lid een like", async () => {
   try {
     await sendReaction(groepSleutel(GROEP.id), "abcdef12-3456", true, GROEP);
     const naar = mock.calls.filter((c) => c.init?.method === "POST").map((c) => bodyOf(c.init).for_user).sort();
-    assert.deepEqual(naar, ["joris@3bm.co.nl", "lara@3bm.co.nl", ME].sort());
+    assert.deepEqual(naar, ["joris@3xz.co.nl", "lara@3xz.co.nl", ME].sort());
   } finally {
     mock.restore();
     await resetState();
@@ -1053,12 +1053,12 @@ test("sendReaction in een groep: bij elk lid een like", async () => {
 
 test("rowToMessage: wie de groep verlaat, staat daarna niet meer in de groep", () => {
   const m = rowToMessage({
-    name: "NL-g4", owner: "joris@3bm.co.nl", for_user: ME, document_name: "joris@3bm.co.nl",
+    name: "NL-g4", owner: "joris@3xz.co.nl", for_user: ME, document_name: "joris@3xz.co.nl",
     link: buildMessageLink(undefined, "abcdef12-3456", GROEP, "verlaten"), email_content: "",
     creation: "2026-10-01 11:00:00", read: 0,
   }, ME);
   assert.ok(m);
   assert.equal(m.gebeurtenis, "verlaten");
-  assert.deepEqual(m.groep?.leden, [ME, "lara@3bm.co.nl"]);
-  assert.equal(m.afzender, "joris@3bm.co.nl");
+  assert.deepEqual(m.groep?.leden, [ME, "lara@3xz.co.nl"]);
+  assert.equal(m.afzender, "joris@3xz.co.nl");
 });

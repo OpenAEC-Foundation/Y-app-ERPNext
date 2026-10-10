@@ -1566,7 +1566,7 @@ test("fetchThreadCompanions haalt ook recent verzonden post op", async () => {
     const filters = JSON.stringify(queryJson(url, "filters") ?? "");
     if (filters.includes("sent_or_received")) {
       return { status: 200, body: { data: [{
-        name: "COMM-SENT-1", subject: "Re: Sollicitatie", sender: "maarten@3bm.co.nl",
+        name: "COMM-SENT-1", subject: "Re: Sollicitatie", sender: "maarten@3xz.co.nl",
         recipients: "jv.beek@telfort.nl", communication_date: "2026-09-07 10:00:00", seen: 1,
       }] } };
     }

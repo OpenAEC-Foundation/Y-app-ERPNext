@@ -25,14 +25,14 @@ test("kop en inhoud staan allebei op papier", () => {
     subject: "Factuur 263-05188",
     sender: "info@vandersmit.nl",
     senderName: "Aaldert van der Smit",
-    recipients: "maarten@3bm.co.nl",
+    recipients: "maarten@3xz.co.nl",
     datum: "maandag 7 september 2026 om 13:38",
     bodyHtml: "<p>Beste Maarten,</p>",
   }, LABELS);
 
   assert.match(html, /<title>Factuur 263-05188<\/title>/);
   assert.match(html, /Aaldert van der Smit &lt;info@vandersmit\.nl&gt;/);
-  assert.match(html, /maarten@3bm\.co\.nl/);
+  assert.match(html, /maarten@3xz\.co\.nl/);
   assert.match(html, /maandag 7 september 2026/);
   assert.match(html, /<p>Beste Maarten,<\/p>/);
 });
