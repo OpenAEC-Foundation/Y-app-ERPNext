@@ -46,13 +46,13 @@
 **Interfaces:**
 - Produces: de doctypes `Y Meeting Note`, `Y Next Setting`, `Y Onkostensoort`, `Y Km Registratie`, `Y Onkosten` en de enkelvoudige `Agenda Koppeling` (velden `enabled`, `server_url`, `service_account`, `service_password`); `node scripts/dev-bench-sync.mjs --pull` haalt de doctypemap van de bench terug naar de repository.
 
-- [ ] **Step 1:** Schrijf in `test_installatie.py` de falende test `test_eigen_doctypes_horen_bij_de_app`: elk van de zes doctypes bestaat met `module == "Y Next"` en `custom == 0`; `Y Next Setting` geeft *Projects User* alleen leesrecht; `Y Km Registratie` geeft *Employee* een rij met `if_owner == 1`; `Agenda Koppeling` is enkelvoudig.
-- [ ] **Step 2:** Draai `node scripts/dev-bench-sync.mjs` en de Python-tests; verwacht: FAIL (doctypes bestaan niet).
-- [ ] **Step 3:** Voeg `--pull` toe aan `dev-bench-sync.mjs` (eerst test: `pullSource(config)` geeft `frappe:/workspace/frappe-bench/apps/y_next/y_next/y_next/doctype/.`).
-- [ ] **Step 4:** Maak de doctypes eenmalig aan op de ontwikkelsite, in ontwikkelmodus, uit de definities van de bouwfuncties in `scripts/provision-y-next.mjs` (met `module: "Y Next"`, `custom: 0`) plus `Agenda Koppeling`. Frappe schrijft de bestanden in de app op de bench.
-- [ ] **Step 5:** `node scripts/dev-bench-sync.mjs --pull`, verwijder `__pycache__`, controleer de zes mappen.
-- [ ] **Step 6:** `node scripts/dev-bench-sync.mjs --migrate` en de Python-tests; verwacht: PASS.
-- [ ] **Step 7:** Vastleggen: `feat: eigen doctypes als app-doctypes`.
+- [x] **Step 1:** Schrijf in `test_installatie.py` de falende test `test_eigen_doctypes_horen_bij_de_app`: elk van de zes doctypes bestaat met `module == "Y Next"` en `custom == 0`; `Y Next Setting` geeft *Projects User* alleen leesrecht; `Y Km Registratie` geeft *Employee* een rij met `if_owner == 1`; `Agenda Koppeling` is enkelvoudig.
+- [x] **Step 2:** Draai `node scripts/dev-bench-sync.mjs` en de Python-tests; verwacht: FAIL (doctypes bestaan niet).
+- [x] **Step 3:** Voeg `--pull` toe aan `dev-bench-sync.mjs` (eerst test: `pullSource(config)` geeft `frappe:/workspace/frappe-bench/apps/y_next/y_next/y_next/doctype/.`).
+- [x] **Step 4:** Maak de doctypes eenmalig aan op de ontwikkelsite, in ontwikkelmodus, uit de definities van de bouwfuncties in `scripts/provision-y-next.mjs` (met `module: "Y Next"`, `custom: 0`) plus `Agenda Koppeling`. Frappe schrijft de bestanden in de app op de bench.
+- [x] **Step 5:** `node scripts/dev-bench-sync.mjs --pull`, verwijder `__pycache__`, controleer de zes mappen.
+- [x] **Step 6:** `node scripts/dev-bench-sync.mjs --migrate` en de Python-tests; verwacht: PASS.
+- [x] **Step 7:** Vastleggen: `feat: eigen doctypes als app-doctypes`.
 
 ### Task 2: Velden, rechten en stamgegevens bij installatie
 
@@ -69,12 +69,12 @@
 
 Velden (15): Project `custom_customer_reference`, `custom_project_manager`, `custom_project_manager_company`, `custom_address`; Task `custom_billing_type`, `custom_project_manager`; Timesheet Detail `custom_is_billed`, `custom_subject`, `custom_project_manager`, `custom_project_manager_company`; Sales Invoice `custom_customer_reference`, `custom_date_paid`; Quotation `custom_description`; Sales Order `custom_description`; Company `disabled`.
 
-- [ ] **Step 1:** Schrijf de falende tests: elk veld uit `custom_fields.json` bestaat; elke `insert_after` verwijst naar een bestaand veld; elke rechtenregel waarvan doctype en rol bestaan staat in `Custom DocPerm`; elk stamrecord waarvan het doctype bestaat is aanwezig; `sync_all()` twee keer draaien verandert de aantallen niet; een definitie voor een onbekend doctype wordt overgeslagen.
-- [ ] **Step 2:** Sync en test; verwacht: FAIL (`y_next.setup.install` bestaat niet).
-- [ ] **Step 3:** Schrijf de drie JSON-bestanden en `install.py`; registreer de hooks.
-- [ ] **Step 4:** `node scripts/dev-bench-sync.mjs --migrate` en de Python-tests; verwacht: PASS.
-- [ ] **Step 5:** Controleer in de browser op de kale site dat de verzoeken voor `Company`, `Project` en de `Y …`-doctypes niet meer falen.
-- [ ] **Step 6:** Vastleggen: `feat: velden, rechten en stamgegevens bij installatie`.
+- [x] **Step 1:** Schrijf de falende tests: elk veld uit `custom_fields.json` bestaat; elke `insert_after` verwijst naar een bestaand veld; elke rechtenregel waarvan doctype en rol bestaan staat in `Custom DocPerm`; elk stamrecord waarvan het doctype bestaat is aanwezig; `sync_all()` twee keer draaien verandert de aantallen niet; een definitie voor een onbekend doctype wordt overgeslagen.
+- [x] **Step 2:** Sync en test; verwacht: FAIL (`y_next.setup.install` bestaat niet).
+- [x] **Step 3:** Schrijf de drie JSON-bestanden en `install.py`; registreer de hooks.
+- [x] **Step 4:** `node scripts/dev-bench-sync.mjs --migrate` en de Python-tests; verwacht: PASS.
+- [x] **Step 5:** Controleer in de browser op de kale site dat de verzoeken voor `Company`, `Project` en de `Y …`-doctypes niet meer falen.
+- [x] **Step 6:** Vastleggen: `feat: velden, rechten en stamgegevens bij installatie`.
 
 ### Task 3: Het provisioneringsscript leest dezelfde definities
 
@@ -86,9 +86,9 @@ Velden (15): Project `custom_customer_reference`, `custom_project_manager`, `cus
 - Produces: `readSetup(naam)`, `readAppDoctype(map)`, `toCustomDoctype(appDoctype)` in `scripts/lib/app-definities.mjs`; in het provisioneringsscript `ensureCustomFields({ baseUrl, token, definitions })` → `{ created, existing, skipped }` en de optionele omgevingsvariabele `YNEXT_SITE_NAME` (stuurt `X-Frappe-Site-Name` mee, voor een bench met meer sites).
 - `toCustomDoctype` zet `module: "Custom"`, `custom: 1` en vult in elke rechtenrij ontbrekende vlaggen (`read`, `write`, `create`, `delete`, `submit`, `cancel`, `amend`, `if_owner`, `permlevel`) met `0`: de REST-route vult ontbrekende vlaggen anders met de standaardwaarde `1`.
 
-- [ ] **Step 1:** Schrijf de falende tests voor `toCustomDoctype` (module/custom, expliciete nullen, velden ongewijzigd) en voor `ensureCustomFields` (bestaand veld → geen POST; ontbrekend veld → POST met `dt`; onbekend doctype → overgeslagen).
-- [ ] **Step 2:** Draai ze; verwacht: FAIL.
-- [ ] **Step 3:** Schrijf `app-definities.mjs`; laat de bouwfuncties, `buildPermissionRules` en `DEFAULT_MASTER_RECORDS` uit de gedeelde bestanden lezen; voeg de veldenfase toe na de doctypes.
-- [ ] **Step 4:** Draai alle scripttests; verwacht: PASS, inclusief de bestaande tests die de exacte velden en rechten vastleggen.
-- [ ] **Step 5:** Draai het script tegen de lokale site van de publicatieroute (`YNEXT_BASE_URL=http://localhost:8000`, `YNEXT_SITE_NAME=ynext.localhost`); verwacht: de vijf doctypes "bestaat al", 15 velden aangemaakt, en een tweede run maakt niets aan.
-- [ ] **Step 6:** Vastleggen: `refactor: provisioning leest de definities van de app`.
+- [x] **Step 1:** Schrijf de falende tests voor `toCustomDoctype` (module/custom, expliciete nullen, velden ongewijzigd) en voor `ensureCustomFields` (bestaand veld → geen POST; ontbrekend veld → POST met `dt`; onbekend doctype → overgeslagen).
+- [x] **Step 2:** Draai ze; verwacht: FAIL.
+- [x] **Step 3:** Schrijf `app-definities.mjs`; laat de bouwfuncties, `buildPermissionRules` en `DEFAULT_MASTER_RECORDS` uit de gedeelde bestanden lezen; voeg de veldenfase toe na de doctypes.
+- [x] **Step 4:** Draai alle scripttests; verwacht: PASS, inclusief de bestaande tests die de exacte velden en rechten vastleggen.
+- [x] **Step 5:** Draai het script tegen de lokale site van de publicatieroute (`YNEXT_BASE_URL=http://localhost:8000`, `YNEXT_SITE_NAME=ynext.localhost`); verwacht: de vijf doctypes "bestaat al", 15 velden aangemaakt, en een tweede run maakt niets aan.
+- [x] **Step 6:** Vastleggen: `refactor: provisioning leest de definities van de app`.

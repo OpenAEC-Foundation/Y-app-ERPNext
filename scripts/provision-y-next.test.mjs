@@ -12,6 +12,7 @@ import {
   ensureMasterRecords,
   DEFAULT_MASTER_RECORDS,
   ensurePermissions,
+  ensureCustomFields,
   provision,
   DEFAULT_NAMING_SERIES_DOCTYPES,
   KM_TARIEF_SETTING_KEY,
@@ -236,10 +237,17 @@ const isMasterUrl = (url) => DEFAULT_MASTER_RECORDS.some(
 /** Doet alsof het stamrecord er al is, zodat de fase geen POST doet. */
 const satisfiedMasterHandler = () => ({ status: 200, body: { data: { name: "Email" } } });
 
+/** Elke call van de veldenfase (`ensureCustomFields`) naar een Custom Field. */
+const CUSTOM_FIELD_RESOURCE = `/api/resource/${encodeURIComponent("Custom Field")}`;
+const isCustomFieldUrl = (url) => url.includes(CUSTOM_FIELD_RESOURCE);
+/** Doet alsof het veld er al is, zodat de fase geen POST doet. */
+const satisfiedCustomFieldHandler = () => ({ status: 200, body: { data: { name: "bestaat" } } });
+
 test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async () => {
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) return satisfiedPermsHandler(url);
     if (isMasterUrl(url)) return satisfiedMasterHandler();
+    if (isCustomFieldUrl(url)) return satisfiedCustomFieldHandler();
     if (/\/api\/resource\/DocType\//.test(url)) {
       return { status: 200, body: { data: { name: "existing" } } };
     }
@@ -346,6 +354,7 @@ test("provision: verstuurt de Authorization-header met token-prefix, maar logt n
   const mock = installFetchMock((url) => {
     if (isPermUrl(url)) return satisfiedPermsHandler(url);
     if (isMasterUrl(url)) return satisfiedMasterHandler();
+    if (isCustomFieldUrl(url)) return satisfiedCustomFieldHandler();
     if (/\/api\/resource\/DocType\//.test(url)) {
       return { status: 200, body: { data: { name: "existing" } } };
     }
@@ -1246,5 +1255,168 @@ test("ensureNamingSeries: Travel Request heeft geen naming_series-veld maar wel 
 test("DEFAULT_NAMING_SERIES_DOCTYPES: de vier HRMS-doctypes staan erbij", () => {
   for (const dt of ["Travel Request", "Leave Application", "Leave Allocation", "Expense Claim"]) {
     assert.ok(DEFAULT_NAMING_SERIES_DOCTYPES.includes(dt), `mist ${dt}`);
+  }
+});
+
+/* ─────────────────────── Eigen velden (ensureCustomFields) ─────────────────────── */
+
+const VELDEN = {
+  Project: [
+    { fieldname: "custom_address", label: "Address", fieldtype: "Link", options: "Address", insert_after: "customer" },
+  ],
+};
+const BASIS = "https://example.frappe.cloud";
+const projectMetaUrl = `${BASIS}/api/resource/DocType/Project`;
+const adresVeldUrl = `${BASIS}${CUSTOM_FIELD_RESOURCE}/${encodeURIComponent("Project-custom_address")}`;
+/** Het doctype bestaat en heeft van zichzelf alleen het veld `customer`. */
+const projectMeta = () => ({ status: 200, body: { data: { name: "Project", fields: [{ fieldname: "customer" }] } } });
+
+test("ensureCustomFields: de standaardlijst is die van de app", async () => {
+  const mock = installFetchMock((url) => {
+    if (isCustomFieldUrl(url)) return satisfiedCustomFieldHandler();
+    return { status: 200, body: { data: { name: "existing", fields: [] } } };
+  });
+  try {
+    const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret" });
+    assert.equal(result.existing.length, 15);
+    assert.ok(result.existing.includes("Project.custom_address"));
+    assert.ok(result.existing.includes("Company.disabled"));
+    assert.deepEqual(result.created, []);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureCustomFields: bestaand veld levert geen POST op", async () => {
+  const mock = installFetchMock((url, init) => {
+    if (url === projectMetaUrl) return projectMeta();
+    if (url === adresVeldUrl && !init?.method) return satisfiedCustomFieldHandler();
+    throw new Error(`Onverwachte call: ${init?.method || "GET"} ${url}`);
+  });
+  try {
+    const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    assert.deepEqual(result, { created: [], existing: ["Project.custom_address"], skipped: [] });
+    assert.equal(mock.calls.filter((c) => c.init?.method === "POST").length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureCustomFields: ontbrekend veld wordt aangemaakt met het doctype erbij", async () => {
+  const mock = installFetchMock((url, init) => {
+    if (url === projectMetaUrl) return projectMeta();
+    if (url === adresVeldUrl && !init?.method) return { status: 404, body: { exc_type: "DoesNotExistError" } };
+    if (url === `${BASIS}${CUSTOM_FIELD_RESOURCE}` && init?.method === "POST") {
+      return { status: 200, body: { data: { name: "Project-custom_address" } } };
+    }
+    throw new Error(`Onverwachte call: ${init?.method || "GET"} ${url}`);
+  });
+  try {
+    const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    assert.deepEqual(result, { created: ["Project.custom_address"], existing: [], skipped: [] });
+    const post = mock.calls.find((c) => c.init?.method === "POST");
+    assert.deepEqual(JSON.parse(post.init.body), { dt: "Project", ...VELDEN.Project[0] });
+    assert.equal(post.init.headers.Authorization, "token key:secret");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureCustomFields: een veld dat het doctype zelf al heeft wordt niet aangemaakt", async () => {
+  // Een nieuwere ERPNext-versie kan een veld hebben overgenomen. Dan is er
+  // niets aan te maken, en een POST zou op de dubbele veldnaam stranden.
+  const mock = installFetchMock((url, init) => {
+    if (url === projectMetaUrl) {
+      return { status: 200, body: { data: { name: "Project", fields: [{ fieldname: "custom_address" }] } } };
+    }
+    throw new Error(`Onverwachte call: ${init?.method || "GET"} ${url}`);
+  });
+  try {
+    const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    assert.deepEqual(result, { created: [], existing: ["Project.custom_address"], skipped: [] });
+    assert.equal(mock.calls.length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureCustomFields: een doctype dat niet bestaat wordt overgeslagen", async () => {
+  const mock = installFetchMock((url, init) => {
+    if (url === projectMetaUrl) return { status: 404, body: { exc_type: "DoesNotExistError" } };
+    throw new Error(`Onverwachte call: ${init?.method || "GET"} ${url}`);
+  });
+  try {
+    const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    assert.deepEqual(result, { created: [], existing: [], skipped: ["Project.custom_address"] });
+    assert.equal(mock.calls.length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("ensureCustomFields: een onverwachte status gooit met de status erin", async () => {
+  const mock = installFetchMock((url) => {
+    if (url === projectMetaUrl) return projectMeta();
+    return { status: 500, body: { exc: "boom" } };
+  });
+  try {
+    await assert.rejects(
+      () => ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN }),
+      /Project\.custom_address.*500/
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test("provision: de veldenfase komt na de doctypes en vóór de rechten", async () => {
+  const order = [];
+  const mock = installFetchMock((url) => {
+    if (isPermUrl(url)) {
+      order.push("perm");
+      return satisfiedPermsHandler(url);
+    }
+    if (isCustomFieldUrl(url)) {
+      order.push("veld");
+      return satisfiedCustomFieldHandler();
+    }
+    if (isOwnDoctypeUrl(url)) order.push("doctype");
+    return { status: 200, body: { data: { name: "existing", fields: [] } } };
+  });
+  try {
+    const result = await provision({ baseUrl: BASIS, token: "key:secret" });
+    assert.equal(result.customFields.existing.length, 15);
+    assert.ok(order.indexOf("doctype") < order.indexOf("veld"));
+    assert.ok(order.lastIndexOf("veld") < order.indexOf("perm"));
+  } finally {
+    mock.restore();
+  }
+});
+
+test("YNEXT_SITE_NAME: elke call wijst de site aan, en zonder die variabele gaat er niets mee", async () => {
+  const handler = (url) => (url === projectMetaUrl ? projectMeta() : satisfiedCustomFieldHandler());
+  const vorige = process.env.YNEXT_SITE_NAME;
+  process.env.YNEXT_SITE_NAME = "eerste.localhost";
+  let mock = installFetchMock(handler);
+  try {
+    await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    assert.equal(mock.calls.length, 2);
+    for (const call of mock.calls) {
+      assert.equal(call.init.headers["X-Frappe-Site-Name"], "eerste.localhost");
+      assert.equal(call.init.headers.Authorization, "token key:secret");
+    }
+  } finally {
+    mock.restore();
+    delete process.env.YNEXT_SITE_NAME;
+  }
+  mock = installFetchMock(handler);
+  try {
+    await ensureCustomFields({ baseUrl: BASIS, token: "key:secret", definitions: VELDEN });
+    for (const call of mock.calls) {
+      assert.equal("X-Frappe-Site-Name" in call.init.headers, false);
+    }
+  } finally {
+    mock.restore();
+    if (vorige !== undefined) process.env.YNEXT_SITE_NAME = vorige;
   }
 });

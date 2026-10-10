@@ -2,7 +2,12 @@
 /**
  * Provisioning-script voor Y-next op ERPNext.
  *
- * Vier fasen, alle idempotent:
+ * Dit is de route voor een site zónder de Frappe-app `y_next`. De definities
+ * zelf staan in die app (`frappe-app/y_next/`); dit script leest ze daar en
+ * zet ze via de REST-API op de site. Zo is er één plek waar staat wat een
+ * site nodig heeft.
+ *
+ * Vijf fasen, alle idempotent:
  *
  * 1. **DocTypes** — maakt de custom DocTypes aan die Y-next nodig heeft:
  *    `Y Meeting Note` (vergadernotities), `Y Next Setting` (generieke
@@ -10,15 +15,18 @@
  *    `Y Onkostensoort` (stamtabel) en de twee declaratie-doctypes
  *    `Y Km Registratie` en `Y Onkosten`. Bestaat een DocType al, dan gebeurt
  *    er niets.
- * 2. **Rechten** — zet de DocPerm-vlaggen op *bestaande* (core-)doctypes die
+ * 2. **Velden** — maakt de velden aan die Y-next aan standaarddoctypes
+ *    toevoegt (zie `ensureCustomFields`). Een veld dat al bestaat blijft
+ *    onaangeroerd.
+ * 3. **Rechten** — zet de DocPerm-vlaggen op *bestaande* (core-)doctypes die
  *    Y-next nodig heeft maar die Frappe standaard niet geeft (zie
  *    `buildPermissionRules` voor het waarom per regel).
- * 3. **Stamgegevens** — records die Y-next verwacht maar die geen enkele
+ * 4. **Stamgegevens** — records die Y-next verwacht maar die geen enkele
  *    installatie meebrengt (zie `DEFAULT_MASTER_RECORDS`).
- * 4. **Naamreeksen** — herstelt tellers die achterlopen op de bestaande
+ * 5. **Naamreeksen** — herstelt tellers die achterlopen op de bestaande
  *    documenten (zie `ensureNamingSeries`).
  *
- * Fase 2 t/m 4 slaan een doctype dat niet op de instance bestaat netjes over.
+ * Fase 2 t/m 5 slaan een doctype dat niet op de instance bestaat netjes over.
  * Daarom mogen de regels voor de **HRMS**-doctypes (`Travel Request`,
  * `Leave Application`, `Leave Allocation`, `Expense Claim`) blijven staan
  * terwijl die app níét geïnstalleerd is: ze doen dan niets. Y-next's eigen
@@ -29,13 +37,15 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL (default de productiesite).
+ * Basis-URL uit YNEXT_BASE_URL (default de productiesite). Op een bench met
+ * meer sites wijst YNEXT_SITE_NAME de site aan (zie `withSiteName`).
  *
  * Gebruik: zie docs/deployment.md.
  *   node scripts/provision-y-next.mjs
  */
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
+import { readAppDoctype, readSetup, toCustomDoctype } from "./lib/app-definities.mjs";
 
 const DEFAULT_BASE_URL = "https://open-aec-studio-erp.prilk.cloud";
 
@@ -64,76 +74,52 @@ export function requiredEnv(env) {
   return { baseUrl, token };
 }
 
+/* ───────────────────────── Eigen doctypes (fase 1) ─────────────────────────
+ *
+ * De definities staan in de Frappe-app, in
+ * `frappe-app/y_next/y_next/doctype/<naam>/<naam>.json`. De app installeert ze
+ * als gewone app-doctypes. Deze route heeft de app niet en maakt dezelfde
+ * doctypes aan als maatwerk-doctype (`custom: 1`, module "Custom");
+ * `toCustomDoctype` doet die omzetting en vult daarbij de rechtenvlaggen
+ * expliciet in.
+ */
+
 /**
- * Bouwt de DocType-definitie voor "Y Meeting Note" (vergadernotities).
+ * De definitie voor "Y Meeting Note" (vergadernotities).
  * @returns {object}
  */
 export function buildMeetingNoteDoctype() {
-  return {
-    doctype: "DocType",
-    name: "Y Meeting Note",
-    module: "Custom",
-    custom: 1,
-    autoname: "format:YMN-{YYYY}-{#####}",
-    fields: [
-      { fieldname: "title", label: "Title", fieldtype: "Data", reqd: 1 },
-      { fieldname: "meeting_date", label: "Meeting Date", fieldtype: "Date" },
-      { fieldname: "project", label: "Project", fieldtype: "Link", options: "Project" },
-      { fieldname: "participants", label: "Participants", fieldtype: "Long Text" },
-      { fieldname: "action_points", label: "Action Points", fieldtype: "Long Text" },
-      { fieldname: "notes", label: "Notes", fieldtype: "Text Editor" },
-      { fieldname: "linked_doctype", label: "Linked Doctype", fieldtype: "Data" },
-      { fieldname: "linked_name", label: "Linked Name", fieldtype: "Data" },
-    ],
-    permissions: [
-      { role: "System Manager", read: 1, write: 1, create: 1, delete: 1 },
-      { role: "Projects User", read: 1, write: 1, create: 1, delete: 1 },
-    ],
-  };
+  return toCustomDoctype(readAppDoctype("y_meeting_note"));
 }
 
 /**
- * Bouwt de DocType-definitie voor "Y Next Setting" (generieke sleutel/waarde-opslag).
+ * De definitie voor "Y Next Setting" (generieke sleutel/waarde-opslag).
+ *
+ * Over de rechten in die definitie:
+ *
+ * - Rol "All" ontbreekt. Frappe weigert die bij API-aanmaak van custom
+ *   doctypes ("Non administrator user can not set the role All").
+ * - Projects User dekt alle Y-next-gebruikers, maar krijgt bewust alléén
+ *   leesrecht: de rijen in dit DocType zijn o.a. de
+ *   geïnstalleerde-extensies-lijst, die vervolgens draait met de
+ *   ERPNext-rechten van de kijker (zie ExtensionHost.tsx RPC-bridge).
+ *   Schrijfrecht voor élke Projects User zou een willekeurige medewerker in
+ *   staat stellen een eigen HTTPS-URL te installeren die dan in de sessie van
+ *   bv. een System Manager wordt uitgevoerd — een privilege-escalatiepad.
+ *   Schrijven/aanmaken/verwijderen is daarom beheerdersactie (System Manager
+ *   only).
  * @returns {object}
  */
 export function buildSettingDoctype() {
-  return {
-    doctype: "DocType",
-    name: "Y Next Setting",
-    module: "Custom",
-    custom: 1,
-    autoname: "field:setting_key",
-    fields: [
-      { fieldname: "setting_key", label: "Setting Key", fieldtype: "Data", reqd: 1, unique: 1 },
-      { fieldname: "setting_value", label: "Setting Value", fieldtype: "Long Text" },
-    ],
-    permissions: [
-      // Rol "All" wordt door Frappe geweigerd bij API-aanmaak van custom
-      // doctypes ("Non administrator user can not set the role All").
-      // Projects User dekt alle Y-next-gebruikers, maar krijgt hier bewust
-      // alléén leesrecht: de rijen in dit DocType zijn o.a. de
-      // geïnstalleerde-extensies-lijst, die vervolgens draait met de
-      // ERPNext-rechten van de kijker (zie ExtensionHost.tsx RPC-bridge).
-      // Schrijfrecht voor élke Projects User zou een willekeurige medewerker
-      // in staat stellen een eigen HTTPS-URL te installeren die dan in de
-      // sessie van bv. een System Manager wordt uitgevoerd — een
-      // privilege-escalatiepad. Schrijven/aanmaken/verwijderen is daarom
-      // beheerdersactie (System Manager only).
-      // Expliciete nullen zijn verplicht: Frappe vult ontbrekende
-      // DocPerm-vlaggen met defaults (live waargenomen: een rij met alleen
-      // read:1 werd r1w1c1d1), wat het read-only-oogmerk stil zou breken.
-      { role: "System Manager", read: 1, write: 1, create: 1, delete: 1, submit: 0, cancel: 0, amend: 0 },
-      { role: "Projects User", read: 1, write: 0, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 },
-    ],
-  };
+  return toCustomDoctype(readAppDoctype("y_next_setting"));
 }
 
 /* ──────────────── Kilometers & onkosten (eigen doctypes) ────────────────
  *
  * Y-next registreert kilometers en onkosten op **eigen** custom DocTypes, niet
- * op HRMS' `Travel Request` / `Expense Claim`. Reden: HRMS wordt op deze
- * instance bewust niet geïnstalleerd, en zonder die app bestaan die doctypes
- * niet. Bijkomend voordeel: HRMS' Travel Request is een dienstreis-aanvraag
+ * op HRMS' `Travel Request` / `Expense Claim`. Reden: zonder de app HRMS
+ * bestaan die doctypes niet, en Y-next moet op een site zonder HRMS werken.
+ * Bijkomend voordeel: HRMS' Travel Request is een dienstreis-aanvraag
  * (vlucht, hotel, visum) zonder datum-, afstands- of bedragveld — Y-next zou
  * er sowieso een handvol customfields op moeten plakken om er een
  * kilometerstaat van te maken.
@@ -142,13 +128,8 @@ export function buildSettingDoctype() {
  * child-rijen): dat maakt goedkeuren per stuk mogelijk, houdt de rechten
  * simpel (`if_owner` werkt alleen op documentniveau, niet op child-rijen) en
  * laat een bon als gewone ERPNext-bijlage aan het document hangen.
- */
-
-/** Statuswaarden van een declaratie. Gedeeld door beide doctypes. */
-const DECLARATIE_STATUSSEN = "Concept\nIngediend\nGoedgekeurd\nAfgewezen";
-
-/**
- * De DocPerm-rijen voor een declaratie-doctype.
+ *
+ * ── De rechten van een declaratie-doctype ──
  *
  * **`if_owner: 1` op de medewerkersrollen is de kern.** Frappe past die vlag
  * toe op *alle* vlaggen van die rij, dus een medewerker ziet en wijzigt
@@ -164,58 +145,17 @@ const DECLARATIE_STATUSSEN = "Concept\nIngediend\nGoedgekeurd\nAfgewezen";
  *
  * **Permlevel 1 op `goedgekeurd_door` / `goedgekeurd_op`.** Die twee velden
  * mogen alleen door de werkgever geschreven worden. Frappe's permlevels zijn
- * het enige middel dat hiervoor zónder server-side script (en dus zonder
- * Bench) werkt. Gevolg — en dat is bewust: `status` staat wél op permlevel 0,
- * want de medewerker moet zelf van Concept naar Ingediend kunnen. Een
- * medewerker die de API rechtstreeks aanroept kan zijn eigen record dus op
- * "Goedgekeurd" zetten, maar kan de goedkeurstempel niet vullen — een
- * "goedgekeurd" record zonder `goedgekeurd_door` is dus zichtbaar onecht. Dat
- * is tamper-evidence, geen tamper-proofing; echte afdwinging vereist een
- * server-side hook, die op deze installatie niet beschikbaar is.
- *
- * Expliciete nullen zijn verplicht: Frappe vult ontbrekende DocPerm-vlaggen
- * met defaults (live waargenomen bij `Y Next Setting`: een rij met alleen
- * `read: 1` werd r1w1c1d1).
+ * het enige middel dat hiervoor zónder server-side script werkt. Gevolg — en
+ * dat is bewust: `status` staat wél op permlevel 0, want de medewerker moet
+ * zelf van Concept naar Ingediend kunnen. Een medewerker die de API
+ * rechtstreeks aanroept kan zijn eigen record dus op "Goedgekeurd" zetten,
+ * maar kan de goedkeurstempel niet vullen — een "goedgekeurd" record zonder
+ * `goedgekeurd_door` is dus zichtbaar onecht. Dat is tamper-evidence, geen
+ * tamper-proofing.
  */
-function declaratiePermissions() {
-  const medewerkerRollen = ["Employee", "Projects User"];
-  return [
-    { role: "System Manager", permlevel: 0, if_owner: 0, read: 1, write: 1, create: 1, delete: 1, submit: 0, cancel: 0, amend: 0 },
-    { role: "System Manager", permlevel: 1, if_owner: 0, read: 1, write: 1, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 },
-    ...medewerkerRollen.map((role) => (
-      { role, permlevel: 0, if_owner: 1, read: 1, write: 1, create: 1, delete: 1, submit: 0, cancel: 0, amend: 0 }
-    )),
-    // Lezen mag wél: anders ziet de medewerker niet wie zijn declaratie heeft
-    // goedgekeurd. Schrijven niet — dat is de hele reden voor permlevel 1.
-    ...medewerkerRollen.map((role) => (
-      { role, permlevel: 1, if_owner: 0, read: 1, write: 0, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 }
-    )),
-  ];
-}
-
-/** De twee goedkeurvelden, identiek op beide declaratie-doctypes. */
-function goedkeurVelden() {
-  return [
-    {
-      fieldname: "goedgekeurd_door",
-      label: "Goedgekeurd door",
-      fieldtype: "Link",
-      options: "User",
-      read_only: 1,
-      permlevel: 1,
-    },
-    {
-      fieldname: "goedgekeurd_op",
-      label: "Goedgekeurd op",
-      fieldtype: "Datetime",
-      read_only: 1,
-      permlevel: 1,
-    },
-  ];
-}
 
 /**
- * Bouwt de DocType-definitie voor "Y Km Registratie" (één rit).
+ * De definitie voor "Y Km Registratie" (één rit).
  *
  * `bedrag` is `read_only` omdat de client het uitrekent
  * (`kilometers × (retour ? 2 : 1) × tarief_per_km`); `read_only` is in Frappe
@@ -225,34 +165,11 @@ function goedkeurVelden() {
  * @returns {object}
  */
 export function buildKmRegistratieDoctype() {
-  return {
-    doctype: "DocType",
-    name: "Y Km Registratie",
-    module: "Custom",
-    custom: 1,
-    autoname: "format:YKM-{YYYY}-{#####}",
-    sort_field: "modified",
-    sort_order: "DESC",
-    fields: [
-      { fieldname: "employee", label: "Medewerker", fieldtype: "Link", options: "Employee", reqd: 1, in_list_view: 1 },
-      { fieldname: "datum", label: "Datum", fieldtype: "Date", reqd: 1, in_list_view: 1 },
-      { fieldname: "van", label: "Van", fieldtype: "Data" },
-      { fieldname: "naar", label: "Naar", fieldtype: "Data" },
-      { fieldname: "kilometers", label: "Kilometers", fieldtype: "Float", precision: "1", reqd: 1, in_list_view: 1 },
-      { fieldname: "retour", label: "Retour", fieldtype: "Check", default: "0" },
-      { fieldname: "project", label: "Project", fieldtype: "Link", options: "Project" },
-      { fieldname: "omschrijving", label: "Omschrijving", fieldtype: "Small Text" },
-      { fieldname: "tarief_per_km", label: "Tarief per km", fieldtype: "Currency" },
-      { fieldname: "bedrag", label: "Bedrag", fieldtype: "Currency", read_only: 1, in_list_view: 1 },
-      { fieldname: "status", label: "Status", fieldtype: "Select", options: DECLARATIE_STATUSSEN, default: "Concept", in_list_view: 1 },
-      ...goedkeurVelden(),
-    ],
-    permissions: declaratiePermissions(),
-  };
+  return toCustomDoctype(readAppDoctype("y_km_registratie"));
 }
 
 /**
- * Bouwt de DocType-definitie voor "Y Onkosten" (één bon).
+ * De definitie voor "Y Onkosten" (één bon).
  *
  * Het bonnetje zelf is géén eigen veld: het hangt als gewone ERPNext-bijlage
  * aan het document (`File` met `attached_to_doctype: "Y Onkosten"`), zodat
@@ -261,32 +178,11 @@ export function buildKmRegistratieDoctype() {
  * @returns {object}
  */
 export function buildOnkostenDoctype() {
-  return {
-    doctype: "DocType",
-    name: "Y Onkosten",
-    module: "Custom",
-    custom: 1,
-    autoname: "format:YON-{YYYY}-{#####}",
-    sort_field: "modified",
-    sort_order: "DESC",
-    fields: [
-      { fieldname: "employee", label: "Medewerker", fieldtype: "Link", options: "Employee", reqd: 1, in_list_view: 1 },
-      { fieldname: "datum", label: "Datum", fieldtype: "Date", reqd: 1, in_list_view: 1 },
-      { fieldname: "soort", label: "Soort", fieldtype: "Link", options: "Y Onkostensoort", reqd: 1, in_list_view: 1 },
-      { fieldname: "bedrag", label: "Bedrag", fieldtype: "Currency", reqd: 1, in_list_view: 1 },
-      { fieldname: "btw_bedrag", label: "Btw-bedrag", fieldtype: "Currency" },
-      { fieldname: "omschrijving", label: "Omschrijving", fieldtype: "Small Text" },
-      { fieldname: "project", label: "Project", fieldtype: "Link", options: "Project" },
-      { fieldname: "leverancier", label: "Leverancier", fieldtype: "Data" },
-      { fieldname: "status", label: "Status", fieldtype: "Select", options: DECLARATIE_STATUSSEN, default: "Concept", in_list_view: 1 },
-      ...goedkeurVelden(),
-    ],
-    permissions: declaratiePermissions(),
-  };
+  return toCustomDoctype(readAppDoctype("y_onkosten"));
 }
 
 /**
- * Bouwt de DocType-definitie voor "Y Onkostensoort" (stamtabel).
+ * De definitie voor "Y Onkostensoort" (stamtabel).
  *
  * `autoname: field:soort_naam` maakt de naam gelijk aan de soort zelf, zodat
  * `Y Onkosten.soort` leesbaar is zonder join. De medewerkersrollen krijgen
@@ -294,30 +190,24 @@ export function buildOnkostenDoctype() {
  * @returns {object}
  */
 export function buildOnkostensoortDoctype() {
-  return {
-    doctype: "DocType",
-    name: "Y Onkostensoort",
-    module: "Custom",
-    custom: 1,
-    autoname: "field:soort_naam",
-    sort_field: "modified",
-    sort_order: "DESC",
-    fields: [
-      { fieldname: "soort_naam", label: "Soort", fieldtype: "Data", reqd: 1, unique: 1, in_list_view: 1 },
-      { fieldname: "actief", label: "Actief", fieldtype: "Check", default: "1", in_list_view: 1 },
-    ],
-    permissions: [
-      { role: "System Manager", permlevel: 0, if_owner: 0, read: 1, write: 1, create: 1, delete: 1, submit: 0, cancel: 0, amend: 0 },
-      { role: "Employee", permlevel: 0, if_owner: 0, read: 1, write: 0, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 },
-      { role: "Projects User", permlevel: 0, if_owner: 0, read: 1, write: 0, create: 0, delete: 0, submit: 0, cancel: 0, amend: 0 },
-    ],
-  };
+  return toCustomDoctype(readAppDoctype("y_onkostensoort"));
+}
+
+/**
+ * Op een bench met meer sites kiest Frappe de site op hostnaam. Waar die
+ * hostnaam niet te bereiken is — een lokale ontwikkel-bench — wijst
+ * YNEXT_SITE_NAME de site aan via de header die Frappe daarvoor kent.
+ */
+function withSiteName(options = {}) {
+  const site = process.env.YNEXT_SITE_NAME;
+  if (!site) return options;
+  return { ...options, headers: { ...(options.headers || {}), "X-Frappe-Site-Name": site } };
 }
 
 /** fetch-wrapper die netwerkfouten redigeert vóór ze her-gegooid worden. */
 async function safeFetch(url, options) {
   try {
-    return await fetch(url, options);
+    return await fetch(url, withSiteName(options));
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     throw new Error(`Netwerkfout richting ${redact(url)}: ${redact(message)}`);
@@ -360,7 +250,93 @@ async function ensureDoctype(baseUrl, token, definition) {
   return "created";
 }
 
-/* ─────────────────────────── Rechten (fase 2) ─────────────────────────── */
+/* ─────────────────────────── Eigen velden (fase 2) ─────────────────────────── */
+
+/**
+ * De veldnamen die een doctype van zichzelf heeft, of `null` als het doctype
+ * niet op de instance bestaat. Custom Fields zitten hier niet bij; die zijn
+ * aparte documenten.
+ * @returns {Promise<Set<string> | null>}
+ */
+async function getStandardFieldnames(baseUrl, token, doctype) {
+  const res = await safeFetch(`${baseUrl}/api/resource/DocType/${encodeURIComponent(doctype)}`, {
+    headers: { Authorization: `token ${token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`DocType "${doctype}" opvragen mislukt: HTTP ${res.status}.`);
+  }
+  const body = await res.json().catch(() => null);
+  const fields = body && body.data && Array.isArray(body.data.fields) ? body.data.fields : [];
+  return new Set(fields.map((field) => field && field.fieldname).filter(Boolean));
+}
+
+/**
+ * Maakt de velden aan die Y-next aan standaarddoctypes toevoegt. De lijst
+ * staat in `frappe-app/y_next/setup/custom_fields.json`; de app past
+ * dezelfde lijst toe bij haar installatie.
+ *
+ * Idempotent, en voorzichtig met wat er al is:
+ *
+ * - een veld dat al bestaat wordt overgeslagen en nooit bijgewerkt, zodat een
+ *   site waar het veld is aangepast zijn eigen instellingen houdt;
+ * - heeft het doctype het veld van zichzelf (een nieuwere ERPNext-versie
+ *   heeft het overgenomen), dan is er niets aan te maken;
+ * - een doctype dat niet op de instance bestaat wordt in zijn geheel
+ *   overgeslagen.
+ *
+ * @param {{ baseUrl: string, token: string, definitions?: Record<string, object[]> }} params
+ * @returns {Promise<{ created: string[], existing: string[], skipped: string[] }>}
+ */
+export async function ensureCustomFields({ baseUrl, token, definitions = readSetup("custom_fields.json") }) {
+  const authHeader = `token ${token}`;
+  const resource = `${baseUrl}/api/resource/${encodeURIComponent("Custom Field")}`;
+  const created = [];
+  const existing = [];
+  const skipped = [];
+
+  for (const [doctype, fields] of Object.entries(definitions)) {
+    const standard = await getStandardFieldnames(baseUrl, token, doctype);
+    if (standard === null) {
+      console.log(`Velden: DocType "${doctype}" bestaat niet op deze instance — velden overgeslagen.`);
+      skipped.push(...fields.map((field) => `${doctype}.${field.fieldname}`));
+      continue;
+    }
+    for (const field of fields) {
+      const label = `${doctype}.${field.fieldname}`;
+      if (standard.has(field.fieldname)) {
+        console.log(`Veld ${label} hoort al bij het doctype zelf — overgeslagen.`);
+        existing.push(label);
+        continue;
+      }
+      // Frappe noemt een Custom Field "<doctype>-<fieldname>".
+      const getRes = await safeFetch(`${resource}/${encodeURIComponent(`${doctype}-${field.fieldname}`)}`, {
+        headers: { Authorization: authHeader },
+      });
+      if (getRes.ok) {
+        console.log(`Veld ${label} bestaat al — overgeslagen [HTTP ${getRes.status}].`);
+        existing.push(label);
+        continue;
+      }
+      if (getRes.status !== 404) {
+        throw new Error(`Opzoeken veld ${label} mislukt: HTTP ${getRes.status}.`);
+      }
+      const postRes = await safeFetch(resource, {
+        method: "POST",
+        headers: { Authorization: authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ dt: doctype, ...field }),
+      });
+      if (!postRes.ok) {
+        throw new Error(`Aanmaken veld ${label} mislukt: HTTP ${postRes.status}.`);
+      }
+      console.log(`Veld ${label} aangemaakt [HTTP ${postRes.status}].`);
+      created.push(label);
+    }
+  }
+  return { created, existing, skipped };
+}
+
+/* ─────────────────────────── Rechten (fase 3) ─────────────────────────── */
 
 const PERM_MANAGER = "frappe.core.page.permission_manager.permission_manager";
 
@@ -440,25 +416,7 @@ const PERM_MANAGER = "frappe.core.page.permission_manager.permission_manager";
  * @returns {{ doctype: string, role: string, permlevel: number, ptype: string, value: number }[]}
  */
 export function buildPermissionRules() {
-  return [
-    { doctype: "Communication", role: "Projects User", permlevel: 0, ptype: "write", value: 1 },
-    { doctype: "Communication", role: "System Manager", permlevel: 0, ptype: "write", value: 1 },
-    { doctype: "Communication", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
-    { doctype: "Communication", role: "System Manager", permlevel: 0, ptype: "delete", value: 1 },
-    { doctype: "ToDo", role: "Projects User", permlevel: 0, ptype: "delete", value: 1 },
-    { doctype: "ToDo", role: "System Manager", permlevel: 0, ptype: "delete", value: 1 },
-    // HRMS — worden overgeslagen zolang de app niet geïnstalleerd is.
-    { doctype: "Travel Request", role: "Employee", permlevel: 0, ptype: "read", value: 1 },
-    { doctype: "Travel Request", role: "Employee", permlevel: 0, ptype: "write", value: 1 },
-    { doctype: "Travel Request", role: "Employee", permlevel: 0, ptype: "create", value: 1 },
-    { doctype: "Leave Application", role: "Employee", permlevel: 0, ptype: "read", value: 1 },
-    { doctype: "Leave Application", role: "Employee", permlevel: 0, ptype: "write", value: 1 },
-    { doctype: "Leave Application", role: "Employee", permlevel: 0, ptype: "create", value: 1 },
-    { doctype: "Leave Allocation", role: "Employee", permlevel: 0, ptype: "read", value: 1 },
-    { doctype: "Expense Claim", role: "Employee", permlevel: 0, ptype: "read", value: 1 },
-    { doctype: "Expense Claim", role: "Employee", permlevel: 0, ptype: "write", value: 1 },
-    { doctype: "Expense Claim", role: "Employee", permlevel: 0, ptype: "create", value: 1 },
-  ];
+  return readSetup("permissions.json");
 }
 
 /**
@@ -608,7 +566,7 @@ export async function ensurePermissions({ baseUrl, token, rules = buildPermissio
   return { added, updated, unchanged, skipped };
 }
 
-/* ────────────────────── Naamreeks-tellers (fase 3) ────────────────────── */
+/* ────────────────────── Naamreeks-tellers (fase 5) ────────────────────── */
 
 /**
  * Doctypes die Y-next raakt en waarvan de naming-series-teller kan
@@ -702,52 +660,26 @@ export const DEFAULT_KM_TARIEF = 0.23;
  * weg wanneer de bron ontbreekt. Deze fase is er om het CRM compleet te maken,
  * niet om de functie te laten werken.
  *
+ * Daarnaast de **onkostensoorten** (`Y Onkostensoort`): de keuzelijst van het
+ * onkostenscherm. Een eigen stamtabel in plaats van ERPNext' `Expense Claim
+ * Type`, omdat dat doctype uit **HRMS** komt en Y-next zonder die app moet
+ * werken. `autoname: field:soort_naam`, dus de `name` wordt de waarde zelf.
+ *
+ * En het **kilometertarief**: één rij in de sleutel/waarde-opslag
+ * `Y Next Setting`, zodat de werkgever hem in Y-next kan wijzigen (schrijven
+ * op dat doctype is System-Manager-only — precies de bedoeling: een medewerker
+ * mag zijn eigen vergoeding niet ophogen). `€ 0,23` is de gangbare onbelaste
+ * kilometervergoeding. Het record wordt alléén aangemaakt als het nog niet
+ * bestaat — `ensureMasterRecords` doet eerst een GET — dus een tarief dat de
+ * werkgever zelf heeft aangepast overleeft elke volgende run. De boeking
+ * neemt het tarief over in `tarief_per_km` op het moment van boeken; een
+ * latere tariefwijziging verandert dus niets aan wat al geboekt is.
+ *
+ * De records zelf staan in `frappe-app/y_next/setup/master_records.json`.
+ *
  * @type {{ doctype: string, name: string, payload: object }[]}
  */
-export const DEFAULT_MASTER_RECORDS = [
-  {
-    doctype: "UTM Source",
-    name: "Email",
-    payload: {
-      name: "Email",
-      source_name: "Email",
-      details: "Binnengekomen via e-mail (Y-next mailherkenning).",
-    },
-  },
-
-  /* ── Onkostensoorten (`Y Onkostensoort`) ──
-   * De keuzelijst van het onkostenscherm. Eigen stamtabel in plaats van
-   * ERPNext' `Expense Claim Type`, omdat dat doctype uit **HRMS** komt en die
-   * app bewust niet geïnstalleerd wordt (zie de kop van dit bestand).
-   * `autoname: field:soort_naam`, dus de `name` wordt de waarde zelf.
-   */
-  { doctype: "Y Onkostensoort", name: "Reiskosten", payload: { soort_naam: "Reiskosten", actief: 1 } },
-  { doctype: "Y Onkostensoort", name: "Parkeren", payload: { soort_naam: "Parkeren", actief: 1 } },
-  { doctype: "Y Onkostensoort", name: "Materiaal", payload: { soort_naam: "Materiaal", actief: 1 } },
-  { doctype: "Y Onkostensoort", name: "Verblijf", payload: { soort_naam: "Verblijf", actief: 1 } },
-  { doctype: "Y Onkostensoort", name: "Overig", payload: { soort_naam: "Overig", actief: 1 } },
-
-  /* ── Kilometertarief ──
-   * Eén rij in de bestaande sleutel/waarde-opslag `Y Next Setting`, zodat de
-   * werkgever hem in Y-next kan wijzigen (schrijven op dat doctype is
-   * System-Manager-only — precies de bedoeling: een medewerker mag zijn eigen
-   * vergoeding niet ophogen).
-   *
-   * `€ 0,23` is de gangbare onbelaste kilometervergoeding. Dit record wordt
-   * alléén aangemaakt als het nog niet bestaat — `ensureMasterRecords` doet
-   * eerst een GET — dus een tarief dat de werkgever zelf heeft aangepast
-   * overleeft elke volgende provisioning-run.
-   *
-   * De boeking neemt het tarief over in `tarief_per_km` op het moment van
-   * boeken; een latere tariefwijziging verandert dus niets aan wat al geboekt
-   * is (historisch correct).
-   */
-  {
-    doctype: "Y Next Setting",
-    name: KM_TARIEF_SETTING_KEY,
-    payload: { setting_key: KM_TARIEF_SETTING_KEY, setting_value: String(DEFAULT_KM_TARIEF) },
-  },
-];
+export const DEFAULT_MASTER_RECORDS = readSetup("master_records.json");
 
 /**
  * Maakt de stamrecords aan die nog niet bestaan. Idempotent, en tolerant voor
@@ -1069,8 +1001,9 @@ export async function ensureNamingSeries({ baseUrl, token, doctypes = DEFAULT_NA
 /**
  * Provisioneert Y-next (idempotent): eerst de custom DocTypes — bestaat een
  * DocType al, dan wordt hij overgeslagen; anders wordt hij aangemaakt —
- * daarna de DocPerm-vlaggen uit `buildPermissionRules`, de stamrecords, en als
- * laatste de naming-series-tellers uit `ensureNamingSeries`. De volgorde is
+ * daarna de eigen velden op standaarddoctypes, de DocPerm-vlaggen uit
+ * `buildPermissionRules`, de stamrecords, en als laatste de
+ * naming-series-tellers uit `ensureNamingSeries`. De volgorde is
  * bewust: een rechten-, stam- of teller-regel kan over een net
  * aangemaakte/gecontroleerde doctype gaan.
  *
@@ -1096,18 +1029,21 @@ export async function provision({ baseUrl, token }) {
     if (result === "created") created.push(definition.name);
     else existing.push(definition.name);
   }
+  const customFields = await ensureCustomFields({ baseUrl, token });
   const permissions = await ensurePermissions({ baseUrl, token });
   const masterRecords = await ensureMasterRecords({ baseUrl, token });
   const namingSeries = await ensureNamingSeries({ baseUrl, token });
-  return { created, existing, permissions, masterRecords, namingSeries };
+  return { created, existing, customFields, permissions, masterRecords, namingSeries };
 }
 
 async function main() {
   const { baseUrl, token } = requiredEnv(process.env);
   console.log(`Provisioning Y-next tegen ${baseUrl} ...`);
-  const { created, existing, permissions, masterRecords, namingSeries } = await provision({ baseUrl, token });
+  const { created, existing, customFields, permissions, masterRecords, namingSeries } = await provision({ baseUrl, token });
   console.log(
     `Klaar. Aangemaakt: ${created.join(", ") || "geen"}. Al aanwezig: ${existing.join(", ") || "geen"}. ` +
+      `Velden — aangemaakt: ${customFields.created.length}, al aanwezig: ${customFields.existing.length}, ` +
+      `overgeslagen: ${customFields.skipped.length}. ` +
       `Rechten — rol-rijen toegevoegd: ${permissions.added.length}, gezet: ${permissions.updated.length}, ` +
       `ongewijzigd: ${permissions.unchanged.length}, overgeslagen: ${permissions.skipped.length}. ` +
       `Stamgegevens — aangemaakt: ${masterRecords.created.length}, al aanwezig: ${masterRecords.existing.length}, ` +

@@ -36,6 +36,27 @@ ook is. Staan er meer sites op de bench, maak die instelling dan leeg:
 Daarna bepaalt de hostnaam de site (`http://<site>:8000`) en moet elke
 `bench`-opdracht een `--site` meekrijgen.
 
+Het provisioneringsscript van de publicatieroute kan zo'n site ook aanwijzen
+als de hostnaam vanaf de ontwikkelmachine niet te bereiken is:
+
+    YNEXT_BASE_URL=http://localhost:8000 YNEXT_SITE_NAME=<site> node scripts/provision-y-next.mjs
+
+## Wat de app op een site inricht
+
+- **Eigen doctypes** staan in `frappe-app/y_next/y_next/doctype/`. Een nieuw
+  doctype of een wijziging maak je in de Desk op de ontwikkelsite; Frappe
+  schrijft de bestanden dan in de app op de bench. Haal ze terug met
+  `node scripts/dev-bench-sync.mjs --pull`, anders gooit de volgende run ze weg.
+- **Velden op standaarddoctypes, rechten en stamgegevens** staan als JSON in
+  `frappe-app/y_next/setup/`. `setup/install.py` past ze toe bij de installatie
+  en na elke migratie. Een definitie voor een doctype of rol die niet bestaat
+  wordt overgeslagen.
+
+`scripts/provision-y-next.mjs` leest dezelfde bestanden en zet ze via de
+REST-API op een site zonder de app. Een wijziging in de definities werkt dus
+op beide routes door; de tests van dat script leggen de exacte velden en
+rechten vast.
+
 ## Testen
 
     node --test scripts/dev-bench-sync.test.mjs scripts/build-frappe-app.test.mjs
