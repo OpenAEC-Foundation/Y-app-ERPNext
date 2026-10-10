@@ -46,3 +46,29 @@ class TestPagina(IntegrationTestCase):
 		_, html = self.haal(bundel=None)
 		self.assertIn("De bundel van Y-next ontbreekt", html)
 		self.assertNotIn('id="root"', html)
+
+	def test_ingelogde_gebruiker_krijgt_mee_wat_de_site_heeft(self):
+		import json
+		import re
+
+		frappe.set_user("Administrator")
+		_, html = self.haal()
+		gevonden = re.search(r"window\.y_next_mogelijkheden = (\{.*\});", html)
+		self.assertIsNotNone(gevonden)
+		mogelijkheden = json.loads(gevonden.group(1))
+		self.assertIn("doctypes", mogelijkheden)
+		self.assertIn("velden", mogelijkheden)
+		self.assertEqual(mogelijkheden["apps"]["hrms"], "hrms" in frappe.get_installed_apps())
+
+	def test_gast_krijgt_niets_over_de_site_mee(self):
+		frappe.set_user("Guest")
+		_, html = self.haal()
+		self.assertNotIn("y_next_mogelijkheden", html)
+
+	def test_gegevens_in_de_pagina_kunnen_het_script_niet_afsluiten(self):
+		frappe.set_user("Administrator")
+		with patch("y_next.www.y_next.mogelijkheden", return_value={"app_versie": "</script><script>alert(1)"}):
+			_, html = self.haal()
+		self.assertNotIn("</script><script>alert(1)", html)
+		# Het kleiner-dan-teken staat er als JSON-ontwijking, niet als teken.
+		self.assertIn(r"\u003c/script>\u003cscript>alert(1)", html)

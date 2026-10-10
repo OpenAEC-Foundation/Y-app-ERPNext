@@ -329,8 +329,18 @@ class TestMogelijkheden(ApiTestCase):
 			self.assertIn(doctype, antwoord["doctypes"])
 		self.assertEqual(
 			set(antwoord),
-			{"app_versie", "apps", "doctypes", "taak_workflow", "mailserver_ingesteld", "cad_viewer"},
+			{"app_versie", "apps", "doctypes", "velden", "taak_workflow", "mailserver_ingesteld", "cad_viewer"},
 		)
+
+	def test_meldt_velden_die_niet_overal_bestaan(self):
+		frappe.set_user(ANNA)
+		velden = roep("y_next_mogelijkheden")["velden"]
+		# Het veld workflow_state bestaat alleen als de site een workflow op dat doctype heeft.
+		for doctype in ("Task", "Timesheet", "Sales Invoice", "Purchase Invoice"):
+			with self.subTest(doctype=doctype):
+				self.assertEqual(
+					velden[doctype], {"workflow_state": bool(frappe.get_meta(doctype).has_field("workflow_state"))}
+				)
 
 	def test_taak_workflow_volgt_de_site(self):
 		frappe.set_user(ANNA)

@@ -13,6 +13,7 @@
  */
 
 import { getActiveInstance } from "./instances.ts";
+import { leesMogelijkheden, ontbrekendeDoctypes, ontbrekendeVelden, type Mogelijkheden } from "./mogelijkheden.ts";
 import { getCsrfToken, refreshCsrfToken } from "./csrf.ts";
 import { uploadFoutmelding } from "./upload-fout.ts";
 
@@ -426,6 +427,30 @@ function markDoctypeMissing(doctype: string): void {
   if (!warnedMissingDoctypes.has(key)) {
     warnedMissingDoctypes.add(key);
     console.warn(`[erpnext] doctype "${doctype}" does not exist on this instance — returning empty results for it from now on.`);
+  }
+}
+
+/**
+ * Neem over wat de site zelf over zichzelf meldt (zie `mogelijkheden.ts`).
+ *
+ * De twee lijsten hierboven — velden en doctypes die er niet zijn — vullen
+ * zich anders pas ná een mislukt verzoek. Met de Frappe-app weet de pagina het
+ * vooraf, en dan hoeft dat eerste mislukte verzoek er niet te komen: een
+ * ontbrekend doctype levert meteen een lege lijst op, en een ontbrekend veld
+ * wordt niet eens gevraagd.
+ *
+ * Zonder gegevens van de pagina (een site zonder de app) gebeurt er niets en
+ * blijft het ontdekken-bij-het-eerste-verzoek gelden. Niets hiervan gaat naar
+ * sessionStorage: de pagina meldt het bij elke keer laden opnieuw, dus een
+ * later geïnstalleerde app of toegevoegd veld is er de volgende keer gewoon.
+ */
+export function applySiteCapabilities(mogelijkheden: Mogelijkheden | null = leesMogelijkheden()): void {
+  for (const doctype of ontbrekendeDoctypes(mogelijkheden)) {
+    missingDoctypesCache.add(missingDoctypeKey(doctype));
+  }
+  for (const [doctype, fields] of Object.entries(ontbrekendeVelden(mogelijkheden))) {
+    const rejected = getRejectedFields(doctype);
+    for (const field of fields) rejected.add(field);
   }
 }
 

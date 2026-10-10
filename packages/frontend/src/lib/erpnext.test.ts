@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchList, fetchAll, createDocument, fetchCount, ApiError, isDoctypeMissing, fetchChildTable } from "./erpnext.ts";
+import { fetchList, fetchAll, createDocument, fetchCount, ApiError, isDoctypeMissing, fetchChildTable, applySiteCapabilities } from "./erpnext.ts";
 import { resetCsrfTokenCache } from "./csrf.ts";
 
 interface RecordedCall {
@@ -590,5 +590,51 @@ test("createDocument: a 417 that is not CSRF-shaped is left alone", async () => 
   } finally {
     mock.restore();
     resetCsrfTokenCache();
+  }
+});
+
+test("applySiteCapabilities: een doctype dat de site niet heeft kost geen enkel verzoek", async () => {
+  const doctype = "CapabilityMissingDoctype";
+  assert.equal(isDoctypeMissing(doctype), false);
+  applySiteCapabilities({ doctypes: { [doctype]: false, CapabilityPresentDoctype: true } });
+  assert.equal(isDoctypeMissing(doctype), true);
+  assert.equal(isDoctypeMissing("CapabilityPresentDoctype"), false);
+
+  const mock = installFetchMock(() => ({ status: 500, body: {} }));
+  try {
+    assert.deepEqual(await fetchList(doctype, { fields: ["name"] }), []);
+    assert.equal(await fetchCount(doctype), 0);
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("applySiteCapabilities: een veld dat de site niet heeft wordt niet eens gevraagd", async () => {
+  const doctype = "CapabilityFieldDoctype";
+  applySiteCapabilities({ velden: { [doctype]: { workflow_state: false, status: true } } });
+
+  const mock = installFetchMock(() => ({ status: 200, body: { data: [{ name: "T-1", status: "Open" }] } }));
+  try {
+    const rows = await fetchList(doctype, { fields: ["name", "status", "workflow_state"] });
+    assert.deepEqual(rows, [{ name: "T-1", status: "Open" }]);
+    assert.equal(mock.calls.length, 1);
+    const fields = JSON.parse(new URL(mock.calls[0].url, "http://x").searchParams.get("fields") || "[]");
+    assert.deepEqual(fields, ["name", "status"]);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("applySiteCapabilities: zonder gegevens van de pagina verandert er niets", async () => {
+  const doctype = "CapabilityLegacyDoctype";
+  applySiteCapabilities(null);
+  const mock = installFetchMock(() => ({ status: 200, body: { data: [] } }));
+  try {
+    await fetchList(doctype, { fields: ["name", "workflow_state"] });
+    const fields = JSON.parse(new URL(mock.calls[0].url, "http://x").searchParams.get("fields") || "[]");
+    assert.deepEqual(fields, ["name", "workflow_state"]);
+  } finally {
+    mock.restore();
   }
 });

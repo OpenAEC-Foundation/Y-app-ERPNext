@@ -20,7 +20,8 @@
 import { useEffect, useState } from "react";
 import { getActiveInstanceId } from "../lib/instances";
 import { isFeatureEnabled } from "../lib/capabilities";
-import { fetchDocument, createDocument, updateDocument, ApiError } from "../lib/erpnext";
+import { createDocument, updateDocument, ApiError } from "../lib/erpnext";
+import { leesInstelling } from "../lib/instelling";
 
 export interface RemoteExtension {
   /** Stable, URL-safe machine ID. Used in the route `/x/<id>`. */
@@ -39,12 +40,6 @@ const SETTING_DOCTYPE = "Y Next Setting";
 const SETTING_KEY = "remote-extensions";
 const LS_PREFIX = "pref_";
 const CHANGE_EVENT = "y-app:remote-extensions-changed";
-
-interface YNextSettingDoc {
-  name: string;
-  setting_key: string;
-  setting_value?: string;
-}
 
 function cacheKey(instanceId: string): string {
   return `${LS_PREFIX}${instanceId}_${SETTING_KEY}`;
@@ -69,8 +64,10 @@ function writeCache(instanceId: string, list: RemoteExtension[]): void {
 
 export async function fetchRemoteExtensions(instanceId: string | number): Promise<RemoteExtension[]> {
   try {
-    const doc = await fetchDocument<YNextSettingDoc>(SETTING_DOCTYPE, SETTING_KEY);
-    const value = doc.setting_value ? JSON.parse(doc.setting_value) : [];
+    // Nog geen extensies geïnstalleerd: de instelling bestaat dan niet.
+    const ruw = await leesInstelling(SETTING_KEY);
+    if (ruw === null) return [];
+    const value = ruw ? JSON.parse(ruw) : [];
     if (!Array.isArray(value)) return readCache(String(instanceId));
     const list = (value as RemoteExtension[]).filter(isValidRemote);
     writeCache(String(instanceId), list);

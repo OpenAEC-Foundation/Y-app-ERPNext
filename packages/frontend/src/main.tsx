@@ -5,9 +5,15 @@ import './i18n'
 import App from './App.tsx'
 import { initInstances } from './lib/instances'
 import { ensureCsrfToken } from './lib/csrf'
+import { applySiteCapabilities } from './lib/erpnext'
 
 // Apply default theme
 initInstances()
+
+// Wat de site over zichzelf meldt (alleen met de Frappe-app): welke optionele
+// doctypes en velden er niet zijn. Vóór de eerste render, zodat geen enkel
+// scherm eerst een verzoek doet dat op een fout uitloopt.
+applySiteCapabilities()
 
 // Zorg vóór de eerste schrijfactie dat er een bruikbaar CSRF-token is.
 // De Web-Page-HTML is browser-cachebaar (`Cache-Control: private,

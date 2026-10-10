@@ -17,6 +17,9 @@
 		<div id="root" data-y-next-router="hash"></div>
 		<script>
 			window.csrf_token = "{{ csrf_token }}";
+			{%- if mogelijkheden %}
+			window.y_next_mogelijkheden = {{ mogelijkheden | safe }};
+			{%- endif %}
 		</script>
 		<script type="module" src="{{ base_url }}{{ entry_js }}"></script>
 		{%- else %}
