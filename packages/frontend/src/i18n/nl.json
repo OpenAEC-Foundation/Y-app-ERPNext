@@ -3307,6 +3307,7 @@
   "agenda.colleagues": "Collega’s",
   "agenda.resize_panel": "Sleep om de kolom breder te maken",
   "weekplanning.open_new_tab": "In nieuw tabblad",
+  "weekplanning.not_configured": "Er is geen weekdashboard ingesteld. Een beheerder kan het pad van de dashboardpagina vastleggen in de instelling weekplanning-pad.",
   "webmail.download_all": "Alles",
   "webmail.download_all_hint": "Alle bijlagen als één zip downloaden",
   "webmail.attachments_zip_name": "bijlagen",

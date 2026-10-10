@@ -17,14 +17,16 @@ Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwi
 |---|---|---|
 | 1 | Skelet, pagina `/y-next`, bundel | klaar |
 | 2 | Doctypes, velden, rechten en stamgegevens uit één bron; provisioning leest ze mee | klaar |
-| 3 | Frontend zonder aannames (taken op `status`, optionele onderdelen verborgen) | open — alleen `y_next_mogelijkheden` aan de serverkant staat er |
+| 3 | Frontend zonder aannames (taken op `status`, optionele onderdelen verborgen) | klaar — de pagina geeft mee wat de site heeft; alle 40 pagina's laden op een kale site zonder mislukt verzoek |
 | 4 | Serverfuncties die alleen ERPNext nodig hebben (7) | klaar |
 | 5 | Mailserver (6 functies, instelling, testmailserver) | de zes functies staan en zijn getoetst tegen een nagespeelde mailserver; de proef tegen een echte testmailserver is open |
-| 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | open |
-| 7 | Generiek maken, ondertekening, generiek-controle | open |
+| 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | `km_rit_boeken` klaar en getest op een site met HRMS; Wiki, rooster en CAD-viewer gaan via de bestaande afhandeling van ontbrekende doctypes, nog niet getest op een site waar ze wél staan |
+| 7 | Generiek maken, ondertekening, generiek-controle | open — alleen het pad van de weekplanning is al een instelling (`weekplanning-pad`) |
 | 8 | Release naar `OpenAEC-Foundation/y_next` | open |
 
-Op een kale site met de app falen nu nog: de takenlijsten (vragen `workflow_state` op), de verzoeken naar HRMS-, Wiki- en roosterdoctypes, en `km_rit_boeken`. Dat zijn fase 3 en 6.
+Testsites op de lokale bench: `kaal.localhost` (alleen ERPNext + de app) en `proef.localhost` (ook HRMS).
+
+De frontendwijzigingen op deze branch zijn gemaakt op versie 0.39.4. De bundel van de app wordt nu uit deze branch gebouwd.
 
 
 ### 2026-07-02 — Codebase-herstructurering: god-files splitsen, tests-eerst (gedrag-behoudend)

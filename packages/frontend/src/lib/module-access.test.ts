@@ -254,3 +254,45 @@ test("doctype-probe: 404 DoesNotExistError ⇒ doctype-missing (app niet geïnst
     mock.restore();
   }
 });
+
+/** Antwoordt op het lezen van een instelling; al het andere gaat naar de standaardantwoorden. */
+function metInstelling(rijen: unknown[]) {
+  const standaard = defaultHandler();
+  return (url: string): { status: number; body: unknown } =>
+    url.startsWith("/api/resource/Y Next Setting") ? { status: 200, body: { data: rijen } } : standaard(url);
+}
+
+test("weekplanning: zonder ingesteld dashboardpad verdwijnt het scherm", async () => {
+  await resetAll();
+  const mock = installFetchMock(metInstelling([]));
+  try {
+    const access = await getModuleAccess();
+    assert.deepEqual(access.weekplanning, { visible: false, reason: "not-configured" });
+    // De rest van het menu heeft er geen last van.
+    assert.deepEqual(access.projects, { visible: true, reason: "ok" });
+  } finally {
+    mock.restore();
+  }
+});
+
+test("weekplanning: met een ingesteld dashboardpad is het scherm er", async () => {
+  await resetAll();
+  const mock = installFetchMock(metInstelling([{ name: "weekplanning-pad", setting_value: "/weekdashboard" }]));
+  try {
+    const access = await getModuleAccess();
+    assert.deepEqual(access.weekplanning, { visible: true, reason: "ok" });
+  } finally {
+    mock.restore();
+  }
+});
+
+test("weekplanning: een lege instelling telt als niet ingesteld", async () => {
+  await resetAll();
+  const mock = installFetchMock(metInstelling([{ name: "weekplanning-pad", setting_value: "  " }]));
+  try {
+    const access = await getModuleAccess();
+    assert.deepEqual(access.weekplanning, { visible: false, reason: "not-configured" });
+  } finally {
+    mock.restore();
+  }
+});

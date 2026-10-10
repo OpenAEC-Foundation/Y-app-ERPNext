@@ -168,10 +168,14 @@ Regels bij het overzetten:
 }
 ```
 
-De frontend vraagt dit bij het starten één keer op (`lib/mogelijkheden.ts`) en
-stemt daar menu, veldlijsten en knoppen op af. Bestaat de functie niet — de
-publicatieroute zonder app — dan valt de frontend terug op het profiel "alles
-aanwezig", wat precies het huidige gedrag is.
+De pagina `/y-next` geeft dit bij het laden mee aan wie is ingelogd
+(`window.y_next_mogelijkheden`); de functie zelf is er om tussentijds te
+verversen. De frontend (`lib/mogelijkheden.ts`) zet het in de lijsten die
+`lib/erpnext.ts` al bijhield na een mislukt verzoek, zodat dat eerste mislukte
+verzoek er niet komt: een ontbrekend doctype levert meteen een lege lijst op
+en een ontbrekend veld wordt niet gevraagd. Daarnaast meldt het antwoord in
+`velden` per doctype welke velden er niet op elke site zijn. Geeft de pagina
+niets mee — de publicatieroute zonder app — dan geldt het huidige gedrag.
 
 ### 5. Mail en agenda horen bij de kern
 
@@ -216,7 +220,7 @@ van het Email Account zelf gebruiken.
 | huisstijl in de ondertekening | velden op `Company` (onderdeel 6) |
 | namen van factuuropmaken | keuze uit de Print Formats van de site, standaard de standaardopmaak |
 | vaste extensies in de catalogus | lege catalogus; installeren via een adres blijft |
-| adres van het weekplanning-dashboard | rij in `Y Next Setting`; leeg = onderdeel verborgen |
+| adres van het weekplanning-dashboard | instelling `weekplanning-pad` in `Y Next Setting`; zonder = onderdeel verborgen |
 | maildomein en `PRODID` in agenda-uitnodigingen | domein van de site, neutrale productnaam |
 | voorbeeldteksten, plaatsaanduidingen, organisatielogo in `public/` | neutrale tekst; logo van het bedrijf uit ERPNext |
 | organisatienamen in release-notes en roadmap | neutrale formulering |
@@ -234,7 +238,7 @@ verborgen.
 
 | Koppeling | Voorwaarde | Voegt toe |
 |---|---|---|
-| HRMS | app `hrms` geïnstalleerd | verlof, declaraties, km via reisaanvragen |
+| HRMS | app `hrms` geïnstalleerd | verlof en declaraties; km via reisaanvragen als de beheerder daarvoor kiest (instelling `km-via-reisaanvraag`) |
 | Wiki | app `wiki` geïnstalleerd | kennisbank |
 | Rooster | doctype `Shift Plan` bestaat | contracturen en roostercontroles |
 | Taak-workflow | de site heeft een actieve workflow op `Task` | workflowstatussen in plaats van `status` |

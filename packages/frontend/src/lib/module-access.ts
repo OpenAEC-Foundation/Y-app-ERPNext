@@ -39,6 +39,7 @@
  */
 
 import { ApiError, fetchCount, fetchDocument, isDoctypeMissing } from "./erpnext.ts";
+import { leesInstelling } from "./instelling.ts";
 import { hasEnabledEmailAccount } from "./mail-erpnext.ts";
 import { resolveSessionUser } from "./session.ts";
 
@@ -150,9 +151,18 @@ const MODULE_DOCTYPE: Record<string, string> = {
   notities: "Y Meeting Note",
 };
 
+/**
+ * Module-id → de instelling (`Y Next Setting`) zonder welke het scherm niets
+ * te tonen heeft. De weekplanning sluit een dashboardpagina in waarvan het pad
+ * per organisatie verschilt; zonder ingesteld pad is er geen weekplanning.
+ */
+const MODULE_INSTELLING: Record<string, string> = {
+  weekplanning: "weekplanning-pad",
+};
+
 /** Alle module-ids waarover deze module een uitspraak doet. */
 const ALL_MODULE_IDS: string[] = [
-  ...new Set([...Object.keys(MODULE_DEFS), ...Object.keys(MODULE_DOCTYPE)]),
+  ...new Set([...Object.keys(MODULE_DEFS), ...Object.keys(MODULE_DOCTYPE), ...Object.keys(MODULE_INSTELLING)]),
 ];
 
 const OK: ModuleAccess = { visible: true, reason: "ok" };
@@ -202,9 +212,12 @@ async function computeModuleAccess(): Promise<Record<string, ModuleAccess>> {
     ),
   ];
 
-  const [probes, mailConfigured] = await Promise.all([
+  const instellingen = Object.entries(MODULE_INSTELLING).filter(([id]) => result[id].visible);
+
+  const [probes, mailConfigured, ingesteld] = await Promise.all([
     Promise.all(doctypes.map(async (dt) => [dt, await probeDoctype(dt)] as const)),
     result.webmail.visible ? hasEnabledEmailAccount() : Promise.resolve(true),
+    Promise.all(instellingen.map(async ([id, sleutel]) => [id, await isIngesteld(sleutel)] as const)),
   ]);
 
   const byDoctype = new Map<string, ModuleAccess>(probes);
@@ -213,6 +226,11 @@ async function computeModuleAccess(): Promise<Record<string, ModuleAccess>> {
     const dt = MODULE_DOCTYPE[id];
     const probed = dt ? byDoctype.get(dt) : undefined;
     if (probed) result[id] = probed;
+  }
+
+  // Een scherm dat aan een instelling hangt, verdwijnt zolang die er niet is.
+  for (const [id, aanwezig] of ingesteld) {
+    if (!aanwezig) result[id] = { visible: false, reason: "not-configured" };
   }
 
   // Mail is toegestaan maar er is nog geen inkomend Email Account: item
@@ -242,6 +260,19 @@ async function loadBlockedModules(): Promise<Set<string>> {
     );
   } catch {
     return new Set();
+  }
+}
+
+/**
+ * Of de instelling bestaat en gevuld is. Lukt het lezen niet (netwerk, geen
+ * leesrecht), dan telt de instelling als afwezig: een scherm tonen dat niets
+ * kan laden helpt niemand.
+ */
+async function isIngesteld(sleutel: string): Promise<boolean> {
+  try {
+    return !!(await leesInstelling(sleutel))?.trim();
+  } catch {
+    return false;
   }
 }
 

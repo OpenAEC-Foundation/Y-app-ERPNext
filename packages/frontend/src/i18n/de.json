@@ -3307,6 +3307,7 @@
   "agenda.colleagues": "Kollegen",
   "agenda.resize_panel": "Ziehen, um die Spalte zu verbreitern",
   "weekplanning.open_new_tab": "In neuem Tab öffnen",
+  "weekplanning.not_configured": "Es ist kein Wochen-Dashboard eingerichtet. Ein Administrator kann den Pfad der Dashboard-Seite in der Einstellung weekplanning-pad festlegen.",
   "webmail.download_all": "Alle",
   "webmail.download_all_hint": "Alle Anhänge als eine Zip-Datei herunterladen",
   "webmail.attachments_zip_name": "anhaenge",

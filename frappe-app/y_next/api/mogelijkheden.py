@@ -30,8 +30,10 @@ OPTIONELE_DOCTYPES = (
 )
 
 # Velden die de frontend opvraagt maar die niet op elke site bestaan.
-# `workflow_state` is er alleen als de site een workflow op dat doctype heeft.
+# `workflow_state` is er alleen als de site een workflow op dat doctype heeft;
+# `Lead.source` bestaat alleen in oudere versies van ERPNext.
 OPTIONELE_VELDEN = {
+	"Lead": ("source",),
 	"Task": ("workflow_state",),
 	"Timesheet": ("workflow_state",),
 	"Sales Invoice": ("workflow_state",),

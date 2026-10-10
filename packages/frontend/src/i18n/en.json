@@ -3307,6 +3307,7 @@
   "agenda.colleagues": "Colleagues",
   "agenda.resize_panel": "Drag to resize the column",
   "weekplanning.open_new_tab": "Open in new tab",
+  "weekplanning.not_configured": "No weekly dashboard has been set up. An administrator can record the path of the dashboard page in the setting weekplanning-pad.",
   "webmail.download_all": "All",
   "webmail.download_all_hint": "Download all attachments as one zip",
   "webmail.attachments_zip_name": "attachments",

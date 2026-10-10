@@ -1,4 +1,5 @@
 import { callMethod } from "./erpnext.ts";
+import { leesMogelijkheden } from "./mogelijkheden.ts";
 
 /**
  * De afwezigheidsmelding van je eigen postbus.
@@ -148,13 +149,27 @@ function naarStand(ruw: unknown): AfwezigheidStand {
   };
 }
 
+/**
+ * De afwezigheidsmelding staat op de mailserver. Meldt de site dat de
+ * koppeling daarmee niet is ingesteld, dan is er niets op te vragen; het
+ * verzoek toch doen levert alleen een foutmelding op. Op een site die niets
+ * over zichzelf meldt (zonder de app) wordt het verzoek gewoon gedaan.
+ */
+function vereisMailserver(): void {
+  if (leesMogelijkheden()?.mailserver_ingesteld === false) {
+    throw new Error("De koppeling met de mailserver is niet ingesteld.");
+  }
+}
+
 /** De huidige afwezigheidsmelding van je eigen postbus. */
 export async function haalAfwezigheid(): Promise<AfwezigheidStand> {
+  vereisMailserver();
   return naarStand(await callMethod("mail_afwezigheid", { actie: "lezen" }));
 }
 
 /** Opslaan en de stand teruggeven zoals de mailserver hem nu heeft. */
 export async function zetAfwezigheid(stand: AfwezigheidStand): Promise<AfwezigheidStand> {
+  vereisMailserver();
   return naarStand(await callMethod("mail_afwezigheid", {
     actie: "opslaan",
     aan: stand.aan ? "1" : "0",

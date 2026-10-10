@@ -17,7 +17,8 @@
  * terug op iets willekeurigs — dan is de huisstijl alsnog weg.
  */
 
-import { fetchDocument, updateDocument, createDocument, ApiError } from "./erpnext.ts";
+import { updateDocument, createDocument, ApiError } from "./erpnext.ts";
+import { leesInstelling } from "./instelling.ts";
 
 const SETTING_DOCTYPE = "Y Next Setting";
 export const MAIL_OPMAAK_SETTING_KEY = "mail-opmaak";
@@ -121,16 +122,10 @@ export function opmaakStijl(opmaak: MailOpmaak): string {
     + `color:${opmaak.kleur}`;
 }
 
-interface YNextSettingDoc {
-  setting_key?: string;
-  setting_value?: string;
-}
-
 /** De huidige instelling; zonder record de standaard. */
 export async function fetchMailOpmaak(): Promise<MailOpmaak> {
   try {
-    const doc = await fetchDocument<YNextSettingDoc>(SETTING_DOCTYPE, MAIL_OPMAAK_SETTING_KEY);
-    return parseMailOpmaak(doc?.setting_value);
+    return parseMailOpmaak((await leesInstelling(MAIL_OPMAAK_SETTING_KEY)) ?? undefined);
   } catch {
     // Geen record, geen leesrecht, geen verbinding — in alle drie de gevallen
     // is doorgaan met de standaard beter dan een mail zonder opmaak.
