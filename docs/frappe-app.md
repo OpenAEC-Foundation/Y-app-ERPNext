@@ -64,6 +64,33 @@ rechten vast.
 
 De site heeft `allow_tests` nodig: `bench --site <site> set-config allow_tests true`.
 
+## Generiek blijven
+
+De app noemt geen organisatie. Wat per organisatie verschilt staat op de site:
+de huisstijl van de ondertekening op `Company`, de afdrukformaten als Print
+Format, de rest als rij in `Y Next Setting`.
+
+`scripts/lib/generiek-check.mjs` bewaakt dat. `npm test` draait de controle op
+de frontendbron en op `frappe-app/`; het releasescript draait haar op het
+samengestelde resultaat. De termen staan als vingerafdruk in het script. Een
+term toevoegen:
+
+    node scripts/lib/generiek-check.mjs --vingerafdruk <term>
+
+## Uitbrengen
+
+`scripts/release-frappe-app.mjs` stelt een release samen in een checkout van de
+distributierepository (`OpenAEC-Foundation/y_next`, branch `version-16`):
+
+    node scripts/release-frappe-app.mjs --doel ../y_next
+
+Het script eist een schone werkmap, draait typecontrole en tests, bouwt de
+bundel, kopieert `frappe-app/` naar het doel met de versie uit `package.json`
+erin, draait de generiek-controle en legt vast als `Release <versie>` met tag
+`v<versie>`. Pushen en de GitHub-release maken gebeurt alleen met
+`--publiceer`. Draai vooraf de Python-tests op de bench; die kan het script
+niet zelf draaien.
+
 ## Hoe het in elkaar zit
 
 - `www/y-next.html` is een volledig HTML-document; Frappe zet er daarom geen
