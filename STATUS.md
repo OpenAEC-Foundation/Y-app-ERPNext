@@ -9,6 +9,24 @@ Short-lived notes on what's actively being worked on right now. Update / reset t
 
 ## In progress
 
+### 2026-10-10 — Y-next als installeerbare Frappe-app (`y_next`), branch `feat/frappe-app`
+
+Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwijze: `docs/frappe-app.md`.
+
+| Fase | Onderwerp | Stand |
+|---|---|---|
+| 1 | Skelet, pagina `/y-next`, bundel | klaar |
+| 2 | Doctypes, velden, rechten en stamgegevens uit één bron; provisioning leest ze mee | klaar |
+| 3 | Frontend zonder aannames (taken op `status`, optionele onderdelen verborgen) | open — alleen `y_next_mogelijkheden` aan de serverkant staat er |
+| 4 | Serverfuncties die alleen ERPNext nodig hebben (7) | klaar |
+| 5 | Mailserver (6 functies, instelling, testmailserver) | open |
+| 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | open |
+| 7 | Generiek maken, ondertekening, generiek-controle | open |
+| 8 | Release naar `OpenAEC-Foundation/y_next` | open |
+
+Op een kale site met de app falen nu nog: de takenlijsten (vragen `workflow_state` op), de verzoeken naar HRMS-, Wiki- en roosterdoctypes, en `km_rit_boeken`. Dat zijn fase 3 en 6.
+
+
 ### 2026-07-02 — Codebase-herstructurering: god-files splitsen, tests-eerst (gedrag-behoudend)
 
 Grote, **gedrag-behoudende** opschoning van de codebase: dode code weg, "god-files" opgesplitst in cohesieve modules, en een test-vangnet opgebouwd dat er niet was (**0 → 90 tests**). Elke stap is verbatim geverifieerd (regel-set-vergelijking oud↔nieuw), langs `build` + `node:test` + gerichte `tsc`, en meerdere flows zijn **live via Playwright** tegen de echte mailbox/Talk/CalDAV getest.
