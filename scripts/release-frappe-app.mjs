@@ -33,7 +33,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { controleerMap } from "./lib/generiek-check.mjs";
 
@@ -118,16 +118,23 @@ export function stelSamen({ bron, doel, versie }) {
 }
 
 function draai(opdracht, args, cwd, { stil = false } = {}) {
-  const res = spawnSync(opdracht, args, {
-    cwd,
-    encoding: "utf8",
-    stdio: stil ? "pipe" : "inherit",
-    shell: process.platform === "win32" && opdracht === "npm",
-  });
+  const res = spawnSync(opdracht, args, { cwd, encoding: "utf8", stdio: stil ? "pipe" : "inherit" });
   if (res.status !== 0) {
     throw new Error(`\`${opdracht} ${args.join(" ")}\` is mislukt${stil && res.stderr ? `: ${res.stderr.trim()}` : "."}`);
   }
   return res.stdout || "";
+}
+
+/**
+ * Het startbestand van npm. Via Node zelf gestart, omdat `npm` op Windows een
+ * script is dat alleen via een shell te starten valt.
+ */
+function npmCli() {
+  const pad = process.env.npm_execpath || join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  if (!existsSync(pad)) {
+    throw new Error("npm is niet gevonden naast Node. Start dit script met `npm exec`, of gebruik --zonder-tests.");
+  }
+  return pad;
 }
 
 function main() {
@@ -144,7 +151,7 @@ function main() {
     console.log("LET OP: tests en typecontrole overgeslagen (--zonder-tests).");
   } else {
     draai(process.execPath, [join(ROOT, "node_modules", "typescript", "bin", "tsc"), "-b"], join(ROOT, "packages", "frontend"));
-    draai("npm", ["test"], ROOT);
+    draai(process.execPath, [npmCli(), "test"], ROOT);
   }
 
   if (!args.zonderBouw) {
