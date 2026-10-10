@@ -22,11 +22,11 @@ Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwi
 | 5 | Mailserver (6 functies, instelling, testmailserver) | de zes functies staan en zijn getoetst tegen een nagespeelde mailserver; de proef tegen een echte testmailserver is open |
 | 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | `km_rit_boeken` klaar en getest op een site met HRMS; Wiki, rooster en CAD-viewer gaan via de bestaande afhandeling van ontbrekende doctypes, nog niet getest op een site waar ze wél staan |
 | 7 | Generiek maken, ondertekening, generiek-controle | klaar — huisstijl uit `Company`, afdrukformaten van de site, lege extensiecatalogus, gedeelde postbussen als instelling; `scripts/lib/generiek-check.mjs` bewaakt de frontendbron en de app in `npm test` |
-| 8 | Release naar `OpenAEC-Foundation/y_next` | het releasescript (`scripts/release-frappe-app.mjs`) staat en is als proef gedraaid zonder publiceren; open: versie 0.40.0 met release-notes, de repository aanmaken (eerst privé) en publiceren — op teken van de eigenaar |
+| 8 | Release naar `OpenAEC-Foundation/y_next` | 0.40.0 uitgebracht op 2026-10-10: de repository bestaat (privé), branch `version-16`, tag `v0.40.0` met GitHub-release. Open: openbaar zetten op teken van de eigenaar; `bench get-app` vanaf GitHub is nog niet gedraaid (privé vraagt inloggegevens op de bench) |
 
 Testsites op de lokale bench: `kaal.localhost` (alleen ERPNext + de app) en `proef.localhost` (ook HRMS).
 
-De branch staat op versie 0.39.5. De nieuwe versie hoeft alleen op ERPNext 16 met de app te werken; de productiesite (ERPNext 15) blijft op 0.39.5 van de publicatieroute. De scripts van die route hebben geen standaardsite meer: `YNEXT_BASE_URL` is verplicht.
+De branch staat op versie 0.40.0 en is nog niet naar de bronrepository gepusht. De nieuwe versie hoeft alleen op ERPNext 16 met de app te werken; de productiesite (ERPNext 15) blijft op 0.39.5 van de publicatieroute. De scripts van die route hebben geen standaardsite meer: `YNEXT_BASE_URL` is verplicht.
 
 Open punt buiten de app: de testgegevens in `packages/frontend/src/**/*.test.ts` bevatten nog namen en adressen van echte relaties (klanten, leveranciers). Die komen niet in de app terecht, maar staan wel in deze openbare repository.
 
