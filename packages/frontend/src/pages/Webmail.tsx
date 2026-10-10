@@ -13,7 +13,7 @@ import {
   ChevronsRight, Users, Users2, AlertTriangle, Send, Inbox, Info, Tag,
   FolderPlus, Clock, CircleAlert, MailOpen, RotateCcw, AtSign,
   ReceiptText, UserPlus, Link2, CheckCheck, Undo2, Box, Plane, Type,
-  FileSpreadsheet, PenLine, AlertCircle, Maximize2,
+  FileSpreadsheet, PenLine, AlertCircle, Maximize2, Image as ImageIcon,
 } from "lucide-react";
 import { getActiveInstanceId, getActiveInstance } from "../lib/instances";
 import { projectLabel } from "../lib/project-onderwerp";
@@ -129,7 +129,9 @@ import MailId from "../components/mail/MailId";
 import {
   conceptenVoorGesprek, haalServerConcepten, verwijderServerConcept, type ServerConcept,
 } from "../lib/mail-concepten";
-import { voorbeeldSoort } from "../lib/bijlage-soort";
+import { buurAfbeeldingen, voorbeeldSoort, type BijlageSoort } from "../lib/bijlage-soort";
+import AfbeeldingVoorbeeld from "../components/mail/AfbeeldingVoorbeeld";
+import ImageLightbox from "../components/ImageLightbox";
 import { zetBelangrijk } from "../lib/mail-belangrijk";
 import MailConnectionChips from "../components/mail/MailConnectionChips";
 import {
@@ -171,7 +173,7 @@ import ComposeWindow from "../components/mail/ComposeWindow";
 import RichTextEditor from "../components/mail/RichTextEditor";
 import { toEmailHtml, ensureHtmlBody, htmlToPlainText } from "../lib/mail-html";
 import ErpAttachmentList from "../components/mail/ErpAttachmentList";
-import { kiesDoorstuurBijlagen, type Doorstuurbijlage } from "../lib/mail-doorsturen";
+import { echteBijlagen, kiesDoorstuurBijlagen, voegBijlagenSamen, type Doorstuurbijlage } from "../lib/mail-doorsturen";
 import { htmlNaarMarkdown, markdownNaarHtml } from "../lib/mail-markdown";
 import {
   fetchMailOpmaak, opmaakStijl, STANDAARD_MAIL_OPMAAK, type MailOpmaak,
@@ -4218,8 +4220,16 @@ function ErpNextWebmail() {
    * bepaalt wie hem tekent — een pdf de browser zelf, een bouwmodel de
    * IFC-viewer.
    */
-  const [voorbeeld, setVoorbeeld] = useState<
-    { url: string; naam: string; soort: "pdf" | "ifc" | "office" | "cad" } | null>(null);
+  const [voorbeeld, setVoorbeeld] = useState<{
+    url: string; naam: string; soort: BijlageSoort;
+    /** Bij een afbeelding: bladeren langs álle plaatjes, ook die uit de mailtekst. */
+    metOpmaak?: boolean;
+  } | null>(null);
+  /**
+   * Een afbeelding over het hele scherm. Alleen op een smal scherm (telefoon):
+   * daar is geen kolom naast de mail, dus zou een klik op een foto niets doen.
+   */
+  const [lichtbak, setLichtbak] = useState<{ url: string; naam: string } | null>(null);
 
   /**
    * De uitnodiging die bij de geopende mail hoort.
@@ -5629,6 +5639,7 @@ function ErpNextWebmail() {
     // De bijlage hoort bij de vórige mail; naast een ander bericht laten
     // staan zou de factuur van A naast mail B zetten.
     setVoorbeeld(null);
+    setLichtbak(null);
     setThread([]);
     setBodyLoading(true);
     if (isMobile) setMobilePane("message");
@@ -6105,7 +6116,9 @@ function ErpNextWebmail() {
   const dialogOpen = Boolean(
     bookingFor || leadFor || relationFor || folderMenu
     || assignOpen || showLinkPicker || projectPickerOpen || newFolderOpen
-    || koppelDialoog,
+    // Ook de foto over het hele scherm: daarachter mag Delete de mail niet
+    // weggooien en mogen de pijltjes geen andere mail openen.
+    || koppelDialoog || lichtbak,
   );
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -6399,22 +6412,50 @@ function ErpNextWebmail() {
     if (isMobile) setMobilePane("message");
   }
 
-  function openForward() {
+  /**
+   * Vult de bijlagen van een doorstuurconcept aan vanaf de server. Voor een
+   * bewaard concept dat zonder bijlagen is opgeslagen — omdat er op
+   * Doorsturen werd geklikt terwijl de mail nog laadde.
+   */
+  async function vulDoorstuurBijlagenAan(draftKey: string, naam: string) {
+    try {
+      const bron = await getMessageBody(naam);
+      const erbij = kiesDoorstuurBijlagen(bron.attachments ?? [], bron.html ?? "");
+      if (erbij.length === 0) return;
+      setDraft((prev) => prev && prev.draftKey === draftKey
+        ? { ...prev, bestaandeBijlagen: voegBijlagenSamen(prev.bestaandeBijlagen, erbij) }
+        : prev);
+    } catch { /* zonder aanvulling blijft het concept zoals het was */ }
+  }
+
+  async function openForward() {
     const msg = selected;
     if (!msg) return;
     const fwdKey = draftKeyFor("forward", msg.name);
     const savedFwd = drafts[fwdKey];
-    if (savedFwd) { resumeDraft(savedFwd); return; }
+    if (savedFwd) {
+      resumeDraft(savedFwd);
+      if (!savedFwd.bestaandeBijlagen?.length) void vulDoorstuurBijlagenAan(fwdKey, msg.name);
+      return;
+    }
     const label = t("webmail.forward_quote_header", {
       name: msg.senderName || msg.sender,
       email: msg.sender,
       date: formatFullDate(msg.date),
     });
+    // Is de mail nog aan het laden, dan zijn tekst en bijlagen er nog niet.
+    // Dan halen we ze hier zelf op: zonder dit ging een doorsturing die je
+    // vlak na het openen van de mail startte zonder bijlagen (en zonder de
+    // doorgestuurde tekst) de deur uit.
+    let bron = body;
+    if (!bron) {
+      try { bron = await getMessageBody(msg.name); } catch { bron = null; }
+    }
     // De bijlagen van het origineel gaan mee. Ze staan al als `File` op de
     // server, dus het versturen krijgt hun docnaam en hoeft niets opnieuw te
     // uploaden. Plaatjes uit de opmaak vallen af — die zitten al in de
     // doorgestuurde tekst; zie `kiesDoorstuurBijlagen`.
-    const meeBijlagen = kiesDoorstuurBijlagen(body?.attachments ?? [], body?.html ?? "");
+    const meeBijlagen = kiesDoorstuurBijlagen(bron?.attachments ?? [], bron?.html ?? "");
     persistDraft(draftRef.current);
     setDraft({
       mode: "forward",
@@ -6425,7 +6466,7 @@ function ErpNextWebmail() {
       bcc: "",
       subject: prefixSubject(msg.subject, "Fwd"),
       body: buildComposeBodyWithQuote(buildQuoteBlock({
-        label, bodyHtml: body?.html || "",
+        label, bodyHtml: bron?.html || "",
       })),
       includeSignature: true,
       // Ook een doorsturing hoort aan het origineel te hangen. Zonder deze
@@ -6442,6 +6483,7 @@ function ErpNextWebmail() {
   async function handleSend() {
     if (!draft) return;
     if (!draft.to.trim()) { setToast(t("webmail.fill_recipient")); return; }
+    if (!draft.subject.trim() && !window.confirm(t("webmail.confirm_no_subject"))) return;
     setSending(true);
     setToast(t("webmail.message_sending"));
     // Het citaat staat ín het tekstvak (zodat je het tijdens het schrijven
@@ -8174,7 +8216,9 @@ function ErpNextWebmail() {
                             ? <FileSpreadsheet size={13} className="flex-shrink-0 text-slate-400" />
                             : voorbeeld.soort === "cad"
                               ? <PenLine size={13} className="flex-shrink-0 text-slate-400" />
-                              : <FileText size={13} className="flex-shrink-0 text-slate-400" />}
+                              : voorbeeld.soort === "afbeelding"
+                                ? <ImageIcon size={13} className="flex-shrink-0 text-slate-400" />
+                                : <FileText size={13} className="flex-shrink-0 text-slate-400" />}
                         <span className="truncate text-xs text-slate-600">{voorbeeld.naam}</span>
                         <div className="flex-1" />
                         {/* Schermvullend in een eigen tabblad: de kolom naast
@@ -8216,7 +8260,25 @@ function ErpNextWebmail() {
                         <Suspense fallback={<div className="flex-1" />}>
                           <CadVoorbeeld url={voorbeeld.url} naam={voorbeeld.naam} />
                         </Suspense>
-                      ) : (
+                      ) : voorbeeld.soort === "afbeelding" ? (() => {
+                        // Bladeren gaat over de afbeeldingen die als bijlage in
+                        // beeld staan; de logo's uit een handtekening doen
+                        // alleen mee als je er zelf een van opende. Die keuze
+                        // ligt vast bij het openen, zodat de teller onderweg
+                        // niet verspringt.
+                        const alle = body?.attachments ?? [];
+                        const lijst = voorbeeld.metOpmaak ? alle : echteBijlagen(alle, body?.html ?? "");
+                        const buren = buurAfbeeldingen(lijst, voorbeeld.url);
+                        const toon = (a: { file_url: string; file_name: string }) =>
+                          setVoorbeeld({ url: a.file_url, naam: a.file_name, soort: "afbeelding", metOpmaak: voorbeeld.metOpmaak });
+                        const { vorige, volgende } = buren;
+                        return (
+                          <AfbeeldingVoorbeeld url={voorbeeld.url} naam={voorbeeld.naam}
+                            positie={buren.positie} totaal={buren.totaal}
+                            onVorige={vorige ? () => toon(vorige) : undefined}
+                            onVolgende={volgende ? () => toon(volgende) : undefined} />
+                        );
+                      })() : (
                         <iframe src={`${voorbeeld.url}#view=FitH`} title={voorbeeld.naam}
                           className="flex-1 w-full border-0" />
                       )}
@@ -8233,14 +8295,24 @@ function ErpNextWebmail() {
                     project={selectedConnections.find((c) => c.category === "project")?.name}
                     berichtHtml={body.html}
                     voorbeeldVan={voorbeeld?.url}
-                    onVoorbeeld={(att) => setVoorbeeld((huidig) =>
-                      huidig?.url === att.file_url
-                        ? null
-                        : {
-                            url: att.file_url,
-                            naam: att.file_name,
-                            soort: voorbeeldSoort(att.file_name) ?? "pdf",
-                          })} />
+                    onVoorbeeld={(att) => {
+                      const soort = voorbeeldSoort(att.file_name) ?? "pdf";
+                      // De kolom naast de mail bestaat pas vanaf een breed
+                      // scherm (`lg`, bij Tailwind 64rem). Op een telefoon gaat
+                      // een foto daarom over het hele scherm.
+                      if (soort === "afbeelding" && !window.matchMedia("(min-width: 64rem)").matches) {
+                        setLichtbak({ url: getFileUrl(att.file_url), naam: att.file_name });
+                        return;
+                      }
+                      // Opende je een plaatje uit de mailtekst (een logo uit
+                      // de handtekening), dan blader je langs alle plaatjes.
+                      const metOpmaak = soort === "afbeelding"
+                        && !echteBijlagen(body.attachments, body.html).some((a) => a.file_url === att.file_url);
+                      setVoorbeeld((huidig) =>
+                        huidig?.url === att.file_url
+                          ? null
+                          : { url: att.file_url, naam: att.file_name, soort, metOpmaak });
+                    }} />
                 )}
                 </div>
               </>
@@ -8251,6 +8323,10 @@ function ErpNextWebmail() {
 
       {toonAfwezigheid && (
         <AfwezigheidInstelling onSluit={() => setToonAfwezigheid(false)} onOpgeslagen={setAfwezigheid} />
+      )}
+
+      {lichtbak && (
+        <ImageLightbox imageUrl={lichtbak.url} filename={lichtbak.naam} onClose={() => setLichtbak(null)} />
       )}
 
       {koppelDialoog && selected && (

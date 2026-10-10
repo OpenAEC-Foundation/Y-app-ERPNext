@@ -8,6 +8,17 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
+## v0.39.5 — 2026-10-09
+
+### Mail: afbeeldingen bekijken
+- Een afbeelding in de bijlagen (jpg, png, gif, webp) opent nu naast de mail, net als een pdf. Je hoeft er geen nieuw tabblad meer voor te openen.
+- Klik op de afbeelding voor de ware grootte; dan kun je het beeld verschuiven. Nog een klik maakt hem weer passend.
+- Heeft een mail meer afbeeldingen, dan blader je met de pijlen (of de pijltjestoetsen) van de ene naar de andere; de teller laat zien waar je bent.
+- Met de knop Schermvullend opent de afbeelding in een eigen tabblad. Op een telefoon gaat een afbeelding meteen over het hele scherm.
+- Vijfde bijlagesoort `afbeelding` in `lib/bijlage-soort.ts`; viewer in `components/mail/AfbeeldingVoorbeeld.tsx`, bladeren via `buurAfbeeldingen`.
+- Achter de schermvullende foto (smal scherm) zwijgen de mailsneltoetsen; Escape sluit alleen de foto (`ImageLightbox` stopt de toets).
+- De schermvullende route `#/voorbeeld` toont alleen bestanden van de eigen server (`isEigenBestand`).
+
 ## v0.39.4 — 2026-09-28
 
 ### Kennisbank: links naar een artikel

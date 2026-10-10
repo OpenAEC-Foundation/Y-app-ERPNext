@@ -6,6 +6,22 @@ import { useTranslation } from "react-i18next";
 // Newest first.
 const LOCAL_RELEASES = [
   {
+    version: "0.39.5",
+    date: "2026-10-09",
+    url: "",
+    sections: [
+      {
+        title: "Mail: afbeeldingen bekijken",
+        items: [
+          "Een afbeelding in de bijlagen (jpg, png, gif, webp) opent nu naast de mail, net als een pdf. Je hoeft er geen nieuw tabblad meer voor te openen.",
+          "Klik op de afbeelding voor de ware grootte; dan kun je het beeld verschuiven. Nog een klik maakt hem weer passend.",
+          "Heeft een mail meer afbeeldingen, dan blader je met de pijlen (of de pijltjestoetsen) van de ene naar de andere; de teller laat zien waar je bent.",
+          "Met de knop Schermvullend opent de afbeelding in een eigen tabblad. Op een telefoon gaat een afbeelding meteen over het hele scherm.",
+        ],
+      },
+    ],
+  },
+  {
     version: "0.39.4",
     date: "2026-09-28",
     url: "",

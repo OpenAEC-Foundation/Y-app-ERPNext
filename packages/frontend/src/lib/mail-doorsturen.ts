@@ -97,3 +97,24 @@ export function ontbrekendeBijlagen(gevraagd: readonly string[], gevonden: reado
   const er = new Set(gevonden);
   return [...new Set(gevraagd)].filter((naam) => !er.has(naam));
 }
+
+/**
+ * Bijlagen van een doorsturing aanvullen met wat er later binnenkomt.
+ *
+ * Klik je op Doorsturen terwijl de mail nog laadt, dan zijn de bijlagen er
+ * nog niet; ze worden daarna alsnog opgehaald en hier bijgevoegd. Wat er al
+ * stond, blijft vooraan staan, en dubbelen (zelfde File) vallen weg.
+ */
+export function voegBijlagenSamen(
+  huidig: readonly Doorstuurbijlage[] | undefined,
+  erbij: readonly Doorstuurbijlage[],
+): Doorstuurbijlage[] {
+  const uit = [...(huidig ?? [])];
+  const gezien = new Set(uit.map((b) => b.name));
+  for (const b of erbij) {
+    if (gezien.has(b.name)) continue;
+    gezien.add(b.name);
+    uit.push(b);
+  }
+  return uit;
+}

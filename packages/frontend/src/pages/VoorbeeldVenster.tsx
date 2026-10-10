@@ -2,10 +2,12 @@ import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, Loader2 } from "lucide-react";
 import { getFileUrl } from "../lib/erpnext";
+import { isEigenBestand } from "../lib/bijlage-soort";
 
 const IfcVoorbeeld = lazy(() => import("../components/mail/IfcVoorbeeld"));
 const OfficeVoorbeeld = lazy(() => import("../components/mail/OfficeVoorbeeld"));
 const CadVoorbeeld = lazy(() => import("../components/mail/CadVoorbeeld"));
+const AfbeeldingVoorbeeld = lazy(() => import("../components/mail/AfbeeldingVoorbeeld"));
 
 /**
  * Een bijlage schermvullend, in een eigen tabblad.
@@ -25,7 +27,9 @@ export default function VoorbeeldVenster() {
   const url = vraag.get("url") ?? "";
   const naam = vraag.get("naam") ?? "";
 
-  if (!url) {
+  // Het bestand komt uit het adres van dit tabblad; alleen een bestand van de
+  // eigen server wordt getoond, nooit een pagina van elders.
+  if (!url || !isEigenBestand(url)) {
     return <div className="flex h-screen items-center justify-center text-sm text-slate-400">{t("webmail.no_results")}</div>;
   }
 
@@ -47,7 +51,8 @@ export default function VoorbeeldVenster() {
         {soort === "ifc" ? <IfcVoorbeeld url={url} naam={naam} />
           : soort === "cad" ? <CadVoorbeeld url={url} naam={naam} />
             : soort === "office" ? <OfficeVoorbeeld url={url} naam={naam} />
-              : <iframe src={`${getFileUrl(url)}#view=FitH`} title={naam} className="flex-1 w-full border-0" />}
+              : soort === "afbeelding" ? <AfbeeldingVoorbeeld url={url} naam={naam} />
+                : <iframe src={`${getFileUrl(url)}#view=FitH`} title={naam} className="flex-1 w-full border-0" />}
       </Suspense>
     </div>
   );

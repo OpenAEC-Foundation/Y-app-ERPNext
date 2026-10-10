@@ -21,7 +21,11 @@ interface ImageLightboxProps {
 export default function ImageLightbox({ imageUrl, filename, downloadUrl, onClose }: ImageLightboxProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Escape sluit alleen dit beeld. Zonder dit bereikt dezelfde toets ook
+      // de pagina eronder, en sloot hij daar bijvoorbeeld de geopende mail.
+      e.stopPropagation();
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

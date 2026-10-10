@@ -119,3 +119,22 @@ test("ontbrekende bijlagen: wat niet gevonden is, zonder dubbelen", async () => 
   assert.deepEqual(ontbrekendeBijlagen([], ["a"]), []);
   assert.deepEqual(ontbrekendeBijlagen(["a"], ["a"]), []);
 });
+
+test("voegBijlagenSamen: aanvullen zonder dubbelen, volgorde van wat er al stond", async () => {
+  const { voegBijlagenSamen } = await import("./mail-doorsturen.ts");
+  const al = [{ name: "a", fileName: "berekening.pdf" }];
+  const erbij = [{ name: "a", fileName: "berekening.pdf" }, { name: "b", fileName: "tekening.pdf" }];
+  assert.deepEqual(voegBijlagenSamen(al, erbij), [
+    { name: "a", fileName: "berekening.pdf" },
+    { name: "b", fileName: "tekening.pdf" },
+  ]);
+});
+
+test("voegBijlagenSamen: een leeg of ontbrekend lijstje is geen fout", async () => {
+  // Precies de situatie van het probleem: het concept kreeg nog geen
+  // bijlagen mee omdat de mail nog aan het laden was.
+  const { voegBijlagenSamen } = await import("./mail-doorsturen.ts");
+  assert.deepEqual(voegBijlagenSamen(undefined, [{ name: "b", fileName: "x.pdf" }]), [{ name: "b", fileName: "x.pdf" }]);
+  assert.deepEqual(voegBijlagenSamen([{ name: "a", fileName: "y.pdf" }], []), [{ name: "a", fileName: "y.pdf" }]);
+  assert.deepEqual(voegBijlagenSamen(undefined, []), []);
+});

@@ -19,6 +19,8 @@ import {
   isValidFolderLabel,
   joinAddresses,
   prefixSubject,
+  schoonOnderwerp,
+  onderwerpVoorVerzenden,
   splitAddresses,
 } from "./mail-erpnext-compose.ts";
 
@@ -249,4 +251,27 @@ test("isIfcName: een bouwmodel herken je aan .ifc, hoofdletters doen er niet toe
   assert.equal(isIfcName("model.ifczip"), false);
   assert.equal(isIfcName("ifc"), false);
   assert.equal(isIfcName(""), false);
+});
+
+test("schoonOnderwerp: HTML uit een onderwerp halen, ook een afgebroken tag", () => {
+  // Zo kwam het binnen: ERPNext nam bij een leeg onderwerp de eerste 60
+  // tekens van de HTML-inhoud, midden in een tag afgebroken.
+  assert.equal(schoonOnderwerp('<div style="font-family:Segoe UI,Arial,Helvetica,sans-seri'), "");
+  assert.equal(schoonOnderwerp("<b>Offerte</b> &amp; tekening"), "Offerte & tekening");
+  assert.equal(schoonOnderwerp("  Offerte   2892  "), "Offerte 2892");
+  assert.equal(schoonOnderwerp("Laptop < 2000 euro"), "Laptop < 2000 euro");
+});
+
+test("prefixSubject: een kapot HTML-onderwerp wordt niet doorgegeven", () => {
+  assert.equal(prefixSubject('Re: <div style="font-family:Segoe UI,Arial,Helvetica,sans-seri', "Re"), "Re:");
+  assert.equal(prefixSubject("<p>Bestekstukken</p>", "Fwd"), "Fwd: Bestekstukken");
+});
+
+test("onderwerpVoorVerzenden: zonder onderwerp het begin van de leesbare tekst", () => {
+  assert.equal(onderwerpVoorVerzenden("Offerte", "<p>x</p>"), "Offerte");
+  assert.equal(
+    onderwerpVoorVerzenden("", '<div style="font-family:Segoe UI"><p>Ik zou deze doen: de HP ZBook Fury 17 met RTX A4000, en dan wisselen met mijne</p></div>'),
+    "Ik zou deze doen: de HP ZBook Fury 17 met RTX A4000, en dan…",
+  );
+  assert.equal(onderwerpVoorVerzenden("  ", "<p></p>"), "(geen onderwerp)");
 });

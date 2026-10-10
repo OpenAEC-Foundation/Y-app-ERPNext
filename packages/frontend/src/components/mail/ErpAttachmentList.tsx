@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Box, Download, FileArchive, FileText, FolderOpen, ImageIcon, Loader2, Paperclip } from "lucide-react";
 import { getFileUrl } from "../../lib/erpnext";
 import { isIfcName, isPdfName } from "../../lib/mail-erpnext-compose";
-import { isCadNaam, isLeesbaarOffice } from "../../lib/bijlage-soort";
+import { isAfbeeldingNaam, isCadNaam, isLeesbaarOffice } from "../../lib/bijlage-soort";
 import { echteBijlagen } from "../../lib/mail-doorsturen";
 import { isPermissionError } from "../../lib/permission-error";
 import {
@@ -238,7 +238,7 @@ export default function ErpAttachmentList({
             return (
               <span key={att.file_url}
                 className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-slate-200 text-xs text-slate-600">
-                {isPdfName(att.file_name) || (onVoorbeeld && (isIfcName(att.file_name) || isLeesbaarOffice(att.file_name) || isCadNaam(att.file_name))) ? (
+                {isPdfName(att.file_name) || (onVoorbeeld && (isIfcName(att.file_name) || isLeesbaarOffice(att.file_name) || isCadNaam(att.file_name) || isAfbeeldingNaam(att.file_name))) ? (
                   /* Een bouwmodel opent alleen naast de mail wanneer daar plek
                      voor is; zonder `onVoorbeeld` (de popout-lezer) blijft het
                      een gewone download in plaats van een knop die niets doet. */
@@ -248,7 +248,9 @@ export default function ErpAttachmentList({
                     className="inline-flex items-center gap-1.5 hover:text-blue-700 cursor-pointer">
                     {isIfcName(att.file_name)
                       ? <Box size={12} className="text-sky-500" />
-                      : <FileText size={12} className="text-red-400" />}
+                      : isAfbeeldingNaam(att.file_name)
+                        ? <ImageIcon size={12} className="text-emerald-500" />
+                        : <FileText size={12} className="text-red-400" />}
                     <span className="truncate max-w-[180px]">{att.file_name}</span>
                   </button>
                 ) : (

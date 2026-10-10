@@ -14,7 +14,7 @@ Zie ook: [deployment.md](./deployment.md) (hoe Y-next zelf op ERPNext komt).
 ```
 mail met bijlage "plattegrond.dwg"
  │
- ├─ lib/bijlage-soort.ts         welke soort is dit?  pdf | ifc | office | cad
+ ├─ lib/bijlage-soort.ts         welke soort is dit?  pdf | ifc | office | cad | afbeelding
  │
  ├─ ErpAttachmentList.tsx        bijlage krijgt een knop "openen" i.p.v. alleen downloaden
  │
@@ -66,6 +66,7 @@ Hetzelfde paneel kan ook schermvullend in een eigen tabblad
 | `packages/frontend/src/components/mail/ErpAttachmentList.tsx` | Bijlagelijst bij een mail; een bekende soort krijgt een openknop. |
 | `packages/frontend/src/pages/Webmail.tsx` | State `voorbeeld` (`{ url, naam, soort }`) en het paneel (`aside`) dat per `voorbeeld.soort` het juiste component toont. |
 | `packages/frontend/src/components/mail/CadVoorbeeld.tsx` | Het `iframe` naar `/ocs-viewer`, met de knoppen Downloaden en Nieuw tabblad. |
+| `packages/frontend/src/components/mail/AfbeeldingVoorbeeld.tsx` | Een afbeelding (jpg, png, …): passend of ware grootte, en bladeren naar de vorige/volgende afbeelding uit dezelfde mail (`buurAfbeeldingen` in `bijlage-soort.ts`). Op een smal scherm, waar geen kolom naast de mail is, opent een afbeelding in `components/ImageLightbox.tsx`. |
 | `packages/frontend/src/pages/VoorbeeldVenster.tsx` | Hetzelfde voorbeeld schermvullend in een eigen tabblad. |
 | `i18n/{nl,en,de}.json`, sleutels `y_next.cad_preview_*` | Teksten onder de viewer. |
 | `docs/bijlage-viewers/` | Kopie van de laadpagina (html, css, javascript), zie hieronder. |

@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  zonderOnbereikbarePlaatjes,
   QUOTE_ATTR,
   QUOTE_COLLAPSE_LINES,
   buildComposeBodyWithQuote,
@@ -271,4 +272,29 @@ test("shouldCollapseQuote: precies op de drempel klapt nog niet in", () => {
 test("shouldCollapseQuote: een nieuw bericht heeft niets in te klappen", () => {
   assert.equal(shouldCollapseQuote("<p>nieuw</p>"), false);
   assert.equal(shouldCollapseQuote(""), false);
+});
+
+test("zonderOnbereikbarePlaatjes: privé-plaatjes en leesbevestigingen gaan uit een citaat", () => {
+  // Een ontvangen mail slaat de plaatjes uit de handtekening op als privé
+  // bestand. In een citaat ziet de ontvanger daar lege vakjes: hij is niet
+  // ingelogd. Het pixeltje van een eerdere mail markeerde die mail elke keer
+  // opnieuw als gelezen.
+  const html = '<p>Ik zou deze doen</p>'
+    + '<img src="/private/files/umlPhehM5vzBC0D0.png?fid=185902edd4" width="70" alt="">'
+    + '<img src="https://erp.voorbeeld.nl/private/files/GSuaf.png?fid=2" alt="">'
+    + '<img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3BM Bouwtechniek">'
+    + '<img src="https://erp.voorbeeld.nl/api/method/frappe.core.doctype.communication.email.mark_email_as_seen?name=2ta582cn33">';
+  assert.equal(
+    zonderOnbereikbarePlaatjes(html),
+    '<p>Ik zou deze doen</p><img src="https://erp.voorbeeld.nl/files/ROkg9UQ.png" alt="3BM Bouwtechniek">',
+  );
+});
+
+test("buildQuoteBlock: het citaat bevat geen privé-plaatjes", () => {
+  const blok = buildQuoteBlock({
+    label: "Op maandag schreef Martijn:",
+    bodyHtml: '<p>Ik zou deze doen</p><img src="/private/files/x.png?fid=1" alt="">',
+  });
+  assert.ok(blok.includes("Ik zou deze doen"));
+  assert.ok(!blok.includes("/private/files/"));
 });

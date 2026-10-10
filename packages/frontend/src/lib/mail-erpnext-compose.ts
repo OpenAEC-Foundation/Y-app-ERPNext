@@ -129,13 +129,53 @@ export function buildReplyRecipients(
   return { to: joinAddresses(to), cc: joinAddresses(cc) };
 }
 
+const ENTITEITEN: Record<string, string> = {
+  "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " ",
+};
+
+function decodeer(tekst: string): string {
+  return tekst.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (e) => ENTITEITEN[e] ?? e);
+}
+
+/**
+ * Een onderwerp zonder HTML. Verstuurde iemand een mail zonder onderwerp, dan
+ * maakte ERPNext er de eerste 60 tekens van de inhoud van — bij een opgemaakte
+ * mail dus `<div style="font-family:…`, midden in een tag afgebroken. Elk
+ * antwoord nam dat over. Alleen iets dat op een tag lijkt (`<` direct gevolgd
+ * door een letter of `/`) valt weg, zodat "Laptop < 2000 euro" blijft staan.
+ */
+export function schoonOnderwerp(onderwerp: string): string {
+  const zonderTags = String(onderwerp || "")
+    .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
+    .replace(/<\/?[a-zA-Z][^>]*$/, " ");
+  return decodeer(zonderTags).replace(/\s+/g, " ").trim();
+}
+
+/** Zo lang mag een uit de tekst afgeleid onderwerp zijn. */
+const MAX_AFGELEID_ONDERWERP = 60;
+
+/**
+ * Het onderwerp waarmee een mail de deur uit gaat. Is het leeg, dan het begin
+ * van de leesbare tekst — anders vult ERPNext het zelf aan met ruwe HTML.
+ */
+export function onderwerpVoorVerzenden(onderwerp: string, bodyHtml: string): string {
+  const eigen = schoonOnderwerp(onderwerp);
+  if (eigen) return eigen;
+  const tekst = schoonOnderwerp(String(bodyHtml || "").replace(/<(style|script)[\s\S]*?<\/\1>/gi, " "));
+  if (!tekst) return "(geen onderwerp)";
+  if (tekst.length <= MAX_AFGELEID_ONDERWERP) return tekst;
+  const stuk = tekst.slice(0, MAX_AFGELEID_ONDERWERP);
+  const grens = stuk.lastIndexOf(" ");
+  return (grens > 20 ? stuk.slice(0, grens) : stuk).replace(/[\s,;:.-]+$/, "") + "…";
+}
+
 /**
  * `Re: ` / `Fwd: ` — maar nooit gestapeld. Zowel de Nederlandse (`Antw:`,
  * `Doorgestuurd:`) als de Engelse en Duitse (`AW:`) varianten tellen als
  * "zit er al op", want een mailwisseling loopt zelden in één taal.
  */
 export function prefixSubject(subject: string, prefix: "Re" | "Fwd"): string {
-  const clean = (subject || "").trim();
+  const clean = schoonOnderwerp(subject);
   const re = prefix === "Re" ? /^(re|antw|aw)\s*:/i : /^(fwd?|doorgestuurd|wg)\s*:/i;
   if (!clean) return `${prefix}:`;
   return re.test(clean) ? clean : `${prefix}: ${clean}`;

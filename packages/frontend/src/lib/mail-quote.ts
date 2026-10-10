@@ -61,6 +61,24 @@ const QUOTE_OPEN_RE = new RegExp(`<blockquote\\b[^>]*\\b${QUOTE_ATTR}\\b[^>]*>`,
 const ANY_BLOCKQUOTE_RE = /<(\/?)blockquote\b[^>]*>/gi;
 
 /**
+ * Plaatjes die bij de ontvanger van een citaat niet kunnen laden, eruit.
+ *
+ * - `/private/files/…`: ERPNext slaat de plaatjes uit een ontvangen mail
+ *   (meestal de handtekening van de afzender) privé op. Alleen wie ingelogd
+ *   is, ziet ze; de ontvanger van je antwoord ziet lege vakjes.
+ * - Het leesbevestigingspixel van ERPNext (`mark_email_as_seen`): in een
+ *   citaat markeerde het een eerdere mail telkens opnieuw als gelezen.
+ *
+ * Openbare plaatjes (`/files/…`, of van een andere site) blijven staan.
+ */
+export function zonderOnbereikbarePlaatjes(html: string): string {
+  return String(html || "").replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? "";
+    return /\/private\/files\/|mark_email_as_seen/i.test(src) ? "" : tag;
+  });
+}
+
+/**
  * Bouwt het citaatblok voor een antwoord of doorsturen.
  *
  * De originele mail passeert `sanitizeEditorHtml`: hij komt van buiten (een
@@ -81,7 +99,7 @@ export function buildQuoteBlock(input: {
 }): string {
   const label = escapeText(input.label || "");
   const notice = (input.noticeHtml || "").trim();
-  const body = sanitizeEditorHtml(input.bodyHtml || "");
+  const body = zonderOnbereikbarePlaatjes(sanitizeEditorHtml(input.bodyHtml || ""));
   const head = label ? `<p>${label}</p>` : "";
   return (
     `<blockquote ${QUOTE_ATTR}="1" style="${QUOTE_STYLE}">` +

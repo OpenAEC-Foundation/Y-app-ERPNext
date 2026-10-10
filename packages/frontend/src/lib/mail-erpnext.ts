@@ -48,6 +48,7 @@ import {
   type FileInfo,
 } from "./erpnext.ts";
 import { ontbrekendeBijlagen } from "./mail-doorsturen.ts";
+import { onderwerpVoorVerzenden } from "./mail-erpnext-compose.ts";
 import { bewaarRegelovergangen } from "./mail-html.ts";
 import { resolvePostbustoegang, resolveSessionUser } from "./session.ts";
 import { isBelangrijk } from "./mail-belangrijk.ts";
@@ -1820,7 +1821,8 @@ export async function sendMail(input: {
   const result = (await callMethod("frappe.core.doctype.communication.email.make", {
     doctype: refDoctype,
     name: refName,
-    subject: input.subject,
+    // Nooit leeg: dan vult ERPNext het zelf aan met de eerste 60 tekens HTML.
+    subject: onderwerpVoorVerzenden(input.subject, input.html),
     content: input.html,
     recipients: input.to,
     cc: input.cc || "",
