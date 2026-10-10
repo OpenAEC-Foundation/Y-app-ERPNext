@@ -33,6 +33,8 @@ override_whitelisted_methods = {
 	"mail_afwezigheid": "y_next.api.mailserver.afwezigheid.mail_afwezigheid",
 	"mail_uitnodiging": "y_next.api.mailserver.post.mail_uitnodiging",
 	"mail_verwijderen": "y_next.api.mailserver.post.mail_verwijderen",
+	# Zonder inlog bereikbaar; werkt alleen met de code van een Y Agenda Deellink.
+	"agenda_ical": "y_next.api.mailserver.ical.agenda_ical",
 }
 
 add_to_apps_screen = [

@@ -19,7 +19,7 @@ Ontwerp: `docs/superpowers/specs/2026-10-10-y-next-frappe-app-design.md`. Werkwi
 | 2 | Doctypes, velden, rechten en stamgegevens uit één bron; provisioning leest ze mee | klaar |
 | 3 | Frontend zonder aannames (taken op `status`, optionele onderdelen verborgen) | open — alleen `y_next_mogelijkheden` aan de serverkant staat er |
 | 4 | Serverfuncties die alleen ERPNext nodig hebben (7) | klaar |
-| 5 | Mailserver (6 functies, instelling, testmailserver) | open |
+| 5 | Mailserver (6 functies, instelling, testmailserver) | de zes functies staan en zijn getoetst tegen een nagespeelde mailserver; de proef tegen een echte testmailserver is open |
 | 6 | Koppelingen: HRMS (`km_rit_boeken`), Wiki, rooster, CAD-viewer | open |
 | 7 | Generiek maken, ondertekening, generiek-controle | open |
 | 8 | Release naar `OpenAEC-Foundation/y_next` | open |

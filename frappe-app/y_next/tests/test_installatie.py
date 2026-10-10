@@ -8,6 +8,7 @@ EIGEN_DOCTYPES = [
 	"Y Km Registratie",
 	"Y Onkosten",
 	"Agenda Koppeling",
+	"Y Agenda Deellink",
 ]
 
 

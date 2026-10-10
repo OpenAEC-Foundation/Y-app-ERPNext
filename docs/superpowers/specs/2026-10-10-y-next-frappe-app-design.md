@@ -85,9 +85,10 @@ het bestaande provisioneringsscript van de publicatieroute.
 
 **Eigen doctypes** (module *Y Next*): `Y Meeting Note`, `Y Next Setting`,
 `Y Onkostensoort`, `Y Km Registratie`, `Y Onkosten` — met dezelfde velden en
-rechten als `scripts/provision-y-next.mjs` nu aanmaakt — en de enkelvoudige
+rechten als `scripts/provision-y-next.mjs` nu aanmaakt — de enkelvoudige
 instelling `Agenda Koppeling` (adres van de mailserver, serviceaccount,
-wachtwoord, aan/uit).
+wachtwoord, aan/uit) en `Y Agenda Deellink` (een agenda delen als
+iCal-abonnement; zie onderdeel 5).
 
 **Eigen velden op standaarddoctypes.** De app maakt ze aan met
 `create_custom_fields`. Startlijst, afgeleid uit wat de frontend opvraagt:
@@ -134,10 +135,10 @@ welke route actief is.
 | `mail_bijwerken`, `mail_ophalen` | `api/mail.py` | alleen ERPNext |
 | `berichten_collegas`, `berichten_foto`, `berichten_verwijderen` | `api/berichten.py` | alleen ERPNext |
 | `agenda_collegas` | `api/agenda.py` | alleen ERPNext |
-| `agenda_ophalen`, `agenda_schrijven`, `agenda_ical` | `api/mailserver/agenda.py` | mailserver |
+| `agenda_ophalen`, `agenda_schrijven` | `api/mailserver/agenda.py` | mailserver |
+| `agenda_ical` | `api/mailserver/ical.py` | mailserver |
 | `mail_afwezigheid` | `api/mailserver/afwezigheid.py` | mailserver |
-| `mail_uitnodiging` | `api/mailserver/uitnodiging.py` | mailserver |
-| `mail_verwijderen` | `api/mailserver/verwijderen.py` | mailserver |
+| `mail_uitnodiging`, `mail_verwijderen` | `api/mailserver/post.py` | mailserver |
 | `km_rit_boeken` | `api/hr.py` | HRMS (koppeling) |
 | `y_next_mogelijkheden` (nieuw) | `api/mogelijkheden.py` | alleen ERPNext |
 
@@ -184,6 +185,10 @@ aanwezig", wat precies het huidige gedrag is.
 - De functies zijn geschreven voor een mailserver die JMAP en CalDAV spreekt
   en een serviceaccount namens gebruikers laat handelen (Stalwart). Dat staat
   in de README als vereiste voor dit onderdeel.
+- Een agenda delen als iCal-abonnement gaat met een `Y Agenda Deellink`: een
+  document per link, met een lange code die de app zelf maakt. Wie de link
+  heeft, leest de agenda zonder inlog; uitzetten of verwijderen van het
+  document trekt de link in. Er staat dus geen code meer in de broncode.
 
 ### 6. Ondertekening uit ERPNext
 
@@ -285,8 +290,10 @@ publiceren gebeurt op een apart teken.
 
 - Geen geheimen in code, git of buildoutput. Het wachtwoord van het
   serviceaccount staat in een `Password`-veld.
-- `agenda_ical` is de enige functie die zonder sessie bereikbaar is; de
-  controle op het abonnementskenmerk gaat ongewijzigd mee.
+- `agenda_ical` is de enige functie die zonder sessie bereikbaar is. Zij
+  werkt alleen met de code van een actieve `Y Agenda Deellink`, die alleen
+  een beheerder kan aanmaken en inzien, en is begrensd in het aantal
+  verzoeken per uur.
 - `berichten_foto` blijft alleen foto's van actieve medewerkers doorgeven aan
   ingelogde medewerkers.
 - De sandbox van extensies verandert niet.

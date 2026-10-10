@@ -71,6 +71,9 @@ def roep(methode: str, /, **parameters):
 	from frappe.utils import set_request
 
 	set_request(method="POST", path=f"/api/method/{methode}")
+	# Een echt verzoek heeft altijd een adres; de begrenzing op het aantal
+	# verzoeken telt daarop.
+	frappe.local.request_ip = "127.0.0.1"
 	frappe.local.form_dict = frappe._dict(parameters)
 	return frappe.handler.execute_cmd(methode)
 

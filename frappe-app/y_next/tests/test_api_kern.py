@@ -25,6 +25,11 @@ KORTE_NAMEN = [
 	"berichten_foto",
 	"berichten_verwijderen",
 	"y_next_mogelijkheden",
+	"agenda_ophalen",
+	"agenda_schrijven",
+	"mail_afwezigheid",
+	"mail_uitnodiging",
+	"mail_verwijderen",
 ]
 
 # Een afbeelding van 1 bij 1 pixel.
