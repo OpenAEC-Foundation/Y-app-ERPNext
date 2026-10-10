@@ -5,9 +5,8 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import set_request
 
-from y_next.tests.hulp import maak_bericht, maak_gebruiker, maak_medewerker
+from y_next.tests.hulp import maak_bericht, maak_gebruiker, maak_mail, maak_medewerker, maak_postbus, roep
 
 ANNA = "anna@voorbeeld.test"
 BRAM = "bram@voorbeeld.test"
@@ -32,13 +31,6 @@ KORTE_NAMEN = [
 PNG = base64.b64decode(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 )
-
-
-def roep(methode: str, /, **parameters):
-	"""Roept een functie aan langs dezelfde weg als `/api/method/<methode>`."""
-	set_request(method="POST", path=f"/api/method/{methode}")
-	frappe.local.form_dict = frappe._dict(parameters)
-	return frappe.handler.execute_cmd(methode)
 
 
 class ApiTestCase(IntegrationTestCase):
@@ -75,20 +67,7 @@ class TestPostbussen(ApiTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		postbus = frappe.get_doc(
-			{
-				"doctype": "Email Account",
-				"email_account_name": "Y Testpostbus",
-				"email_id": "postbus@voorbeeld.test",
-				"enable_incoming": 0,
-				"enable_outgoing": 0,
-			}
-		)
-		postbus.insert(ignore_permissions=True)
-		cls.postbus = postbus.name
-		anna = frappe.get_doc("User", ANNA)
-		anna.append("user_emails", {"email_account": postbus.name, "email_id": postbus.email_id})
-		anna.save(ignore_permissions=True)
+		cls.postbus = maak_postbus("Y Testpostbus", "postbus@voorbeeld.test", ANNA)
 
 	def test_alleen_de_eigen_postbussen(self):
 		frappe.set_user(ANNA)
@@ -132,23 +111,8 @@ class TestPostbussen(ApiTestCase):
 class TestMailBijwerken(ApiTestCase):
 	def maak_mail(self) -> str:
 		# Een geadresseerde met een komma in de naam: Frappe keurt zo'n adres af
-		# bij gewoon opslaan. Daarom rechtstreeks in de database.
-		mail = frappe.get_doc(
-			{
-				"doctype": "Communication",
-				"communication_type": "Communication",
-				"communication_medium": "Email",
-				"sent_or_received": "Received",
-				"subject": "Testbericht",
-				"content": "Inhoud",
-				"sender": "afzender@voorbeeld.test",
-				"recipients": '"Achternaam, V. (Voornaam)" <ontvanger@voorbeeld.test>',
-				"status": "Open",
-				"seen": 0,
-			}
-		)
-		mail.db_insert()
-		return mail.name
+		# bij gewoon opslaan.
+		return maak_mail(recipients='"Achternaam, V. (Voornaam)" <ontvanger@voorbeeld.test>')
 
 	def test_zet_alleen_de_gevraagde_velden(self):
 		naam = self.maak_mail()

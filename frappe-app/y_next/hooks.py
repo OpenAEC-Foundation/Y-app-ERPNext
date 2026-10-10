@@ -27,6 +27,12 @@ override_whitelisted_methods = {
 	"berichten_foto": "y_next.api.berichten.berichten_foto",
 	"berichten_verwijderen": "y_next.api.berichten.berichten_verwijderen",
 	"y_next_mogelijkheden": "y_next.api.mogelijkheden.y_next_mogelijkheden",
+	# Mailserver: doen hun werk zodra Agenda Koppeling is ingevuld.
+	"agenda_ophalen": "y_next.api.mailserver.agenda.agenda_ophalen",
+	"agenda_schrijven": "y_next.api.mailserver.agenda.agenda_schrijven",
+	"mail_afwezigheid": "y_next.api.mailserver.afwezigheid.mail_afwezigheid",
+	"mail_uitnodiging": "y_next.api.mailserver.post.mail_uitnodiging",
+	"mail_verwijderen": "y_next.api.mailserver.post.mail_verwijderen",
 }
 
 add_to_apps_screen = [
