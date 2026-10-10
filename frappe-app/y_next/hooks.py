@@ -27,6 +27,8 @@ override_whitelisted_methods = {
 	"berichten_foto": "y_next.api.berichten.berichten_foto",
 	"berichten_verwijderen": "y_next.api.berichten.berichten_verwijderen",
 	"y_next_mogelijkheden": "y_next.api.mogelijkheden.y_next_mogelijkheden",
+	# HRMS: meldt zelf of de site kilometers via reisaanvragen boekt.
+	"km_rit_boeken": "y_next.api.hr.km_rit_boeken",
 	# Mailserver: doen hun werk zodra Agenda Koppeling is ingevuld.
 	"agenda_ophalen": "y_next.api.mailserver.agenda.agenda_ophalen",
 	"agenda_schrijven": "y_next.api.mailserver.agenda.agenda_schrijven",

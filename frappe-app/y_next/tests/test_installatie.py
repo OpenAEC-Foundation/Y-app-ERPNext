@@ -76,6 +76,8 @@ class TestInrichting(IntegrationTestCase):
 
 		aantal = 0
 		for doctype, velden in install.load("custom_fields.json").items():
+			if not frappe.db.exists("DocType", doctype):
+				continue
 			meta = frappe.get_meta(doctype)
 			for veld in velden:
 				with self.subTest(veld=f"{doctype}.{veld['fieldname']}"):
@@ -87,12 +89,15 @@ class TestInrichting(IntegrationTestCase):
 						frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": veld["fieldname"]})
 					)
 					aantal += 1
-		self.assertEqual(aantal, 15)
+		# 15 velden op doctypes van ERPNext zelf; 7 erbij op een site met HRMS.
+		self.assertEqual(aantal, 22 if frappe.db.exists("DocType", "Travel Request") else 15)
 
 	def test_velden_staan_achter_een_bestaand_veld(self):
 		from y_next.setup import install
 
 		for doctype, velden in install.load("custom_fields.json").items():
+			if not frappe.db.exists("DocType", doctype):
+				continue
 			meta = frappe.get_meta(doctype)
 			for veld in velden:
 				with self.subTest(veld=f"{doctype}.{veld['fieldname']}"):

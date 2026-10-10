@@ -30,6 +30,7 @@ KORTE_NAMEN = [
 	"mail_afwezigheid",
 	"mail_uitnodiging",
 	"mail_verwijderen",
+	"km_rit_boeken",
 ]
 
 # Een afbeelding van 1 bij 1 pixel.

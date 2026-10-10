@@ -131,5 +131,61 @@
    "in_standard_filter": 1,
    "description": "Hides this company from the pick lists in Y-next. Existing transactions stay."
   }
+ ],
+ "Travel Request": [
+  {
+   "fieldname": "custom_from_date",
+   "label": "From Date",
+   "fieldtype": "Date",
+   "insert_after": "details_of_sponsor",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_to_date",
+   "label": "To Date",
+   "fieldtype": "Date",
+   "insert_after": "custom_from_date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_total_distance",
+   "label": "Total Distance",
+   "fieldtype": "Float",
+   "insert_after": "itinerary",
+   "read_only": 1
+  }
+ ],
+ "Travel Itinerary": [
+  {
+   "fieldname": "custom_distance",
+   "label": "Distance",
+   "fieldtype": "Float",
+   "insert_after": "advance_amount",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "custom_travel_type",
+   "label": "Travel Type",
+   "fieldtype": "Select",
+   "options": "Private\nBusiness",
+   "default": "Business",
+   "insert_after": "custom_distance",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "custom_travel_cost",
+   "label": "Travel Cost",
+   "fieldtype": "Currency",
+   "insert_after": "custom_travel_type",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "custom_journey_type",
+   "label": "Journey Type",
+   "fieldtype": "Select",
+   "options": "One way\nReturn",
+   "default": "Return",
+   "insert_after": "custom_travel_cost"
+  }
  ]
 }

@@ -1278,7 +1278,7 @@ test("ensureCustomFields: de standaardlijst is die van de app", async () => {
   });
   try {
     const result = await ensureCustomFields({ baseUrl: BASIS, token: "key:secret" });
-    assert.equal(result.existing.length, 15);
+    assert.equal(result.existing.length, 22);
     assert.ok(result.existing.includes("Project.custom_address"));
     assert.ok(result.existing.includes("Company.disabled"));
     assert.deepEqual(result.created, []);
@@ -1385,7 +1385,7 @@ test("provision: de veldenfase komt na de doctypes en vóór de rechten", async 
   });
   try {
     const result = await provision({ baseUrl: BASIS, token: "key:secret" });
-    assert.equal(result.customFields.existing.length, 15);
+    assert.equal(result.customFields.existing.length, 22);
     assert.ok(order.indexOf("doctype") < order.indexOf("veld"));
     assert.ok(order.lastIndexOf("veld") < order.indexOf("perm"));
   } finally {
