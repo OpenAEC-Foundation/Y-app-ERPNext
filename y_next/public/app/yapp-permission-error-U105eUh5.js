@@ -1,0 +1,1 @@
+var e=/permissionerror|does not have doctype access|insufficient permission|not permitted to|no permission|not allowed to/i;function t(t){if(!t||typeof t!=`object`)return!1;if(Number(t.status)===403)return!0;let n=t.message;return typeof n==`string`?e.test(n):!1}function n(e){for(let n of e)if(t(n))return n;return null}export{t as n,n as t};

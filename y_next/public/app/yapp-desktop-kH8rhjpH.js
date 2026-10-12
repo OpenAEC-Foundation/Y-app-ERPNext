@@ -1,0 +1,1 @@
+function e(){return typeof window<`u`&&`__TAURI_INTERNALS__`in window}function t(){if(e())return e=>{fetch(`/api/desktop/open-external`,{method:`POST`,headers:{"content-type":`application/json`},body:JSON.stringify({url:e})}).catch(()=>{})}}export{t as n,e as t};

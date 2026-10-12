@@ -1,0 +1,1 @@
+import{r as e}from"./yapp-chunk-DiClddyL.js";var t=e({DEFAULT_SELECTIVE_SAVE_MAX_BYTES:()=>DEFAULT_SELECTIVE_SAVE_MAX_BYTES,resolveSelectiveSaveFlags:()=>n});function n(e){return{selectiveSave:e?.selectiveSave??!0,selectiveSaveTripwire:e?.selectiveSaveTripwire??!1,selectiveSaveMaxBytes:e?.selectiveSaveMaxBytes??104857600}}export{t as n,n as t};

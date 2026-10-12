@@ -1,0 +1,1 @@
+var e=`visible`,t=[`/nextcloud-files`,`/nextcloud-talk`,`/passwords`];function n(e){return!t.some(t=>e===t||e.startsWith(`${t}/`))}var r=new Set([`erpnext-mail`,`erpnext-messages`,`extensions`]);function i(e){return r.has(e)}export{i as n,n as r,e as t};

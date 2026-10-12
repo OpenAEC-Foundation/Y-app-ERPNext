@@ -1,0 +1,1 @@
+import{d as e}from"./yapp-erpnext-D3MW3D4-.js";var t=`Y Next Setting`;async function n(n){let r=(await e(t,{fields:[`name`,`setting_value`],filters:[[`name`,`=`,n]],limit_page_length:1})).find(e=>e.name===n);return r?r.setting_value??``:null}export{n as t};

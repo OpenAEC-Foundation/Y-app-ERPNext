@@ -1,0 +1,1 @@
+import{t as e}from"./yapp-createLucideIcon-BaPRLlQf.js";var t=e(`check-check`,[[`path`,{d:`M18 6 7 17l-5-5`,key:`116fxf`}],[`path`,{d:`m22 10-7.5 7.5L13 16`,key:`ke71qq`}]]),n=e(`reply`,[[`path`,{d:`M20 18v-2a4 4 0 0 0-4-4H4`,key:`5vmcpk`}],[`path`,{d:`m9 17-5-5 5-5`,key:`nvlc11`}]]);export{t as n,n as t};
