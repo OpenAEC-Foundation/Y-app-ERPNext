@@ -1,134 +1,201 @@
-# Y-next
+# Y-Next
 
-Web interface for ERPNext. Y-next runs on the same site as the data it shows:
-it uses the ERPNext session of the signed-in user and reads and writes through
-the standard Frappe/ERPNext API.
+Y-Next is een webwerkplek voor **ERPNext 16**: projecten, uren, e-mail,
+agenda, berichten en documenten op je eigen ERPNext-site. De app gebruikt
+de bestaande ERPNext-login en rechten. Geen apart Y-Next-account, geen
+instancewisselaar en geen aparte proxyserver.
 
-## Requirements
+Deze `main`-branch bevat de **volledige, installeerbare Frappe-app**
+`y_next`: Python-code, DocTypes, installatiehooks en de gebouwde
+browserinterface, inclusief Calc, Writer, workers, WASM en licentiebestanden.
+Op de installatiehost is geen frontend-build met Node nodig.
 
-- Frappe 16 and ERPNext 16. Nothing else: no other apps, no extra Python
-  packages and no Node build on the server.
+## Lichte werkplek
 
-Optional, switched on automatically when present: HRMS (leave, expense claims),
-Wiki (knowledge base).
+![Y-Next-dashboard met lichte navigatie, uren boeken en het Apps-paneel](docs/screenshots/y-next-light-workplace.jpg)
 
-## Install
+Screenshot van de lokale ontwikkelbuild. De lege testsite bevat nog geen
+medewerkers of projecten; de interface toont geen fictieve bedrijfsgegevens.
+Uren boeken en projecten staan centraal, met kilometerregistratie en
+persoonlijke taken eronder. Rechts staan de Apps en Agenda vandaag.
+Op smalle schermen staan de Apps boven de dashboardwidgets.
 
-    bench get-app --branch version-16 https://github.com/OpenAEC-Foundation/y_next
-    bench --site your.site install-app y_next
-    bench --site your.site list-apps
+## Mail met een DWG-bijlage — ontwerpbeeld
 
-Run these commands from an existing bench with Frappe 16 and ERPNext 16.
-Replace `your.site` with your site's name, then open `/y-next` on that site
-and sign in with your existing ERPNext account. Installation requires bench
-access or a hosting administrator; using Y-next afterwards only requires a
-browser.
+![Fictieve geopende e-mail met een DWG-funderingsplan in Y-Next](docs/screenshots/y-next-email-dwg-concept.png)
 
-### Download the app
+Gegenereerd ontwerpbeeld met fictieve afzenders, mailtekst en tekening.
+Dit is geen live screenshot en geen bewijs dat de getoonde DWG-preview
+al op iedere installatie beschikbaar is.
 
-Choose a version under
-[Releases](https://github.com/OpenAEC-Foundation/y_next/releases). The currently
-published release is
-[v0.40.0](https://github.com/OpenAEC-Foundation/y_next/releases/tag/v0.40.0).
-The release's **Source code (zip)** contains the app and its built frontend.
-This repository is currently private, so your GitHub account needs access.
-Use Bench to install the app; downloading a zip does not install it on a site.
+## Downloaden en installeren
 
-The release bundle contains `y_next/public/app/.vite/manifest.json` and the
-frontend assets. No frontend compilation is needed on the installation host.
+Je kunt de app zelf installeren of de installatie aan een Claude Code-sessie
+laten uitvoeren. Beide routes gebruiken hetzelfde pakket uit deze repository.
 
-### Let Claude import the app
+### Benodigd
 
-Start Claude Code in an environment with access to your bench and this
-repository. Replace the placeholders and paste:
+- Een bestaande bench met Frappe 16 en ERPNext 16.
+- Toegang tot de bench of een hostingbeheerder die de installatie uitvoert.
+- Voor de standaard Frappe 16-omgeving: Python 3.14 of nieuwer.
+
+HRMS en Wiki zijn optioneel. De app schakelt aanvullende functies in wanneer
+de bijbehorende apps op de site beschikbaar zijn. Mail vereist een
+geconfigureerd ERPNext Email Account; een lege testsite krijgt geen
+voorbeeldberichten.
+
+### Zelf installeren
+
+Voer in de bestaande bench uit:
+
+```bash
+bench get-app --branch main https://github.com/OpenAEC-Foundation/Y-app-ERPNext
+bench --site jouw.site install-app y_next
+bench --site jouw.site list-apps
+```
+
+Vervang `jouw.site` door je sitenaam. Open daarna
+`https://jouw.site/y-next` en log in met je bestaande ERPNext-account.
+
+Je kunt het complete pakket ook downloaden via
+[Code → Download ZIP](https://github.com/OpenAEC-Foundation/Y-app-ERPNext/archive/refs/heads/main.zip).
+De ZIP bevat de gebouwde frontend, maar downloaden alleen installeert
+de app niet op een site. Y-Next is een browserapp, geen los desktopprogramma.
+
+### Via Claude Code importeren
+
+Start Claude Code in een omgeving waar je bench bereikbaar is. Vul de
+placeholders in en geef deze installatieopdracht:
 
 ```text
-Installeer Y-next uit https://github.com/OpenAEC-Foundation/y_next,
-branch version-16, op mijn bestaande lokale ERPNext 16-testsite.
+Installeer Y-Next uit https://github.com/OpenAEC-Foundation/Y-app-ERPNext,
+branch main, op mijn bestaande lokale ERPNext 16-testsite.
 Bench-map: <pad-naar-mijn-bench>
 Site: <mijn-testsite>
 
-Lees de README. Controleer Frappe 16 en ERPNext 16, de repositorytoegang,
-en of y_next al op de bench en de genoemde site staat. Gebruik de gebouwde
-distributie: bench get-app en daarna bench --site <site> install-app y_next.
-Controleer list-apps en open /y-next met de bestaande ERPNext-login.
-Geef de geïnstalleerde versie en URL. Een bestaande installatie niet
-automatisch overschrijven of updaten; stel alleen noodzakelijke vragen.
+Lees eerst de README. Controleer de Frappe- en ERPNext-versies en of y_next
+al op de bench en op de genoemde site staat. Gebruik de gebouwde app.
+Als zij nog niet is geïnstalleerd: bench get-app, daarna install-app
+op uitsluitend de genoemde testsite. Controleer list-apps en open /y-next
+met de bestaande ERPNext-login. Rapporteer de versie en de lokale URL.
+Maak bij een bestaande installatie eerst een backup en controleer lokale
+wijzigingen; overschrijf of update haar niet zonder toestemming.
+Bewaar aanmeldgegevens buiten de repository.
 ```
 
-Claude still needs repository and bench access. Keep credentials in the
-normal local authentication or secret configuration.
+Claude heeft dezelfde bench-toegang nodig als bij handmatige installatie.
 
-## Updating an existing installation
+## Wat zit erin?
 
-Read the target release notes and create a site backup including files
-before updating. In the app checkout (`apps/y_next`), check that there are no
-local changes and that the selected branch is `version-16`, then:
+- **Dashboard:** uren, kilometerregistratie, projecten, taken en de agenda
+  van vandaag. Modulekeuzes, widgetinstellingen en ERPNext-rechten blijven
+  leidend.
+- **E-mail:** berichten komen binnen in ERPNext en worden gelezen via
+  `Communication`. Project- en relatielinks, zoeken, schrijven, concepten,
+  bijlagen en ondertekening blijven bij dezelfde site.
+- **Berichten:** chat op het Frappe Framework, met de bestaande gebruikers
+  en rechten.
+- **Agenda:** Frappe Events en, indien geconfigureerd, agenda's van de
+  mailserver.
+- **Bedrijfsvoering:** projecten, planning, urenstaten, verkoop en inkoop,
+  offertes, leads en de beschikbare HR-functies.
+- **Apps:** Email, Berichten, Agenda, Open CAD Studio, Open Planner Studio,
+  IFC Viewer, Calc en Writer.
+
+CAD gebruikt de lokale viewer wanneer die beschikbaar is, anders de online
+Open CAD Studio. Planner opent de online Open Planner Studio. Deze links
+openen in een nieuw tabblad; documenten en aanmeldgegevens worden niet
+automatisch aan de externe studio meegegeven. De IFC Viewer kan een lokaal
+model openen zonder het bestand naar de site te uploaden.
+
+## Calc en Writer
+
+Writer bewerkt `.docx`; Calc bewerkt `.xlsx` en `.xlsm`. Open een
+bijlage vanuit mail of een project, upload een lokaal bestand of start een
+nieuw document via Apps. Bewerk in de browser en sla een nieuwe private
+bestandsversie op. Het origineel blijft beschikbaar; een ontvangen bericht
+wordt niet gewijzigd of verzonden. Macro's worden niet uitgevoerd.
+
+De editorinterface is beschikbaar in Nederlands, Engels en Duits.
+Controleer een bewerkte kopie voordat je haar verder gebruikt: complexe
+documentfuncties kunnen ontbreken. Onveilige externe resources worden
+geweigerd; onbekende OOXML-onderdelen worden waar mogelijk behouden.
+
+Bekende beperkingen van Calc:
+
+- Getalinvoer gebruikt een punt als decimaalteken (`1234.5`); komma-invoer
+  blijft tekst. Formules gebruiken Engelse functienamen.
+- Nieuwe werkboeken houden 26 kolommen en 1.000 rijen bereikbaar na invoer,
+  opslaan en heropenen. Dit wordt niet aan bestaande bestanden toegevoegd.
+- De huidige editor toont nog geen zichtbare rij- en kolomkoppen.
+  Het naamvak geeft de actieve cel aan.
+
+## Instellingen
+
+De basisapp werkt zonder aanvullende koppelingen. Optioneel:
+
+- **ERPNext Email Account:** inkomende en uitgaande mail en de mailboxrechten.
+- **Company → E-mail Signature:** huisstijlgegevens voor de ondertekening.
+  Een persoonlijke ondertekening van de gebruiker heeft voorrang.
+- **Agenda Koppeling:** verbinding met een mailserver die JMAP en CalDAV
+  ondersteunt, voor mailserveragenda's, uitnodigingen en afwezigheidsmeldingen.
+- **Y Agenda Deellink:** iCal-abonnement met een specifieke deelcode.
+- **Y Next Setting:** onder meer `km-tarief`, `km-via-reisaanvraag`,
+  `weekplanning-pad` en `gedeelde-postbussen`.
+- **Print Formats:** factuur- en offertevoorbeelden gebruiken de formats
+  en rechten van je eigen site.
+
+## Een bestaande installatie bijwerken
+
+Lees eerst de wijzigingen en maak een sitebackup inclusief bestanden.
+Controleer in `apps/y_next` dat er geen lokale wijzigingen zijn en dat
+de branch `main` is. Voer daar uit:
 
 ```bash
 git pull --ff-only
 ```
 
-From the bench directory:
+Daarna, vanuit de bench:
 
 ```bash
-bench --site your.site migrate
-bench --site your.site clear-cache
-bench --site your.site list-apps
+bench --site jouw.site migrate
+bench --site jouw.site clear-cache
+bench --site jouw.site list-apps
 ```
 
-Reload `/y-next` and verify the installed version. In production, have the
-hosting administrator apply the environment's normal restart procedure.
-Updating a shared bench updates the app code for every site using it;
-plan migrations and verification for each affected site.
+Open `/y-next` opnieuw en controleer de interface. Laat in productie de
+hostingbeheerder de gebruikelijke herstart uitvoeren. Appcode is gedeeld
+door de sites op een bench: plan migratie en controle voor iedere betrokken
+site. Een installatie uit een andere repository niet zomaar overzetten.
 
-## Word and Excel
+## Ontwikkeling en pakketindeling
 
-Release 0.40.0 provides read-only Office attachment previews. Word (`.docx`)
-and Excel (`.xlsx` and `.xlsm`) editing is being developed separately; it is
-not part of that published release. Editor availability and known format
-limitations will be documented in the release that ships them.
+`main` is het installatiepakket. De volledige frontend-bron en
+ontwikkelscripts staan op
+[de ontwikkelbranch](https://github.com/OpenAEC-Foundation/Y-app-ERPNext/tree/codex/y-next-office-editors).
+Bouw de browserinterface daar met `node scripts/build-frappe-app.mjs`;
+die komt terecht in `frappe-app/y_next/public/app/`. De inhoud van
+`frappe-app/` vormt de distributie op `main`.
 
-The planned save flow creates a private edited copy attached to the same
-project or message, preserving the original. Received mail is never changed
-or sent as a side effect of editing an attachment.
+```text
+pyproject.toml          Python-/Bench-pakketmetadata
+y_next/hooks.py        Frappe-integratie en installatiehooks
+y_next/api/            Serverfuncties met ERPNext-rechten
+y_next/setup/          Velden, rechten en stamgegevens
+y_next/y_next/doctype/ Eigen DocTypes
+y_next/www/            De route /y-next
+y_next/public/app/     Gebouwde frontend, workers, WASM en notices
+docs/screenshots/      README-afbeeldingen
+```
 
-## Settings
+Wijzig geen gegenereerde JS-bundels met de hand. Ontwikkel en test op de
+bronbranch, bouw opnieuw en publiceer het complete pakket. Geheimen,
+sitebackups, gebruikersbestanden en lokale databasegegevens horen niet
+in Git.
 
-Everything below is optional; Y-next works without it.
+## Licentie
 
-- **E-mail signature** (`Company` → *E-mail Signature*): trade name, greeting,
-  brand colours and LinkedIn address. Together with the company logo, website
-  and the company's own address they make up the signature under every mail.
-  Left empty, the signature is plain, and a user's own e-mail signature takes
-  precedence. Set *Company* on an `Email Account` to sign mail from that
-  mailbox with another company's house style.
+MIT — zie [license.txt](license.txt). Meegeleverde frontendcomponenten
+hebben hun eigen licenties en notices onder `y_next/public/app/`.
 
-- **Mail server** (`Agenda Koppeling`): address, service account and password
-  of a mail server that speaks JMAP and CalDAV and lets a service account act
-  on behalf of users (Stalwart). Switches on calendars from the mail server,
-  out-of-office replies, invitations and deleting mail on the server.
-- **Calendar share links** (`Y Agenda Deellink`): lets someone read a calendar
-  as an iCal subscription without signing in.
-- **`Y Next Setting`** rows:
-  - `km-tarief`: the mileage rate.
-  - `km-via-reisaanvraag` = `1`: with HRMS installed, book mileage in the
-    monthly travel request instead of in Y-next's own mileage records.
-  - `weekplanning-pad`: path of a dashboard page on the same site, shown under
-    "Weekplanning".
-  - `gedeelde-postbussen`: addresses of shared mailboxes, separated by commas.
-    A System Manager sees these as extra tabs in Mail; everyone else sees the
-    mailboxes assigned to them in ERPNext.
-- **Invoice print formats**: Y-next offers the Print Formats of your site. The
-  default one is chosen under Settings → Project settings.
-
-## Source
-
-This repository is assembled by a release script and holds the built frontend.
-Development happens in the source repository:
-<https://github.com/OpenAEC-Foundation/Y-app-ERPNext>. Please open issues and
-pull requests there.
-
-## License
-
-MIT
+Copyright [OpenAEC Foundation](https://github.com/OpenAEC-Foundation).
