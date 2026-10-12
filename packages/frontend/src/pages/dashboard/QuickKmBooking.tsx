@@ -422,7 +422,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3 min-w-0">
-        <div className="grid grid-cols-2 gap-3 min-w-0">
+        <div className="y-km-identity grid grid-cols-2 gap-3 min-w-0">
           <div className="min-w-0">
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("common.employee_required")}</label>
             <select value={employee} onChange={(e) => setEmployee(e.target.value)} required
@@ -442,7 +442,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
 
         {/* Van ⇄ Naar — stacked on mobile so the address inputs don't
             squeeze to unreadable widths; horizontal from sm: upwards. */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 min-w-0">
+        <div className="y-km-route flex flex-col sm:flex-row items-stretch sm:items-end gap-2 min-w-0">
           <div className="flex-1 min-w-0">
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("dashboard.km_from_required")}</label>
             <AddressInput value={departure} onChange={setDeparture} placeholder={t("dashboard.km_departure_placeholder")}
@@ -459,7 +459,7 @@ export function QuickKmBooking({ hideRecentTrips = false, onHeaderClick, onGeboe
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="y-km-options grid gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">{t("dashboard.km_distance_required")}</label>
             <input type="number" step="0.1" min="0" value={km} onChange={(e) => setKm(e.target.value)} required

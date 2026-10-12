@@ -8,6 +8,14 @@ Older entries (v0.3.x and below) are in Dutch; newer entries are in English — 
 
 ---
 
+## Unreleased
+
+### Lichte werkplek
+- Lichte navigatie met vlak Y-Next-beeldmerk en blauwe actieve pagina. Het dashboard zet uren boeken en de projecttabel centraal, met een Apps-paneel en Agenda vandaag ernaast.
+- De editors heten Calc en Writer. Een nieuw Calc-werkblad houdt een leeg raster van 26 kolommen en 1.000 rijen bereikbaar na invoer, opslaan en heropenen; bestaande bestanden worden niet aangepast.
+- Agenda vandaag leest ERPNext Events en de eigen gekoppelde postbus, met gedeelde herhaalregels, dagfiltering en chronologische sortering.
+- Opgeslagen widgetkolommen, volgorde en verborgen widgets blijven behouden. Apps staan op smalle schermen vóór de dashboardwidgets.
+
 ## v0.40.0 — 2026-10-10
 
 ### Y-next als installeerbare Frappe-app

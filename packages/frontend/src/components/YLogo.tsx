@@ -17,10 +17,18 @@ import { useId } from "react";
  * de webmanifest en de desktop-build. Verander je het hier, verander het dan
  * daar ook.
  */
-export function YLogo({ size = 64, className = "" }: { size?: number; className?: string }) {
+export function YLogo({ size = 64, className = "", variant = "tile" }: { size?: number; className?: string; variant?: "tile" | "mark" }) {
   // Verloop-id's moeten uniek zijn: staan er twee logo's op één pagina, dan
   // wint anders de eerste definitie voor allebei.
   const id = useId().replace(/:/g, "");
+  if (variant === "mark") return (
+    <svg viewBox="0 0 64 64" width={size} height={size} className={className} role="img" aria-label="Y-Next">
+      <g fill="none" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 10 32 32V56" stroke="#08bec7" />
+        <path d="M54 10 32 32" stroke="#009da8" />
+      </g>
+    </svg>
+  );
   return (
     <svg
       viewBox="0 0 64 64"

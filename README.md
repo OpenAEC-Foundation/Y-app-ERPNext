@@ -8,6 +8,23 @@ browserinterface en de bijbehorende Python-functies voor Frappe. Bestanden en
 gegevens blijven op je eigen site; een aparte Y-next-server of account is
 niet nodig. De browserinterface gebruikt de API van diezelfde site.
 
+## Lichte werkplek
+
+![Y-Next-dashboard met lichte navigatie, uren boeken en het Apps-paneel](docs/screenshots/y-next-light-workplace.jpg)
+
+Screenshot van de lokale ontwikkelbuild. De lege testsite bevat nog geen
+medewerkers of projecten; de interface toont geen fictieve bedrijfsgegevens.
+Het dashboard heeft een centrale werkplek en een Apps-paneel met Calc en Writer.
+Op smalle schermen staan de Apps boven de dashboardwidgets.
+
+## Mail met een DWG-bijlage — ontwerpbeeld
+
+![Fictieve geopende e-mail met een DWG-funderingsplan in Y-Next](docs/screenshots/y-next-email-dwg-concept.png)
+
+Gegenereerd ontwerpbeeld met volledig fictieve afzenders, mailtekst en
+tekening. Dit is geen live screenshot en geen bewijs dat de getoonde
+DWG-preview al op iedere installatie beschikbaar is.
+
 ## Downloaden en installeren
 
 Er zijn twee manieren om dezelfde app te installeren:
@@ -73,11 +90,12 @@ staat in [docs/frappe-app.md](docs/frappe-app.md).
 ## Apps op het startscherm
 
 Het dashboard bevat snelkoppelingen naar Email, Berichten, Agenda,
-Open CAD Studio, Open Planner Studio, IFC Viewer, Excel-editor en Word-editor.
-De bestaande dashboardwidgets blijven daaronder beschikbaar.
+Open CAD Studio, Open Planner Studio, IFC Viewer, Calc en Writer.
+Uren boeken en de projecttabel staan centraal, met kilometerregistratie en
+persoonlijke taken eronder. De Apps en Agenda vandaag staan rechts.
 
 Email, Berichten en Agenda gebruiken dezelfde ERPNext-sessie en rechten.
-Word en Excel starten een nieuw lokaal document; bestaande bijlagen openen
+Writer en Calc starten een nieuw lokaal document; bestaande bijlagen openen
 via hun project of e-mail. De IFC Viewer opent een lokaal model (.ifc,
 maximaal 100 MB) zonder het bestand te uploaden.
 
@@ -86,23 +104,28 @@ online Open CAD Studio. Planner opent de online Open Planner Studio.
 Deze twee links openen in een nieuw tabblad; documenten en aanmeldgegevens
 worden niet aan de externe studio meegegeven.
 
-## Word en Excel
+## Calc en Writer
 
 De gepubliceerde versie 0.40.0 toont Office-bijlagen als leesvoorbeeld.
 Deze ontwikkelversie bevat geïntegreerde editors:
-`.docx` voor Word en `.xlsx`/`.xlsm` voor Excel. De flow is openen
+`.docx` voor Writer en `.xlsx`/`.xlsm` voor Calc. De flow is openen
 vanuit mail, project of een lokaal bestand, bewerken in de browser en als
 nieuwe private bestandsversie opslaan. Het origineel blijft beschikbaar;
 een ontvangen bericht wordt niet gewijzigd of verzonden. Een werkboek met
 macro's wordt als bestand bewaard, zonder macro's uit te voeren.
 
 De editorinterface is beschikbaar in Nederlands, Engels en Duits.
-Excel-getalinvoer gebruikt in deze preview een punt als decimaalteken
+Calc-getalinvoer gebruikt in deze preview een punt als decimaalteken
 (`1234.5`); komma-invoer blijft tekst en formules gebruiken Engelse
 functienamen. Complexe documenten kunnen functies bevatten die de editors
 niet ondersteunen. Bewaar het origineel en controleer een nieuwe versie
 voordat je die verder gebruikt; onbekende OOXML-onderdelen worden waar
 mogelijk behouden en onveilige externe resources geweigerd.
+
+Nieuwe Calc-werkboeken houden een leeg raster van 26 kolommen en 1.000 rijen
+bereikbaar na invoer, opslaan en heropenen. Dit wordt niet automatisch aan
+bestaande bestanden toegevoegd. De huidige editor toont nog geen zichtbare
+rij- en kolomkoppen; het naamvak geeft de actieve cel aan.
 
 De nieuwe lichte werkplek gebruikt gedeelde kleur- en typografietokens.
 Het menu en dashboard zijn opnieuw vormgegeven zonder de bestaande

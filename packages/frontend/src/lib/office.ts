@@ -139,10 +139,14 @@ export function createOfficePackage(kind: OfficeKind): Uint8Array {
     entries["word/document.xml"] = `<w:document xmlns:w="${ns}/wordprocessingml/2006/main"><w:body><w:p/><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`;
   } else {
     const main = `${ns}/spreadsheetml/2006/main`;
-    entries["[Content_Types].xml"] = `<Types xmlns="${types}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
+    entries["[Content_Types].xml"] = `<Types xmlns="${types}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
     entries["xl/workbook.xml"] = `<workbook xmlns="${main}" xmlns:r="${office}"><sheets><sheet name="Blad1" sheetId="1" r:id="r1"/></sheets></workbook>`;
-    entries["xl/_rels/workbook.xml.rels"] = `<Relationships xmlns="${rels}"><Relationship Id="r1" Type="${office}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`;
-    entries["xl/worksheets/sheet1.xml"] = `<worksheet xmlns="${main}"><dimension ref="A1"/><sheetData/></worksheet>`;
+    entries["xl/_rels/workbook.xml.rels"] = `<Relationships xmlns="${rels}"><Relationship Id="r1" Type="${office}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Type="${office}/styles" Target="styles.xml"/></Relationships>`;
+    entries["xl/styles.xml"] = `<styleSheet xmlns="${main}"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    // De editor leidt toetsenbord- en scrollbereik af van expliciete cellen.
+    // Een lege standaard-opgemaakte cel houdt een nieuw werkblad bruikbaar;
+    // er wordt geen voorbeeldwaarde toegevoegd en uploads blijven ongewijzigd.
+    entries["xl/worksheets/sheet1.xml"] = `<worksheet xmlns="${main}"><dimension ref="A1:Z1000"/><sheetViews><sheetView workbookViewId="0" showGridLines="1" showRowColHeaders="1"/></sheetViews><sheetData><row r="1000"><c r="Z1000" s="0"/></row></sheetData></worksheet>`;
   }
   return zipSync(Object.fromEntries(Object.entries(entries).map(([path, text]) => [path, strToU8(text)])));
 }

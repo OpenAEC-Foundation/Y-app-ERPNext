@@ -593,9 +593,9 @@ export default function UrenBoekenWidget({
 
       <form onSubmit={handleSubmit} className="y-time-entry space-y-2 min-w-0">
         {/* Row 1: MDW (130px) | PROJECT (~40%) | TAAK (~40%) */}
-        <div className="grid grid-cols-1 sm:grid-cols-[130px_1fr_1fr] gap-2 items-end min-w-0">
+        <div className="y-time-head grid gap-2 items-end min-w-0">
           <div className="min-w-0">
-            <label className="block h-[18px] leading-[18px] text-[10px] font-medium text-slate-500 uppercase tracking-wide">{t("common.employee_short", { defaultValue: "Mdw." })}</label>
+            <label className="block h-[18px] leading-[18px] text-[10px] font-medium text-slate-500 uppercase tracking-wide">{t("common.employee_required")}</label>
             <select value={employee} onChange={(e) => setEmployee(e.target.value)} required
               className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal">
               <option value="">{t("common.select")}</option>

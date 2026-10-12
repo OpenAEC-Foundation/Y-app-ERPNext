@@ -2,6 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { editableOfficeKind, inspectOfficePackage, preserveOfficeParts, OfficeRevision, officeEditorUrl, createOfficePackage } from "./office.ts";
+import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { initWasm, openWorkbook } from "@betteroffice/xlsx";
+
+test("Calc nieuw werkblad houdt het lege raster bereikbaar na invoer en heropenen", async () => {
+  await initWasm(new Uint8Array(readFileSync(join(dirname(fileURLToPath(import.meta.resolve("@betteroffice/xlsx"))), "generated", "xlsx_wasm_bg.wasm"))));
+  const workbook = openWorkbook(createOfficePackage("excel"));
+  workbook.editCell(0, 0, 0, "12");
+  assert.ok(workbook.sheetInfo().contentHeight >= 20_000, "toetsenbordbereik moet niet krimpen tot enkele rijen");
+  assert.ok(workbook.sheetInfo().contentWidth >= 26 * 64, "kolommen blijven bereikbaar");
+  const reopened = openWorkbook(workbook.save());
+  assert.ok(reopened.sheetInfo().contentHeight >= 20_000);
+  assert.equal(reopened.cell(0, 999, 25).input, "", "geen voorbeeldwaarde in de lege rastercel");
+  workbook.dispose(); reopened.dispose();
+});
 
 const types = '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/><Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/></Types>';
 const fixture = (extra: Record<string, Uint8Array> = {}) => zipSync({ "[Content_Types].xml": strToU8(types), "xl/workbook.xml": strToU8('<workbook/>'), ...extra });

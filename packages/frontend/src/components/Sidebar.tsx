@@ -456,7 +456,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
         // Desktop: relative, width based on collapsed state. The
         // transition-all here is desktop-only because mobile gets its
         // own per-frame transform via the inline style above.
-        sidebarCollapsed ? "md:w-16" : "md:w-64",
+        sidebarCollapsed ? "md:w-16" : "md:w-56",
         "md:relative md:flex md:h-full md:transition-all md:duration-200",
         // Mobile: fixed overlay or hidden
         mobileOpen
@@ -465,36 +465,36 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
       ].join(" ")}
     >
       {/* Header */}
-      <div className={`${isExpanded ? "p-4" : "p-3"} bg-y-purple-dark text-white border-b border-y-purple-light`}>
+      <div className={`y-sidebar-brand ${isExpanded ? "p-4" : "p-3"} bg-white text-slate-800 border-b border-slate-200`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => handleNavClick("dashboard")}
-            className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-y-teal/20 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+            className="w-10 h-10 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
             title="Home"
             aria-label="Home"
           >
-            <YLogo size={40} className="w-full h-full" />
+            <YLogo size={40} variant="mark" className="w-full h-full" />
           </button>
           {isExpanded && (
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-1.5">
                 <button
                   onClick={() => handleNavClick("dashboard")}
-                  className="text-lg font-extrabold tracking-tight text-white hover:text-y-teal-light cursor-pointer transition-colors text-left"
+                  className="text-xl font-bold tracking-tight text-slate-900 hover:text-y-teal cursor-pointer transition-colors text-left"
                   title="Home"
                 >
                   {APP_NAME}
                 </button>
-                <button onClick={() => handleNavClick("release-notes" as Page)} className="text-[10px] text-y-teal-light/50 font-medium hover:text-y-teal-light cursor-pointer transition-colors" title="Release notes">v{APP_VERSION}</button>
+                <button onClick={() => handleNavClick("release-notes" as Page)} className="text-[10px] text-slate-400 font-medium hover:text-y-teal cursor-pointer transition-colors" title="Release notes">v{APP_VERSION}</button>
               </div>
-              <span className="block text-[11px] leading-tight text-y-teal-light/70 font-medium">{t("y_next.direct_mode")}</span>
+              <span className="block text-[10px] leading-tight text-slate-500">{t("y_next.direct_mode")}</span>
             </div>
           )}
           {/* Mobile close button */}
           {isMobile && (
             <button
               onClick={onCloseMobile}
-              className="ml-auto p-1.5 rounded-lg text-y-teal-light/60 hover:text-white hover:bg-y-purple-light transition-colors cursor-pointer"
+              className="ml-auto p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -507,12 +507,12 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
             <select
               value={viewMode}
               onChange={(e) => onViewModeChange(e.target.value as ViewMode)}
-              className="w-full appearance-none bg-y-purple text-white text-sm font-medium px-3 py-2 pr-8 rounded-lg border border-y-purple-light hover:border-y-teal/50 focus:outline-none focus:ring-2 focus:ring-y-teal/50 cursor-pointer"
+              className="w-full appearance-none bg-slate-50 text-slate-700 text-xs font-medium px-3 py-2 pr-8 rounded-lg border border-slate-200 hover:border-y-teal/50 focus:outline-none focus:ring-2 focus:ring-y-teal/50 cursor-pointer"
             >
               <option value="employer">{t("instance_bar.employer_mode", { defaultValue: "Employer" })}</option>
               <option value="employee">{t("instance_bar.employee_mode", { defaultValue: "Employee" })}</option>
             </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-y-teal-light/60 pointer-events-none" />
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
         )}
       </div>

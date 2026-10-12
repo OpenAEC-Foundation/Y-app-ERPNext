@@ -19,7 +19,7 @@ export default function StartAppShortcuts() {
   const localCad = leesMogelijkheden()?.cad_viewer === true;
   const tile = "y-app-tile group";
   return (
-    <nav aria-label={t("start_apps.title")} className="y-app-dock grid grid-cols-4 gap-x-2 gap-y-4 xl:grid-cols-8">
+    <nav aria-label={t("start_apps.title")} className="y-app-dock">
       {APPS.map(({ id, Icon, to, url }) => {
         const content = <>
           <span className="y-app-symbol"><Icon size={25} strokeWidth={1.6} aria-hidden="true" /></span>

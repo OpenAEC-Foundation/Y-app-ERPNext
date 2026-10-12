@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 import StartAppShortcuts from "../../components/StartAppShortcuts";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { restoreWidgetLayout, splitWorkspaceWidgets } from "./layout";
 import { getActiveInstanceId } from "../../lib/instances";
 import { isFeatureEnabled } from "../../lib/capabilities";
 import type { Page, ViewMode } from "../../components/Sidebar";
@@ -42,16 +43,14 @@ const ALL_WIDGET_DEFS: { id: string; labelKey: string; visibility: WidgetVisibil
 ];
 
 /**
- * Twee widgets hangen aan endpoints die alleen de verdwenen Express-server
- * kende: de e-mailwidget (`/api/mail/*`) en de vandaag-agenda (`/api/calendar/*`).
- * Zolang die features uit staan worden ze zowel uit de widgetlijst als uit een
+ * De oude e-mailwidget hangt aan de verdwenen Express-server.
+ * Uitgeschakelde features worden zowel uit de widgetlijst als uit een
  * opgeslagen layout gefilterd — anders zou een bestaande layout ze alsnog
  * mounten en meteen falende calls doen. De overige widgets draaien op
  * `/api/resource` / `/api/method` en blijven ongemoeid.
  */
 function isWidgetAvailable(id: string): boolean {
   if (id === "email") return isFeatureEnabled("webmail");
-  if (id === "today-agenda") return isFeatureEnabled("calendar-bridge");
   return true;
 }
 
@@ -63,23 +62,23 @@ function getWidgetsForMode(mode: string): { id: string; labelKey: string }[] {
 
 const DEFAULT_EMPLOYER_LAYOUT: WidgetPlacement[] = [
   { id: "time-booking", col: 0 },
+  { id: "projects", col: 1 },
   { id: "km-booking", col: 0 },
+  { id: "my-tasks", col: 1 },
+  { id: "today-agenda", col: 1 },
   { id: "tasks", col: 0 },
   { id: "werkvoorraad", col: 0 },
-  { id: "today-agenda", col: 0 },
-  { id: "projects", col: 1 },
-  { id: "my-tasks", col: 1 },
   { id: "todos", col: 1 },
   { id: "email", col: 1 },
 ];
 
 const DEFAULT_EMPLOYEE_LAYOUT: WidgetPlacement[] = [
   { id: "time-booking", col: 0 },
-  { id: "km-booking", col: 0 },
-  { id: "leave", col: 0 },
-  { id: "today-agenda", col: 0 },
   { id: "projects", col: 1 },
+  { id: "km-booking", col: 0 },
   { id: "my-tasks", col: 1 },
+  { id: "today-agenda", col: 1 },
+  { id: "leave", col: 0 },
   { id: "todos", col: 1 },
   { id: "email", col: 1 },
   { id: "birthdays", col: 1 },
@@ -100,13 +99,7 @@ function loadLayout(mode: string): WidgetPlacement[] {
     const raw = localStorage.getItem(getLayoutKey(mode));
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const saved = (parsed as WidgetPlacement[]).filter((w) => isWidgetAvailable(w.id));
-        const savedIds = new Set(saved.map((w) => w.id));
-        const missing = defaults.filter(w => !savedIds.has(w.id));
-        if (missing.length > 0) return [...saved, ...missing];
-        return saved;
-      }
+      return restoreWidgetLayout(parsed, defaults, getWidgetsForMode(mode).map(w => w.id));
     }
   } catch { /* use default */ }
   return defaults;
@@ -134,14 +127,17 @@ function WidgetColumn({
   items,
   onNavigate,
   onRemove,
+  utility = false,
 }: {
   items: WidgetPlacement[];
   onNavigate: (page: Page) => void;
   onRemove: (id: string) => void;
+  utility?: boolean;
 }) {
   const ids = items.map((w) => w.id);
 
-  function renderWidget(widgetId: string) {
+  function renderWidget(placement: WidgetPlacement) {
+    const widgetId = placement.id;
     // Vangnet: een layout uit een eerdere fase kan nog een uitgeschakelde
     // widget bevatten. Nooit mounten — die zou meteen falende calls doen.
     if (!isWidgetAvailable(widgetId)) return null;
@@ -187,16 +183,16 @@ function WidgetColumn({
     }
 
     return (
-      <SortableWidget key={widgetId} id={widgetId} onRemove={() => onRemove(widgetId)}>
+      <SortableWidget key={widgetId} id={widgetId} column={placement.col} onRemove={() => onRemove(widgetId)}>
         {content}
       </SortableWidget>
     );
   }
 
   return (
-    <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-      <div className="space-y-4 sm:space-y-6">
-        {items.map((w) => renderWidget(w.id))}
+    <SortableContext items={ids} strategy={rectSortingStrategy}>
+      <div className={utility ? "y-dashboard-utility-widgets" : "y-dashboard-grid"}>
+        {items.map(renderWidget)}
       </div>
     </SortableContext>
   );
@@ -210,7 +206,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const mode = viewMode || "employer";
   const [layout, setLayout] = useState<WidgetPlacement[]>(() => loadLayout(mode));
   const [addOpen, setAddOpen] = useState(false);
@@ -231,8 +227,7 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
 
   const ALL_WIDGETS = getWidgetsForMode(mode);
 
-  const leftWidgets = layout.filter((w) => w.col === 0);
-  const rightWidgets = layout.filter((w) => w.col === 1);
+  const { main, utility } = splitWorkspaceWidgets(layout);
   const hiddenWidgets = ALL_WIDGETS.filter((w) => !layout.find((l) => l.id === w.id));
 
   function handleRemove(id: string) {
@@ -260,52 +255,30 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
 
     if (activeIdx === -1 || overIdx === -1) return;
 
-    // Move the active widget to the same column as the over widget
-    const targetCol = layout[overIdx].col;
-
-    // Get all widgets in the target column (including the moved one placed at target col)
-    const newLayout = [...layout];
-    newLayout[activeIdx] = { ...newLayout[activeIdx], col: targetCol };
-
-    // Now reorder within the full layout: extract column items, reorder, put back
-    const colItems = newLayout
-      .map((w, i) => ({ ...w, _origIdx: i }))
-      .filter((w) => w.col === targetCol);
-
-    const colActiveIdx = colItems.findIndex((w) => w.id === activeId);
-    const colOverIdx = colItems.findIndex((w) => w.id === overId);
-
-    if (colActiveIdx !== -1 && colOverIdx !== -1) {
-      const reordered = arrayMove(colItems, colActiveIdx, colOverIdx);
-      // Rebuild layout: non-target-col items stay, target-col items get reordered
-      const otherItems = newLayout.filter((w) => w.col !== targetCol);
-      const finalLayout = [
-        ...otherItems,
-        ...reordered.map((w) => ({ id: w.id, col: w.col })),
-      ];
-      // Preserve original ordering: left col first, then right col
-      const sorted = [
-        ...finalLayout.filter((w) => w.col === 0),
-        ...finalLayout.filter((w) => w.col === 1),
-      ];
-      setLayout(sorted);
-      saveLayout(sorted, mode);
-    } else {
-      setLayout(newLayout);
-      saveLayout(newLayout, mode);
-    }
+    const next = arrayMove(layout, activeIdx, overIdx);
+    const moved = next.findIndex(w => w.id === activeId);
+    next[moved] = { ...next[moved], col: layout[overIdx].col };
+    setLayout(next);
+    saveLayout(next, mode);
   }
 
   return (
-    <div className="y-dashboard p-4 sm:p-7 lg:p-8 space-y-5 sm:space-y-6">
+    <div className="y-dashboard p-4 sm:p-6 lg:p-7 space-y-4">
       <div className="y-dashboard-heading flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 min-w-0 truncate">{t("nav.dashboard")}</h2>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 min-w-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-800 min-w-0 truncate">{t("nav.dashboard")}</h2>
+          <time className="y-dashboard-date text-sm text-slate-500" dateTime={new Date().toLocaleDateString("en-CA")}>
+            {new Date().toLocaleDateString(i18n.language, { weekday: "long", day: "numeric", month: "long" })}
+          </time>
+        </div>
         <div ref={addRef} className="relative shrink-0">
           <button
             onClick={() => setAddOpen((o) => !o)}
+            aria-expanded={addOpen}
+            aria-label={t("dashboard.manage_widgets")}
             className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-500 bg-white border border-slate-200 rounded-lg hover:border-y-teal hover:text-y-teal cursor-pointer"
           >
-            <Plus size={14} />
+            <LayoutGrid size={16} />
             <span className="hidden sm:inline">
               {hiddenWidgets.length > 0 ? t("dashboard.add_widget_count", { n: hiddenWidgets.length }) : t("dashboard.manage_widgets")}
             </span>
@@ -321,14 +294,14 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
                   {hiddenWidgets.map((w) => (
                     <button key={w.id} onClick={() => handleAdd(w.id)}
                       className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer flex items-center gap-2">
-                      <Plus size={12} className="text-y-teal" /> {t(w.labelKey)}
+                      <LayoutGrid size={12} className="text-y-teal" /> {t(w.labelKey)}
                     </button>
                   ))}
                 </>
               ) : (
                 <p className="px-4 py-2 text-sm text-slate-400">{t("dashboard.all_widgets_visible")}</p>
               )}
-              {layout.length > 0 && (
+              {ALL_WIDGETS.length > 0 && (
                 <>
                   <div className="border-t border-slate-100 my-1" />
                   <p className="px-4 py-1 text-[10px] text-slate-400 uppercase">Reset</p>
@@ -342,8 +315,6 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
           )}
         </div>
       </div>
-
-      <StartAppShortcuts />
 
       {/* Beta/alpha banner */}
       {mode === "employee" ? (
@@ -359,9 +330,15 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
       )}
 
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-          <WidgetColumn items={leftWidgets} onNavigate={onNavigate} onRemove={handleRemove} />
-          <WidgetColumn items={rightWidgets} onNavigate={onNavigate} onRemove={handleRemove} />
+        <div className="y-dashboard-workplace">
+          <WidgetColumn items={main} onNavigate={onNavigate} onRemove={handleRemove} />
+          <aside className="y-dashboard-utilities" aria-label={t("start_apps.title")}>
+            <section className="y-app-panel">
+              <h3 className="font-semibold text-lg text-slate-800">{t("start_apps.title")}</h3>
+              <StartAppShortcuts />
+            </section>
+            <WidgetColumn utility items={utility} onNavigate={onNavigate} onRemove={handleRemove} />
+          </aside>
         </div>
       </DndContext>
     </div>
