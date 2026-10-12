@@ -107,7 +107,7 @@
 
 .y-time-entry { container-type: inline-size; }
 .y-time-row {
-  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) 70px;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) auto;
   grid-template-areas:
     "date date date date"
     "from mode to hours"
