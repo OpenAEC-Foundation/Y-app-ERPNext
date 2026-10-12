@@ -14,10 +14,84 @@ Wiki (knowledge base).
 
 ## Install
 
-    bench get-app https://github.com/OpenAEC-Foundation/y_next --branch version-16
+    bench get-app --branch version-16 https://github.com/OpenAEC-Foundation/y_next
     bench --site your.site install-app y_next
+    bench --site your.site list-apps
 
-Then open `/y-next` on your site.
+Run these commands from an existing bench with Frappe 16 and ERPNext 16.
+Replace `your.site` with your site's name, then open `/y-next` on that site
+and sign in with your existing ERPNext account. Installation requires bench
+access or a hosting administrator; using Y-next afterwards only requires a
+browser.
+
+### Download the app
+
+Choose a version under
+[Releases](https://github.com/OpenAEC-Foundation/y_next/releases). The currently
+published release is
+[v0.40.0](https://github.com/OpenAEC-Foundation/y_next/releases/tag/v0.40.0).
+The release's **Source code (zip)** contains the app and its built frontend.
+This repository is currently private, so your GitHub account needs access.
+Use Bench to install the app; downloading a zip does not install it on a site.
+
+The release bundle contains `y_next/public/app/.vite/manifest.json` and the
+frontend assets. No frontend compilation is needed on the installation host.
+
+### Let Claude import the app
+
+Start Claude Code in an environment with access to your bench and this
+repository. Replace the placeholders and paste:
+
+```text
+Installeer Y-next uit https://github.com/OpenAEC-Foundation/y_next,
+branch version-16, op mijn bestaande lokale ERPNext 16-testsite.
+Bench-map: <pad-naar-mijn-bench>
+Site: <mijn-testsite>
+
+Lees de README. Controleer Frappe 16 en ERPNext 16, de repositorytoegang,
+en of y_next al op de bench en de genoemde site staat. Gebruik de gebouwde
+distributie: bench get-app en daarna bench --site <site> install-app y_next.
+Controleer list-apps en open /y-next met de bestaande ERPNext-login.
+Geef de geïnstalleerde versie en URL. Een bestaande installatie niet
+automatisch overschrijven of updaten; stel alleen noodzakelijke vragen.
+```
+
+Claude still needs repository and bench access. Keep credentials in the
+normal local authentication or secret configuration.
+
+## Updating an existing installation
+
+Read the target release notes and create a site backup including files
+before updating. In the app checkout (`apps/y_next`), check that there are no
+local changes and that the selected branch is `version-16`, then:
+
+```bash
+git pull --ff-only
+```
+
+From the bench directory:
+
+```bash
+bench --site your.site migrate
+bench --site your.site clear-cache
+bench --site your.site list-apps
+```
+
+Reload `/y-next` and verify the installed version. In production, have the
+hosting administrator apply the environment's normal restart procedure.
+Updating a shared bench updates the app code for every site using it;
+plan migrations and verification for each affected site.
+
+## Word and Excel
+
+Release 0.40.0 provides read-only Office attachment previews. Word (`.docx`)
+and Excel (`.xlsx` and `.xlsm`) editing is being developed separately; it is
+not part of that published release. Editor availability and known format
+limitations will be documented in the release that ships them.
+
+The planned save flow creates a private edited copy attached to the same
+project or message, preserving the original. Received mail is never changed
+or sent as a side effect of editing an attachment.
 
 ## Settings
 

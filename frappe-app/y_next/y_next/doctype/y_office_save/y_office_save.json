@@ -1,0 +1,26 @@
+{
+ "doctype": "DocType",
+ "name": "Y Office Save",
+ "module": "Y Next",
+ "autoname": "field:operation_id",
+ "naming_rule": "By fieldname",
+ "engine": "InnoDB",
+ "allow_rename": 0,
+ "field_order": ["operation_id", "actor", "source_file", "expected_sha256", "input_sha256", "upload_filename", "result_file", "result_sha256"],
+ "fields": [
+  {"fieldname": "operation_id", "fieldtype": "Data", "label": "Operation ID", "length": 36, "reqd": 1, "unique": 1, "read_only": 1},
+  {"fieldname": "actor", "fieldtype": "Data", "label": "Actor", "reqd": 1, "read_only": 1, "search_index": 1},
+  {"fieldname": "source_file", "fieldtype": "Data", "label": "Source File", "reqd": 1, "read_only": 1},
+  {"fieldname": "expected_sha256", "fieldtype": "Data", "label": "Expected SHA256", "length": 64, "reqd": 1, "read_only": 1},
+  {"fieldname": "input_sha256", "fieldtype": "Data", "label": "Input SHA256", "length": 64, "reqd": 1, "read_only": 1},
+  {"fieldname": "upload_filename", "fieldtype": "Data", "label": "Upload Filename", "reqd": 1, "read_only": 1},
+  {"fieldname": "result_file", "fieldtype": "Data", "label": "Result File", "read_only": 1},
+  {"fieldname": "result_sha256", "fieldtype": "Data", "label": "Result SHA256", "length": 64, "read_only": 1}
+ ],
+ "permissions": [],
+ "links": [],
+ "actions": [],
+ "states": [],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

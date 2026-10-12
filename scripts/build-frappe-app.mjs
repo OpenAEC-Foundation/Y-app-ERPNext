@@ -26,6 +26,7 @@ import { copyFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeOfficeNotices } from "./lib/office-notices.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const APP_BASE = "/assets/y_next/app/";
@@ -82,6 +83,8 @@ function main() {
   if (result.status !== 0) {
     throw new Error(`De Vite-build is mislukt (exitcode ${result.status}).`);
   }
+
+  writeOfficeNotices(frontendDir, outDir, join(ROOT, "scripts", "legal", "betteroffice-0.3.0"));
 
   const manifest = JSON.parse(readFileSync(join(outDir, ".vite", "manifest.json"), "utf8"));
   const entry = findEntry(manifest);

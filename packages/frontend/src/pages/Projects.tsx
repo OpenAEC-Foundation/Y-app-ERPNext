@@ -17,6 +17,7 @@ import {
 import { isDesktopApp } from "../lib/desktop";
 import { isFeatureEnabled } from "../lib/capabilities";
 import ErrorBoundary from "../components/ErrorBoundary";
+import ProjectFiles from "../components/office/ProjectFiles";
 import { loadProjectFoldersConfig, hydrateProjectFoldersConfig, buildProjectFolderPath } from "../lib/nasConfig";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -861,6 +862,8 @@ export function ProjectDetail({
               </div>
 
               {/* Connections */}
+              <ProjectFiles project={project.name} />
+
               <div className="mb-4">
                 <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
                   <Link2 size={12} /> {t("projects.detail.connections")}

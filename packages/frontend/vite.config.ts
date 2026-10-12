@@ -3,6 +3,7 @@ import type { ProxyOptions, HttpProxy } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import pkg from './package.json' with { type: 'json' }
+import { fileURLToPath } from 'node:url'
 
 // Y-next draait single-tenant direct op ERPNext v16 (geen eigen backend meer).
 // De productie-SPA wordt gepubliceerd als ERPNext Web Page (route "y-next")
@@ -40,6 +41,7 @@ const proxyEntry: ProxyOptions = {
 
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
+  resolve: { alias: [{ find: /^@office-xlsx-wasm(?=\?|$)/, replacement: fileURLToPath(new URL('../../node_modules/@betteroffice/xlsx/dist/generated/xlsx_wasm_bg.wasm', import.meta.url)) }] },
   // Assets staan in productie fysiek plat op /files/<naam>; lazy chunks
   // resolven via base. In dev blijft base "/" (Vite dev-server serveert
   // vanaf root).

@@ -72,6 +72,8 @@ const Letters = lazy(() => import("./pages/Letters"));
 const ReleaseNotes = lazy(() => import("./pages/ReleaseNotes"));
 const MailView = lazy(() => import("./pages/MailView"));
 const VoorbeeldVenster = lazy(() => import("./pages/VoorbeeldVenster"));
+const Office = lazy(() => import("./pages/Office"));
+const IfcViewer = lazy(() => import("./pages/IfcViewer"));
 import LoginScherm from "./components/LoginScherm";
 const MessengerView = lazy(() => import("./pages/MessengerView"));
 // Iframe-host voor extensies. Lazy (was statisch) zodat de host — inclusief
@@ -468,7 +470,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
         app bezig bent; de vensternotificatie van de browser toont zichzelf
         dan bewust niet. */}
     <MeldingStrook />
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="y-next-workspace flex flex-col h-full bg-slate-100">
       <DataProvider userRoles={user.roles}>
         <div className="flex flex-1 min-h-0">
           {/* Mobile sidebar overlay backdrop */}
@@ -500,15 +502,16 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
             {/* Mobiele hamburger — de sidebar is op < md een overlay en werd
                 voorheen geopend vanuit de (verwijderde) instance-tabbalk. */}
             {!isStandaloneView && (
-              <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-y-purple-dark text-white">
+              <div className="md:hidden flex items-center gap-3 px-3 py-2 bg-white border-b border-slate-200 text-slate-800">
                 <button
                   onClick={() => setMobileMenuOpen(true)}
-                  className="p-1.5 rounded-lg hover:bg-y-purple-light cursor-pointer"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
                   title={t("sidebar.expand")}
                   aria-label={t("sidebar.expand")}
                 >
                   <Menu size={20} />
                 </button>
+                <span className="text-sm font-semibold tracking-tight">Y-Next</span>
               </div>
             )}
             <main className="flex-1 overflow-auto">
@@ -537,6 +540,8 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/quotations" element={gate("/quotations", <Quotations />)} />
                   <Route path="/salesorders" element={gate("/salesorders", <SalesOrders />)} />
                   <Route path="/projects" element={gate("/projects", <Projects />)} />
+                  <Route path="/office" element={gate("/office", <Office />)} />
+                  <Route path="/ifc-viewer" element={gate("/ifc-viewer", <IfcViewer />)} />
                   <Route path="/tasks" element={gate("/tasks", <Tasks />)} />
                   <Route path="/subtasks" element={gate("/subtasks", <Subtasks />)} />
                   <Route path="/planning" element={gate("/planning", <Planning />)} />

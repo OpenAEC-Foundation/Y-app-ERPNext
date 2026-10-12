@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
+import StartAppShortcuts from "../../components/StartAppShortcuts";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -296,8 +297,8 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
   }
 
   return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="y-dashboard p-4 sm:p-7 lg:p-8 space-y-5 sm:space-y-6">
+      <div className="y-dashboard-heading flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl sm:text-2xl font-bold text-slate-800 min-w-0 truncate">{t("nav.dashboard")}</h2>
         <div ref={addRef} className="relative shrink-0">
           <button
@@ -342,14 +343,16 @@ export default function Dashboard({ onNavigate, viewMode }: DashboardProps) {
         </div>
       </div>
 
+      <StartAppShortcuts />
+
       {/* Beta/alpha banner */}
       {mode === "employee" ? (
-        <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+        <div className="flex items-start gap-3 px-4 py-2 bg-blue-50 border-l-2 border-blue-300 rounded-r-lg text-xs text-blue-800">
           <span className="font-semibold shrink-0">Beta</span>
           <span dangerouslySetInnerHTML={{ __html: t("dashboard.beta_banner") }} />
         </div>
       ) : (
-        <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+        <div className="flex items-start gap-3 px-4 py-2 bg-amber-50 border-l-2 border-amber-300 rounded-r-lg text-xs text-amber-800">
           <span className="font-semibold shrink-0">Alpha</span>
           <span dangerouslySetInnerHTML={{ __html: t("dashboard.alpha_banner") }} />
         </div>

@@ -29,7 +29,7 @@ export function SortableWidget({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="relative group/widget min-w-0">
+    <div ref={setNodeRef} style={style} className="y-widget relative group/widget min-w-0">
       {/* Drag handle + close button overlay */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover/widget:opacity-100 transition-opacity">
         <button

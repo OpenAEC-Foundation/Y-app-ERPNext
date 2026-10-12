@@ -164,7 +164,7 @@ export default function InlineSearch({ onNavigate, onCloseMobile }: InlineSearch
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-y-teal-light/40 pointer-events-none" />
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
@@ -173,13 +173,13 @@ export default function InlineSearch({ onNavigate, onCloseMobile }: InlineSearch
           onFocus={() => { if (query.length >= 2) setDropdownOpen(true); }}
           onKeyDown={handleKeyDown}
           placeholder={t("search.placeholder")}
-          className="w-full pl-9 pr-8 py-2 rounded-lg bg-y-purple text-white text-sm placeholder:text-y-teal-light/40 focus:outline-none focus:ring-2 focus:ring-y-teal/50 border-none"
+          className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-slate-50 text-slate-800 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-y-teal/30 border border-slate-200"
         />
-        {loading && <Loader2 size={14} className="absolute right-8 top-1/2 -translate-y-1/2 text-y-teal-light/40 animate-spin" />}
+        {loading && <Loader2 size={14} className="absolute right-8 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" />}
         {query && (
           <button
             onClick={() => { setQuery(""); setResults([]); setDropdownOpen(false); inputRef.current?.focus(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-y-teal-light/40 hover:text-white cursor-pointer"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-y-teal cursor-pointer"
           >
             <X size={14} />
           </button>

@@ -591,7 +591,7 @@ export default function UrenBoekenWidget({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-2 min-w-0">
+      <form onSubmit={handleSubmit} className="y-time-entry space-y-2 min-w-0">
         {/* Row 1: MDW (130px) | PROJECT (~40%) | TAAK (~40%) */}
         <div className="grid grid-cols-1 sm:grid-cols-[130px_1fr_1fr] gap-2 items-end min-w-0">
           <div className="min-w-0">
@@ -689,7 +689,7 @@ export default function UrenBoekenWidget({
         {/* Row 2: DATUM | STARTTIJD [Nu] | Tot/Duur | EINDTIJD [Nu] | Uren | Omschrijving | Boeken
             Mobile: single column stacks every field full-width; ≥md: original
             dense 7-column layout for desktop efficiency. */}
-        <div className="grid grid-cols-1 md:grid-cols-[144px_76px_44px_76px_48px_1fr_auto] gap-2 md:gap-1 md:items-end min-w-0">
+        <div className="y-time-row grid gap-2 items-end min-w-0">
           <div className="min-w-0">
             <label className="block h-[18px] leading-[18px] text-[10px] font-medium text-slate-500 uppercase tracking-wide">{t("common.date_required")}</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required

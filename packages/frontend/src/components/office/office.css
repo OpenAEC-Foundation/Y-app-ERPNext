@@ -1,0 +1,22 @@
+.y-office { font-family: system-ui, -apple-system, sans-serif; }
+.y-office .folio-root {
+  --background: #ffffff;
+  --foreground: #334155;
+  --primary: var(--color-y-teal, #006876);
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #334155;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: color-mix(in srgb, var(--color-y-teal, #006876) 10%, white);
+  --accent-foreground: var(--color-y-purple, #043b42);
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: var(--color-y-teal, #006876);
+  --font-sans: system-ui, -apple-system, sans-serif;
+  height: 100%;
+}
+.y-office-sheet { height: 100%; min-height: 0; }
+.y-office-sheet button:focus-visible, .y-office-sheet input:focus-visible { outline: 2px solid var(--color-y-teal, #006876); outline-offset: 2px; }
+.y-office-sheet button:hover { color: var(--color-y-purple, #043b42); }
+@media (prefers-reduced-motion: reduce) { .y-office * { transition: none !important; } }

@@ -36,7 +36,7 @@ export type Page =
   | "calendar" | "weekplanning" | "ledgers" | "bank-transactions" | "booking-program"
   | "wiki" | "passwords" | "messenger" | "erpnext-overview" | "contacts"
   | "meeting-notes" | "notities" | "leads" | "liquidity-planning" | "letters"
-  | "release-notes"
+  | "release-notes" | "office"
   | "to-invoice";
 
 export type ViewMode = "employer" | "employee";
@@ -74,7 +74,7 @@ const ROLE_PAGE_MAP: Record<string, Set<Page>> = {
 const UNIVERSAL_PAGES: Set<Page> = new Set([
   "dashboard", "settings", "contacts", "calendar", "weekplanning", "todo", "wiki",
   "webmail", "messenger", "meeting-notes", "notities", "letters", "release-notes",
-  "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview",
+  "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview", "office",
 ]);
 
 /** Routepad van een nav-item — de router-tegenhanger van `Page`. */
@@ -145,6 +145,7 @@ function getSections(): NavSection[] {
         // dagelijks gebruikt en hoort dus bij wat altijd in beeld staat.
         { id: "wiki", labelKey: "nav.wiki", icon: BookOpen },
         { id: "nextcloud-files", labelKey: "nav.documents", icon: Cloud, visibility: "employer" },
+        { id: "office", labelKey: "office.title", icon: FileSpreadsheet },
         { id: "financieel-dashboard", labelKey: "nav.statistics", icon: BarChart3, visibility: "employer" },
       ],
     },
@@ -451,7 +452,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
           : undefined
       }
       className={[
-        "bg-y-purple-dark text-white flex flex-col flex-shrink-0",
+        "y-sidebar bg-white text-slate-700 flex flex-col flex-shrink-0",
         // Desktop: relative, width based on collapsed state. The
         // transition-all here is desktop-only because mobile gets its
         // own per-frame transform via the inline style above.
@@ -464,7 +465,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
       ].join(" ")}
     >
       {/* Header */}
-      <div className={`${isExpanded ? "p-4" : "p-3"} border-b border-y-purple-light`}>
+      <div className={`${isExpanded ? "p-4" : "p-3"} bg-y-purple-dark text-white border-b border-y-purple-light`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => handleNavClick("dashboard")}
@@ -528,7 +529,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
         <div className="px-1 pt-3">
           <button
             onClick={() => window.dispatchEvent(new Event("y-app:focus-search"))}
-            className="w-full flex items-center justify-center py-2 rounded-lg text-y-teal-light/50 hover:text-white hover:bg-y-purple-light transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center py-2 rounded-lg text-slate-500 hover:text-y-teal hover:bg-slate-100 transition-colors cursor-pointer"
             title={t("sidebar.global_search_tooltip")}
           >
             <Search size={16} />
@@ -559,7 +560,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
               {section.title && isExpanded && (
                 <button
                   onClick={() => section.collapsible && toggleSection(section.title)}
-                  className={`w-full flex items-center gap-1 px-4 py-2 mt-3 text-[10px] font-bold text-y-teal/70 uppercase tracking-widest border-t border-y-purple-light/50 ${
+                  className={`w-full flex items-center gap-1 px-3 py-2 mt-3 text-xs font-semibold text-slate-500 border-t border-slate-200 ${
                     section.collapsible ? "hover:text-y-teal cursor-pointer" : ""
                   }`}
                 >
@@ -573,7 +574,7 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
               )}
               {/* Section divider — collapsed desktop mode */}
               {section.title && !isExpanded && (
-                <div className="border-t border-y-purple-light/50 mt-2 mb-1" />
+                <div className="border-t border-slate-200 mt-2 mb-1" />
               )}
               {/* Items */}
               {!isCollapsedSection && (
@@ -604,16 +605,17 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
                           window.open(`${window.location.pathname}?standalone=1#${path}`, "_blank", "noopener");
                         }}
                         title={!isExpanded ? t(item.labelKey) : t("nav.dblclick_to_popout", "Dubbelklik = nieuw tabblad")}
-                        className={`w-full flex items-center ${isExpanded ? "gap-3 px-4" : "justify-center px-2"} py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                        aria-current={active ? "page" : undefined}
+                        className={`relative w-full flex items-center ${isExpanded ? "gap-3 px-3" : "justify-center px-2"} py-2 rounded-lg text-left transition-colors cursor-pointer ${
                           active
-                            ? "bg-y-teal text-white shadow-md shadow-y-teal/20"
-                            : "text-slate-300 hover:bg-y-purple-light hover:text-white"
+                            ? "bg-y-teal/10 text-y-teal-dark"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                         } ${pageEnabled ? "" : "opacity-50"}`}
                       >
                         <Icon size={18} className="flex-shrink-0" />
                         {isExpanded && <span className="font-medium text-sm flex-1">{t(item.labelKey)}</span>}
                         {isExpanded && !pageEnabled && (
-                          <span className="ml-auto text-[9px] font-semibold uppercase tracking-wide text-y-teal-light/70 border border-y-teal-light/30 rounded px-1 py-px whitespace-nowrap">
+                          <span className="ml-auto text-[9px] font-medium text-slate-500 border border-slate-200 rounded px-1 py-px whitespace-nowrap">
                             {t("y_next.badge_later")}
                           </span>
                         )}
@@ -642,10 +644,11 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
                         key={ext.id}
                         onClick={() => { navigate(url); onCloseMobile?.(); }}
                         title={!isExpanded ? `${ext.name} (${extLabel})` : undefined}
-                        className={`w-full flex items-center ${isExpanded ? "gap-3 px-4" : "justify-center px-2"} py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                        aria-current={active ? "page" : undefined}
+                        className={`w-full flex items-center ${isExpanded ? "gap-3 px-3" : "justify-center px-2"} py-2 rounded-lg text-left transition-colors cursor-pointer ${
                           active
-                            ? "bg-y-teal text-white shadow-md shadow-y-teal/20"
-                            : "text-slate-300 hover:bg-y-purple-light hover:text-white"
+                            ? "bg-y-teal/10 text-y-teal-dark"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                         }`}
                       >
                         <Puzzle size={18} className="flex-shrink-0" />
@@ -669,19 +672,19 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
       {isExpanded && (
         <div className="px-3 pb-2">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-y-teal-light/40 pointer-events-none" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               ref={filterRef}
               type="text"
               value={moduleFilter}
               onChange={(e) => setModuleFilter(e.target.value)}
               placeholder={t("sidebar.filter_modules_placeholder")}
-              className="w-full pl-9 pr-8 py-1.5 rounded-lg bg-y-purple text-white text-xs placeholder:text-y-teal-light/40 focus:outline-none focus:ring-2 focus:ring-y-teal/50 border-none"
+              className="w-full pl-9 pr-8 py-2 rounded-lg bg-slate-50 text-slate-700 text-xs placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-y-teal/30 border border-slate-200"
             />
             {moduleFilter && (
               <button
                 onClick={() => { setModuleFilter(""); filterRef.current?.focus(); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-y-teal-light/40 hover:text-white cursor-pointer"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-y-teal cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -694,13 +697,13 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
           kale balk over de volle breedte: zo is het een bedienbaar ding en
           niet een streep die toevallig klikbaar is. */}
       {!isMobile && (
-        <div className="hidden md:block border-t border-white/5 px-2 py-2">
+        <div className="hidden md:block border-t border-slate-200 px-2 py-2">
           <button
             onClick={onToggleCollapse}
             title={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
             aria-label={sidebarCollapsed ? t("sidebar.expand") : t("sidebar.collapse")}
             aria-expanded={!sidebarCollapsed}
-            className={`group flex w-full cursor-pointer items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] py-2 text-y-teal-light/60 transition-colors hover:border-y-teal/30 hover:bg-white/[0.08] hover:text-white ${
+            className={`group flex w-full cursor-pointer items-center gap-2 rounded-lg py-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-y-teal ${
               sidebarCollapsed ? "justify-center px-0" : "px-3"
             }`}
           >
@@ -713,15 +716,15 @@ export default function Sidebar({ activePage, onNavigate, viewMode, onViewModeCh
       {/* Waar dit op draait: Frappe, het platform onder de administratie.
           Alleen als de balk openstaat — ingeklapt is er geen ruimte voor. */}
       {isExpanded && (
-        <div className="pointer-events-none flex items-center justify-center gap-2 border-t border-white/5 px-3 py-3">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1">
+        <div className="pointer-events-none flex items-center justify-center gap-2 border-t border-slate-200 px-3 py-3">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1">
             <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-[#2490EF] text-[10px] font-extrabold leading-none text-white">F</span>
-            <span className="text-[11px] font-semibold tracking-tight text-white/80">Frappe</span>
+            <span className="text-[11px] font-semibold tracking-tight text-slate-600">Frappe</span>
           </span>
-          <span className="text-[10px] text-white/25">&times;</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1">
+          <span className="text-[10px] text-slate-400">&times;</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1">
             <span className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-emerald-500 text-[10px] font-extrabold leading-none text-white">&#x2B21;</span>
-            <span className="text-[11px] font-medium tracking-tight text-white/70">OpenAEC</span>
+            <span className="text-[11px] font-medium tracking-tight text-slate-600">OpenAEC</span>
           </span>
         </div>
       )}

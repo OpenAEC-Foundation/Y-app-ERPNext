@@ -1,18 +1,32 @@
 @import "tailwindcss";
+@source "../../../node_modules/@stll/folio-react/dist/**/*.js";
 @import "leaflet/dist/leaflet.css";
+@import "./workspace.css";
 
 @theme {
-  --color-y-purple: #043b42;
-  --color-y-purple-light: #065a64;
-  --color-y-purple-dark: #022a2f;
-  --color-y-teal: #006876;
-  --color-y-teal-light: #99c2c8;
-  --color-y-teal-dark: #043b42;
+  --color-y-purple: #143d4b;
+  --color-y-purple-light: #205566;
+  --color-y-purple-dark: #142b35;
+  --color-y-teal: #087e82;
+  --color-y-teal-light: #b4efe0;
+  --color-y-teal-dark: #035a61;
+  --color-slate-50: #f8fbfc;
+  --color-slate-100: #f0f5f7;
+  --color-slate-200: #d6e2e8;
+  --color-slate-300: #adc1cc;
+  --color-slate-400: #6f8693;
+  --color-slate-500: #597180;
+  --color-slate-600: #415a67;
+  --color-slate-700: #27414e;
+  --color-slate-800: #162b35;
+  --color-slate-900: #10222c;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #162b35;
 }
 
 /* Global custom scrollbars — slim & modern */

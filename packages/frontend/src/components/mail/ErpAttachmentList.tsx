@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Box, Download, FileArchive, FileText, FolderOpen, ImageIcon, Loader2, Paperclip } from "lucide-react";
+import { Box, Download, FileArchive, FileText, FolderOpen, ImageIcon, Loader2, Paperclip, Pencil } from "lucide-react";
+import { editableOfficeKind, officeEditorUrl } from "../../lib/office";
 import { getFileUrl } from "../../lib/erpnext";
 import { isIfcName, isPdfName } from "../../lib/mail-erpnext-compose";
 import { isAfbeeldingNaam, isCadNaam, isLeesbaarOffice } from "../../lib/bijlage-soort";
@@ -261,6 +262,10 @@ export default function ErpAttachmentList({
                     <FileText size={12} className="text-slate-400" />
                     <span className="truncate max-w-[180px]">{att.file_name}</span>
                   </a>
+                )}
+                {att.name && editableOfficeKind(att.file_name) && (
+                  <a href={officeEditorUrl(att.name)} target="_blank" rel="noopener noreferrer" title={t("office.edit")}
+                    className="inline-flex items-center gap-1 rounded p-1 text-y-teal hover:bg-slate-100"><Pencil size={11} /><span>{t("office.edit")}</span></a>
                 )}
                 {project && (
                   <button onClick={() => void bewaarInProjectmap(att)}

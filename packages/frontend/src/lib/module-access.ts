@@ -118,6 +118,7 @@ const MODULE_DEFS: Record<string, string[]> = {
  * uiteraard maar één keer.
  */
 const MODULE_DOCTYPE: Record<string, string> = {
+  office: "File",
   webmail: "Communication",
   contacts: "Contact",
   calendar: "Event",

@@ -38,6 +38,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
       { id: "messenger", label: "Berichten" },
       { id: "calendar", label: "Agenda" },
       { id: "nextcloud-files", label: "Documenten" },
+      { id: "office", label: "Office" },
       { id: "financieel-dashboard", label: "Statistieken" },
     ],
   },

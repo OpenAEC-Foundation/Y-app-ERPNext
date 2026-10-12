@@ -43,6 +43,8 @@
 import { ApiError, getFileUrl } from "./erpnext.ts";
 
 export interface MailAttachmentRef {
+  /** Autoritatieve ERPNext File-id; nooit uit de URL afleiden. */
+  name?: string;
   file_url: string;
   file_name: string;
 }

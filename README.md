@@ -1,13 +1,115 @@
 # Y-next
 
-**Single-tenant web interface for ERPNext / Frappe v16** — a frontend that runs
-on the same site as the data it shows.
+**Web app voor ERPNext 16**, met projecten, uren, mail en documenten op de
+eigen ERPNext-site. Y-next gebruikt de bestaande login en ERPNext-rechten.
 
-Y-next is a fork of Y-app, rebuilt as a lightweight SPA that talks directly to
-one Frappe/ERPNext environment. There is no backend of its own, no separate
-authentication and no separate database: Y-next uses the existing session
-(login/cookies) of the site it is published on, and reads and writes data
-exclusively through the standard Frappe/ERPNext REST API.
+Y-next wordt geleverd als de Frappe-app `y_next`. De release bevat de gebouwde
+browserinterface en de bijbehorende Python-functies voor Frappe. Bestanden en
+gegevens blijven op je eigen site; een aparte Y-next-server of account is
+niet nodig. De browserinterface gebruikt de API van diezelfde site.
+
+## Downloaden en installeren
+
+Er zijn twee manieren om dezelfde app te installeren:
+
+1. **Zelf installeren:** download een release of haal de app met Bench op.
+2. **Via Claude:** geef je Claude Code-sessie de repository en de
+   installatieopdracht hieronder.
+
+De [app-repository](https://github.com/OpenAEC-Foundation/y_next) bevat het
+installeerbare pakket. Deze bronrepository is voor ontwikkeling.
+
+### Route 1: installeer de app
+
+Open de [releases](https://github.com/OpenAEC-Foundation/y_next/releases) en
+kies een versie. De huidige gepubliceerde versie is
+[v0.40.0](https://github.com/OpenAEC-Foundation/y_next/releases/tag/v0.40.0).
+Via **Source code (zip)** kun je het volledige pakket downloaden, inclusief
+de gebouwde frontend. De repository is momenteel privé: downloaden en
+installeren vraagt een GitHub-account met toegang.
+
+Voer in een bestaande Frappe-bench met Frappe 16 en ERPNext 16 uit:
+
+```bash
+bench get-app --branch version-16 https://github.com/OpenAEC-Foundation/y_next
+bench --site jouw.site install-app y_next
+bench --site jouw.site list-apps
+```
+
+Vervang `jouw.site` door de sitenaam. Open vervolgens
+`https://jouw.site/y-next` en log in met je bestaande ERPNext-account.
+Je hebt toegang tot de bench of een hostingbeheerder nodig voor installatie.
+De gebruiksklare app draait daarna in de browser.
+
+### Route 2: laat Claude de app importeren
+
+Start Claude Code in de omgeving waar je bench bereikbaar is en plak deze
+opdracht. Vul eerst de twee placeholders in:
+
+```text
+Installeer Y-next uit https://github.com/OpenAEC-Foundation/y_next,
+branch version-16, op mijn bestaande lokale ERPNext 16-testsite.
+Bench-map: <pad-naar-mijn-bench>
+Site: <mijn-testsite>
+
+Lees eerst de README van de app. Controleer de Frappe- en ERPNext-versies,
+de toegang tot de repository en of y_next al op de site staat.
+Gebruik de gebouwde distributie. Als de app nog niet op de bench staat,
+haal haar op met bench get-app; installeer haar op de genoemde site.
+Controleer daarna list-apps en open /y-next met de bestaande ERPNext-login.
+Rapporteer de geïnstalleerde versie en de lokale URL.
+Bij een bestaande installatie: controleer eerst de versie; overschrijf of
+update haar niet automatisch. Vraag alleen om informatie die ontbreekt.
+```
+
+Deze opdracht helpt bij het importeren van de app; Claude heeft dezelfde
+repository- en bench-toegang nodig als bij handmatige installatie. Geheimen
+horen in de normale lokale aanmelding of secretconfiguratie.
+
+Volledige installatie-, instellingen- en update-informatie staat in de
+[README van de app](frappe-app/README.md). De technische ontwikkelwerkwijze
+staat in [docs/frappe-app.md](docs/frappe-app.md).
+
+## Apps op het startscherm
+
+Het dashboard bevat snelkoppelingen naar Email, Berichten, Agenda,
+Open CAD Studio, Open Planner Studio, IFC Viewer, Excel-editor en Word-editor.
+De bestaande dashboardwidgets blijven daaronder beschikbaar.
+
+Email, Berichten en Agenda gebruiken dezelfde ERPNext-sessie en rechten.
+Word en Excel starten een nieuw lokaal document; bestaande bijlagen openen
+via hun project of e-mail. De IFC Viewer opent een lokaal model (.ifc,
+maximaal 100 MB) zonder het bestand te uploaden.
+
+CAD opent de lokale viewer als die op de site beschikbaar is, anders de
+online Open CAD Studio. Planner opent de online Open Planner Studio.
+Deze twee links openen in een nieuw tabblad; documenten en aanmeldgegevens
+worden niet aan de externe studio meegegeven.
+
+## Word en Excel
+
+De gepubliceerde versie 0.40.0 toont Office-bijlagen als leesvoorbeeld.
+Deze ontwikkelversie bevat geïntegreerde editors:
+`.docx` voor Word en `.xlsx`/`.xlsm` voor Excel. De flow is openen
+vanuit mail, project of een lokaal bestand, bewerken in de browser en als
+nieuwe private bestandsversie opslaan. Het origineel blijft beschikbaar;
+een ontvangen bericht wordt niet gewijzigd of verzonden. Een werkboek met
+macro's wordt als bestand bewaard, zonder macro's uit te voeren.
+
+De editorinterface is beschikbaar in Nederlands, Engels en Duits.
+Excel-getalinvoer gebruikt in deze preview een punt als decimaalteken
+(`1234.5`); komma-invoer blijft tekst en formules gebruiken Engelse
+functienamen. Complexe documenten kunnen functies bevatten die de editors
+niet ondersteunen. Bewaar het origineel en controleer een nieuwe versie
+voordat je die verder gebruikt; onbekende OOXML-onderdelen worden waar
+mogelijk behouden en onveilige externe resources geweigerd.
+
+De nieuwe lichte werkplek gebruikt gedeelde kleur- en typografietokens.
+Het menu en dashboard zijn opnieuw vormgegeven zonder de bestaande
+modulekeuzes, ERPNext-rechten of widgetinstellingen te vervangen.
+
+Het editorontwerp staat in
+[docs/superpowers/specs/2026-10-12-office-editors-design.md](docs/superpowers/specs/2026-10-12-office-editors-design.md).
 
 ![Sign-in screen](docs/screenshots/login.jpg)
 
@@ -103,19 +205,25 @@ npm test
 The suite is plain `node --test` over the TypeScript sources: pure modules with
 no DOM, so the rules that decide what the app does are checked in milliseconds.
 
-## Publishing
+## De Frappe-app lokaal bouwen
 
-Y-next is published as a Frappe **Web Page** on route `/y-next`, with the built
-assets as public **File** documents:
+Voor ontwikkeling zijn Node 24, de npm-afhankelijkheden en een lokale
+Docker Compose-bench met Frappe 16 en ERPNext 16 nodig. In PowerShell:
 
-```bash
-YNEXT_BASE_URL=https://your-site.example npm run deploy
+```powershell
+npm install
+node scripts/build-frappe-app.mjs
+$env:YNEXT_BENCH_DIR = 'C:\pad\naar\frappe-bench-v16'
+$env:YNEXT_BENCH_SITE = 'jouw.localhost'
+node scripts/dev-bench-sync.mjs --migrate
 ```
 
-`YNEXT_BASE_URL` decides which site you publish to — set it, or you publish to
-the default in `scripts/deploy-y-next.mjs`. See
-[`docs/deployment.md`](docs/deployment.md) for the full deploy, smoke test and
-rollback procedure.
+De sync vervangt de ontwikkelkopie van `y_next` op die lokale bench.
+Gebruik dit uitsluitend op een testbench zonder ongekopieerde appwijzigingen.
+Open daarna `http://jouw.localhost:8000/y-next`.
+Zie [docs/frappe-app.md](docs/frappe-app.md) voor tests en het samenstellen
+van de distributie. De oudere Web Page-publicatieroute staat beschreven in
+[docs/deployment.md](docs/deployment.md); zij is niet de app-installatie.
 
 ---
 
