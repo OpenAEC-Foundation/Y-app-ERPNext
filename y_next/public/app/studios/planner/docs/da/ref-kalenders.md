@@ -1,0 +1,57 @@
+# Kalendervinduer
+
+Vinduet *Kalendere* håndterer projektets bibliotek med kalendere: hvilke arbejdsdage, arbejdstider og dage uden arbejde der findes, og hvilken kalender der er projektkalender. Formularen ved siden af listen er den samme som i vinduet *Ressourcekalender*. Denne artikel forklarer for hvert felt, hvad det gør, hvad standarden er, og hvad du mærker af det. Hvordan du laver en kalender og tildeler den til opgaver, står i [Oprettelse og tildeling af en kalender](docs://howto-kalender-maken-en-toewijzen). Hvordan appen tæller arbejdsdage, står i [Kalendere og arbejdsdage](docs://uitleg-kalenders).
+
+## Hvor du finder det
+
+- **Kalendere** — *Tidsplan › Kalender › Kalender* eller *Indstillinger › Kalender › Kalender*.
+- **Kalender for en opgave** — feltet *Kalender* i vinduet *Rediger opgave* eller i panelet *Egenskaber*. Se [Opgavedialog og egenskabspanel](docs://ref-taak-eigenschappen).
+- **Ressourcekalender** — panelet *Ressourcer*, kolonnen *Kalender*: vælg en kalender, vælg *+ Ressourcekalender* for en ny, eller klik på blyanten (*Rediger…*) for den valgte kalender. Se [Ressourcepanel](docs://ref-resourcepaneel).
+
+## Biblioteket i vinduet Kalendere
+
+Til venstre står listen over kalendere, til højre formularen for den valgte kalender. Projektkalenderen har en stjerne. En kalender med ugyldige indtastninger har en rød trekant (*Denne kalender indeholder ugyldige indtastninger*).
+
+- **Opret kalender** (plusset) — tilføjer en kalender med navnet *Opret kalender* og appens standardindhold: mandag til fredag, 07:00 til 16:00, 8 nettotimer. Hvis *Slå byggetilstand til* er aktiv (standard), er de nederlandske helligdage også med i kalenderen, uden byggeferien. Er den slået fra, er listen tom. Vil du ikke have disse helligdage, så vælg *Generer helligdage…* og derefter *Ingen helligdage*. (Navnene *Bouwkalender NL* og *Standaardkalender* forbliver nederlandske i alle sprog.)
+- **Dupliker** — kopierer den valgte kalender under navnet *{name} (kopi)*.
+- **Slet** (papirkurven) — sletter den valgte kalender. Ikke tilgængelig, når der kun er én kalender tilbage. Var det projektkalenderen, bliver den første resterende kalender projektkalender. Opgaver og ressourcer, der brugte kalenderen, sættes til projektkalenderen.
+- **Angiv som projektstandard** — gør den valgte kalender til projektkalender. På kalenderen, der allerede er det, vises *Projektkalender* med en stjerne. Virkning: hver opgave uden egen kalender tæller i denne kalender, og det gør en ressource uden egen kalender også. En opgave, du selv har givet en kalender, beholder den.
+- **Anvend** — skriver alle ændringer i hele listen til projektet på én gang, genberegner tidsplanen og lukker vinduet. Den genberegner ikke, hvis der samlet set ikke er ændret noget. Ikke tilgængelig, så længe en af kalenderne har ugyldige indtastninger. Enter i et almindeligt tekstfelt gør det samme, men lader vinduet stå åbent.
+- **Annuller** — lukker vinduet og kasserer alt, du har ændret siden åbningen (eller siden den sidste Enter). Esc og krydset virker som *Annuller*. Et klik ved siden af vinduet gør ikke noget, så du mister ikke dine indtastninger.
+
+Som standard har et projekt kalenderen *Bouwkalender NL* (byggetilstand til) eller *Standaardkalender* (byggetilstand fra), med mandag til fredag 07:00 til 16:00.
+
+## Formularen
+
+### Grundlæggende
+
+- **Navn** — navnet i listen og i rullelisterne for opgaver og ressourcer.
+- **Arbejdsdage** — en knap pr. ugedag, fra *Ma* til *Sø*. En trykket knap er en arbejdsdag. Rækkefølgen følger *Uge starter på* (*Indstillinger*, fanen *Tidsplan*). Standard: *Ma* til *Fr*. Der er to hurtigknapper: *Man–fre* sætter man–fre, 07:00 til 16:00, 8 timer; en indstillet pause bliver den implicitte pause kl. 12:00, igen 60 minutter; *Kontinuerlig (24/7)* sætter alle syv dage, 00:00 til 24:00, 24 timer. Virkning: en opgave arbejder kun på arbejdsdage. Appen kan ikke beregne en kalender uden arbejdsdage (*Kalenderen har ingen arbejdsdage angivet*).
+- **Start (time)** og **Slut (time)** — start- og sluttidspunktet for arbejdsdagen, i formatet tt:mm i 24-timers notation. Standard: 07:00 og 16:00. Pilene (eller piletasterne) justerer i trin på 15 minutter. Slutten må være 24:00, og starten skal ligge før slutten. Virkning: sammen med pausen bestemmer de nettotimerne pr. dag. De tæller ikke for datoerne på en opgave i dage, men de tæller for opgaver i timer. Disse felter forsvinder, når *Slå timeplanlægning til* er aktiv, og kalenderen har arbejdstider pr. ugedag. Så har arbejdstiderne pr. ugedag forrang.
+- **Pause starter** og **Pausens varighed (minutter)** — pausens start og længde, med samme trin på 15 minutter. Standard: 12:00 og 60 minutter. Hvis du sætter varigheden til 0, er arbejdsdagen sammenhængende. Pausen skal ligge helt inden for arbejdsdagen og må ikke optage hele dagen. Virkning: nettotimerne er slut minus start minus pause. For en opgave i timer udføres der intet arbejde i pausen. De samme felter forsvinder under samme betingelse som *Start (time)*.
+- **Nettotimer pr. dag** — kun læsning: den udledte længde af en arbejdsdag, med to decimaler, for eksempel *8,00 h*. Standard: 8. Virkning: dette er længden af en dag, når du omregner mellem dage og timer, og for opgaver i timer. Se [Dage og timer](docs://uitleg-dagen-en-uren).
+
+### Arbejdstider
+
+Dette afsnit er kun der, når *Slå timeplanlægning til* er aktiv (*Indstillinger*, fanen *Tidsplan*). Her angiver du arbejdstider og arbejdsskift pr. ugedag. Se [Angiv arbejdstider](docs://howto-werktijden-instellen).
+
+- **Forudindstillinger** — knapper, der sætter arbejdstiderne i ét hug: *Dagarbejdsskift* (man–fre 08:00 til 16:00, en almindelig dagkalender), *2 arbejdsskift* (man–fre 06:00 til 22:00, 16 timer), *3 arbejdsskift* (man–fre 06:00 til 06:00 næste dag, 24 timer), *Natarbejdsskift* (man–fre 22:00 til 06:00, 8 timer) og *24/7* (alle dage 00:00 til 24:00). Bag de indbyggede knapper ligger dine egne forudindstillinger, med et kryds til at slette dem.
+- **Gem som forudindstilling…** — gemmer de aktuelle arbejdstider som din egen forudindstilling på denne enhed, så du kan genbruge dem i alle projekter. Du angiver et navn (*Navn til din egen forudindstilling*) og klikker på *Gem* eller *Annuller*.
+- **Angiv pr. ugedag…** — gør en dagkalender til en timekalender: de aktuelle tider bliver tidsbånd for hver arbejdsdag, med pausen som hul. For en timekalender hedder knappen *Skjul arbejdstimer* eller *Vis arbejdstimer*, og den fælder editoren sammen eller ud. I en timekalender er editoren åben som standard.
+- **Editoren** — pr. ugedag en liste over tidsbånd (*bånd*) med et start- og sluttidspunkt. Afkrydsningen *næste dag* lader et tidsbånd løbe over midnat (et natarbejdsskift). *Tilføj bånd* (plusset) tilføjer 08:00 til 16:00. *Kopiér til alle arbejdsdage* (kun på man–fre) kopierer tidsbåndene for den dag til mandag til fredag. En dag uden tidsbånd kaldes *Ikke-arbejdsdag*. Nederst står *Udledte timer/dag*: og så snart en dag har mere end ét tidsbånd, vises hintet *Et hul mellem to bånd er en pause — justér tiderne efter behov*. Virkning: tidsbåndene har forrang. En ugedag med tidsbånd er en arbejdsdag, og felterne *Start (time)*, *Slut (time)* og pausen forsvinder.
+
+### Helligdage
+
+- **Generer helligdage…** — åbner generatoren. *Land* vælger *Nederlandene*, *Tyskland*, *Belgien*, *Frankrig*, *Storbritannien*, *Østrig*, *Schweiz* eller *Ingen helligdage*. *Region* vises kun, hvis landet har regioner; standard er *Landsdækkende*. *Byggeferie* vises kun for Nederlandene og når *Slå byggetilstand til* er aktiv, med valgmulighederne *Ingen* (standard), *Nord*, *Midt* og *Syd* og hintet *Vejledende datoer — tjek hos Bouwend Nederland*. En forhåndsvisning viser, hvor mange helligdage der bliver tilføjet (*… helligdage, …–…*), og du kan udvide den for at se listen. *Generér* sætter resultatet i den kalender, du redigerer (det tæller først efter *Anvend*). *Annuller* lukker generatoren. Virkning: hele listen *Helligdage* erstattes, inklusive det du selv har tilføjet. Generatoren dækker årene fra året før projektstart til og med året efter projektslut (uden projektslut: op til tre år efter starten). Se [Generering af helligdage og byggeferie](docs://howto-feestdagen-genereren).
+- **Regenerér** — vises ved knappen, når de genererede helligdage ikke længere dækker projektperioden, med teksten *Helligdage dækker …–…; projektet løber til …. Generér igen?* Et klik genererer det samme valg (land, region, byggeferie) igen for den nye periode. Uden det er dage uden for de genererede år almindelige arbejdsdage.
+- **Helligdage** — listen over helligdage: *Beskrivelse*, *Fra* og *Til*, og en papirkurv pr. linje. *Tilføj helligdag* tilføjer en linje med i dag som *Fra* og en tom *Til*. En tom *Til* betyder én dag. Uden linjer står der *Ingen helligdage endnu*. Virkning: alle dage i perioden er ikke-arbejdsdage i denne kalender, for opgaver i denne kalender og for ressourcer, der bruger den. En ugyldig linje får en rød kant og en tekst (*Indtast en gyldig startdato*, *Indtast en gyldig slutdato, eller lad feltet være tomt for én dag* eller *Slutdatoen ligger før startdatoen*) og blokerer *Anvend*.
+
+### Fejlmeddelelser og undtagelser
+
+Fejl i arbejdstiderne vises under felterne og blokerer *Anvend*: *Indtast et gyldigt starttidspunkt som tt:mm*, *Indtast et gyldigt sluttidspunkt som tt:mm*, *Starttidspunktet skal ligge før sluttidspunktet*, *Indtast et gyldigt pausetidspunkt som tt:mm*, *Pausens varighed skal være et helt antal minutter på 0 eller mere*, *Pausen skal helt ligge inden for den indstillede arbejdsdag* og *Pausen må ikke fylde hele arbejdsdagen*.
+
+Kalenderen kender kun dage uden arbejde som undtagelser. En kalender fra en MS Project- eller Primavera-fil kan også have arbejdsundtagelser, altså en ekstra arbejdsdag. Vinduet viser eller redigerer dem ikke.
+
+## Vinduet Ressourcekalender
+
+- **Ressourcekalender** — formularen ovenfor, i et vindue med kun *Anvend* og *Annuller*. Esc og krydset virker som *Annuller*. Et klik ved siden af vinduet gør ikke noget, og Enter gør heller ikke noget her. Du redigerer én kalender i det: en eksisterende eller en ny med standardnavnet *Ressourcekalender*, som knyttes til ressourcen efter *Anvend* (*Annuller* efterlader ingenting). Åbner du den i visningen *Bibliotek* i ressourcepanelet, redigerer den en kalender i biblioteket. I visningen *Projekt* redigerer den projektets kalender, også selv om den kom fra biblioteket. Virkning: en ressourcekalender bestemmer, hvornår ressourcen er til rådighed i histogrammet, ved overallokering og ved udjævning. Den ændrer ikke datoerne på en opgave. *Anvend* genberegner ikke. Er kalenderen også på opgaver eller er projektkalenderen, ændrer tidsplanen sig. Så er tidsplanen ikke længere opdateret, og *Beregn* genberegner den. Se [Angiv en ressourcekalender](docs://howto-resourcekalender-instellen).

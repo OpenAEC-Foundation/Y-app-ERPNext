@@ -1,0 +1,3 @@
+Y-next local studio packaging
+Runtime wrappers enforce local asset fetching and account-scoped browser storage.
+Only docs/nb/*.md uses semantically equivalent Norwegian window terminology, preserving capitalization. Other locales and original source archives remain unchanged.

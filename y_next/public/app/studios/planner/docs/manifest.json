@@ -1,0 +1,661 @@
+{
+  "version": 2,
+  "articles": [
+    {
+      "id": "howto-relaties-leggen",
+      "title": {
+        "nl": "Relaties leggen",
+        "en": "Adding relations"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-taken-en-mijlpalen-toevoegen",
+      "title": {
+        "nl": "Taken en mijlpalen toevoegen",
+        "en": "Adding tasks and milestones"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-structuur-aanpassen",
+      "title": {
+        "nl": "Structuur aanpassen",
+        "en": "Adjusting the structure"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-wbs-sjablonen",
+      "title": {
+        "nl": "WBS-sjablonen bewaren en invoegen",
+        "en": "Saving and inserting WBS templates"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-codes-en-velden",
+      "title": {
+        "nl": "Codes en eigen velden",
+        "en": "Codes and custom fields"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-taak-splitsen",
+      "title": {
+        "nl": "Een taak splitsen",
+        "en": "Splitting a task"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-project-verplaatsen",
+      "title": {
+        "nl": "Project verplaatsen",
+        "en": "Moving a project"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-taken-selecteren-verwijderen",
+      "title": {
+        "nl": "Taken selecteren, verwijderen en ongedaan maken",
+        "en": "Selecting, deleting and undoing tasks"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "gids-goed-plannen",
+      "title": {
+        "nl": "Goed plannen",
+        "en": "Planning well"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-kritiek-pad",
+      "title": {
+        "nl": "Kritiek pad en speling",
+        "en": "Critical path and float"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-relaties",
+      "title": {
+        "nl": "Relaties en lag",
+        "en": "Relations and lag"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-constraints",
+      "title": {
+        "nl": "Constraints en deadlines",
+        "en": "Constraints and deadlines"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "howto-pad-traceren",
+      "title": {
+        "nl": "Een pad traceren",
+        "en": "Tracing a path"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-externe-relaties",
+      "title": {
+        "nl": "Externe relaties naar een ander project",
+        "en": "External relations to another project"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-constraint-deadline-zetten",
+      "title": {
+        "nl": "Een constraint of deadline zetten",
+        "en": "Setting a constraint or deadline"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-hammock",
+      "title": {
+        "nl": "Een hammock maken",
+        "en": "Creating a hammock"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "uitleg-kalenders",
+      "title": {
+        "nl": "Kalenders en werkdagen",
+        "en": "Calendars and working days"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-dagen-en-uren",
+      "title": {
+        "nl": "Dagen en uren",
+        "en": "Days and hours"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "howto-kalender-maken-en-toewijzen",
+      "title": {
+        "nl": "Een kalender maken en toewijzen",
+        "en": "Creating and assigning a calendar"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-feestdagen-genereren",
+      "title": {
+        "nl": "Feestdagen en bouwvak genereren",
+        "en": "Generating holidays and the construction holiday"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-resourcekalender-instellen",
+      "title": {
+        "nl": "Een resourcekalender instellen",
+        "en": "Setting up a resource calendar"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-urenplanning-aanzetten",
+      "title": {
+        "nl": "Urenplanning aanzetten",
+        "en": "Turning on hour planning"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-werktijden-instellen",
+      "title": {
+        "nl": "Werktijden instellen",
+        "en": "Setting working times"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-resources-beheren",
+      "title": {
+        "nl": "Resources beheren",
+        "en": "Managing resources"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-resource-toewijzen",
+      "title": {
+        "nl": "Resources toewijzen met een curve",
+        "en": "Assigning resources with a curve"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-urenverdeling-aanpassen",
+      "title": {
+        "nl": "Urenverdeling aanpassen",
+        "en": "Adjusting the hour distribution"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-werkregel-kiezen",
+      "title": {
+        "nl": "Werkregel kiezen",
+        "en": "Choosing a work rule"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-overbezetting-oplossen",
+      "title": {
+        "nl": "Overbezetting oplossen",
+        "en": "Resolving overallocation"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "uitleg-werkregels",
+      "title": {
+        "nl": "Werkregels: duur, inzet en werk",
+        "en": "Work rules: duration, units and work"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-nivelleren",
+      "title": {
+        "nl": "Nivelleren",
+        "en": "Resource leveling"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-voortgang",
+      "title": {
+        "nl": "Voortgang, statusdatum en baseline",
+        "en": "Progress, status date and baseline"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-rekenprofielen",
+      "title": {
+        "nl": "Rekenprofielen en conventies",
+        "en": "Calculation profiles and conventions"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "howto-baseline-opslaan-en-beheren",
+      "title": {
+        "nl": "Een baseline opslaan en beheren",
+        "en": "Saving and managing a baseline"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-voortgang-bijwerken",
+      "title": {
+        "nl": "Voortgang bijwerken",
+        "en": "Updating progress"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-voortgang-importeren",
+      "title": {
+        "nl": "Voortgang uit een spreadsheet importeren",
+        "en": "Importing progress from a spreadsheet"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-voortgangsmodus-kiezen",
+      "title": {
+        "nl": "De voortgangsmodus kiezen",
+        "en": "Choosing the progress mode"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-rapport-maken-en-afdrukken",
+      "title": {
+        "nl": "Een rapport maken en afdrukken",
+        "en": "Making and printing a report"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-rapportageperiode-kiezen",
+      "title": {
+        "nl": "De rapportageperiode kiezen",
+        "en": "Choosing the reporting period"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-layouts-gebruiken",
+      "title": {
+        "nl": "Een layout maken en gebruiken",
+        "en": "Creating and using a layout"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-tabelkolommen-aanpassen",
+      "title": {
+        "nl": "Tabelkolommen aanpassen",
+        "en": "Adjusting table columns"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-split-view-en-mini-map",
+      "title": {
+        "nl": "Split view en mini-map gebruiken",
+        "en": "Using split view and the mini-map"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-gantt-bedienen",
+      "title": {
+        "nl": "In de Gantt slepen, pannen en zoomen",
+        "en": "Dragging, panning and zooming in the Gantt"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-presentatie",
+      "title": {
+        "nl": "Presenteren op een groot scherm",
+        "en": "Presenting on a large screen"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-meerdere-projecten",
+      "title": {
+        "nl": "Met meerdere projecten tegelijk werken",
+        "en": "Working with several projects at once"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "uitleg-bestanden",
+      "title": {
+        "nl": "Bestanden en formaten",
+        "en": "Files and formats"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-datums-zoals-opgeslagen",
+      "title": {
+        "nl": "Datums zoals opgeslagen",
+        "en": "Dates as recorded"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "howto-bestand-openen-en-opslaan",
+      "title": {
+        "nl": "Een bestand openen en opslaan",
+        "en": "Opening and saving a file"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-openen-en-opslaan-via-de-site",
+      "title": {
+        "nl": "Openen en opslaan via de site",
+        "en": "Opening and saving through the site"
+      },
+      "kind": "howto",
+      "draft": true
+    },
+    {
+      "id": "howto-automatisch-opslaan",
+      "title": {
+        "nl": "Automatisch opslaan aanzetten",
+        "en": "Turning on AutoSave"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-mpp-openen",
+      "title": {
+        "nl": "Een MS Project-bestand (.mpp) openen",
+        "en": "Opening an MS Project file (.mpp)"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-xer-openen",
+      "title": {
+        "nl": "Een Primavera P6-bestand (.xer) openen",
+        "en": "Opening a Primavera P6 file (.xer)"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-exporteren",
+      "title": {
+        "nl": "Exporteren",
+        "en": "Exporting"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-herstellen-na-een-crash",
+      "title": {
+        "nl": "Herstellen na een crash",
+        "en": "Recovering after a crash"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "uitleg-resourcebibliotheek",
+      "title": {
+        "nl": "De resourcebibliotheek",
+        "en": "The resource library"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "uitleg-ai-koppeling",
+      "title": {
+        "nl": "Hoe de AI-koppeling werkt",
+        "en": "How the AI link works"
+      },
+      "kind": "uitleg"
+    },
+    {
+      "id": "howto-resourcebibliotheek-gebruiken",
+      "title": {
+        "nl": "De resourcebibliotheek gebruiken",
+        "en": "Using the resource library"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-bibliotheken-beheren",
+      "title": {
+        "nl": "Resourcebibliotheken beheren en delen",
+        "en": "Managing and sharing resource libraries"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-bezettingsoverzicht-gebruiken",
+      "title": {
+        "nl": "Het bezettingsoverzicht gebruiken",
+        "en": "Using the occupancy overview"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-extensie-installeren",
+      "title": {
+        "nl": "Een extensie installeren en beheren",
+        "en": "Installing and managing an extension"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-ai-assistent-koppelen",
+      "title": {
+        "nl": "Een AI-assistent koppelen (MCP)",
+        "en": "Connecting an AI assistant (MCP)"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-feedback-geven",
+      "title": {
+        "nl": "Feedback geven",
+        "en": "Giving feedback"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "howto-app-bijwerken",
+      "title": {
+        "nl": "De app bijwerken",
+        "en": "Updating the app"
+      },
+      "kind": "howto"
+    },
+    {
+      "id": "ref-lint",
+      "title": {
+        "nl": "Lint per tabblad",
+        "en": "The ribbon, tab by tab"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-taak-eigenschappen",
+      "title": {
+        "nl": "Taakdialoog en eigenschappenpaneel",
+        "en": "Task dialog and properties panel"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-kalenders",
+      "title": {
+        "nl": "Kalendervensters",
+        "en": "Calendar windows"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-resourcepaneel",
+      "title": {
+        "nl": "Resourcepaneel",
+        "en": "Resource panel"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-tabelkolommen",
+      "title": {
+        "nl": "Tabelkolommen",
+        "en": "Table columns"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-meldingen",
+      "title": {
+        "nl": "Meldingen en waarschuwingen",
+        "en": "Notifications and warnings"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-ai-tools",
+      "title": {
+        "nl": "AI-tools (planner_*)",
+        "en": "AI tools (planner_*)"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-sneltoetsen",
+      "title": {
+        "nl": "Sneltoetsen",
+        "en": "Keyboard shortcuts"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-contextmenus",
+      "title": {
+        "nl": "Rechtermuismenu's",
+        "en": "Right-click menus"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-instellingen",
+      "title": {
+        "nl": "Instellingen",
+        "en": "Settings"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-projectinfo",
+      "title": {
+        "nl": "Nieuw project en Projectinfo",
+        "en": "New project and Project info"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-rekenopties-en-conventies",
+      "title": {
+        "nl": "Rekenopties en conventies",
+        "en": "Calculation options and conventions"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-import-exportformaten",
+      "title": {
+        "nl": "Import- en exportformaten",
+        "en": "Import and export formats"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-rapporttypes",
+      "title": {
+        "nl": "Rapporttypes",
+        "en": "Report types"
+      },
+      "kind": "referentie"
+    },
+    {
+      "id": "ref-extensiepermissies",
+      "title": {
+        "nl": "Extensiepermissies",
+        "en": "Extension permissions"
+      },
+      "kind": "referentie"
+    }
+  ],
+  "aliases": {
+    "quick-start": "howto-taken-en-mijlpalen-toevoegen",
+    "gids-plannen-wbs": "howto-structuur-aanpassen",
+    "gids-relaties-constraints": "uitleg-relaties",
+    "gids-taken-splitsen": "howto-taak-splitsen",
+    "gids-kalenders-uren": "uitleg-kalenders",
+    "gids-resources-histogram": "howto-resources-beheren",
+    "gids-resourcebibliotheken": "uitleg-resourcebibliotheek",
+    "gids-bezettingsoverzicht": "howto-bezettingsoverzicht-gebruiken",
+    "gids-baselines-voortgang": "uitleg-voortgang",
+    "gids-kritiek-pad-analyse": "uitleg-kritiek-pad",
+    "gids-import-export": "uitleg-bestanden",
+    "gids-voortgang-importeren": "howto-voortgang-importeren",
+    "gids-taaktypes": "uitleg-werkregels",
+    "gids-msproject-import": "howto-mpp-openen",
+    "gids-xer-import": "howto-xer-openen",
+    "gids-rekenprofielen": "uitleg-rekenprofielen",
+    "datums-zoals-opgeslagen": "uitleg-datums-zoals-opgeslagen",
+    "gids-ai-mcp": "howto-ai-assistent-koppelen",
+    "gids-rapporten-printen": "howto-rapport-maken-en-afdrukken",
+    "gids-sneltoetsen-bediening": "ref-sneltoetsen",
+    "ref-taakdialoog": "ref-taak-eigenschappen",
+    "ref-kalenderdialoog": "ref-kalenders",
+    "ref-resourcekalender": "howto-resourcekalender-instellen",
+    "ref-nivellering": "howto-overbezetting-oplossen",
+    "ref-baselinebeheer": "howto-baseline-opslaan-en-beheren",
+    "ref-externe-koppelingen": "howto-externe-relaties",
+    "ref-codes-velden": "howto-codes-en-velden",
+    "ref-filters": "howto-layouts-gebruiken",
+    "ref-kolommen": "ref-tabelkolommen",
+    "ref-layouts": "howto-layouts-gebruiken",
+    "ref-projectgegevens": "ref-projectinfo",
+    "ref-extensies": "howto-extensie-installeren",
+    "ref-herstellen": "howto-herstellen-na-een-crash",
+    "gids-taaktypen": "ref-taak-eigenschappen",
+    "ref-waarschuwingen": "ref-meldingen",
+    "ref-sneltoetsen-lijst": "ref-sneltoetsen",
+    "ref-instellingen-lijst": "ref-instellingen"
+  }
+}

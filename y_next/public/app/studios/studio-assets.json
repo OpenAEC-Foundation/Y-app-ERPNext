@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "studios": {
+    "cad": {
+      "entry": "index.html",
+      "wasm": [
+        "OpenCADStudio-1562abfa2c78e4a3_bg.wasm"
+      ],
+      "notices": [
+        "LICENSE",
+        "Y-NEXT-PACKAGING-NOTICE.txt",
+        "fonts/OFL.txt"
+      ],
+      "sourceArchive": "source/cad-source-20261013.zip",
+      "localizedDocRewrites": []
+    },
+    "planner": {
+      "entry": "index.html",
+      "wasm": [
+        "assets/hb-subset-FM1Orw2S.wasm"
+      ],
+      "notices": [
+        "Y-NEXT-PACKAGING-NOTICE.txt",
+        "notices/LICENSE",
+        "notices/LICENSE.GPL",
+        "notices/node_modules/@fontsource/inter/LICENSE",
+        "notices/node_modules/@fontsource/jetbrains-mono/LICENSE",
+        "notices/node_modules/@fontsource/space-grotesk/LICENSE",
+        "notices/src/services/pdf/fonts/Inter-OFL.txt",
+        "notices/src/services/pdf/fonts/NotoSansArabic-OFL.txt",
+        "notices/src/services/pdf/vendor/HarfBuzz-LICENSE.txt"
+      ],
+      "sourceArchive": "source/planner-source-1f127177-complete.zip",
+      "localizedDocRewrites": [
+        "docs/nb/gids-goed-plannen.md",
+        "docs/nb/uitleg-kritiek-pad.md",
+        "docs/nb/uitleg-nivelleren.md"
+      ]
+    }
+  }
+}

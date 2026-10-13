@@ -1,0 +1,112 @@
+# Opgavedialog og egenskabspanel
+
+Du kan redigere en opgave på to steder: i vinduet *Rediger opgave* og i panelet *Egenskaber*. De deler næsten alle felter. Denne artikel beskriver for hvert felt, hvad det gør, hvad standarden er, og hvad du ser af det. Hvordan du opretter og opsætter en opgave, står i [Tilføj opgaver og milepæle](docs://howto-taken-en-mijlpalen-toevoegen). Hvorfor beregningen kommer ud, hvor den gør, står i [Kritisk vej og slæk](docs://uitleg-kritiek-pad).
+
+## De to steder
+
+- **Rediger opgave** — vinduet for den første valgte opgave. Åbn det med F2, ved at dobbeltklikke på en bjælke i Gantt-diagrammet, eller ved at højreklikke på en opgave i Gantt-diagrammet eller tabellen og vælge *Rediger...*. Dine ændringer bliver i et udkast, til du klikker på *Gem* (Enter). *Annuller* (Esc) smider dem væk. *Gem* er slået fra, så længe navnet er tomt. Gem tæller som ét trin under *Fortryd*, inklusive det du gjorde i sektionerne *Arbejdsregel*, *Afhængigheder*, *Tildelinger* og *Koder og felter*. Disse påvirker allerede projektet, mens du redigerer, og *Annuller* fortryder dem.
+- **Egenskaber** — panelet i den højre kolonne, for den aktive opgave. Hver ændring virker med det samme. Ændringer i det samme felt, de følger direkte på hinanden, tæller som ét trin under *Fortryd*. Uden opgave står der *Vælg en opgave for at se egenskaberne.* Slå det til eller fra med *Visning › Paneler › Egenskaber*. Standard: til. Panelet står ved siden af Gantt-diagrammet og på fanen *Tabel*, ikke på *IFC* og *Rapport*, og ikke under det fulde ressourcepanel.
+
+Kun i vinduet: *Overordnet opgave* og knapperne *Gem* og *Annuller*. Kun i panelet: papirkurven *Slet opgave*, knappen *Beregn* nederst, sektionen *Afbrydelser*, de tre markeringer under *Arbejdsregel* (lang ikke-arbejdsperiode, MS Project, registrerede datoer) og tilføjelse af afhængigheder samt hop til en forbundet opgave under *Afhængigheder*. Alle andre felter står begge steder. Vinduet viser *Afhængigheder*, *Tildelinger* og *Koder og felter* kun for en eksisterende opgave.
+
+Hvis du har ændret noget, der rører datoerne, tryk på *Beregn*. Beregningen sker ikke af sig selv, medmindre *Beregn automatisk* er til.
+
+## Generelt
+
+- **Navn** (i vinduet *Navn \**) — opgavens navn i Gantt-diagrammet, tabellen og rapporterne. Påkrævet: et tomt navn bliver ikke gemt. Standard for en ny opgave: *Ny opgave*.
+- **WBS-kode** — strukturkoden for opgaven, for eksempel `RB-301`. Påkrævet. Med *Tidsplan › Struktur › WBS auto* er feltet slået fra (hjælpetekst: *WBS-koder nummereres automatisk (Tidsplan → Struktur)*), fordi appen så ejer koderne.
+- **Beskrivelse** — fri tekst. Har ingen effekt på beregningen; du kan vise den som kolonnen *Beskrivelse* i tabellen.
+- **Type** — opgavetypen. Listen har gruppene *Indbyggede typer* (*Byggeri*, *Installation*, *Nedrivning*, *Logistik*, *Kontrol/inspektion*, *Flytning*, *Renovation*, *Vedligeholdelse*), *Mine opgavetyper* og *Fra dette projekt*. *Andet* vises kun, hvis opgaven allerede har den type. Nederst står *+ Opret opgavetype…* og *Administrer opgavetyper…*. Standard: typen for den overordnede opgave, ellers *Byggeri* (tilstanden Byggeri er til, standard) eller *Andet*. Effekt: ingen effekt på beregningen; du kan gruppere og filtrere på den og farve bjælkerne efter den. Appen gemmer en egen opgavetype på din enhed. Når du vælger den, kommer en kopi ind i projektet (*Fra dette projekt*). Skriver du et navn ved *+ Opret opgavetype…*, og navnet findes allerede i *Mine opgavetyper*, også med andre store bogstaver, så opretter appen ikke en ny type. Den vælger den eksisterende. I *Administrer opgavetyper…* redigerer eller fjerner du kun dine egne typer. Et tomt navn, eller et navn der allerede findes, bliver ikke gemt. Fjerner du en type, som det åbne projekt bruger, spørger appen først, og projektets kopi bliver. En type under *Fra dette projekt*, for eksempel fra en andens fil, kommer først på din egen liste, når du klikker på *Tilføj til mine opgavetyper* i *Administrer opgavetyper…*.
+- **Kalender** — kalenderen, hvor opgaven tæller sin varighed, slutdato og slæk. Standard: *Projektets kalender: {name}*. Effekt: en opgave med sin egen kalender arbejder på andre dage end projektets kalender. Efter en ændring genberegner *Beregn* datoerne. Se [Kalendere og arbejdsdage](docs://uitleg-kalenders).
+- **Overordnet opgave** (kun i vinduet) — flytter opgaven under en anden opgave. Standard: den nuværende overordnede opgave. *- Ingen (rod) -* sætter opgaven på øverste niveau. Et valg, der ville skabe en cyklus i afhængighederne, bliver afvist ved *Gem* med en besked, og vinduet forbliver åbent.
+
+## Noter
+
+- **Noter** — en tjekliste på opgaven. *Tilføj note* tilføjer en linje. Fluebenet (*Færdig*) streger linjen over. Papirkurven (*Fjern*) sletter den. Uden linjer står der *Ingen noter endnu.* Ingen effekt på beregningen. Kolonnen *Noter* i tabellen viser dem med ✓ eller ○ foran.
+
+## Milepæl
+
+- **Milepæl** — gør opgaven til en milepæl. Standard: fra. Effekt: varigheden bliver 0. Appen afviser det for en hovedopgave (en opgave med underopgaver) og for en opgave med ressourcetildelinger, med en besked. Fjern først tildelingerne. Fjerner du markeringen igen, forsvinder *Milepælstype* og *Obligatorisk (kontraktuel)*.
+- **Milepælstype** (kun for en milepæl) — *Automatisk*, *Startmilepæl* eller *Slutmilepæl*. Standard: *Automatisk*. Effekt: en startmilepæl står i begyndelsen af en dag, en slutmilepæl i slutningen af en dag. Med *Automatisk* tæller milepælen som startmilepæl, når den er en foregående opgave, og den står i begyndelsen af dagen.
+- **Obligatorisk (kontraktuel)** (kun for en milepæl) — markerer en kontraktuel milepæl, for eksempel en inspektion eller en overdragelse. Standard: fra. Effekt: en markering for Gantt-diagrammet og rapporterne; den beskytter ikke en dato. Det gør du med en begrænsning eller en deadline.
+
+## Tid
+
+- **Start** (i vinduet *Startdato*) — viser den beregnede start, den samme dato som bjælken i Gantt-diagrammet og kolonnen *Start*, ikke det oprindelige planlagte ankerpunkt. Påkrævet: et tomt felt får en standardværdi. Effekt ved indtastning: den nye dato bliver det planlagte ankerpunkt (kolonnen *Planlagt startdato*). Har opgaven en foregående opgave og er den ikke startet endnu, gemmer appen den nye start som en begrænsning *Start ikke tidligere end (SNET)* på den dato (eller flytter en eksisterende SNET), med en besked. Efter *Beregn* starter opgaven derfor ikke tidligere. Findes der en begrænsning, der er anden end *ASAP* eller SNET, anvender appen ikke startdatoen. Appen siger, hvilken begrænsning der bestemmer startdatoen.
+- **Varighed** — hvor længe opgaven arbejder. Skriv `5d` for dage, eller `12h` eller `1h 30m` for timer. Et tal uden enhed tæller i opgavens enhed. Dage er altid hele; timer kan have decimaler. En ugyldig indtastning giver *Indtast et helt antal dage eller timer, for eksempel 2d eller 12t.*, og feltet springer tilbage. Standard for en ny opgave: 5 dage (en milepæl 0). Feltet er slået fra for en hovedopgave, en hængekøje og en milepæl med varighed 0. Deres varighed følger af andre opgaver, eller er nul. Et felt i timer er slået fra, så længe timeplanlægning er slået fra. Der er en knap med navnet *Slå timeplanlægning til*. Effekt: efter *Beregn* bestemmer varigheden slutdatoen i opgavens kalender. Har opgaven ressourcer og en arbejdsregel, bestemmer reglen, om arbejde eller enheder flytter sig med. Er opgaven allerede delvist udført, afviser appen en varighed, der er kortere end det udførte arbejde. Se [Dage og timer](docs://uitleg-dagen-en-uren).
+- **Varighedsenhed** — et valg mellem *Dage* og *Timer*, med en infoknap ved siden af. Kun synlig, når timeplanlægning er til og *Tillad blandet dag/timeplanlægning* er til. Den sidste er til som standard, når timeplanlægning er til. Effekt: vælger du en anden enhed, omregner appen varigheden med det samme, hvis resultatet er nøjagtigt. *Fortryd* sætter det tilbage i ét trin. Passer det ikke nøjagtigt, bliver enheden, og appen siger det. En kalender uden gyldige arbejdstider afviser skiftet.
+- **Arbejdsregel** — hvilket hjørne af varighed × tildelingsenheder = arbejde der forbliver fast, når en af de tre ændres. Valg: *Projektstandard (Fast varighed og faste enheder)*, *Fast varighed og faste enheder*, *Fast varighed og fast arbejde*, *Fast arbejde* og *Faste enheder*. Standard: projektstandarden. Under valget står, hvad reglen beskytter (*Beskyttet: …*), og for en opgave fra MS Project *Fra MS Project: indsatsbaseret* eller *Fra MS Project: ikke indsatsbaseret*. Kun synlig, når *Vis arbejdsregler og arbejde* er til (*Indstillinger*, fanen *Tidsplan*, overskriften *Beregning*), eller når filen selv har arbejdsregler eller gemt arbejde. Og kun for en almindelig opgave: ikke en hovedopgave, milepæl, hængekøje eller opgave i forløbet varighed. Se [Arbejdsregler: varighed, enheder og arbejde](docs://uitleg-werkregels).
+
+## Hængekøje
+
+- **Hængekøje (afledt varighed)** — lader varigheden følge af to andre opgaver i stedet for at have sin egen. Standard: fra. Kun for en almindelig opgave, altså ikke for en milepæl eller en hovedopgave. Når til: *Startbestemmende afhængighed* viser de foregående opgaver med en slut til start- eller start til start-afhængighed. *Slutbestemmende afhængighed* viser dem med en slut til slut- eller start til slut-afhængighed. Hver har afhængighedstypen efter sig. Har du ingen slutbestemmende afhængighed, står der *Ingen slutbestemmende afhængighed (FF/SF) — spændet falder tilbage til nul længde*. Varigheden er da nul. Se [Lav en hængekøje](docs://howto-hammock).
+
+## Begrænsning og deadline
+
+På en hovedopgave har en begrænsning eller deadline ingen effekt: beregningen regner kun på opgaver uden underopgaver, og den udleder datoerne for en hovedopgave fra dens underopgaver.
+
+- **Begrænsning** — en datogrænse for opgaven. Valg: *Så tidligt som muligt (ASAP)*, *Så sent som muligt (ALAP)*, *Start ikke tidligere end (SNET)*, *Start ikke senere end (SNLT)*, *Afslut ikke tidligere end (FNET)*, *Afslut ikke senere end (FNLT)*, *Skal starte den (MSO)* og *Skal slutte den (MFO)*. Standard: *ASAP*. Det er ingen begrænsning. Vælger du ASAP, forsvinder alle begrænsninger for opgaven. Vælger du ALAP, forsvinder den sekundære begrænsning. Effekt efter *Beregn*: en grænse flytter opgaven, eller gør slækken negativ. Se [Begrænsninger og deadlines](docs://uitleg-constraints).
+- **Begrænsningsdato** — datoen, der hører til begrænsningen. Synlig for alle begrænsninger undtagen *ALAP*. Påkrævet. En ny begrænsning får den planlagte startdato som dato.
+- **Obligatorisk (fastlåsning)** — kun for *MSO* og *MFO*. Standard: fra. Til: datoen er hård, den går over afhængighederne og fastlåser bjælken, også før de foregående opgaver. En overtrædelse giver negativ slæk opstrøms. Første gang du slår det til, vises en forklaring én gang.
+- **Sekundær begrænsning** og **Sekundær dato** — en tweede grænse, kun én af *SNET*, *FNET*, *SNLT* eller *FNLT* (eller *(ingen)*). Synlig, så snart der er en primær begrænsning, som ikke er ASAP, ALAP eller en hård fastlåsning. Altid blød. En ikke tilladt kombination får en rød kant og en begrundelse: en sekundær begrænsning må ikke være hård, ikke sammen med MSO/MFO eller en hård fastlåsning, ikke sammen med ASAP/ALAP, skal være en grænse, og primær og sekundær må ikke begrænse samme side. Et gyldigt par er for eksempel SNET med FNLT.
+- **Deadline** — en måldato for slutdatoen. Tom = ingen deadline. Effekt: opgaven flytter sig ikke på grund af den. Ligger den tidligste slutdato senere, bliver slækken negativ, og appen melder *Deadline … overskredet — tidligste slutdato …*.
+
+## Fremdrift
+
+- **Fremdrift (%)** — en skyder fra 0 til 100. Standard: 0. Effekt: over 0 udfylder appen en manglende *Faktisk startdato*, og 100 udfylder *Faktisk slutdato*. Tilstanden følger: *Ikke startet* uden faktisk startdato, *I gang* med en faktisk startdato og *Fuldført* med en faktisk slutdato. Den resterende varighed (*Resterende*) er varigheden × (1 − fremdrift), afrundet til hele dage for en opgave i dage og til hele minutter for en opgave i timer. Udført arbejde måles frem til statusdatoen. Er der endnu ingen statusdato, sætter appen den til i dag og siger det. For en hovedopgave er feltet slået fra: fremdriften følger af underopgaverne efter *Beregn* (*Afledt af underopgaverne: ændr fremdriften dér. Hovedopgaven følger efter beregning (F5)*).
+- **Faktisk startdato** — datoen, hvor opgaven virkelig begyndte. En dato efter den faktiske slutdato eller efter statusdatoen afvises. Er opgaven planlagt til at starte først efter statusdatoen, og får den nu fremdrift, spørger vinduet *Angiv faktisk startdato*. For en milepæl er der ét felt, *Faktisk dato*, i stedet for *Faktisk startdato* og *Faktisk slutdato*.
+- **Faktisk slutdato** — datoen, hvor opgaven virkelig blev færdig. Udfylder du den, sættes fremdriften til 100 og tilstanden til *Fuldført*. Sletter du den, sættes fremdriften tilbage til 0 og tilstanden til *I gang*. Samme afvisninger som ved *Faktisk startdato*.
+- **Resterende** — skrivebeskyttet (ikke for en milepæl): hvor meget varighed der er tilbage, i opgavens enhed.
+
+Vinduet bruger disse regler på udkastet. De tæller først efter *Gem*. Se [Fremdrift, statusdato og oprindelig plan](docs://uitleg-voortgang).
+
+## CPM-resultat
+
+- **CPM-resultat** — skrivebeskyttet visning af den sidste beregning: *Tidligste startdato*, *Tidligste slutdato*, *Seneste startdato*, *Seneste slutdato*, *Samlet slæk*, *Tilladt slæk*, *Interfererende slæk* og *Kritisk vej* (*Ja* eller *Nej*). Slæk står i arbejdsdage med to decimaler. Er den forældet, eller endnu ikke beregnet? Tryk på *Beregn*.
+
+## Afhængigheder
+
+- **Afhængigheder** — opgavens afhængigheder, én linje per afhængighed: den forbundne opgave (i panelet WBS-koden, eller navnet hvis den mangler; i vinduet navnet), et lynikon, hvis afhængigheden er bestemmende (*Bestemmende afhængighed*, efter en beregning), afhængighedstypen (*FS*, *SS*, *FF* eller *SF*), forsinkelsen og en papirkurv. I panelet er WBS-koden en knap: peger du på den, vises opgaven, og klikker du, hopper du til den. Et lille mærke før koden viser rollen: en gylden rund markering for en foregående opgave og en lilla firkantet markering for en efterfølgende opgave, med de samme farver som i [Spor en vej](docs://howto-pad-traceren). Rollen står også i knappens navn, for skærmlæseren. I vinduet er det almindelig tekst, og du ser kun sektionen, hvis opgaven har afhængigheder.
+- **Forsinkelse** — skriv et tal med en enhed: `2d` arbejdsdage, `3ed` kalenderdage, `2u` eller `2h` arbejdstimer, `3eu` eller `3eh` kalendertimer, `50%` en procentdel af den foregående opgaves varighed, `-25e%` en procentdel i kalendertid. Et minus gør den til et forskud. Uden enhed tæller den som arbejdsdage. En ugyldig indtastning gør feltet rødt, og det falder tilbage. Se [Afhængigheder og forsinkelse](docs://uitleg-relaties).
+- **Tilføj afhængighed** (kun i panelet) — åbner en udkastrække. Vælg under *Retning* *Foregående opgave* eller *Efterfølgende opgave*. Find opgaven med *Søg opgave…* på WBS-kode eller navn, vælg typen og forsinkelsen, og bekræft med *Gem afhængighed* (eller *Annuller*). En dublet, eller en afhængighed med opgavens egen overordnede opgave, bliver afvist med en besked, og rækken bliver stående.
+
+## Afbrydelser
+
+Kun i panelet, og ikke for en milepæl, hovedopgave, hængekøje, opgave med forløbet varighed, manuelt planlagt opgave eller en opgave, som er for kort til en afbrydelse.
+
+- **Afbrydelser** — stop i arbejdet på opgaven. Én linje pr. afbrydelse: *efter* (hvor meget arbejde der er før afbrydelsen), *afbrydelse* (længden) og enheden (*arbejdsdage*, for en opgave i timer *timer*), med fra–til for stykket efter den nedenfor. En afbrydelse, som udjævningen har lavet, har mærket *udjævning*. En afbrydelse med længden 0 fjerner den; skraldespanden på hver linje (*Fjern afbrydelse*) fjerner den også. Virkning: bjælken tegnes med huller, og efter *Beregn* flyttes slutdatoen med afbrydelsens længde.
+- **Tilføj afbrydelse** — tilføjer en afbrydelse på én enhed midt i det længste stykke. Ikke tilgængelig, når der ikke er plads til en afbrydelse.
+- **Fjern alle afbrydelser** — vises, når afbrydelserne kommer fra en kildefil i et format, der ikke kan redigeres her (*Disse afbrydelser kommer fra kildefilen i et format, der ikke kan redigeres her.*). Så ser du kun datoerne.
+
+Se [Opdeling af en opgave](docs://howto-taak-splitsen).
+
+## Tildelinger
+
+- **Tildelinger** — ressourcerne på denne opgave. Pr. ressource: navnet med en skraldespand (*Fjern*), *Enh./dag*, *Arbejde (rest.)*, *Kurve*, en knap *Rediger timefordeling…* og *Flyt til…*. Nederst står en liste *Tildel ressource*; den tildeler ressourcen med 1 tildelingsenhed pr. dag. Uden ressourcer står der *Opret først ressourcer (fanen Ressourcer).* Når alle er tildelt, står der *Alle ressourcer er allerede tildelt.* For en milepæl eller hovedopgave står der, at tildeling ikke er mulig.
+- **Enh./dag** — hvor meget af ressourcen opgaven bruger pr. dag, et tal over 0. Virkning: belastningen i histogrammet og overallokeringen, og med en arbejdsregel også arbejdet.
+- **Arbejde (rest.)** — det resterende arbejde i timer for denne ressource. Kun synlig, når arbejdsreglerne er synlige og opgaven har en arbejdsregel; for materiale vises en tankestreg. Låsen viser, hvilket hjørne arbejdsreglen beskytter (*Beskyttet af arbejdsreglen …*). Advarselstrekanten (*Afviger fra tildelingsenheder × varighed*) betyder, at det gemte arbejde ikke er lig med tildelingsenheder × resterende varighed. Histogrammet følger så det gemte arbejde.
+- **Kurve** — hvordan arbejdet fordeles over varigheden: *Jævn*, *Forrest belastet*, *Bagerst belastet*, *Klokkeformet*, *Tidlig top*, *Sen top*, *Dobbelt top* eller *Skildpadde*. Standard: *Jævn*. Har tildelingen sin egen timefordeling, står der *Profil*, og listen er deaktiveret. En importeret kurve kaldes *Importeret kurve*.
+- **Rediger timefordeling…** — åbner timefordelingen pr. arbejdsdag for denne tildeling. Se [Justering af timefordelingen](docs://howto-urenverdeling-aanpassen).
+- **Flyt til…** — flytter tildelingen til en anden opgave uden underopgaver, som endnu ikke har ressourcen. Kun synlig, når en sådan opgave findes.
+
+## Koder og felter
+
+- **Koder og felter** — kun synlig, når projektet har opgavekoder eller brugerdefinerede felter. Hver opgavekode er en liste med *(ingen)* og værdierne som `kode — beskrivelse`. Pr. type vælger du højst én værdi. Hvert brugerdefineret felt har et inputfelt, der passer til dets type: *Tekst*, *Tal*, *Heltal*, *Omkostning*, *Dato* eller *Ja/nej*. Virkning: ingen virkning på beregningen. Du kan gruppere og filtrere på dem og vise dem som kolonner. Se [Koder og brugerdefinerede felter](docs://howto-codes-en-velden).
+
+## Mærker under arbejdsreglen
+
+Kun i panelet, og kun når de gælder.
+
+- **Lang periode med ikke-arbejdsdage** — *Denne opgave løber gennem en periode med ikke-arbejdsdage på … dage (… til …).*, eller med navnet på helligdagen eller byggeferien tilføjet. Vises, når opgaven løber gennem en sammenhængende periode på 8 dage eller mere, som indeholder mindst én helligdag. Det er en advarsel, ikke en afvisning. Kontrollér, om tidsplanen er ment sådan.
+- **MS Project-mærke** — et mærke *Følger timefordelingen fra MS Project*, *MS Project-datovindue ikke længere anvendt efter redigering — …* eller *Egen timefordeling*, med *Læs mere*. Det viser, om timefordelingen fra en MS Project-fil stadig styrer datoerne.
+- **Gemte datoer** — et mærke for en importeret fil med gemte datoer: *Viser datoerne som de står i filen for denne opgave* (for en Primavera-fil *Viser Primaveras egne gemte datoer for denne opgave*), *Afviger fra de gemte datoer* eller *Registreringen er delvis ufuldstændig — se kolonnerne for seneste datoer og slæk*, med *Læs mere*. Se [Datoer som de er gemt](docs://uitleg-datums-zoals-opgeslagen).
+
+## Top og bund af panelet
+
+- **Slet opgave** — skraldespanden ved siden af overskriften *Opgave*. Sletter denne opgave sammen med dens underopgaver, som ét trin, som du kan fortryde med *Fortryd*. Tidsplanen er bagefter ikke længere opdateret, før du trykker på *Beregn*.
+- **Beregn** — knappen nederst; den samme beregning som *Start › Tidsplan › Beregn*.
+
+## Det finder du ikke her
+
+- **Udjævningsprioritet** — står ikke i vinduet eller panelet. Du angiver den ved at højreklikke og vælge *Prioritet* (*Lav* = 100, *Normal* = 500, *Høj* = 900), eller ved at skrive et tal fra 0 til 1000 i kolonnen *Udjævningsprioritet*. Standard: 500. Virkning: udjævning lader først opgaver med højere prioritet stå, hvor de er. 1000 låser opgaven, så udjævning aldrig flytter den. Se [Udjævning](docs://uitleg-nivelleren).
+- **Andre opgavedata** — resten af det, en opgave indeholder, fx kolonnerne *Manuelt planlagt*, *Farve* og de tekniske kolonner, står kun i tabellen. Se [Tabelkolonner](docs://ref-tabelkolommen).

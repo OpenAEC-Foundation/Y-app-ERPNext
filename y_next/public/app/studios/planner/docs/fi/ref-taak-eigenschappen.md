@@ -1,0 +1,112 @@
+# Tehtäväikkuna ja ominaisuuspaneeli
+
+Tehtävää voi muokata kahdessa paikassa: ikkunassa *Muokkaa tehtävää* ja paneelissa *Ominaisuudet*. Lähes kaikki kentät ovat molemmissa. Tässä artikkelissa kerrotaan kustakin kentästä, mitä se tekee, mikä on sen oletus ja mitä siitä huomaa. Tehtävän luominen ja asettaminen on kuvattu kohdassa [Tehtävien ja välitavoitteiden lisääminen](docs://howto-taken-en-mijlpalen-toevoegen). Miksi laskenta antaa juuri tuloksensa, kerrotaan kohdassa [Kriittinen polku ja pelivara](docs://uitleg-kritiek-pad).
+
+## Kaksi paikkaa
+
+- **Muokkaa tehtävää** — ikkuna ensimmäiselle valitulle tehtävälle. Se avataan F2-näppäimellä, kaksoisnapsauttamalla palkkia Gantt-kaaviossa tai napsauttamalla tehtävää hiiren kakkospainikkeella Gantt-kaaviossa tai taulukossa ja valitsemalla *Muokkaa...*. Muutokset pysyvät luonnoksena, kunnes *Tallenna* valitaan (Enter). *Peruuta* (Esc) hylkää ne. *Tallenna* ei ole käytettävissä, kun nimi on tyhjä. Tallennus on yksi vaihe, jonka *Kumoa* kumoaa. Se pätee myös silloin, kun osioissa *Työsääntö*, *Riippuvuudet*, *Resurssikohdistukset* ja *Koodit ja kentät* on muokattu. Ne vaikuttavat jo projektiin muokkauksen aikana, ja *Peruuta* kumoaa ne.
+- **Ominaisuudet** — paneeli oikeassa sarakkeessa aktiiviselle tehtävälle. Jokainen muutos tulee voimaan heti. Peräkkäiset muutokset samaan kenttään lasketaan yhdeksi vaiheeksi *Kumoa*-toiminnossa. Ilman tehtävää paneeli näyttää tekstin *Valitse tehtävä ominaisuuksien näyttämiseksi.* Paneelin voi kytkeä päälle tai pois valikkopolulla *Näkymä › Paneelit › Ominaisuudet*. Oletus: päällä. Paneeli on Gantt-kaavion vieressä ja *Taulukko*-välilehdellä. Se ei ole *IFC*- eikä *Raportti*-välilehdellä, eikä koko resurssipaneelin alla.
+
+Vain ikkunassa ovat *Ylätehtävä* sekä painikkeet *Tallenna* ja *Peruuta*. Vain paneelissa ovat roskakori *Poista tehtävä*, alareunan painike *Laske*, osio *Tauot*, kolme merkkiä kohdan *Työsääntö* alla (pitkä ei-työpäivien aikajakso, MS Project ja tallennetut päivämäärät) sekä riippuvuuksien lisääminen ja siirtyminen linkitettyyn tehtävään kohdassa *Riippuvuudet*. Kaikki muut kentät ovat molemmissa. Ikkuna näyttää kohdat *Riippuvuudet*, *Resurssikohdistukset* ja *Koodit ja kentät* vain olemassa olevalle tehtävälle.
+
+Jos jotakin muutetaan, joka koskee päivämääriä, paina *Laske*. Laskenta ei käynnisty itsestään, ellei *Laske automaattisesti* ole päällä.
+
+## Yleistä
+
+- **Nimi** (ikkunan kentässä *Nimi \**) — tehtävän nimi Gantt-kaaviossa, taulukossa ja raporteissa. Pakollinen: tyhjää nimeä ei säilytetä. Oletus uudelle tehtävälle: *Uusi tehtävä*.
+- **WBS-koodi** — tehtävän rakennekoodi, esimerkiksi `RB-301`. Pakollinen. Kun *Aikataulu › Rakenne › WBS auto* on päällä, kenttä on pois käytöstä (ohjeteksti: *WBS-koodit numeroidaan automaattisesti (Aikataulu → Rakenne)*), koska sovellus hallitsee koodeja silloin.
+- **Kuvaus** — vapaa teksti. Ei vaikuta laskentaan. Sen voi näyttää taulukossa sarakkeena *Kuvaus*.
+- **Tyyppi** — tehtävätyyppi. Luettelossa ovat ryhmät *Sisäänrakennetut tyypit* (*Rakentaminen*, *Asennus*, *Purku*, *Logistiikka*, *Tarkastus*, *Siirto*, *Saneeraus*, *Huolto*), *Omat tehtävätyypit* ja *Tästä projektista*. *Muu* näkyy vain, jos tehtävällä on jo tämä tyyppi. Alareunassa ovat *+ Luo uusi tehtävätyyppi…* ja *Hallitse tehtävätyyppejä…*. Oletus: ylätehtävän tyyppi, muuten *Rakentaminen* (rakentamistila päällä, oletus) tai *Muu*. Vaikutus: ei vaikuta laskentaan. Tyypin mukaan voi ryhmitellä, suodattaa ja värittää palkit. Sovellus säilyttää omat tyypit laitteellasi. Kun tyyppi valitaan, kopio viedään projektiin (*Tästä projektista*). Jos kirjoitetaan nimi kohtaan *+ Luo uusi tehtävätyyppi…* ja sama nimi on jo luettelossa *Omat tehtävätyypit*, myös eri isoilla kirjaimilla, sovellus ei luo toista tyyppiä vaan valitsee olemassa olevan. Kohdassa *Hallitse tehtävätyyppejä…* muokataan tai poistetaan vain omia tyyppejä. Tyhjää nimeä tai jo olemassa olevaa nimeä ei säilytetä. Kun poistetaan tyyppi, jota avoin projekti käyttää, sovellus kysyy ensin, ja projektin kopio jää paikalleen. Tyyppi kohdassa *Tästä projektista*, esimerkiksi toisen henkilön tiedostosta, siirtyy omaan luetteloon vasta, kun *Lisää omiin tehtävätyyppeihin* valitaan kohdassa *Hallitse tehtävätyyppejä…*.
+- **Kalenteri** — kalenteri, jonka mukaan tehtävä laskee kestonsa, loppupäivänsä ja pelivaransa. Oletus: *Projektikalenteri: {name}*. Vaikutus: tehtävä, jolla on oma kalenteri, toimii eri päivinä kuin projektikalenteri. Muutoksen jälkeen päivämäärät lasketaan uudelleen komennolla *Laske*. Katso [Kalenterit ja työpäivät](docs://uitleg-kalenders).
+- **Ylätehtävä** (vain ikkunassa) — siirtää tehtävän toisen tehtävän alle. Oletus: nykyinen ylätehtävä. *- Ei (juuritaso) -* siirtää tehtävän ylimmälle tasolle. Valinta, joka aiheuttaisi kehän riippuvuuksissa, hylätään *Tallenna*-vaiheessa ilmoituksella, ja ikkuna jää auki.
+
+## Muistiinpanot
+
+- **Muistiinpanot** — tarkistuslista tehtävässä. *Lisää muistiinpano* lisää rivin. Valintamerkki (*Tehty*) yliviivaa rivin. Roskakori (*Poista*) poistaa rivin. Ilman rivejä näkyy *Ei vielä muistiinpanoja.* Ei vaikutusta laskentaan. Sarake *Muistiinpanot* taulukossa näyttää ne merkillä ✓ tai ○ edessä.
+
+## Välitavoite
+
+- **Välitavoite** — tekee tehtävästä välitavoitteen. Oletus: pois. Vaikutus: kesto on 0. Sovellus ei salli tätä yhteenvetotehtävälle (tehtävälle, jolla on alitehtäviä) eikä tehtävälle, jolla on resurssikohdistuksia, ja näyttää siitä ilmoituksen. Poista ensin kohdistukset. Kun valinta poistetaan, *Välitavoitetyyppi* ja *Pakollinen (sopimuksellinen)* katoavat.
+- **Välitavoitetyyppi** (vain välitavoitteelle) — *Automaattinen*, *Aloitusvälitavoite* tai *Loppuvälitavoite*. Oletus: *Automaattinen*. Vaikutus: aloitusvälitavoite on päivän alussa, loppuvälitavoite päivän lopussa. Kun *Automaattinen* on valittu, välitavoite on aloitusvälitavoite silloin, kun se on edeltäjä, ja se on päivän alussa.
+- **Pakollinen (sopimuksellinen)** (vain välitavoitteelle) — merkitsee sopimuksellisen välitavoitteen, esimerkiksi tarkastuksen tai luovutuksen. Oletus: pois. Vaikutus: merkki Gantt-kaaviolle ja raporteille. Se ei suojaa päivämäärää. Tämä tehdään rajoitteella tai tavoitepäivällä.
+
+## Aika
+
+- **Alku** (ikkunan kentässä *Alkamispäivä*) — näyttää lasketun alun, sama päivä kuin Gantt-palkissa ja sarakkeessa *Alku*. Se ei ole raaka suunnitteluankkuri. Pakollinen: tyhjä kenttä palautuu. Kirjoittamisen vaikutus: uudesta päivästä tulee suunniteltu ankkuri (sarake *Suunniteltu alku*). Jos tehtävällä on edeltäjä eikä se ole vielä alkanut, sovellus tallentaa uuden alun rajoitteeksi *Alkaa aikaisintaan (SNET)* tuolle päivälle, tai siirtää olemassa olevan SNET-rajoitteen. Sovellus ilmoittaa siitä. *Laske*-toiminnon jälkeen tehtävä ei siis ala aiemmin. Jos rajoite on muu kuin *ASAP* tai *SNET*, sovellus ei käytä alkua. Se kertoo, mikä rajoite alun määrää.
+- **Kesto** — kuinka kauan tehtävää tehdään. Kirjoita `5d` päiville, tai `12h` tai `1h 30m` tunneille. Luku ilman kirjainta käyttää tehtävän asetusta päivistä tai tunneista. Päivät ovat aina kokonaisia. Tunneissa voi olla desimaali. Virheellinen syöte antaa ilmoituksen *Syötä kokonaisluku päiviä tai tunteja, esimerkiksi 2d tai 12h.* ja kenttä palautuu. Oletus uudelle tehtävälle: 5 päivää (välitavoitteen kesto 0). Kenttä on pois käytöstä yhteenvetotehtävällä, riippumattotehtävällä ja välitavoitteella, jonka kesto on 0. Niiden kesto seuraa muita tehtäviä tai on nolla. Tunneissa oleva tehtävä on pois käytöstä, kun *Ota tuntisuunnittelu käyttöön* on pois päältä. Siinä on painike samalla nimellä. Vaikutus: *Laske*-toiminnon jälkeen kesto määrää loppupäivän tehtävän kalenterissa. Jos tehtävällä on resursseja ja työsääntö, sääntö päättää, liikkuuko työ vai kuormitusaste. Jos tehtävä on jo osittain tehty, sovellus hylkää kestoa, joka on lyhyempi kuin tehty työ. Katso [Päivät ja tunnit](docs://uitleg-dagen-en-uren).
+- **Kestotapa** — valinta *Päivät* tai *Tunnit*, ja sen vieressä on ohjepainike. Näkyy vain, kun *Ota tuntisuunnittelu käyttöön* ja *Salli sekoitettu päivä/tuntisuunnittelu* ovat päällä. Jälkimmäinen on oletuksena päällä, kun tuntisuunnittelu on päällä. Vaikutus: kun valitset toisen mitan, sovellus muuntaa keston heti, jos tulos on tarkka. *Kumoa* palauttaa sen yhdellä askeleella. Jos muunnos ei ole tarkka, päivät tai tunnit säilyvät ennallaan ja sovellus kertoo siitä. Kalenteri, jossa ei ole kelvollisia työaikoja, estää vaihdon.
+- **Työsääntö** — mikä kolmesta kohdasta (kesto × kuormitusaste = työmäärä) pysyy kiinteänä, kun yksi kolmesta muuttuu. Valinnat: *Projektin oletus (Kiinteä kesto ja kuormitusaste)*, *Kiinteä kesto ja kuormitusaste*, *Kiinteä kesto ja työmäärä*, *Kiinteä työmäärä* ja *Kiinteä yksikkömäärä*. Oletus: projektin oletus. Sen alla näkyy, mitä sääntö suojaa (*Suojattu: …*). MS Project -tehtävälle näkyy *MS Projectista: työmäärään perustuva* tai *MS Projectista: ei työmäärään perustuva*. Työsääntö näkyy vain, kun *Näytä työsäännöt ja työ* on päällä (*Asetukset*, välilehti *Aikataulu*, otsikko *Laskenta*). Se näkyy myös, jos tiedosto itse sisältää työsääntöjä tai tallennettua työtä. Se näkyy vain tavalliselle tehtävälle: ei yhteenvetotehtävälle, välitavoitteelle, riippumattotehtävälle eikä tehtävälle, jonka kesto on *kulunut aika*. Katso [Työsäännöt: kesto, kuormitusaste ja työ](docs://uitleg-werkregels).
+
+## Riippumatto
+
+- **Riippumattotehtävä (johdettu kesto)** — antaa keston seurata kahta muuta tehtävää oman keston sijaan. Oletus: pois. Vain tavalliselle tehtävälle, ei välitavoitteelle eikä yhteenvetotehtävälle. Päällä: *Alkua ohjaava riippuvuus* näyttää edeltäjät, joilla on lopusta alkuun tai alusta alkuun -riippuvuus. *Loppua ohjaava riippuvuus* näyttää ne, joilla on lopusta loppuun tai alusta loppuun -riippuvuus. Kummassakin näkyy riippuvuuden tyyppi perässään. Jos loppua ohjaavaa riippuvuutta ei ole, näkyy *Ei loppua ohjaavaa riippuvuutta (FF/SF) — väli palautuu nollan pituiseksi.* ja kesto on nolla. Katso [Riippumattotehtävän tekeminen](docs://howto-hammock).
+
+## Rajoite ja tavoitepäivä
+
+Yhteenvetotehtävällä rajoitteella tai tavoitepäivällä ei ole vaikutusta. Laskenta laskee vain lehtitehtävät ja johtaa yhteenvetotehtävän päivämäärät sen alitehtävistä.
+
+- **Rajoite** — päivämäärärajoite tehtävälle. Valinnat: *Mahdollisimman aikaisin (ASAP)*, *Mahdollisimman myöhään (ALAP)*, *Alkaa aikaisintaan (SNET)*, *Alkaa viimeistään (SNLT)*, *Päättyy aikaisintaan (FNET)*, *Päättyy viimeistään (FNLT)*, *Täytyy alkaa (MSO)* ja *Täytyy päättyä (MFO)*. Oletus: *ASAP*, joka tarkoittaa ei rajoitetta. Kun *ASAP* valitaan, kaikki tehtävän rajoitteet katoavat. Kun *ALAP* valitaan, toissijainen rajoite katoaa. Vaikutus *Laske*-toiminnon jälkeen: raja siirtää tehtävää tai tekee pelivarasta negatiivisen. Katso [Rajoitteet ja tavoitepäivät](docs://uitleg-constraints).
+- **Rajoitepäivä** — rajoitteeseen kuuluva päivä. Näkyy kaikissa rajoitteissa paitsi *ALAP*-rajoitteessa. Pakollinen. Uusi rajoite saa suunnitellun alun päivämääräkseen.
+- **Pakollinen (kiinnityslogiikka)** — vain *MSO*- ja *MFO*-rajoitteille. Oletus: pois. Päällä: päivämäärä on kiinteä, se ohittaa riippuvuudet ja kiinnittää palkin jo ennen edeltäjiään. Rikkominen tuottaa ylävirtaan negatiivisen pelivaran. Kun tämä kytketään ensimmäistä kertaa päälle, selitys näkyy kerran.
+- **Toissijainen rajoite** ja **Toissijainen päivä** — toinen raja. Vain yksi *SNET*, *FNET*, *SNLT* tai *FNLT* (tai *(ei mitään)*). Näkyy heti, kun on ensisijainen rajoite, joka ei ole *ASAP*, *ALAP* eikä kova kiinnitys. Se on aina pehmeä. Kielletty yhdistelmä saa punaisen reunan ja syyn. Toissijainen rajoite ei saa olla kova. Se ei saa olla *MSO*- tai *MFO*-rajoitteen kanssa, eikä kovan kiinnityksen kanssa. Se ei saa olla *ASAP*- tai *ALAP*-rajoitteen kanssa. Sen täytyy olla raja. Ensisijainen ja toissijainen eivät saa rajata samaa puolta. Sallittu pari on esimerkiksi *SNET* ja *FNLT*.
+- **Tavoitepäivä** — tehtävän loppupäivän tavoite. Tyhjä = ei tavoitepäivää. Vaikutus: tehtävä ei siirry sen takia. Jos varhaisin valmistumispäivä on myöhempi, pelivara muuttuu negatiiviseksi ja sovellus näyttää *Tavoitepäivä … ohitettu — varhaisin valmistumispäivä …*.
+
+## Edistyminen
+
+- **Edistyminen (%)** — liukusäädin 0:sta 100:aan. Oletus: 0. Vaikutus: kun arvo on yli 0, sovellus täyttää puuttuvan kentän *Toteutunut alkamispäivä*. Arvo 100 täyttää kentän *Toteutunut valmistumispäivä*. Tila seuraa: *Ei aloitettu*, kun toteutunutta alkamispäivää ei ole. *Käynnissä*, kun toteutunut alkamispäivä on. *Suoritettu*, kun toteutunut valmistumispäivä on. Jäljellä oleva kesto (*Jäljellä*) on kesto × (1 − edistyminen). Se pyöristetään kokonaisiin päiviin päivissä ja kokonaisiin minuutteihin tunneissa. Tehty työ mitataan raportointipäivään asti. Jos raportointipäivää ei vielä ole, sovellus asettaa sen tähän päivään ja kertoo siitä. Yhteenvetotehtävällä kenttä on pois käytöstä. Sen edistyminen seuraa alitehtäviä *Laske*-toiminnon jälkeen (*Johdettu alitehtävistä: muuta edistymistä siellä. Yhteenvetotehtävä päivittyy, kun aikataulu on laskettu (F5).*).
+- **Toteutunut alkamispäivä** — päivä, jolloin tehtävä todella alkoi. Päivä toteutuneen valmistumispäivän jälkeen tai raportointipäivän jälkeen hylätään. Jos tehtävä on suunniteltu alkamaan vasta raportointipäivän jälkeen ja siihen annetaan nyt edistymistä, ikkuna kysyy *Anna toteutunut alkamispäivä*. Välitavoitteella on yksi kenttä *Todellinen päivämäärä*. Kenttä *Todellinen päivämäärä* korvaa kentät *Toteutunut alkamispäivä* ja *Toteutunut valmistumispäivä*.
+- **Toteutunut valmistumispäivä** — päivä, jolloin tehtävä todella valmistui. Kun se täytetään, edistymisen arvoksi tulee 100 ja tilaksi *Suoritettu*. Kun se tyhjennetään, edistymisen arvoksi tulee 0 ja tilaksi *Käynnissä*. Samat hylkäykset kuin kohdassa *Toteutunut alkamispäivä*.
+- **Jäljellä** — vain luku (ei välitavoitteelle): kuinka paljon kestoa on jäljellä, tehtävän yksikössä.
+
+Ikkuna soveltaa nämä säännöt luonnokseen. Ne tulevat voimaan vasta *Tallenna*-vaiheen jälkeen. Katso [Edistyminen, raportointipäivä ja perustaso](docs://uitleg-voortgang).
+
+## CPM-tulos
+
+- **CPM-tulos** — vain luku -näkymä viimeisimmästä laskennasta: *Varhaisin alkamispäivä*, *Varhaisin valmistumispäivä*, *Myöhäisin alkamispäivä*, *Myöhäisin valmistumispäivä*, *Kokonaispelivara*, *Vapaa pelivara*, *Häiritsevä pelivara* ja *Kriittinen polku* (*Kyllä* tai *Ei*). Pelivara ilmoitetaan työpäivinä kahden desimaalin tarkkuudella. Ovatko tiedot vanhentuneet tai ei vielä laskettu? Paina *Laske*.
+
+## Riippuvuudet
+
+- **Riippuvuudet** — tehtävän riippuvuudet, yksi rivi riippuvuutta kohden: linkitetty tehtävä (ominaisuuspaneelissa WBS-koodi tai nimi, jos koodia ei ole; ikkunassa nimi), salamakuvake, jos riippuvuus on ohjaava (*Ohjaava riippuvuus (driving)*, laskennan jälkeen), riippuvuuden tyyppi (*FS*, *SS*, *FF* tai *SF*), viive ja roskakori. Paneelissa WBS-koodi on painike. Sen päälle osoittaminen näyttää tehtävän, ja napsautus siirtyy siihen. Koodin edessä oleva pieni merkki kertoo roolin: kultainen pyöreä merkki edeltäjälle ja violetti neliö seuraajalle. Värit ovat samat kuin kohdassa [Polun jäljittäminen](docs://howto-pad-traceren). Rooli on myös painikkeen nimessä ruudunlukijaa varten. Ikkunassa se on tavallista tekstiä, ja osio näkyy vain, jos tehtävällä on riippuvuuksia.
+- **Viive** — kirjoita luku yksikön kanssa: `2d` työpäivinä, `3ed` kalenteripäivinä, `2u` tai `2h` työtunteina, `3eu` tai `3eh` kalenteritunteina, `50%` edeltäjän keston prosenttina ja `-25e%` prosenttina kalenteriajassa. Miinusmerkki tekee siitä limityksen. Ilman merkintää luku on työpäivinä. Virheellinen syöte tekee kentästä punaisen, ja kenttä palautuu. Katso [Riippuvuudet ja viive](docs://uitleg-relaties).
+- **Lisää riippuvuus** (vain paneelissa) — avaa luonnosrivin. Kohdassa *Suunta* valitaan *Edeltäjä* tai *Seuraaja*. Tehtävä haetaan kentästä *Hae tehtävää…* WBS-koodilla tai nimellä. Tyyppi ja viive valitaan, ja riippuvuus vahvistetaan painikkeella *Luo riippuvuus* (tai *Peruuta*). Kaksoiskappale tai riippuvuus tehtävän oman ylätehtävän kanssa hylätään ilmoituksella, ja rivi jää paikalleen.
+
+## Tauot
+
+Vain paneelissa. Ei välitavoitteille, yhteenvetotehtäville, riippumatoille, tehtäville, joiden kesto on kulunut aika, manuaalisesti ajoitetuille tehtäville eikä tehtäville, jotka ovat liian lyhyitä tauolle.
+
+- **Tauot** — tehtävän työn taukoja. Yksi rivi jokaista taukoa kohden: *jälkeen* (kuinka paljon työtä on ennen taukoa), *tauko* (pituus) ja mitta (*työpäivää*, tai *tuntia* tehtävälle, joka mitataan tunteina), ja alla olevan osan alku–loppu. Tasaamisen tekemän taukon merkki on *tasaaminen*. Tauko, jonka pituus on 0, poistetaan. Rivin roskakorikuvake (*Poista tauko*) poistaa sen myös. Vaikutus: palkki piirtyy katkonaisena, ja kun *Laske* on valittu, loppu siirtyy taukon verran.
+- **Lisää tauko** — lisää tauon, jonka pituus on yksi työpäivä tai yksi tunti tehtävän ajanmitan mukaan, pisimmän osan keskelle. Ei käytössä, kun taukoa ei mahdu.
+- **Poista kaikki tauot** — näkyy, kun tauot tulevat lähdetiedostosta muodossa, jota ei voi muokata täällä (*Nämä tauot tulevat lähdetiedostosta muodossa, jota ei voi muokata täällä*). Silloin näkyvät vain päivämäärät.
+
+Katso [Tehtävän jakaminen](docs://howto-taak-splitsen).
+
+## Resurssikohdistukset
+
+- **Resurssikohdistukset** — tehtävän resurssit. Jokaisesta resurssista näkyy nimi roskakorikuvakkeella (*Poista*), *Kuorm./päivä*, *Työ (jäljellä)*, *Käyrä*, painike *Muokkaa tuntijakautumista…* ja *Siirrä kohteeseen…*. Alareunassa on luettelo *Kohdista resurssi*. Se kohdistaa resurssin kuormitusasteella 1 päivässä. Ilman resursseja lukee *Luo ensin resurssit (Resurssit-välilehti)*. Kun kaikki resurssit on kohdistettu, lukee *Kaikki resurssit on jo kohdistettu*. Välitavoitteelle tai yhteenvetotehtävälle lukee, ettei resurssikohdistus ole mahdollinen.
+- **Kuorm./päivä** — kuinka paljon resurssia tehtävä käyttää päivässä. Arvo on luku, joka on suurempi kuin 0. Vaikutus: kuormitus histogrammissa ja ylikuormitus. Työsäännön kanssa vaikutus on myös työhön.
+- **Työ (jäljellä)** — jäljellä oleva työ tunteina tälle resurssille. Näkyy vain, kun työsäännöt näkyvät ja tehtävällä on työsääntö. Materiaalin kohdalla on viiva. Lukko näyttää, mitä arvoa työsääntö suojaa (*Työsäännön suojaama …*). Varoituskolmio (*Poikkeaa kuormitusasteesta × kestosta*) tarkoittaa, että tallennettu työ ei ole sama kuin kuormitusaste × jäljellä oleva kesto. Histogrammi seuraa silloin tallennettua työtä.
+- **Käyrä** — työn jakautuminen kestolle: *Tasainen*, *Alussa painottuva*, *Lopussa painottuva*, *Kellomainen*, *Aikainen huippu*, *Myöhäinen huippu*, *Kaksoishuippu* tai *Kilpikonna*. Oletus: *Tasainen*. Jos resurssikohdistuksella on oma tuntijakautuminen, siinä lukee *Jaksottuminen* ja luettelo on pois käytöstä. Tuotu käyrä näkyy nimellä *Tuotu käyrä*.
+- **Muokkaa tuntijakautumista…** — avaa tämän resurssikohdistuksen tuntijakautumisen työpäivittäin. Katso [Tuntijakautumisen muokkaaminen](docs://howto-urenverdeling-aanpassen).
+- **Siirrä kohteeseen…** — siirtää resurssikohdistuksen toiseen lehtitehtävään, jossa tätä resurssia ei vielä ole. Näkyy vain, kun tällainen tehtävä on olemassa.
+
+## Koodit ja kentät
+
+- **Koodit ja kentät** — näkyy vain, kun projektissa on tehtäväkoodeja tai mukautettuja kenttiä. Jokainen tehtäväkoodi on luettelo. Siinä on *(ei mitään)* ja arvot muodossa `koodi — kuvaus`. Kustakin tyypistä voi valita enintään yhden arvon. Jokaisessa mukautetussa kentässä on syöttökenttä, joka sopii sen tyyppiin: *Teksti*, *Luku*, *Kokonaisluku*, *Kustannus*, *Päivämäärä* tai *Kyllä/ei*. Vaikutus: ei vaikutusta laskentaan. Kenttien mukaan voi ryhmitellä ja suodattaa, ja ne voi näyttää sarakkeina. Katso [Tehtäväkoodit ja mukautetut kentät](docs://howto-codes-en-velden).
+
+## Merkit työsäännön alla
+
+Vain paneelissa ja vain silloin, kun ne pätevät.
+
+- **Pitkä ei-työpäivien jakso** — *Tämä tehtävä ulottuu … päivän pituisen ei-työpäivien aikajakson yli (… – …)*, tai vapaapäivän tai rakennustauon nimi lisättynä. Merkki näkyy, kun tehtävä ulottuu yli yhtäjaksoisen aikajakson, joka on 8 päivää tai pidempi ja sisältää vähintään yhden vapaapäivän. Se on varoitus, ei este. Tarkistetaan, onko aikataulun tarkoitus olla näin.
+- **MS Project -merkki** — merkki *Seuraa MS Projectin tuntijakautumista*, *MS Project -päivämääräikkuna ei enää ole käytössä muokkauksen jälkeen — …* tai *Oma tuntijakautuminen*, ja siinä on *Lue lisää*. Merkki kertoo, ohjaako MS Project -tiedoston tuntijakautuminen yhä päivämääriä.
+- **Tallennetut päivämäärät** — merkki tuodusta tiedostosta, jossa on tallennettuja päivämääriä. Merkissä lukee *Näyttää tiedostoon tallennetut päivämäärät tälle tehtävälle* (Primavera-tiedostolle *Näyttää Primaveran omat tallennetut päivämäärät tälle tehtävälle*), *Poikkeaa tallennetuista päivämääristä* tai *Tallennus on osittain puutteellinen — katso myöhäis- ja pelivarasarakkeet*. Siinä on *Lue lisää*. Katso [Tallennetut päivämäärät](docs://uitleg-datums-zoals-opgeslagen).
+
+## Paneelin ylä- ja alaosa
+
+- **Poista tehtävä** — roskakorikuvake otsikon *Tehtävä* vieressä. Se poistaa tämän tehtävän yhdessä sen alitehtävien kanssa yhtenä vaiheena kohdassa *Kumoa*. Aikataulu ei ole sen jälkeen ajan tasalla, kunnes *Laske* on valittu.
+- **Laske** — painike alareunassa. Sama laskenta kuin *Aloitus › Aikataulu › Laske*.
+
+## Mitä et löydä täältä
+
+- **Tasaamisprioriteetti** — ei ole ikkunassa eikä paneelissa. Se asetetaan napsauttamalla hiiren kakkospainikkeella ja valitsemalla *Prioriteetti* (*Matala* = 100, *Normaali* = 500, *Korkea* = 900). Vaihtoehtoisesti kirjoitetaan luku välillä 0–1000 sarakkeeseen *Tasaamisprioriteetti*. Oletus: 500. Vaikutus: tasaaminen pitää ensin paikallaan tehtävät, joilla on korkeampi prioriteetti. Arvo 1000 lukitsee tehtävän, joten tasaaminen ei siirrä sitä koskaan. Katso [Tasaaminen](docs://uitleg-nivelleren).
+- **Muut tehtävätiedot** — loput tehtävän tiedoista, kuten sarakkeet *Manuaalisesti ajoitettu*, *Väri* ja tekniset sarakkeet, ovat vain taulukossa. Katso [Taulukon sarakkeet](docs://ref-tabelkolommen).

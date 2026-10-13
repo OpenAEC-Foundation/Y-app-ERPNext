@@ -1412,167 +1412,167 @@
     "src": "../../node_modules/@fontsource/tinos/files/tinos-vietnamese-700-normal.woff2"
   },
   "../../node_modules/@stll/folio-core/dist/docx/selectiveSave.js": {
-    "file": "yapp-selectiveSave-dOyZGNAh.js",
+    "file": "yapp-selectiveSave-DGrL17G9.js",
     "name": "selectiveSave",
     "src": "../../node_modules/@stll/folio-core/dist/docx/selectiveSave.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-paragraphPropertySource-Bi3msYIG.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-rezip-nY8fCpeS.js",
-      "_yapp-documentParser-BjHT-GdO.js"
+      "_yapp-paragraphPropertySource-CkuWpaTV.js",
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-rezip--nhzh9fF.js",
+      "_yapp-documentParser-ClaWKvj4.js"
     ],
     "dynamicImports": [
-      "_yapp-jszip.min-DKjOEY-P.js"
+      "_yapp-jszip.min-tQSiNWkI.js"
     ]
   },
   "../../node_modules/@stll/folio-core/dist/docx/selectiveSaveTripwire.js": {
-    "file": "yapp-selectiveSaveTripwire-BXYag7sN.js",
+    "file": "yapp-selectiveSaveTripwire-DUbcD1YQ.js",
     "name": "selectiveSaveTripwire",
     "src": "../../node_modules/@stll/folio-core/dist/docx/selectiveSaveTripwire.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-dist-B_PifVxs.js"
+      "_yapp-dist-DEYAWyAv.js"
     ],
     "dynamicImports": [
-      "_yapp-jszip.min-DKjOEY-P.js"
+      "_yapp-jszip.min-tQSiNWkI.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/CommentsSidebar-C4IpXib8.js": {
-    "file": "yapp-CommentsSidebar-C4IpXib8-CEegskaF.js",
+    "file": "yapp-CommentsSidebar-C4IpXib8-BY2MAld_.js",
     "name": "CommentsSidebar-C4IpXib8",
     "src": "../../node_modules/@stll/folio-react/dist/CommentsSidebar-C4IpXib8.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-renderAsync-T2p_qqNU-CO7LU9IO.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-renderAsync-T2p_qqNU-t87B-9J1.js",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-ellipsis-vertical-C_z3VgJ2.js",
+      "_yapp-ellipsis-vertical-D9HUCqF6.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/FindReplaceDialog-LlVMe3EW.js": {
-    "file": "yapp-FindReplaceDialog-LlVMe3EW-aOZdYj9h.js",
+    "file": "yapp-FindReplaceDialog-LlVMe3EW-42oL5m-V.js",
     "name": "FindReplaceDialog-LlVMe3EW",
     "src": "../../node_modules/@stll/folio-react/dist/FindReplaceDialog-LlVMe3EW.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
       "_yapp-chevron-up-DFxX43co.js",
-      "_yapp-x-DPMv6zXI.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-x-70OBA6sc.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/FootnotePropertiesDialog-D73t3LNP.js": {
-    "file": "yapp-FootnotePropertiesDialog-D73t3LNP-dHP7z7T_.js",
+    "file": "yapp-FootnotePropertiesDialog-D73t3LNP-XGew6_9J.js",
     "name": "FootnotePropertiesDialog-D73t3LNP",
     "src": "../../node_modules/@stll/folio-react/dist/FootnotePropertiesDialog-D73t3LNP.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/ImagePositionDialog-Cwt6R8iM.js": {
-    "file": "yapp-ImagePositionDialog-Cwt6R8iM-CXyI8Q57.js",
+    "file": "yapp-ImagePositionDialog-Cwt6R8iM-KAwUyAqk.js",
     "name": "ImagePositionDialog-Cwt6R8iM",
     "src": "../../node_modules/@stll/folio-react/dist/ImagePositionDialog-Cwt6R8iM.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/ImagePropertiesDialog-GNZLBFLB.js": {
-    "file": "yapp-ImagePropertiesDialog-GNZLBFLB-98_rnCu3.js",
+    "file": "yapp-ImagePropertiesDialog-GNZLBFLB-AHCgEFWy.js",
     "name": "ImagePropertiesDialog-GNZLBFLB",
     "src": "../../node_modules/@stll/folio-react/dist/ImagePropertiesDialog-GNZLBFLB.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/InsertSymbolDialog-CeEhkEvc.js": {
-    "file": "yapp-InsertSymbolDialog-CeEhkEvc-BlbL9CQ3.js",
+    "file": "yapp-InsertSymbolDialog-CeEhkEvc-Buc40MtQ.js",
     "name": "InsertSymbolDialog-CeEhkEvc",
     "src": "../../node_modules/@stll/folio-react/dist/InsertSymbolDialog-CeEhkEvc.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/PageSetupDialog-DD6IEZAo.js": {
-    "file": "yapp-PageSetupDialog-DD6IEZAo-DcrtFhDO.js",
+    "file": "yapp-PageSetupDialog-DD6IEZAo-RgmTvCQu.js",
     "name": "PageSetupDialog-DD6IEZAo",
     "src": "../../node_modules/@stll/folio-react/dist/PageSetupDialog-DD6IEZAo.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-units-DbGI_Nl1.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-units-DpX4eFnm.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/SetNumberingValueDialog-CDQGDvP1.js": {
-    "file": "yapp-SetNumberingValueDialog-CDQGDvP1-C2g3qOSa.js",
+    "file": "yapp-SetNumberingValueDialog-CDQGDvP1-D3O1S-jA.js",
     "name": "SetNumberingValueDialog-CDQGDvP1",
     "src": "../../node_modules/@stll/folio-react/dist/SetNumberingValueDialog-CDQGDvP1.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/TablePropertiesDialog-Vu0HXQz6.js": {
-    "file": "yapp-TablePropertiesDialog-Vu0HXQz6-CSf88wDJ.js",
+    "file": "yapp-TablePropertiesDialog-Vu0HXQz6-DSLGSfOW.js",
     "name": "TablePropertiesDialog-Vu0HXQz6",
     "src": "../../node_modules/@stll/folio-react/dist/TablePropertiesDialog-Vu0HXQz6.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-tableOperations-Cz5PXEFJ.js",
-      "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
-      "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-tableOperations-BguyUqsp.js",
+      "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
+      "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/@stll/folio-react/dist/TextContextMenu-DZ3AUFKh.js": {
-    "file": "yapp-TextContextMenu-DZ3AUFKh-CWrwtjtj.js",
+    "file": "yapp-TextContextMenu-DZ3AUFKh-BYFMgw-s.js",
     "name": "TextContextMenu-DZ3AUFKh",
     "src": "../../node_modules/@stll/folio-react/dist/TextContextMenu-DZ3AUFKh.js",
     "isDynamicEntry": true,
@@ -1582,63 +1582,63 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-clipboard-paste-Bge5mh_T.js",
       "_yapp-copy-DGO1-NeX.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "../../node_modules/hyphen/cs/index.js": {
-    "file": "yapp-cs-DbDE7gBe.js",
+    "file": "yapp-cs-1SA2Z2cf.js",
     "name": "cs",
     "src": "../../node_modules/hyphen/cs/index.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-export-contract-DPVN32mI.js"
+      "_yapp-export-contract-gs5LfJI6.js"
     ]
   },
   "../../node_modules/hyphen/en-gb/index.js": {
-    "file": "yapp-en-gb-DMemkT4M.js",
+    "file": "yapp-en-gb-D4QsNONd.js",
     "name": "en-gb",
     "src": "../../node_modules/hyphen/en-gb/index.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-export-contract-DPVN32mI.js"
+      "_yapp-export-contract-gs5LfJI6.js"
     ]
   },
   "../../node_modules/hyphen/en-us/index.js": {
-    "file": "yapp-en-us-DwbS6Eet.js",
+    "file": "yapp-en-us-Y4qKTJGj.js",
     "name": "en-us",
     "src": "../../node_modules/hyphen/en-us/index.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-export-contract-DPVN32mI.js"
+      "_yapp-export-contract-gs5LfJI6.js"
     ]
   },
   "../../node_modules/hyphen/sk/index.js": {
-    "file": "yapp-sk-L0T9EBCD.js",
+    "file": "yapp-sk-Dt5f-1s2.js",
     "name": "sk",
     "src": "../../node_modules/hyphen/sk/index.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-export-contract-DPVN32mI.js"
+      "_yapp-export-contract-gs5LfJI6.js"
     ]
   },
   "../../node_modules/mammoth/lib/index.js": {
-    "file": "yapp-lib-CirOHGI8.js",
+    "file": "yapp-lib-xtHCD7XT.js",
     "name": "lib",
     "src": "../../node_modules/mammoth/lib/index.js",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-jszip.min-DKjOEY-P.js"
+      "_yapp-jszip.min-tQSiNWkI.js"
     ]
   },
   "../../node_modules/pdfjs-dist/build/pdf.mjs": {
-    "file": "yapp-pdf-CTMy7OMX.js",
+    "file": "yapp-pdf-B1xmotWO.js",
     "name": "pdf",
     "src": "../../node_modules/pdfjs-dist/build/pdf.mjs",
     "isDynamicEntry": true,
@@ -1647,7 +1647,7 @@
     ]
   },
   "../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs": {
-    "file": "yapp-pdf.worker.min-BimGwKeE.js",
+    "file": "yapp-pdf.worker.min-6N6k4lFv.js",
     "name": "pdf.worker.min",
     "src": "../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
     "isDynamicEntry": true,
@@ -1656,13 +1656,13 @@
     ]
   },
   "../../node_modules/three/build/three.module.js": {
-    "file": "yapp-three.module-BVvxLR3P.js",
+    "file": "yapp-three.module-CxpvOMUB.js",
     "name": "three.module",
     "src": "../../node_modules/three/build/three.module.js",
     "isDynamicEntry": true
   },
   "../../node_modules/three/examples/jsm/controls/OrbitControls.js": {
-    "file": "yapp-OrbitControls-Cjv1sna7.js",
+    "file": "yapp-OrbitControls-BM7y9P2B.js",
     "name": "OrbitControls",
     "src": "../../node_modules/three/examples/jsm/controls/OrbitControls.js",
     "isDynamicEntry": true,
@@ -1671,7 +1671,7 @@
     ]
   },
   "../../node_modules/utif2/UTIF.js": {
-    "file": "yapp-UTIF-DwXDK1oG.js",
+    "file": "yapp-UTIF-ChtMrXfv.js",
     "name": "UTIF",
     "src": "../../node_modules/utif2/UTIF.js",
     "isDynamicEntry": true,
@@ -1680,30 +1680,42 @@
     ]
   },
   "../../node_modules/web-ifc/web-ifc-api.js": {
-    "file": "yapp-web-ifc-api-DDNRRHKl.js",
+    "file": "yapp-web-ifc-api-Xa8KYSr_.js",
     "name": "web-ifc-api",
     "src": "../../node_modules/web-ifc/web-ifc-api.js",
     "isDynamicEntry": true
   },
   "../../node_modules/xlsx/xlsx.mjs": {
-    "file": "yapp-xlsx-BDtFmsnF.js",
+    "file": "yapp-xlsx-CVID0rr8.js",
     "name": "xlsx",
     "src": "../../node_modules/xlsx/xlsx.mjs",
     "isDynamicEntry": true
   },
   "../../node_modules/y-prosemirror/src/y-prosemirror.js": {
-    "file": "yapp-y-prosemirror-MF2h59zS.js",
+    "file": "yapp-y-prosemirror-SzQ-du5z.js",
     "name": "y-prosemirror",
     "src": "../../node_modules/y-prosemirror/src/y-prosemirror.js",
     "isDynamicEntry": true,
     "imports": [
-      "_yapp-yjs-C9oH5-Jm.js",
-      "_yapp-dist-C3pDNyF2.js",
-      "_yapp-dist-DgGPykP1.js"
+      "_yapp-yjs-DRogjjoE.js",
+      "_yapp-dist-BA3oi7qv.js",
+      "_yapp-dist-rHS0ifNZ.js"
     ]
   },
-  "_yapp-CompanySelect-Cz8aBZ3h.js": {
-    "file": "yapp-CompanySelect-Cz8aBZ3h.js",
+  "_yapp-CadFrame-D3ZTjbOa.js": {
+    "file": "yapp-CadFrame-D3ZTjbOa.js",
+    "name": "CadFrame",
+    "imports": [
+      "_yapp-chunk-DiClddyL.js",
+      "index.html",
+      "_yapp-rotate-ccw-Df5gNUMw.js",
+      "_yapp-useTranslation-XNJgytEB.js",
+      "_yapp-jsx-runtime-B1TN9NKv.js",
+      "_yapp-erpnext-B1Nh1pil.js"
+    ]
+  },
+  "_yapp-CompanySelect-UWMVnyuc.js": {
+    "file": "yapp-CompanySelect-UWMVnyuc.js",
     "name": "CompanySelect",
     "imports": [
       "index.html",
@@ -1711,59 +1723,59 @@
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-CustomerSearchSelect-CAF3C14v.js": {
-    "file": "yapp-CustomerSearchSelect-CAF3C14v.js",
+  "_yapp-CustomerSearchSelect-CPz3rIss.js": {
+    "file": "yapp-CustomerSearchSelect-CPz3rIss.js",
     "name": "CustomerSearchSelect",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-user-FkHGtJan.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-user-hdCs05wt.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-DateRangeFilter-C5j_Mhqe.js": {
-    "file": "yapp-DateRangeFilter-C5j_Mhqe.js",
+  "_yapp-DateRangeFilter-lyywJQoR.js": {
+    "file": "yapp-DateRangeFilter-lyywJQoR.js",
     "name": "DateRangeFilter",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-FindReplaceManager-C3ifZLVi.js": {
-    "file": "yapp-FindReplaceManager-C3ifZLVi.js",
+  "_yapp-FindReplaceManager-BZHW0e-2.js": {
+    "file": "yapp-FindReplaceManager-BZHW0e-2.js",
     "name": "FindReplaceManager",
     "imports": [
-      "_yapp-paragraphPropertySource-Bi3msYIG.js"
+      "_yapp-paragraphPropertySource-CkuWpaTV.js"
     ]
   },
-  "_yapp-ImageLightbox-D9Q85jEG.js": {
-    "file": "yapp-ImageLightbox-D9Q85jEG.js",
+  "_yapp-ImageLightbox-C7gqbg4d.js": {
+    "file": "yapp-ImageLightbox-C7gqbg4d.js",
     "name": "ImageLightbox",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-InfoOverlay-CvfcUqr0.js": {
-    "file": "yapp-InfoOverlay-CvfcUqr0.js",
+  "_yapp-InfoOverlay-BDdhHief.js": {
+    "file": "yapp-InfoOverlay-BDdhHief.js",
     "name": "InfoOverlay",
     "imports": [
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-InvoiceModal-CvTmmGJt.js": {
-    "file": "yapp-InvoiceModal-CvTmmGJt.js",
+  "_yapp-InvoiceModal-Biuzt5pC.js": {
+    "file": "yapp-InvoiceModal-Biuzt5pC.js",
     "name": "InvoiceModal",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
@@ -1771,54 +1783,54 @@
       "_yapp-briefcase-DzVewzlG.js",
       "_yapp-check-2XMzp0nH.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-maximize-2-DdW76F4G.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
-      "_yapp-zoom-in-9jp-i-Hs.js",
-      "_yapp-zoom-out-Dcja3_Jf.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-maximize-2-Cdk7quM1.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
+      "_yapp-zoom-in-C5xIM5vE.js",
+      "_yapp-zoom-out-aNCivBPt.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CustomerSearchSelect-CAF3C14v.js",
-      "_yapp-ItemSearchSelect-DT2Mnlvc.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoiceEmail-fs5XPQFL.js"
+      "_yapp-CustomerSearchSelect-CPz3rIss.js",
+      "_yapp-ItemSearchSelect-B0rgnUMl.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoiceEmail-DfAx0v18.js"
     ]
   },
-  "_yapp-ItemSearchSelect-DT2Mnlvc.js": {
-    "file": "yapp-ItemSearchSelect-DT2Mnlvc.js",
+  "_yapp-ItemSearchSelect-B0rgnUMl.js": {
+    "file": "yapp-ItemSearchSelect-B0rgnUMl.js",
     "name": "ItemSearchSelect",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-package-DPLg57PV.js",
+      "_yapp-package-BbLaRgvX.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-LinkedText-BeHI8C4Q.js": {
-    "file": "yapp-LinkedText-BeHI8C4Q.js",
+  "_yapp-LinkedText-iy4yuhtQ.js": {
+    "file": "yapp-LinkedText-iy4yuhtQ.js",
     "name": "LinkedText",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-linkify-C9W9_XPh.js"
+      "_yapp-linkify-BuVmNGVY.js"
     ]
   },
-  "_yapp-ProjectOnderwerpKnop-B3-q-bz7.js": {
-    "file": "yapp-ProjectOnderwerpKnop-B3-q-bz7.js",
+  "_yapp-ProjectOnderwerpKnop-BuGop5eO.js": {
+    "file": "yapp-ProjectOnderwerpKnop-BuGop5eO.js",
     "name": "ProjectOnderwerpKnop",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-office-mwyQNxOi.js",
+      "_yapp-office-BnUNXuXX.js",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-arrow-up-right-CU1KoWW5.js",
       "_yapp-building-2-B-3U7EN0.js",
@@ -1826,94 +1838,95 @@
       "_yapp-circle-alert-BnV0-M83.js",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-file-image-BuLlz7l3.js",
-      "_yapp-file-Dk4mJ7GV.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-image-CXIiSwNb.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-zap-Bbv86N1n.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-file-image-CntqQXVO.js",
+      "_yapp-file-BAkxovID.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-hard-drive-CXtRrHs6.js",
+      "_yapp-image-SX4yRxUD.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-zap-ChVjozFp.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-ItemSearchSelect-DT2Mnlvc.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-bijlage-soort-BH9yCLDh.js",
-      "_yapp-default-company-k-PZ8qGZ.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-linkify-C9W9_XPh.js",
-      "_yapp-nasConfig-BhtgeaUC.js",
-      "_yapp-nasStorage-k8yV5ZVf.js",
-      "_yapp-permission-error-U105eUh5.js"
+      "_yapp-ItemSearchSelect-B0rgnUMl.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-bijlage-soort-zvcKr68V.js",
+      "_yapp-default-company-DiEuX-w9.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-linkify-BuVmNGVY.js",
+      "_yapp-nasConfig-CSaL8KUz.js",
+      "_yapp-nasStorage-B621u_2F.js",
+      "_yapp-permission-error-lO265u-l.js"
     ],
     "dynamicImports": [
       "../../node_modules/pdfjs-dist/build/pdf.mjs",
       "../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs"
     ]
   },
-  "_yapp-Projects-G5eIu8Bs.js": {
-    "file": "yapp-Projects-G5eIu8Bs.js",
+  "_yapp-Projects-pIGK41Cb.js": {
+    "file": "yapp-Projects-pIGK41Cb.js",
     "name": "Projects",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-office-mwyQNxOi.js",
+      "_yapp-office-BnUNXuXX.js",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-building-2-B-3U7EN0.js",
       "_yapp-chevron-left-BwIKRmIh.js",
       "_yapp-circle-alert-BnV0-M83.js",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-flag-XhDnzusl.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-folder-plus-Dws_Pq4L.js",
-      "_yapp-link-2-MzpESIqQ.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-map-pin-BhID5JGz.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-user-FkHGtJan.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-flag-C8O4klQP.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-folder-plus-cUDyWSPo.js",
+      "_yapp-link-2-BzV0ZsHI.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-map-pin-DOJhr5B-.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-user-hdCs05wt.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-default-company-k-PZ8qGZ.js",
-      "_yapp-desktop-kH8rhjpH.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js",
-      "_yapp-nasConfig-BhtgeaUC.js",
-      "_yapp-permission-error-U105eUh5.js",
-      "_yapp-useIsMobile-CT9g06yK.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-default-company-DiEuX-w9.js",
+      "_yapp-desktop-DDN1_GRL.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js",
+      "_yapp-nasConfig-CSaL8KUz.js",
+      "_yapp-permission-error-lO265u-l.js",
+      "_yapp-useIsMobile-DXQ173r5.js"
     ]
   },
-  "_yapp-QuickKmBooking-CLJ-bisx.js": {
-    "file": "yapp-QuickKmBooking-CLJ-bisx.js",
+  "_yapp-QuickKmBooking-C5Fz-TMp.js": {
+    "file": "yapp-QuickKmBooking-C5Fz-TMp.js",
     "name": "QuickKmBooking",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-car-BSuqIoqG.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-send-Dsxf37do.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-send-eoWuxcVa.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-holidays-aO-KK9OV.js",
-      "_yapp-useSessionEmployee-30ZBkIi_.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-holidays-BqQVzoTe.js",
+      "_yapp-useSessionEmployee-CEwZc9WV.js"
     ]
   },
-  "_yapp-RichTextEditor-DIfM4N9K.js": {
-    "file": "yapp-RichTextEditor-DIfM4N9K.js",
+  "_yapp-RichTextEditor-Cg_bBhqx.js": {
+    "file": "yapp-RichTextEditor-Cg_bBhqx.js",
     "name": "RichTextEditor",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
@@ -1921,21 +1934,21 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-underline-BeNGue8e.js",
       "_yapp-clipboard-paste-Bge5mh_T.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-remove-formatting-NrBCb67u.js",
-      "_yapp-link-2-MzpESIqQ.js",
-      "_yapp-text-align-start-CN8JPXZZ.js",
-      "_yapp-table-C2NckOFg.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-minus-CLlyUxUu.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-remove-formatting-B0onDcdk.js",
+      "_yapp-link-2-BzV0ZsHI.js",
+      "_yapp-text-align-start-CTeEXvUz.js",
+      "_yapp-table-CxvHjAuI.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-minus-BFUD77-X.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-linkify-C9W9_XPh.js"
+      "_yapp-linkify-BuVmNGVY.js"
     ]
   },
-  "_yapp-Tasks-COS-63sV.js": {
-    "file": "yapp-Tasks-COS-63sV.js",
+  "_yapp-Tasks-DadGEqpi.js": {
+    "file": "yapp-Tasks-DadGEqpi.js",
     "name": "Tasks",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
@@ -1944,31 +1957,31 @@
       "_yapp-underline-BeNGue8e.js",
       "_yapp-briefcase-DzVewzlG.js",
       "_yapp-circle-check-CWe5wW2x.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-flag-XhDnzusl.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-remove-formatting-NrBCb67u.js",
-      "_yapp-layout-grid-kR9U8L3M.js",
-      "_yapp-link-iFFEtxxk.js",
-      "_yapp-list-checks-Cdxie6np.js",
-      "_yapp-table-C2NckOFg.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-user-FkHGtJan.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-flag-C8O4klQP.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-remove-formatting-B0onDcdk.js",
+      "_yapp-layout-grid-C0rPtj_n.js",
+      "_yapp-link-DseZbxZh.js",
+      "_yapp-list-checks-BJsZoPvx.js",
+      "_yapp-table-CxvHjAuI.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-user-hdCs05wt.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-permission-error-U105eUh5.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-permission-error-lO265u-l.js"
     ]
   },
-  "_yapp-Timesheets-BbkQrHaM.js": {
-    "file": "yapp-Timesheets-BbkQrHaM.js",
+  "_yapp-Timesheets-DJEzHWPw.js": {
+    "file": "yapp-Timesheets-DJEzHWPw.js",
     "name": "Timesheets",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
@@ -1977,51 +1990,51 @@
       "_yapp-chevron-up-DFxX43co.js",
       "_yapp-circle-check-big-0vnRC4IX.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-printer-CyeXknuo.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-timesheetValidation-B7SG5R5b.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-printer-IhWUvuqq.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-timesheetValidation-Di0ILipA.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-useSessionEmployee-30ZBkIi_.js"
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-useSessionEmployee-CEwZc9WV.js"
     ]
   },
-  "_yapp-TodoDetail-Bwqqy77k.js": {
-    "file": "yapp-TodoDetail-Bwqqy77k.js",
+  "_yapp-TodoDetail-Baxt7scx.js": {
+    "file": "yapp-TodoDetail-Baxt7scx.js",
     "name": "TodoDetail",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-B_r-07GT.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-flag-XhDnzusl.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-flag-C8O4klQP.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-agenda-mailserver-CwD4WmOO.js": {
-    "file": "yapp-agenda-mailserver-CwD4WmOO.js",
+  "_yapp-agenda-mailserver-6I0od-jy.js": {
+    "file": "yapp-agenda-mailserver-6I0od-jy.js",
     "name": "agenda-mailserver",
     "imports": [
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-app-badge-DtyIINd_.js": {
-    "file": "yapp-app-badge-DtyIINd_.js",
+  "_yapp-app-badge-C60akNv6.js": {
+    "file": "yapp-app-badge-C60akNv6.js",
     "name": "app-badge",
     "imports": [
-      "_yapp-desktop-kH8rhjpH.js"
+      "_yapp-desktop-DDN1_GRL.js"
     ]
   },
   "_yapp-arrow-left-vBkRz_NF.js": {
@@ -2052,8 +2065,8 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-bijlage-soort-BH9yCLDh.js": {
-    "file": "yapp-bijlage-soort-BH9yCLDh.js",
+  "_yapp-bijlage-soort-zvcKr68V.js": {
+    "file": "yapp-bijlage-soort-zvcKr68V.js",
     "name": "bijlage-soort"
   },
   "_yapp-bot-BXwLpo9d.js": {
@@ -2098,8 +2111,8 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-capabilities-DiO0riXf.js": {
-    "file": "yapp-capabilities-DiO0riXf.js",
+  "_yapp-capabilities-Cn_1Mp_B.js": {
+    "file": "yapp-capabilities-Cn_1Mp_B.js",
     "name": "capabilities"
   },
   "_yapp-car-BSuqIoqG.js": {
@@ -2183,13 +2196,13 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-contact-suggestions-DgxSK29_.js": {
-    "file": "yapp-contact-suggestions-DgxSK29_.js",
+  "_yapp-contact-suggestions-BMnx_6zs.js": {
+    "file": "yapp-contact-suggestions-BMnx_6zs.js",
     "name": "contact-suggestions",
     "imports": [
       "index.html",
-      "_yapp-agenda-mailserver-CwD4WmOO.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-agenda-mailserver-6I0od-jy.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "_yapp-copy-DGO1-NeX.js": {
@@ -2207,80 +2220,80 @@
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-csrf-BasjK-TS.js": {
-    "file": "yapp-csrf-BasjK-TS.js",
+  "_yapp-csrf-B3z_sxRH.js": {
+    "file": "yapp-csrf-B3z_sxRH.js",
     "name": "csrf"
   },
-  "_yapp-default-company-k-PZ8qGZ.js": {
-    "file": "yapp-default-company-k-PZ8qGZ.js",
+  "_yapp-default-company-DiEuX-w9.js": {
+    "file": "yapp-default-company-DiEuX-w9.js",
     "name": "default-company",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-desktop-kH8rhjpH.js": {
-    "file": "yapp-desktop-kH8rhjpH.js",
+  "_yapp-desktop-DDN1_GRL.js": {
+    "file": "yapp-desktop-DDN1_GRL.js",
     "name": "desktop"
   },
-  "_yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js": {
-    "file": "yapp-dialogChrome-BoGYPgeu-DjF7uiS5.js",
+  "_yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js": {
+    "file": "yapp-dialogChrome-BoGYPgeu-CHuuRo_i.js",
     "name": "dialogChrome-BoGYPgeu",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-dist-B_PifVxs.js": {
-    "file": "yapp-dist-B_PifVxs.js",
+  "_yapp-dist-BA3oi7qv.js": {
+    "file": "yapp-dist-BA3oi7qv.js",
     "name": "dist"
   },
-  "_yapp-dist-BldOkA9d.js": {
-    "file": "yapp-dist-BldOkA9d.js",
+  "_yapp-dist-D10XX_4t.js": {
+    "file": "yapp-dist-D10XX_4t.js",
     "name": "dist",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-dist-C3pDNyF2.js": {
-    "file": "yapp-dist-C3pDNyF2.js",
+  "_yapp-dist-DEYAWyAv.js": {
+    "file": "yapp-dist-DEYAWyAv.js",
     "name": "dist"
   },
-  "_yapp-dist-DgGPykP1.js": {
-    "file": "yapp-dist-DgGPykP1.js",
+  "_yapp-dist-rHS0ifNZ.js": {
+    "file": "yapp-dist-rHS0ifNZ.js",
     "name": "dist",
     "imports": [
-      "_yapp-dist-C3pDNyF2.js"
+      "_yapp-dist-BA3oi7qv.js"
     ]
   },
-  "_yapp-document-CQ0oovh0-CvaDJPYP.js": {
-    "file": "yapp-document-CQ0oovh0-CvaDJPYP.js",
+  "_yapp-document-CQ0oovh0-Cy3-3ODM.js": {
+    "file": "yapp-document-CQ0oovh0-Cy3-3ODM.js",
     "name": "document-CQ0oovh0",
     "imports": [
-      "_yapp-dist-B_PifVxs.js"
+      "_yapp-dist-DEYAWyAv.js"
     ]
   },
-  "_yapp-documentEnumValues-sJnFo-4C.js": {
-    "file": "yapp-documentEnumValues-sJnFo-4C.js",
+  "_yapp-documentEnumValues-DcShnnZR.js": {
+    "file": "yapp-documentEnumValues-DcShnnZR.js",
     "name": "documentEnumValues",
     "imports": [
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js"
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js"
     ]
   },
-  "_yapp-documentParser-BjHT-GdO.js": {
-    "file": "yapp-documentParser-BjHT-GdO.js",
+  "_yapp-documentParser-ClaWKvj4.js": {
+    "file": "yapp-documentParser-ClaWKvj4.js",
     "name": "documentParser",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-paragraphPropertySource-Bi3msYIG.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-rezip-nY8fCpeS.js",
-      "_yapp-dist-B_PifVxs.js",
-      "_yapp-jszip.min-DKjOEY-P.js"
+      "_yapp-paragraphPropertySource-CkuWpaTV.js",
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-rezip--nhzh9fF.js",
+      "_yapp-dist-DEYAWyAv.js",
+      "_yapp-jszip.min-tQSiNWkI.js"
     ]
   },
   "_yapp-dollar-sign-DGEG-6RG.js": {
@@ -2297,133 +2310,140 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-ellipsis-vertical-C_z3VgJ2.js": {
-    "file": "yapp-ellipsis-vertical-C_z3VgJ2.js",
+  "_yapp-ellipsis-vertical-D9HUCqF6.js": {
+    "file": "yapp-ellipsis-vertical-D9HUCqF6.js",
     "name": "ellipsis-vertical",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-erpnext-D3MW3D4-.js": {
-    "file": "yapp-erpnext-D3MW3D4-.js",
+  "_yapp-erpnext-B1Nh1pil.js": {
+    "file": "yapp-erpnext-B1Nh1pil.js",
     "name": "erpnext",
     "imports": [
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-csrf-BasjK-TS.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-csrf-B3z_sxRH.js"
     ]
   },
-  "_yapp-export-contract-DPVN32mI.js": {
-    "file": "yapp-export-contract-DPVN32mI.js",
+  "_yapp-export-contract-gs5LfJI6.js": {
+    "file": "yapp-export-contract-gs5LfJI6.js",
     "name": "export-contract",
     "imports": [
       "_yapp-chunk-DiClddyL.js"
     ]
   },
-  "_yapp-external-link-Boqkp6XF.js": {
-    "file": "yapp-external-link-Boqkp6XF.js",
+  "_yapp-external-link-BbrZcq59.js": {
+    "file": "yapp-external-link-BbrZcq59.js",
     "name": "external-link",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-eye-BnFZyYfz.js": {
-    "file": "yapp-eye-BnFZyYfz.js",
+  "_yapp-eye-D8Maiekf.js": {
+    "file": "yapp-eye-D8Maiekf.js",
     "name": "eye",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-eye-off-CRazo5zo.js": {
-    "file": "yapp-eye-off-CRazo5zo.js",
+  "_yapp-eye-off-VKQR70sq.js": {
+    "file": "yapp-eye-off-VKQR70sq.js",
     "name": "eye-off",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-file-Dk4mJ7GV.js": {
-    "file": "yapp-file-Dk4mJ7GV.js",
+  "_yapp-file-BAkxovID.js": {
+    "file": "yapp-file-BAkxovID.js",
     "name": "file",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-file-exclamation-point-C4hbYVv1.js": {
-    "file": "yapp-file-exclamation-point-C4hbYVv1.js",
+  "_yapp-file-exclamation-point-CVzcSG21.js": {
+    "file": "yapp-file-exclamation-point-CVzcSG21.js",
     "name": "file-exclamation-point",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-file-image-BuLlz7l3.js": {
-    "file": "yapp-file-image-BuLlz7l3.js",
+  "_yapp-file-image-CntqQXVO.js": {
+    "file": "yapp-file-image-CntqQXVO.js",
     "name": "file-image",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-flag-XhDnzusl.js": {
-    "file": "yapp-flag-XhDnzusl.js",
+  "_yapp-flag-C8O4klQP.js": {
+    "file": "yapp-flag-C8O4klQP.js",
     "name": "flag",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-folder-BizDp_Tj.js": {
-    "file": "yapp-folder-BizDp_Tj.js",
+  "_yapp-folder-Bu9pzeSb.js": {
+    "file": "yapp-folder-Bu9pzeSb.js",
     "name": "folder",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-folder-open-DewoO7_N.js": {
-    "file": "yapp-folder-open-DewoO7_N.js",
+  "_yapp-folder-open-C60eYbzO.js": {
+    "file": "yapp-folder-open-C60eYbzO.js",
     "name": "folder-open",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-folder-plus-Dws_Pq4L.js": {
-    "file": "yapp-folder-plus-Dws_Pq4L.js",
+  "_yapp-folder-plus-cUDyWSPo.js": {
+    "file": "yapp-folder-plus-cUDyWSPo.js",
     "name": "folder-plus",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js": {
-    "file": "yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
+  "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js": {
+    "file": "yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
     "name": "folio-ui-rCHqCEG6",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
       "_yapp-shim-D10i3ZjC.js"
     ]
   },
-  "_yapp-funnel-DO3HesP2.js": {
-    "file": "yapp-funnel-DO3HesP2.js",
+  "_yapp-funnel-CoJxpLqg.js": {
+    "file": "yapp-funnel-CoJxpLqg.js",
     "name": "funnel",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-holidays-aO-KK9OV.js": {
-    "file": "yapp-holidays-aO-KK9OV.js",
+  "_yapp-hard-drive-CXtRrHs6.js": {
+    "file": "yapp-hard-drive-CXtRrHs6.js",
+    "name": "hard-drive",
+    "imports": [
+      "_yapp-createLucideIcon-BaPRLlQf.js"
+    ]
+  },
+  "_yapp-holidays-BqQVzoTe.js": {
+    "file": "yapp-holidays-BqQVzoTe.js",
     "name": "holidays"
   },
-  "_yapp-horizontalScale-BZAx7Rpq.js": {
-    "file": "yapp-horizontalScale-BZAx7Rpq.js",
+  "_yapp-horizontalScale-Ca1Y7Jhz.js": {
+    "file": "yapp-horizontalScale-Ca1Y7Jhz.js",
     "name": "horizontalScale"
   },
-  "_yapp-image-CXIiSwNb.js": {
-    "file": "yapp-image-CXIiSwNb.js",
+  "_yapp-image-SX4yRxUD.js": {
+    "file": "yapp-image-SX4yRxUD.js",
     "name": "image",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-info-otVIeEEV.js": {
-    "file": "yapp-info-otVIeEEV.js",
+  "_yapp-info-C_-gFI1Z.js": {
+    "file": "yapp-info-C_-gFI1Z.js",
     "name": "info",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
@@ -2433,27 +2453,27 @@
     "file": "yapp-initReactI18next-ByYvyJ3z.js",
     "name": "initReactI18next"
   },
-  "_yapp-instances-DlkwA_bz.js": {
-    "file": "yapp-instances-DlkwA_bz.js",
+  "_yapp-instances-CMMd_zmx.js": {
+    "file": "yapp-instances-CMMd_zmx.js",
     "name": "instances"
   },
-  "_yapp-instelling-CGaHy8ru.js": {
-    "file": "yapp-instelling-CGaHy8ru.js",
+  "_yapp-instelling-74GvPH70.js": {
+    "file": "yapp-instelling-74GvPH70.js",
     "name": "instelling",
     "imports": [
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-invoice-docstatus-CGIC88Wc.js": {
-    "file": "yapp-invoice-docstatus-CGIC88Wc.js",
+  "_yapp-invoice-docstatus-CigYH-86.js": {
+    "file": "yapp-invoice-docstatus-CigYH-86.js",
     "name": "invoice-docstatus"
   },
-  "_yapp-invoiceEmail-fs5XPQFL.js": {
-    "file": "yapp-invoiceEmail-fs5XPQFL.js",
+  "_yapp-invoiceEmail-DfAx0v18.js": {
+    "file": "yapp-invoiceEmail-DfAx0v18.js",
     "name": "invoiceEmail",
     "imports": [
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "_yapp-jsx-runtime-B1TN9NKv.js": {
@@ -2463,184 +2483,184 @@
       "_yapp-chunk-DiClddyL.js"
     ]
   },
-  "_yapp-jszip.min-DKjOEY-P.js": {
-    "file": "yapp-jszip.min-DKjOEY-P.js",
+  "_yapp-jszip.min-tQSiNWkI.js": {
+    "file": "yapp-jszip.min-tQSiNWkI.js",
     "name": "jszip.min",
     "imports": [
       "_yapp-chunk-DiClddyL.js"
     ]
   },
-  "_yapp-key-DxDEDI85.js": {
-    "file": "yapp-key-DxDEDI85.js",
+  "_yapp-key-CVFFjDu_.js": {
+    "file": "yapp-key-CVFFjDu_.js",
     "name": "key",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-layers-DS6egnWu.js": {
-    "file": "yapp-layers-DS6egnWu.js",
+  "_yapp-layers-CDebIxGs.js": {
+    "file": "yapp-layers-CDebIxGs.js",
     "name": "layers",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-layout-grid-kR9U8L3M.js": {
-    "file": "yapp-layout-grid-kR9U8L3M.js",
+  "_yapp-layout-grid-C0rPtj_n.js": {
+    "file": "yapp-layout-grid-C0rPtj_n.js",
     "name": "layout-grid",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-link-2-MzpESIqQ.js": {
-    "file": "yapp-link-2-MzpESIqQ.js",
+  "_yapp-link-2-BzV0ZsHI.js": {
+    "file": "yapp-link-2-BzV0ZsHI.js",
     "name": "link-2",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-link-iFFEtxxk.js": {
-    "file": "yapp-link-iFFEtxxk.js",
+  "_yapp-link-DseZbxZh.js": {
+    "file": "yapp-link-DseZbxZh.js",
     "name": "link",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-linkify-C9W9_XPh.js": {
-    "file": "yapp-linkify-C9W9_XPh.js",
+  "_yapp-linkify-BuVmNGVY.js": {
+    "file": "yapp-linkify-BuVmNGVY.js",
     "name": "linkify"
   },
-  "_yapp-list-DHOIBpea.js": {
-    "file": "yapp-list-DHOIBpea.js",
+  "_yapp-list-DJ96ScPG.js": {
+    "file": "yapp-list-DJ96ScPG.js",
     "name": "list",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-list-checks-Cdxie6np.js": {
-    "file": "yapp-list-checks-Cdxie6np.js",
+  "_yapp-list-checks-BJsZoPvx.js": {
+    "file": "yapp-list-checks-BJsZoPvx.js",
     "name": "list-checks",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-lock-B8btokAU.js": {
-    "file": "yapp-lock-B8btokAU.js",
+  "_yapp-lock-N_Wop3n4.js": {
+    "file": "yapp-lock-N_Wop3n4.js",
     "name": "lock",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-mailOpmaak-Bev6hMw2.js": {
-    "file": "yapp-mailOpmaak-Bev6hMw2.js",
+  "_yapp-mailOpmaak-CEllEPGz.js": {
+    "file": "yapp-mailOpmaak-CEllEPGz.js",
     "name": "mailOpmaak",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-instelling-CGaHy8ru.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-instelling-74GvPH70.js"
     ]
   },
-  "_yapp-map-pin-BhID5JGz.js": {
-    "file": "yapp-map-pin-BhID5JGz.js",
+  "_yapp-map-pin-DOJhr5B-.js": {
+    "file": "yapp-map-pin-DOJhr5B-.js",
     "name": "map-pin",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-maximize-2-DdW76F4G.js": {
-    "file": "yapp-maximize-2-DdW76F4G.js",
+  "_yapp-maximize-2-Cdk7quM1.js": {
+    "file": "yapp-maximize-2-Cdk7quM1.js",
     "name": "maximize-2",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-messages-erpnext-iPfSY1oz.js": {
-    "file": "yapp-messages-erpnext-iPfSY1oz.js",
+  "_yapp-messages-erpnext-DOeqw4jv.js": {
+    "file": "yapp-messages-erpnext-DOeqw4jv.js",
     "name": "messages-erpnext",
     "imports": [
       "index.html",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
-  "_yapp-minus-CLlyUxUu.js": {
-    "file": "yapp-minus-CLlyUxUu.js",
+  "_yapp-minus-BFUD77-X.js": {
+    "file": "yapp-minus-BFUD77-X.js",
     "name": "minus",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-missingDays-CcFOPBAh.js": {
-    "file": "yapp-missingDays-CcFOPBAh.js",
+  "_yapp-missingDays-DVbmBgFl.js": {
+    "file": "yapp-missingDays-DVbmBgFl.js",
     "name": "missingDays",
     "imports": [
       "index.html",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-holidays-aO-KK9OV.js"
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-holidays-BqQVzoTe.js"
     ]
   },
-  "_yapp-nasConfig-BhtgeaUC.js": {
-    "file": "yapp-nasConfig-BhtgeaUC.js",
+  "_yapp-nasConfig-CSaL8KUz.js": {
+    "file": "yapp-nasConfig-CSaL8KUz.js",
     "name": "nasConfig",
     "imports": [
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
-  "_yapp-nasStorage-k8yV5ZVf.js": {
-    "file": "yapp-nasStorage-k8yV5ZVf.js",
+  "_yapp-nasStorage-B621u_2F.js": {
+    "file": "yapp-nasStorage-B621u_2F.js",
     "name": "nasStorage"
   },
-  "_yapp-office-mwyQNxOi.js": {
-    "file": "yapp-office-mwyQNxOi.js",
+  "_yapp-office-BnUNXuXX.js": {
+    "file": "yapp-office-BnUNXuXX.js",
     "name": "office"
   },
-  "_yapp-package-DPLg57PV.js": {
-    "file": "yapp-package-DPLg57PV.js",
+  "_yapp-package-BbLaRgvX.js": {
+    "file": "yapp-package-BbLaRgvX.js",
     "name": "package",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-paperclip-Bb35aSu-.js": {
-    "file": "yapp-paperclip-Bb35aSu-.js",
+  "_yapp-paperclip-DrVhvDzw.js": {
+    "file": "yapp-paperclip-DrVhvDzw.js",
     "name": "paperclip",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-paragraphPropertySource-Bi3msYIG.js": {
-    "file": "yapp-paragraphPropertySource-Bi3msYIG.js",
+  "_yapp-paragraphPropertySource-CkuWpaTV.js": {
+    "file": "yapp-paragraphPropertySource-CkuWpaTV.js",
     "name": "paragraphPropertySource",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-documentEnumValues-sJnFo-4C.js",
-      "_yapp-horizontalScale-BZAx7Rpq.js",
-      "_yapp-units-DbGI_Nl1.js",
-      "_yapp-dist-B_PifVxs.js",
-      "_yapp-jszip.min-DKjOEY-P.js",
-      "_yapp-dist-C3pDNyF2.js"
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-documentEnumValues-DcShnnZR.js",
+      "_yapp-horizontalScale-Ca1Y7Jhz.js",
+      "_yapp-units-DpX4eFnm.js",
+      "_yapp-dist-DEYAWyAv.js",
+      "_yapp-jszip.min-tQSiNWkI.js",
+      "_yapp-dist-BA3oi7qv.js"
     ]
   },
-  "_yapp-pencil-BhQgbY5I.js": {
-    "file": "yapp-pencil-BhQgbY5I.js",
+  "_yapp-pencil-C5XxhtIM.js": {
+    "file": "yapp-pencil-C5XxhtIM.js",
     "name": "pencil",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-permission-error-U105eUh5.js": {
-    "file": "yapp-permission-error-U105eUh5.js",
+  "_yapp-permission-error-lO265u-l.js": {
+    "file": "yapp-permission-error-lO265u-l.js",
     "name": "permission-error"
   },
-  "_yapp-phone-BSFlJFJ4.js": {
-    "file": "yapp-phone-BSFlJFJ4.js",
+  "_yapp-phone-BKXoJ3a-.js": {
+    "file": "yapp-phone-BKXoJ3a-.js",
     "name": "phone",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-plus-DQmAFAq1.js": {
-    "file": "yapp-plus-DQmAFAq1.js",
+  "_yapp-plus-F2G2fIvo.js": {
+    "file": "yapp-plus-F2G2fIvo.js",
     "name": "plus",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
@@ -2650,79 +2670,79 @@
     "file": "yapp-preload-helper-C3Ja_wKo.js",
     "name": "preload-helper"
   },
-  "_yapp-printer-CyeXknuo.js": {
-    "file": "yapp-printer-CyeXknuo.js",
+  "_yapp-printer-IhWUvuqq.js": {
+    "file": "yapp-printer-IhWUvuqq.js",
     "name": "printer",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-refresh-cw-B1xA-OGb.js": {
-    "file": "yapp-refresh-cw-B1xA-OGb.js",
+  "_yapp-refresh-cw-Bsw63R99.js": {
+    "file": "yapp-refresh-cw-Bsw63R99.js",
     "name": "refresh-cw",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-remove-formatting-NrBCb67u.js": {
-    "file": "yapp-remove-formatting-NrBCb67u.js",
+  "_yapp-remove-formatting-B0onDcdk.js": {
+    "file": "yapp-remove-formatting-B0onDcdk.js",
     "name": "remove-formatting",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-renderAsync-T2p_qqNU-CO7LU9IO.js": {
-    "file": "yapp-renderAsync-T2p_qqNU-CO7LU9IO.js",
+  "_yapp-renderAsync-T2p_qqNU-t87B-9J1.js": {
+    "file": "yapp-renderAsync-T2p_qqNU-t87B-9J1.js",
     "name": "renderAsync-T2p_qqNU",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-paragraphPropertySource-Bi3msYIG.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-rezip-nY8fCpeS.js",
-      "_yapp-documentParser-BjHT-GdO.js",
-      "_yapp-selectiveSaveFlags-CfqPg33y.js",
-      "_yapp-selectionRects-BO0g2WcC.js",
-      "_yapp-FindReplaceManager-C3ifZLVi.js",
-      "_yapp-documentEnumValues-sJnFo-4C.js",
-      "_yapp-horizontalScale-BZAx7Rpq.js",
-      "_yapp-tableOperations-Cz5PXEFJ.js",
-      "_yapp-units-DbGI_Nl1.js",
-      "_yapp-dist-B_PifVxs.js",
-      "_yapp-jszip.min-DKjOEY-P.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-paragraphPropertySource-CkuWpaTV.js",
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-rezip--nhzh9fF.js",
+      "_yapp-documentParser-ClaWKvj4.js",
+      "_yapp-selectiveSaveFlags-DnxG0qNe.js",
+      "_yapp-selectionRects-4A0ePacj.js",
+      "_yapp-FindReplaceManager-BZHW0e-2.js",
+      "_yapp-documentEnumValues-DcShnnZR.js",
+      "_yapp-horizontalScale-Ca1Y7Jhz.js",
+      "_yapp-tableOperations-BguyUqsp.js",
+      "_yapp-units-DpX4eFnm.js",
+      "_yapp-dist-DEYAWyAv.js",
+      "_yapp-jszip.min-tQSiNWkI.js",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-underline-BeNGue8e.js",
       "_yapp-check-2XMzp0nH.js",
       "_yapp-chevron-left-BwIKRmIh.js",
       "_yapp-circle-alert-BnV0-M83.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-file-Dk4mJ7GV.js",
-      "_yapp-image-CXIiSwNb.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-link-iFFEtxxk.js",
-      "_yapp-text-align-start-CN8JPXZZ.js",
-      "_yapp-table-C2NckOFg.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-square-pen-B3s5KPh_.js",
-      "_yapp-type-DqHkyiyw.js",
-      "_yapp-undo-2-P2juoTk9.js",
-      "_yapp-x-DPMv6zXI.js",
-      "_yapp-dist-C3pDNyF2.js",
-      "_yapp-dist-DgGPykP1.js",
-      "_yapp-dist-BldOkA9d.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-file-BAkxovID.js",
+      "_yapp-image-SX4yRxUD.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-link-DseZbxZh.js",
+      "_yapp-text-align-start-CTeEXvUz.js",
+      "_yapp-table-CxvHjAuI.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-square-pen-DQE-3B-p.js",
+      "_yapp-type-Czkpv9kd.js",
+      "_yapp-undo-2-BgCphjoJ.js",
+      "_yapp-x-70OBA6sc.js",
+      "_yapp-dist-BA3oi7qv.js",
+      "_yapp-dist-rHS0ifNZ.js",
+      "_yapp-dist-D10XX_4t.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ],
     "dynamicImports": [
       "../../node_modules/utif2/UTIF.js",
-      "_yapp-rezip-nY8fCpeS.js",
+      "_yapp-rezip--nhzh9fF.js",
       "../../node_modules/@stll/folio-core/dist/docx/selectiveSave.js",
       "../../node_modules/@stll/folio-core/dist/docx/selectiveSaveTripwire.js",
-      "_yapp-selectionRects-BO0g2WcC.js",
+      "_yapp-selectionRects-4A0ePacj.js",
       "../../node_modules/y-prosemirror/src/y-prosemirror.js",
-      "_yapp-yjs-C9oH5-Jm.js",
+      "_yapp-yjs-DRogjjoE.js",
       "../../node_modules/@stll/folio-react/dist/FindReplaceDialog-LlVMe3EW.js",
       "../../node_modules/@stll/folio-react/dist/TablePropertiesDialog-Vu0HXQz6.js",
       "../../node_modules/@stll/folio-react/dist/ImagePositionDialog-Cwt6R8iM.js",
@@ -2733,7 +2753,7 @@
       "../../node_modules/@stll/folio-react/dist/InsertSymbolDialog-CeEhkEvc.js",
       "../../node_modules/@stll/folio-react/dist/CommentsSidebar-C4IpXib8.js",
       "../../node_modules/@stll/folio-react/dist/TextContextMenu-DZ3AUFKh.js",
-      "_yapp-selectiveSaveFlags-CfqPg33y.js"
+      "_yapp-selectiveSaveFlags-DnxG0qNe.js"
     ]
   },
   "_yapp-reply-Mrap14vu.js": {
@@ -2743,41 +2763,48 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-rezip-nY8fCpeS.js": {
-    "file": "yapp-rezip-nY8fCpeS.js",
+  "_yapp-rezip--nhzh9fF.js": {
+    "file": "yapp-rezip--nhzh9fF.js",
     "name": "rezip",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-paragraphPropertySource-Bi3msYIG.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-documentEnumValues-sJnFo-4C.js",
-      "_yapp-horizontalScale-BZAx7Rpq.js",
-      "_yapp-units-DbGI_Nl1.js",
-      "_yapp-dist-B_PifVxs.js",
-      "_yapp-jszip.min-DKjOEY-P.js"
+      "_yapp-paragraphPropertySource-CkuWpaTV.js",
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-documentEnumValues-DcShnnZR.js",
+      "_yapp-horizontalScale-Ca1Y7Jhz.js",
+      "_yapp-units-DpX4eFnm.js",
+      "_yapp-dist-DEYAWyAv.js",
+      "_yapp-jszip.min-tQSiNWkI.js"
     ]
   },
-  "_yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js": {
-    "file": "yapp-rolldown-runtime-BBjsoOtd-B_Wg6Zp9.js",
+  "_yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js": {
+    "file": "yapp-rolldown-runtime-BBjsoOtd-CtiWTium.js",
     "name": "rolldown-runtime-BBjsoOtd"
   },
-  "_yapp-save-DFDVj8Zt.js": {
-    "file": "yapp-save-DFDVj8Zt.js",
+  "_yapp-rotate-ccw-Df5gNUMw.js": {
+    "file": "yapp-rotate-ccw-Df5gNUMw.js",
+    "name": "rotate-ccw",
+    "imports": [
+      "_yapp-createLucideIcon-BaPRLlQf.js"
+    ]
+  },
+  "_yapp-save-Cl-27HY5.js": {
+    "file": "yapp-save-Cl-27HY5.js",
     "name": "save",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-selectionRects-BO0g2WcC.js": {
-    "file": "yapp-selectionRects-BO0g2WcC.js",
+  "_yapp-selectionRects-4A0ePacj.js": {
+    "file": "yapp-selectionRects-4A0ePacj.js",
     "name": "selectionRects",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-document-CQ0oovh0-CvaDJPYP.js",
-      "_yapp-horizontalScale-BZAx7Rpq.js",
-      "_yapp-units-DbGI_Nl1.js",
-      "_yapp-dist-B_PifVxs.js"
+      "_yapp-document-CQ0oovh0-Cy3-3ODM.js",
+      "_yapp-horizontalScale-Ca1Y7Jhz.js",
+      "_yapp-units-DpX4eFnm.js",
+      "_yapp-dist-DEYAWyAv.js"
     ],
     "dynamicImports": [
       "../../node_modules/hyphen/cs/index.js",
@@ -2786,26 +2813,26 @@
       "../../node_modules/hyphen/sk/index.js"
     ]
   },
-  "_yapp-selectiveSaveFlags-CfqPg33y.js": {
-    "file": "yapp-selectiveSaveFlags-CfqPg33y.js",
+  "_yapp-selectiveSaveFlags-DnxG0qNe.js": {
+    "file": "yapp-selectiveSaveFlags-DnxG0qNe.js",
     "name": "selectiveSaveFlags",
     "imports": [
       "_yapp-chunk-DiClddyL.js"
     ]
   },
-  "_yapp-send-Dsxf37do.js": {
-    "file": "yapp-send-Dsxf37do.js",
+  "_yapp-send-eoWuxcVa.js": {
+    "file": "yapp-send-eoWuxcVa.js",
     "name": "send",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-shiftHours-BuPdNUeB.js": {
-    "file": "yapp-shiftHours-BuPdNUeB.js",
+  "_yapp-shiftHours-sc8xDw1O.js": {
+    "file": "yapp-shiftHours-sc8xDw1O.js",
     "name": "shiftHours",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "_yapp-shim-D10i3ZjC.js": {
@@ -2816,104 +2843,111 @@
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-smile-BFKzHjsp.js": {
-    "file": "yapp-smile-BFKzHjsp.js",
+  "_yapp-smile-Qq9im29G.js": {
+    "file": "yapp-smile-Qq9im29G.js",
     "name": "smile",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-square-DsEo1F5d.js": {
-    "file": "yapp-square-DsEo1F5d.js",
+  "_yapp-square-CM_CQ_ti.js": {
+    "file": "yapp-square-CM_CQ_ti.js",
     "name": "square",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-square-pen-B3s5KPh_.js": {
-    "file": "yapp-square-pen-B3s5KPh_.js",
+  "_yapp-square-chart-gantt-CA8NeCft.js": {
+    "file": "yapp-square-chart-gantt-CA8NeCft.js",
+    "name": "square-chart-gantt",
+    "imports": [
+      "_yapp-createLucideIcon-BaPRLlQf.js"
+    ]
+  },
+  "_yapp-square-pen-DQE-3B-p.js": {
+    "file": "yapp-square-pen-DQE-3B-p.js",
     "name": "square-pen",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-star-9z1LbSD-.js": {
-    "file": "yapp-star-9z1LbSD-.js",
+  "_yapp-star-8q8amP9n.js": {
+    "file": "yapp-star-8q8amP9n.js",
     "name": "star",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-table-C2NckOFg.js": {
-    "file": "yapp-table-C2NckOFg.js",
+  "_yapp-table-CxvHjAuI.js": {
+    "file": "yapp-table-CxvHjAuI.js",
     "name": "table",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-tableOperations-Cz5PXEFJ.js": {
-    "file": "yapp-tableOperations-Cz5PXEFJ.js",
+  "_yapp-tableOperations-BguyUqsp.js": {
+    "file": "yapp-tableOperations-BguyUqsp.js",
     "name": "tableOperations",
     "imports": [
-      "_yapp-documentEnumValues-sJnFo-4C.js"
+      "_yapp-documentEnumValues-DcShnnZR.js"
     ]
   },
-  "_yapp-tag-BYy_x8Xe.js": {
-    "file": "yapp-tag-BYy_x8Xe.js",
+  "_yapp-tag-BWoNcr-Z.js": {
+    "file": "yapp-tag-BWoNcr-Z.js",
     "name": "tag",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-text-align-start-CN8JPXZZ.js": {
-    "file": "yapp-text-align-start-CN8JPXZZ.js",
+  "_yapp-text-align-start-CTeEXvUz.js": {
+    "file": "yapp-text-align-start-CTeEXvUz.js",
     "name": "text-align-start",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-thumbs-up-SB0Yvu2V.js": {
-    "file": "yapp-thumbs-up-SB0Yvu2V.js",
+  "_yapp-thumbs-up-BpIn-MJP.js": {
+    "file": "yapp-thumbs-up-BpIn-MJP.js",
     "name": "thumbs-up",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-timesheet-hours-udG9e0Q0.js": {
-    "file": "yapp-timesheet-hours-udG9e0Q0.js",
+  "_yapp-timesheet-hours-DZ9uxIN0.js": {
+    "file": "yapp-timesheet-hours-DZ9uxIN0.js",
     "name": "timesheet-hours"
   },
-  "_yapp-timesheetValidation-B7SG5R5b.js": {
-    "file": "yapp-timesheetValidation-B7SG5R5b.js",
+  "_yapp-timesheetValidation-Di0ILipA.js": {
+    "file": "yapp-timesheetValidation-Di0ILipA.js",
     "name": "timesheetValidation",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
-  "_yapp-trash-2-BRxQiqcL.js": {
-    "file": "yapp-trash-2-BRxQiqcL.js",
+  "_yapp-trash-2-D3dRY9k2.js": {
+    "file": "yapp-trash-2-D3dRY9k2.js",
     "name": "trash-2",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-tree-palm-CH84WFAu.js": {
-    "file": "yapp-tree-palm-CH84WFAu.js",
+  "_yapp-tree-palm-BuyoSR-k.js": {
+    "file": "yapp-tree-palm-BuyoSR-k.js",
     "name": "tree-palm",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-trending-down-CXYPe3Pz.js": {
-    "file": "yapp-trending-down-CXYPe3Pz.js",
+  "_yapp-trending-down-CBSKql3s.js": {
+    "file": "yapp-trending-down-CBSKql3s.js",
     "name": "trending-down",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-type-DqHkyiyw.js": {
-    "file": "yapp-type-DqHkyiyw.js",
+  "_yapp-type-Czkpv9kd.js": {
+    "file": "yapp-type-Czkpv9kd.js",
     "name": "type",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
@@ -2926,39 +2960,39 @@
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-undo-2-P2juoTk9.js": {
-    "file": "yapp-undo-2-P2juoTk9.js",
+  "_yapp-undo-2-BgCphjoJ.js": {
+    "file": "yapp-undo-2-BgCphjoJ.js",
     "name": "undo-2",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-units-DbGI_Nl1.js": {
-    "file": "yapp-units-DbGI_Nl1.js",
+  "_yapp-units-DpX4eFnm.js": {
+    "file": "yapp-units-DpX4eFnm.js",
     "name": "units"
   },
-  "_yapp-upload-DZt1tnu-.js": {
-    "file": "yapp-upload-DZt1tnu-.js",
+  "_yapp-upload-1FTHHbHw.js": {
+    "file": "yapp-upload-1FTHHbHw.js",
     "name": "upload",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-useIsMobile-CT9g06yK.js": {
-    "file": "yapp-useIsMobile-CT9g06yK.js",
+  "_yapp-useIsMobile-DXQ173r5.js": {
+    "file": "yapp-useIsMobile-DXQ173r5.js",
     "name": "useIsMobile",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
-  "_yapp-useSessionEmployee-30ZBkIi_.js": {
-    "file": "yapp-useSessionEmployee-30ZBkIi_.js",
+  "_yapp-useSessionEmployee-CEwZc9WV.js": {
+    "file": "yapp-useSessionEmployee-CEwZc9WV.js",
     "name": "useSessionEmployee",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "_yapp-useTranslation-XNJgytEB.js": {
@@ -2971,80 +3005,80 @@
       "_yapp-shim-D10i3ZjC.js"
     ]
   },
-  "_yapp-user-FkHGtJan.js": {
-    "file": "yapp-user-FkHGtJan.js",
+  "_yapp-user-hdCs05wt.js": {
+    "file": "yapp-user-hdCs05wt.js",
     "name": "user",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-user-plus-ClYvRQkr.js": {
-    "file": "yapp-user-plus-ClYvRQkr.js",
+  "_yapp-user-plus-BLBnWRX7.js": {
+    "file": "yapp-user-plus-BLBnWRX7.js",
     "name": "user-plus",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-user-round-DInsbcqP.js": {
-    "file": "yapp-user-round-DInsbcqP.js",
+  "_yapp-user-round-D42wIxOe.js": {
+    "file": "yapp-user-round-D42wIxOe.js",
     "name": "user-round",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-video-rSbumJLr.js": {
-    "file": "yapp-video-rSbumJLr.js",
+  "_yapp-video-CIexiD6i.js": {
+    "file": "yapp-video-CIexiD6i.js",
     "name": "video",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-webmail-prefetch-CVg2-GU_.js": {
-    "file": "yapp-webmail-prefetch-CVg2-GU_.js",
+  "_yapp-webmail-prefetch-ENqzlaqC.js": {
+    "file": "yapp-webmail-prefetch-ENqzlaqC.js",
     "name": "webmail-prefetch",
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
-  "_yapp-x-DPMv6zXI.js": {
-    "file": "yapp-x-DPMv6zXI.js",
+  "_yapp-x-70OBA6sc.js": {
+    "file": "yapp-x-70OBA6sc.js",
     "name": "x",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-yjs-C9oH5-Jm.js": {
-    "file": "yapp-yjs-C9oH5-Jm.js",
+  "_yapp-yjs-DRogjjoE.js": {
+    "file": "yapp-yjs-DRogjjoE.js",
     "name": "yjs",
     "imports": [
       "_yapp-chunk-DiClddyL.js"
     ]
   },
-  "_yapp-zap-Bbv86N1n.js": {
-    "file": "yapp-zap-Bbv86N1n.js",
+  "_yapp-zap-ChVjozFp.js": {
+    "file": "yapp-zap-ChVjozFp.js",
     "name": "zap",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-zoom-in-9jp-i-Hs.js": {
-    "file": "yapp-zoom-in-9jp-i-Hs.js",
+  "_yapp-zoom-in-C5xIM5vE.js": {
+    "file": "yapp-zoom-in-C5xIM5vE.js",
     "name": "zoom-in",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
-  "_yapp-zoom-out-Dcja3_Jf.js": {
-    "file": "yapp-zoom-out-Dcja3_Jf.js",
+  "_yapp-zoom-out-aNCivBPt.js": {
+    "file": "yapp-zoom-out-aNCivBPt.js",
     "name": "zoom-out",
     "imports": [
       "_yapp-createLucideIcon-BaPRLlQf.js"
     ]
   },
   "index.html": {
-    "file": "yapp-index-BUeav9VP.js",
+    "file": "yapp-index-pd6wr2Td.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -3054,22 +3088,22 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-circle-check-big-0vnRC4IX.js",
       "_yapp-circle-x-Bixin18S.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-initReactI18next-ByYvyJ3z.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-csrf-BasjK-TS.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-instelling-CGaHy8ru.js",
-      "_yapp-linkify-C9W9_XPh.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-csrf-B3z_sxRH.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-instelling-74GvPH70.js",
+      "_yapp-linkify-BuVmNGVY.js"
     ],
     "dynamicImports": [
       "src/pages/Planning.tsx",
-      "_yapp-Tasks-COS-63sV.js",
-      "_yapp-Timesheets-BbkQrHaM.js",
-      "_yapp-Projects-G5eIu8Bs.js",
+      "_yapp-Tasks-DadGEqpi.js",
+      "_yapp-Timesheets-DJEzHWPw.js",
+      "_yapp-Projects-pIGK41Cb.js",
       "src/pages/SalesInvoices.tsx",
       "src/pages/dashboard/index.tsx",
       "src/pages/ManagementDashboard.tsx",
@@ -3116,21 +3150,22 @@
       "src/pages/VoorbeeldVenster.tsx",
       "src/pages/Office.tsx",
       "src/pages/IfcViewer.tsx",
+      "src/pages/Studio.tsx",
       "src/pages/MessengerView.tsx",
       "src/components/ExtensionHost.tsx",
       "src/lib/BackgroundSyncProvider.tsx",
       "src/components/AgentPanel.tsx",
-      "_yapp-webmail-prefetch-CVg2-GU_.js",
+      "_yapp-webmail-prefetch-ENqzlaqC.js",
       "src/lib/messenger-prefetch.ts",
       "src/lib/agenda-voorladen.ts",
       "src/lib/meldingen-poller.ts"
     ],
     "css": [
-      "yapp-index-DUgaqlOW.css"
+      "yapp-index-Z1i1zTDL.css"
     ]
   },
   "src/components/AgentPanel.tsx": {
-    "file": "yapp-AgentPanel-DyImp9C9.js",
+    "file": "yapp-AgentPanel-xl_42MgL.js",
     "name": "AgentPanel",
     "src": "src/components/AgentPanel.tsx",
     "isDynamicEntry": true,
@@ -3139,40 +3174,40 @@
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-circle-question-mark-Cb5z2prz.js",
-      "_yapp-maximize-2-DdW76F4G.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-zap-Bbv86N1n.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-undo-2-P2juoTk9.js",
+      "_yapp-maximize-2-Cdk7quM1.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-zap-ChVjozFp.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-undo-2-BgCphjoJ.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ],
     "css": [
       "yapp-AgentPanel-BrP-ENHg.css"
     ]
   },
   "src/components/ExtensionHost.tsx": {
-    "file": "yapp-ExtensionHost-A7pmT1xx.js",
+    "file": "yapp-ExtensionHost-BZs8w63a.js",
     "name": "ExtensionHost",
     "src": "src/components/ExtensionHost.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/components/mail/AfbeeldingVoorbeeld.tsx": {
-    "file": "yapp-AfbeeldingVoorbeeld-D3_eXKhX.js",
+    "file": "yapp-AfbeeldingVoorbeeld-7ElRaoVm.js",
     "name": "AfbeeldingVoorbeeld",
     "src": "src/components/mail/AfbeeldingVoorbeeld.tsx",
     "isDynamicEntry": true,
@@ -3181,28 +3216,29 @@
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-chevron-left-BwIKRmIh.js",
-      "_yapp-zoom-in-9jp-i-Hs.js",
-      "_yapp-zoom-out-Dcja3_Jf.js",
+      "_yapp-zoom-in-C5xIM5vE.js",
+      "_yapp-zoom-out-aNCivBPt.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/components/mail/CadVoorbeeld.tsx": {
-    "file": "yapp-CadVoorbeeld-Dgf7sgTg.js",
+    "file": "yapp-CadVoorbeeld-By8CP-hU.js",
     "name": "CadVoorbeeld",
     "src": "src/components/mail/CadVoorbeeld.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-download-O82bpK5W.js",
-      "_yapp-external-link-Boqkp6XF.js",
+      "_yapp-external-link-BbrZcq59.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CadFrame-D3ZTjbOa.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/components/mail/IfcVoorbeeld.tsx": {
-    "file": "yapp-IfcVoorbeeld-DDWxfqjg.js",
+    "file": "yapp-IfcVoorbeeld-ZnOmwTaU.js",
     "name": "IfcVoorbeeld",
     "src": "src/components/mail/IfcVoorbeeld.tsx",
     "isDynamicEntry": true,
@@ -3210,7 +3246,7 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ],
@@ -3221,7 +3257,7 @@
     ]
   },
   "src/components/mail/OfficeVoorbeeld.tsx": {
-    "file": "yapp-OfficeVoorbeeld-DzycVdTF.js",
+    "file": "yapp-OfficeVoorbeeld-L0_wm1Nd.js",
     "name": "OfficeVoorbeeld",
     "src": "src/components/mail/OfficeVoorbeeld.tsx",
     "isDynamicEntry": true,
@@ -3231,8 +3267,8 @@
       "_yapp-preload-helper-C3Ja_wKo.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-bijlage-soort-BH9yCLDh.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-bijlage-soort-zvcKr68V.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ],
     "dynamicImports": [
       "../../node_modules/mammoth/lib/index.js",
@@ -3240,7 +3276,7 @@
     ]
   },
   "src/components/office/SheetEditor.tsx": {
-    "file": "yapp-SheetEditor-CS0jojkj.js",
+    "file": "yapp-SheetEditor-DXBAhbr5.js",
     "name": "SheetEditor",
     "src": "src/components/office/SheetEditor.tsx",
     "isDynamicEntry": true,
@@ -3254,14 +3290,14 @@
     ]
   },
   "src/components/office/WordEditor.tsx": {
-    "file": "yapp-WordEditor-BznNn8Gx.js",
+    "file": "yapp-WordEditor-CnQY1y7a.js",
     "name": "WordEditor",
     "src": "src/components/office/WordEditor.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-folio-ui-rCHqCEG6-ObheBIpa.js",
-      "_yapp-renderAsync-T2p_qqNU-CO7LU9IO.js",
+      "_yapp-folio-ui-rCHqCEG6-rmiSBMZu.js",
+      "_yapp-renderAsync-T2p_qqNU-t87B-9J1.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ],
     "css": [
@@ -3623,7 +3659,7 @@
     ]
   },
   "src/lib/BackgroundSyncProvider.tsx": {
-    "file": "yapp-BackgroundSyncProvider-VErC8-Dt.js",
+    "file": "yapp-BackgroundSyncProvider-BKxeOyPI.js",
     "name": "BackgroundSyncProvider",
     "src": "src/lib/BackgroundSyncProvider.tsx",
     "isDynamicEntry": true,
@@ -3631,44 +3667,44 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-app-badge-DtyIINd_.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-app-badge-C60akNv6.js",
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "src/lib/agenda-voorladen.ts": {
-    "file": "yapp-agenda-voorladen-CnVSEdmF.js",
+    "file": "yapp-agenda-voorladen-BZhsarDM.js",
     "name": "agenda-voorladen",
     "src": "src/lib/agenda-voorladen.ts",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_yapp-agenda-mailserver-CwD4WmOO.js"
+      "_yapp-agenda-mailserver-6I0od-jy.js"
     ]
   },
   "src/lib/meldingen-poller.ts": {
-    "file": "yapp-meldingen-poller-BuQGgt8K.js",
+    "file": "yapp-meldingen-poller-BYAiAyHE.js",
     "name": "meldingen-poller",
     "src": "src/lib/meldingen-poller.ts",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_yapp-app-badge-DtyIINd_.js",
-      "_yapp-messages-erpnext-iPfSY1oz.js",
-      "_yapp-capabilities-DiO0riXf.js"
+      "_yapp-app-badge-C60akNv6.js",
+      "_yapp-messages-erpnext-DOeqw4jv.js",
+      "_yapp-capabilities-Cn_1Mp_B.js"
     ]
   },
   "src/lib/messenger-prefetch.ts": {
-    "file": "yapp-messenger-prefetch-XzgmWTIP.js",
+    "file": "yapp-messenger-prefetch-C83idWRD.js",
     "name": "messenger-prefetch",
     "src": "src/lib/messenger-prefetch.ts",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "src/pages/Agenda.tsx": {
-    "file": "yapp-Agenda-CxUT3iXq.js",
+    "file": "yapp-Agenda-EupjCV2u.js",
     "name": "Agenda",
     "src": "src/pages/Agenda.tsx",
     "isDynamicEntry": true,
@@ -3677,32 +3713,32 @@
       "index.html",
       "_yapp-building-2-B-3U7EN0.js",
       "_yapp-chevron-left-BwIKRmIh.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-map-pin-BhID5JGz.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-video-rSbumJLr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-map-pin-DOJhr5B-.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-video-CIexiD6i.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-agenda-mailserver-CwD4WmOO.js",
+      "_yapp-agenda-mailserver-6I0od-jy.js",
       "src/lib/agenda-voorladen.ts",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-contact-suggestions-DgxSK29_.js",
-      "_yapp-default-company-k-PZ8qGZ.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-linkify-C9W9_XPh.js",
-      "_yapp-timesheet-hours-udG9e0Q0.js",
-      "_yapp-useIsMobile-CT9g06yK.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-contact-suggestions-BMnx_6zs.js",
+      "_yapp-default-company-DiEuX-w9.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-linkify-BuVmNGVY.js",
+      "_yapp-timesheet-hours-DZ9uxIN0.js",
+      "_yapp-useIsMobile-DXQ173r5.js"
     ]
   },
   "src/pages/BTW.tsx": {
-    "file": "yapp-BTW-B_l46OJK.js",
+    "file": "yapp-BTW-kLdEwv3u.js",
     "name": "BTW",
     "src": "src/pages/BTW.tsx",
     "isDynamicEntry": true,
@@ -3711,57 +3747,57 @@
       "index.html",
       "_yapp-calculator-C4EO_JFO.js",
       "_yapp-circle-alert-BnV0-M83.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-trending-down-CXYPe3Pz.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-trending-down-CBSKql3s.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/BankTransactions.tsx": {
-    "file": "yapp-BankTransactions-BBzusCha.js",
+    "file": "yapp-BankTransactions-CbjCHPzj.js",
     "name": "BankTransactions",
     "src": "src/pages/BankTransactions.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/BookingProgram.tsx": {
-    "file": "yapp-BookingProgram-DUT5sb1m.js",
+    "file": "yapp-BookingProgram-DwRp7jhd.js",
     "name": "BookingProgram",
     "src": "src/pages/BookingProgram.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Contacts.tsx": {
-    "file": "yapp-Contacts-DFbg3Nto.js",
+    "file": "yapp-Contacts-oqEwKtC_.js",
     "name": "Contacts",
     "src": "src/pages/Contacts.tsx",
     "isDynamicEntry": true,
@@ -3770,23 +3806,23 @@
       "index.html",
       "_yapp-at-sign-CXmlWMAh.js",
       "_yapp-building-2-B-3U7EN0.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-phone-BSFlJFJ4.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-tag-BYy_x8Xe.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-phone-BKXoJ3a-.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-tag-BWoNcr-Z.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/CostInsight.tsx": {
-    "file": "yapp-CostInsight-qdTWQIw-.js",
+    "file": "yapp-CostInsight-BL2Gc_Bw.js",
     "name": "CostInsight",
     "src": "src/pages/CostInsight.tsx",
     "isDynamicEntry": true,
@@ -3794,17 +3830,17 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-chevron-left-BwIKRmIh.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/DeliveryNotes.tsx": {
-    "file": "yapp-DeliveryNotes-BrE2DfuZ.js",
+    "file": "yapp-DeliveryNotes-D8QvGWt5.js",
     "name": "DeliveryNotes",
     "src": "src/pages/DeliveryNotes.tsx",
     "isDynamicEntry": true,
@@ -3813,21 +3849,21 @@
       "index.html",
       "_yapp-circle-check-big-0vnRC4IX.js",
       "_yapp-dollar-sign-DGEG-6RG.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-package-DPLg57PV.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-package-BbLaRgvX.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Employees.tsx": {
-    "file": "yapp-Employees-DWsg3RTR.js",
+    "file": "yapp-Employees-CZZrntOG.js",
     "name": "Employees",
     "src": "src/pages/Employees.tsx",
     "isDynamicEntry": true,
@@ -3837,30 +3873,30 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-cake-BAHBjZDj.js",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-file-exclamation-point-C4hbYVv1.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-list-checks-Cdxie6np.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-printer-CyeXknuo.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-tag-BYy_x8Xe.js",
-      "_yapp-shiftHours-BuPdNUeB.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-tree-palm-CH84WFAu.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-file-exclamation-point-CVzcSG21.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-list-checks-BJsZoPvx.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-printer-IhWUvuqq.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-tag-BWoNcr-Z.js",
+      "_yapp-shiftHours-sc8xDw1O.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-tree-palm-BuyoSR-k.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-InfoOverlay-CvfcUqr0.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-timesheet-hours-udG9e0Q0.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-InfoOverlay-BDdhHief.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-timesheet-hours-DZ9uxIN0.js"
     ]
   },
   "src/pages/ErpNextOverview.tsx": {
-    "file": "yapp-ErpNextOverview-BXb4NAEp.js",
+    "file": "yapp-ErpNextOverview-CWe5SdOh.js",
     "name": "ErpNextOverview",
     "src": "src/pages/ErpNextOverview.tsx",
     "isDynamicEntry": true,
@@ -3869,16 +3905,16 @@
       "index.html",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-x-Bixin18S.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/Expenses.tsx": {
-    "file": "yapp-Expenses-BNKutKHb.js",
+    "file": "yapp-Expenses-CLlm40oR.js",
     "name": "Expenses",
     "src": "src/pages/Expenses.tsx",
     "isDynamicEntry": true,
@@ -3889,19 +3925,19 @@
       "_yapp-car-BSuqIoqG.js",
       "_yapp-circle-check-big-0vnRC4IX.js",
       "_yapp-circle-x-Bixin18S.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-useSessionEmployee-30ZBkIi_.js",
-      "_yapp-QuickKmBooking-CLJ-bisx.js"
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-useSessionEmployee-CEwZc9WV.js",
+      "_yapp-QuickKmBooking-C5Fz-TMp.js"
     ]
   },
   "src/pages/FinancieelDashboard.tsx": {
-    "file": "yapp-FinancieelDashboard-DzYcou42.js",
+    "file": "yapp-FinancieelDashboard-k08F3Akq.js",
     "name": "FinancieelDashboard",
     "src": "src/pages/FinancieelDashboard.tsx",
     "isDynamicEntry": true,
@@ -3909,21 +3945,21 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-building-2-B-3U7EN0.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-package-DPLg57PV.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-package-BbLaRgvX.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/IfcViewer.tsx": {
-    "file": "yapp-IfcViewer-BBoXnKkR.js",
+    "file": "yapp-IfcViewer-6sBvnAmi.js",
     "name": "IfcViewer",
     "src": "src/pages/IfcViewer.tsx",
     "isDynamicEntry": true,
@@ -3932,8 +3968,8 @@
       "index.html",
       "_yapp-preload-helper-C3Ja_wKo.js",
       "_yapp-boxes-h85agBUv.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ],
@@ -3942,25 +3978,25 @@
     ]
   },
   "src/pages/Jaarrekening.tsx": {
-    "file": "yapp-Jaarrekening-D_Adhx96.js",
+    "file": "yapp-Jaarrekening-CxvpDkCr.js",
     "name": "Jaarrekening",
     "src": "src/pages/Jaarrekening.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/Leads.tsx": {
-    "file": "yapp-Leads-oMjmcnPu.js",
+    "file": "yapp-Leads-yRrxEtfl.js",
     "name": "Leads",
     "src": "src/pages/Leads.tsx",
     "isDynamicEntry": true,
@@ -3969,22 +4005,22 @@
       "index.html",
       "_yapp-building-2-B-3U7EN0.js",
       "_yapp-circle-alert-BnV0-M83.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-layout-grid-kR9U8L3M.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-map-pin-BhID5JGz.js",
-      "_yapp-phone-BSFlJFJ4.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-layout-grid-C0rPtj_n.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-map-pin-DOJhr5B-.js",
+      "_yapp-phone-BKXoJ3a-.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Leave.tsx": {
-    "file": "yapp-Leave-Chl_tHtl.js",
+    "file": "yapp-Leave-Cx2Y0gHU.js",
     "name": "Leave",
     "src": "src/pages/Leave.tsx",
     "isDynamicEntry": true,
@@ -3994,46 +4030,46 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-x-Bixin18S.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-shiftHours-BuPdNUeB.js",
-      "_yapp-x-DPMv6zXI.js",
-      "_yapp-zoom-in-9jp-i-Hs.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-shiftHours-sc8xDw1O.js",
+      "_yapp-x-70OBA6sc.js",
+      "_yapp-zoom-in-C5xIM5vE.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-missingDays-CcFOPBAh.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-holidays-aO-KK9OV.js",
-      "_yapp-timesheet-hours-udG9e0Q0.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-missingDays-DVbmBgFl.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-holidays-BqQVzoTe.js",
+      "_yapp-timesheet-hours-DZ9uxIN0.js"
     ],
     "css": [
       "yapp-Leave-Chw94eNX.css"
     ]
   },
   "src/pages/Ledgers.tsx": {
-    "file": "yapp-Ledgers-BxsOnsP8.js",
+    "file": "yapp-Ledgers-C9eN8P3U.js",
     "name": "Ledgers",
     "src": "src/pages/Ledgers.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Letters.tsx": {
-    "file": "yapp-Letters-BvmHduin.js",
+    "file": "yapp-Letters-BUddg93b.js",
     "name": "Letters",
     "src": "src/pages/Letters.tsx",
     "isDynamicEntry": true,
@@ -4042,18 +4078,18 @@
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-copy-DGO1-NeX.js",
-      "_yapp-lock-B8btokAU.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-printer-CyeXknuo.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-trash-2-BRxQiqcL.js",
+      "_yapp-lock-N_Wop3n4.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-printer-IhWUvuqq.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-trash-2-D3dRY9k2.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "src/pages/LiquidityPlanning.tsx": {
-    "file": "yapp-LiquidityPlanning-BY3Aaju_.js",
+    "file": "yapp-LiquidityPlanning-DLy4R2cV.js",
     "name": "LiquidityPlanning",
     "src": "src/pages/LiquidityPlanning.tsx",
     "isDynamicEntry": true,
@@ -4062,18 +4098,18 @@
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-arrow-up-right-CU1KoWW5.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/Loonaangifte.tsx": {
-    "file": "yapp-Loonaangifte-DUPV3RmI.js",
+    "file": "yapp-Loonaangifte-13RFCT19.js",
     "name": "Loonaangifte",
     "src": "src/pages/Loonaangifte.tsx",
     "isDynamicEntry": true,
@@ -4085,7 +4121,7 @@
     ]
   },
   "src/pages/MailView.tsx": {
-    "file": "yapp-MailView-BUWFUXmJ.js",
+    "file": "yapp-MailView-BalN0TUt.js",
     "name": "MailView",
     "src": "src/pages/MailView.tsx",
     "isDynamicEntry": true,
@@ -4093,32 +4129,32 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-underline-BeNGue8e.js",
-      "_yapp-ProjectOnderwerpKnop-B3-q-bz7.js",
+      "_yapp-ProjectOnderwerpKnop-BuGop5eO.js",
       "_yapp-reply-Mrap14vu.js",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-zap-Bbv86N1n.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-undo-2-P2juoTk9.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-user-FkHGtJan.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-zap-ChVjozFp.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-undo-2-BgCphjoJ.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-user-hdCs05wt.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-desktop-kH8rhjpH.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-linkify-C9W9_XPh.js",
-      "_yapp-permission-error-U105eUh5.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-desktop-DDN1_GRL.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-linkify-BuVmNGVY.js",
+      "_yapp-permission-error-lO265u-l.js"
     ]
   },
   "src/pages/ManagementDashboard.tsx": {
-    "file": "yapp-ManagementDashboard-DdC8ZHoa.js",
+    "file": "yapp-ManagementDashboard-BY3ufVQL.js",
     "name": "ManagementDashboard",
     "src": "src/pages/ManagementDashboard.tsx",
     "isDynamicEntry": true,
@@ -4129,18 +4165,18 @@
       "_yapp-arrow-right-u0nMurCj.js",
       "_yapp-cake-BAHBjZDj.js",
       "_yapp-car-BSuqIoqG.js",
-      "_yapp-file-exclamation-point-C4hbYVv1.js",
+      "_yapp-file-exclamation-point-CVzcSG21.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-missingDays-CcFOPBAh.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-holidays-aO-KK9OV.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-missingDays-DVbmBgFl.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-holidays-BqQVzoTe.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/MeetingNotes.tsx": {
-    "file": "yapp-MeetingNotes-D3dujkcm.js",
+    "file": "yapp-MeetingNotes-BwMH1bbQ.js",
     "name": "MeetingNotes",
     "src": "src/pages/MeetingNotes.tsx",
     "isDynamicEntry": true,
@@ -4150,20 +4186,20 @@
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-B_r-07GT.js",
       "_yapp-copy-DGO1-NeX.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Messages.tsx": {
-    "file": "yapp-Messages-CphX0k9H.js",
+    "file": "yapp-Messages-BvKhC--N.js",
     "name": "Messages",
     "src": "src/pages/Messages.tsx",
     "isDynamicEntry": true,
@@ -4174,29 +4210,29 @@
       "_yapp-check-2XMzp0nH.js",
       "_yapp-chevron-left-BwIKRmIh.js",
       "_yapp-circle-alert-BnV0-M83.js",
-      "_yapp-image-CXIiSwNb.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-smile-BFKzHjsp.js",
-      "_yapp-thumbs-up-SB0Yvu2V.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-image-SX4yRxUD.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-smile-Qq9im29G.js",
+      "_yapp-thumbs-up-BpIn-MJP.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-ImageLightbox-D9Q85jEG.js",
-      "_yapp-LinkedText-BeHI8C4Q.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-messages-erpnext-iPfSY1oz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-permission-error-U105eUh5.js",
-      "_yapp-useIsMobile-CT9g06yK.js"
+      "_yapp-ImageLightbox-C7gqbg4d.js",
+      "_yapp-LinkedText-iy4yuhtQ.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-messages-erpnext-DOeqw4jv.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-permission-error-lO265u-l.js",
+      "_yapp-useIsMobile-DXQ173r5.js"
     ]
   },
   "src/pages/Messenger.tsx": {
-    "file": "yapp-Messenger-COCFs0aH.js",
+    "file": "yapp-Messenger-sO335kJJ.js",
     "name": "Messenger",
     "src": "src/pages/Messenger.tsx",
     "isDynamicEntry": true,
@@ -4208,32 +4244,32 @@
       "_yapp-reply-Mrap14vu.js",
       "_yapp-chevron-left-BwIKRmIh.js",
       "_yapp-circle-alert-BnV0-M83.js",
-      "_yapp-ellipsis-vertical-C_z3VgJ2.js",
-      "_yapp-layers-DS6egnWu.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-phone-BSFlJFJ4.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-smile-BFKzHjsp.js",
-      "_yapp-thumbs-up-SB0Yvu2V.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-video-rSbumJLr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-ellipsis-vertical-D9HUCqF6.js",
+      "_yapp-layers-CDebIxGs.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-phone-BKXoJ3a-.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-smile-Qq9im29G.js",
+      "_yapp-thumbs-up-BpIn-MJP.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-video-CIexiD6i.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-ImageLightbox-D9Q85jEG.js",
+      "_yapp-ImageLightbox-C7gqbg4d.js",
       "src/lib/BackgroundSyncProvider.tsx",
-      "_yapp-app-badge-DtyIINd_.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-desktop-kH8rhjpH.js",
+      "_yapp-app-badge-C60akNv6.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-desktop-DDN1_GRL.js",
       "src/lib/messenger-prefetch.ts",
-      "_yapp-useIsMobile-CT9g06yK.js"
+      "_yapp-useIsMobile-DXQ173r5.js"
     ]
   },
   "src/pages/MessengerView.tsx": {
-    "file": "yapp-MessengerView-C5ReeRxP.js",
+    "file": "yapp-MessengerView-D6n0DVA5.js",
     "name": "MessengerView",
     "src": "src/pages/MessengerView.tsx",
     "isDynamicEntry": true,
@@ -4241,21 +4277,21 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-reply-Mrap14vu.js",
-      "_yapp-ellipsis-vertical-C_z3VgJ2.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-thumbs-up-SB0Yvu2V.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-ellipsis-vertical-D9HUCqF6.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-thumbs-up-BpIn-MJP.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-ImageLightbox-D9Q85jEG.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-ImageLightbox-C7gqbg4d.js",
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "src/pages/NextCloudFiles.tsx": {
-    "file": "yapp-NextCloudFiles-BanDPnYE.js",
+    "file": "yapp-NextCloudFiles-COER3h33.js",
     "name": "NextCloudFiles",
     "src": "src/pages/NextCloudFiles.tsx",
     "isDynamicEntry": true,
@@ -4267,24 +4303,24 @@
       "_yapp-check-2XMzp0nH.js",
       "_yapp-circle-alert-BnV0-M83.js",
       "_yapp-copy-DGO1-NeX.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-file-image-BuLlz7l3.js",
-      "_yapp-file-Dk4mJ7GV.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-folder-BizDp_Tj.js",
-      "_yapp-link-iFFEtxxk.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-upload-DZt1tnu-.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-file-image-CntqQXVO.js",
+      "_yapp-file-BAkxovID.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-folder-Bu9pzeSb.js",
+      "_yapp-link-DseZbxZh.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-upload-1FTHHbHw.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-desktop-kH8rhjpH.js"
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-desktop-DDN1_GRL.js"
     ]
   },
   "src/pages/NextCloudTalk.tsx": {
-    "file": "yapp-NextCloudTalk-Dd_05VnS.js",
+    "file": "yapp-NextCloudTalk-B7IjsN_M.js",
     "name": "NextCloudTalk",
     "src": "src/pages/NextCloudTalk.tsx",
     "isDynamicEntry": true,
@@ -4292,35 +4328,35 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
-      "_yapp-external-link-Boqkp6XF.js",
+      "_yapp-external-link-BbrZcq59.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js"
+      "_yapp-instances-CMMd_zmx.js"
     ]
   },
   "src/pages/Notities.tsx": {
-    "file": "yapp-Notities-BkeYfjma.js",
+    "file": "yapp-Notities-CtMvmRoc.js",
     "name": "Notities",
     "src": "src/pages/Notities.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-RichTextEditor-DIfM4N9K.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-square-DsEo1F5d.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-user-round-DInsbcqP.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-RichTextEditor-Cg_bBhqx.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-square-CM_CQ_ti.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-user-round-D42wIxOe.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Office.tsx": {
-    "file": "yapp-Office-Ckmjj0X8.js",
+    "file": "yapp-Office-GSQiES7U.js",
     "name": "Office",
     "src": "src/pages/Office.tsx",
     "isDynamicEntry": true,
@@ -4328,15 +4364,15 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-preload-helper-C3Ja_wKo.js",
-      "_yapp-office-mwyQNxOi.js",
+      "_yapp-office-BnUNXuXX.js",
       "_yapp-arrow-left-vBkRz_NF.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-save-DFDVj8Zt.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-save-Cl-27HY5.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-csrf-BasjK-TS.js"
+      "_yapp-csrf-B3z_sxRH.js"
     ],
     "dynamicImports": [
       "src/components/office/WordEditor.tsx",
@@ -4347,7 +4383,7 @@
     ]
   },
   "src/pages/Outstanding.tsx": {
-    "file": "yapp-Outstanding-4zO6lDVk.js",
+    "file": "yapp-Outstanding-BDcGRFCU.js",
     "name": "Outstanding",
     "src": "src/pages/Outstanding.tsx",
     "isDynamicEntry": true,
@@ -4355,20 +4391,20 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-calculator-C4EO_JFO.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/Passwords.tsx": {
-    "file": "yapp-Passwords-B8sqZ4oJ.js",
+    "file": "yapp-Passwords-NNlkxlmO.js",
     "name": "Passwords",
     "src": "src/pages/Passwords.tsx",
     "isDynamicEntry": true,
@@ -4378,23 +4414,23 @@
       "_yapp-check-2XMzp0nH.js",
       "_yapp-copy-DGO1-NeX.js",
       "_yapp-download-O82bpK5W.js",
-      "_yapp-eye-off-CRazo5zo.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-key-DxDEDI85.js",
-      "_yapp-lock-B8btokAU.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-square-pen-B3s5KPh_.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-upload-DZt1tnu-.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-eye-off-VKQR70sq.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-key-CVFFjDu_.js",
+      "_yapp-lock-N_Wop3n4.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-square-pen-DQE-3B-p.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-upload-1FTHHbHw.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "src/pages/Planning.tsx": {
-    "file": "yapp-Planning-C7onus7E.js",
+    "file": "yapp-Planning-BT_dCRIU.js",
     "name": "Planning",
     "src": "src/pages/Planning.tsx",
     "isDynamicEntry": true,
@@ -4403,22 +4439,22 @@
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-chevron-left-BwIKRmIh.js",
-      "_yapp-Tasks-COS-63sV.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-layout-grid-kR9U8L3M.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-zoom-in-9jp-i-Hs.js",
-      "_yapp-zoom-out-Dcja3_Jf.js",
+      "_yapp-Tasks-DadGEqpi.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-layout-grid-C0rPtj_n.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-zoom-in-C5xIM5vE.js",
+      "_yapp-zoom-out-aNCivBPt.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-holidays-aO-KK9OV.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-holidays-BqQVzoTe.js"
     ]
   },
   "src/pages/Profitability.tsx": {
-    "file": "yapp-Profitability-COvPaHam.js",
+    "file": "yapp-Profitability-yJkGtuUC.js",
     "name": "Profitability",
     "src": "src/pages/Profitability.tsx",
     "isDynamicEntry": true,
@@ -4427,39 +4463,39 @@
       "index.html",
       "_yapp-chevron-up-DFxX43co.js",
       "_yapp-dollar-sign-DGEG-6RG.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-trending-down-CXYPe3Pz.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-trending-down-CBSKql3s.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/PurchaseInvoices.tsx": {
-    "file": "yapp-PurchaseInvoices-CD4CxL34.js",
+    "file": "yapp-PurchaseInvoices-BmkCAtra.js",
     "name": "PurchaseInvoices",
     "src": "src/pages/PurchaseInvoices.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-InvoiceModal-CvTmmGJt.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-InvoiceModal-Biuzt5pC.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Quotations.tsx": {
-    "file": "yapp-Quotations-Da1g33aW.js",
+    "file": "yapp-Quotations-B2C1QDK0.js",
     "name": "Quotations",
     "src": "src/pages/Quotations.tsx",
     "isDynamicEntry": true,
@@ -4467,39 +4503,39 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-CustomerSearchSelect-CAF3C14v.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-ItemSearchSelect-DT2Mnlvc.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-default-company-k-PZ8qGZ.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-CustomerSearchSelect-CPz3rIss.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-ItemSearchSelect-B0rgnUMl.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-default-company-DiEuX-w9.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/ReleaseNotes.tsx": {
-    "file": "yapp-ReleaseNotes-N-kcw6Wl.js",
+    "file": "yapp-ReleaseNotes-N2Pkl-wE.js",
     "name": "ReleaseNotes",
     "src": "src/pages/ReleaseNotes.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-tag-BYy_x8Xe.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-tag-BWoNcr-Z.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js"
     ]
   },
   "src/pages/Revenue.tsx": {
-    "file": "yapp-Revenue-DtKHCYcj.js",
+    "file": "yapp-Revenue-iRQLwLA3.js",
     "name": "Revenue",
     "src": "src/pages/Revenue.tsx",
     "isDynamicEntry": true,
@@ -4507,19 +4543,19 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-createLucideIcon-BaPRLlQf.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js"
     ]
   },
   "src/pages/Roadmap.tsx": {
-    "file": "yapp-Roadmap-mptiXkND.js",
+    "file": "yapp-Roadmap-BwGsI5tD.js",
     "name": "Roadmap",
     "src": "src/pages/Roadmap.tsx",
     "isDynamicEntry": true,
@@ -4528,69 +4564,69 @@
       "index.html",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-B_r-07GT.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/SalesInvoices.tsx": {
-    "file": "yapp-SalesInvoices-BAWHKxaT.js",
+    "file": "yapp-SalesInvoices-Jo73o9x1.js",
     "name": "SalesInvoices",
     "src": "src/pages/SalesInvoices.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-Projects-G5eIu8Bs.js",
+      "_yapp-Projects-pIGK41Cb.js",
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-check-2XMzp0nH.js",
       "_yapp-chevron-up-DFxX43co.js",
-      "_yapp-Tasks-COS-63sV.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-minus-CLlyUxUu.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-timesheetValidation-B7SG5R5b.js",
-      "_yapp-square-DsEo1F5d.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-Tasks-DadGEqpi.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-minus-BFUD77-X.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-timesheetValidation-Di0ILipA.js",
+      "_yapp-square-CM_CQ_ti.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-InfoOverlay-CvfcUqr0.js",
-      "_yapp-InvoiceModal-CvTmmGJt.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoice-docstatus-CGIC88Wc.js",
-      "_yapp-invoiceEmail-fs5XPQFL.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-InfoOverlay-BDdhHief.js",
+      "_yapp-InvoiceModal-Biuzt5pC.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoice-docstatus-CigYH-86.js",
+      "_yapp-invoiceEmail-DfAx0v18.js"
     ]
   },
   "src/pages/SalesOrders.tsx": {
-    "file": "yapp-SalesOrders-3OUhco4X.js",
+    "file": "yapp-SalesOrders-pGmShg-w.js",
     "name": "SalesOrders",
     "src": "src/pages/SalesOrders.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
       "index.html",
-      "_yapp-funnel-DO3HesP2.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-funnel-CoJxpLqg.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-DateRangeFilter-C5j_Mhqe.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-DateRangeFilter-lyywJQoR.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Settings.tsx": {
-    "file": "yapp-Settings-DnismWtx.js",
+    "file": "yapp-Settings-BJXmJLHQ.js",
     "name": "Settings",
     "src": "src/pages/Settings.tsx",
     "isDynamicEntry": true,
@@ -4602,36 +4638,53 @@
       "_yapp-check-2XMzp0nH.js",
       "_yapp-circle-check-big-0vnRC4IX.js",
       "_yapp-circle-x-Bixin18S.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-eye-off-CRazo5zo.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-key-DxDEDI85.js",
-      "_yapp-layout-grid-kR9U8L3M.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-mailOpmaak-Bev6hMw2.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-type-DqHkyiyw.js",
-      "_yapp-video-rSbumJLr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-eye-off-VKQR70sq.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-key-CVFFjDu_.js",
+      "_yapp-layout-grid-C0rPtj_n.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-rotate-ccw-Df5gNUMw.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-type-Czkpv9kd.js",
+      "_yapp-video-CIexiD6i.js",
+      "_yapp-mailOpmaak-CEllEPGz.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-desktop-kH8rhjpH.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-invoiceEmail-fs5XPQFL.js",
-      "_yapp-nasConfig-BhtgeaUC.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-desktop-DDN1_GRL.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-invoiceEmail-DfAx0v18.js",
+      "_yapp-nasConfig-CSaL8KUz.js",
       "src/pages/ReleaseNotes.tsx"
     ]
   },
+  "src/pages/Studio.tsx": {
+    "file": "yapp-Studio-DfQnqQ9F.js",
+    "name": "Studio",
+    "src": "src/pages/Studio.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_yapp-chunk-DiClddyL.js",
+      "index.html",
+      "_yapp-arrow-left-vBkRz_NF.js",
+      "_yapp-square-chart-gantt-CA8NeCft.js",
+      "_yapp-hard-drive-CXtRrHs6.js",
+      "_yapp-useTranslation-XNJgytEB.js",
+      "_yapp-jsx-runtime-B1TN9NKv.js",
+      "_yapp-CadFrame-D3ZTjbOa.js"
+    ]
+  },
   "src/pages/Subtasks.tsx": {
-    "file": "yapp-Subtasks-EYlDGGE4.js",
+    "file": "yapp-Subtasks-B-OgfsMr.js",
     "name": "Subtasks",
     "src": "src/pages/Subtasks.tsx",
     "isDynamicEntry": true,
@@ -4639,22 +4692,22 @@
       "_yapp-chunk-DiClddyL.js",
       "index.html",
       "_yapp-check-2XMzp0nH.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-CompanySelect-Cz8aBZ3h.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-CompanySelect-UWMVnyuc.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/Todo.tsx": {
-    "file": "yapp-Todo-CN4U9x9f.js",
+    "file": "yapp-Todo-DkcWiVjm.js",
     "name": "Todo",
     "src": "src/pages/Todo.tsx",
     "isDynamicEntry": true,
@@ -4663,19 +4716,19 @@
       "index.html",
       "_yapp-circle-check-CWe5wW2x.js",
       "_yapp-circle-B_r-07GT.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-TodoDetail-Bwqqy77k.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-permission-error-U105eUh5.js"
+      "_yapp-TodoDetail-Baxt7scx.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-permission-error-lO265u-l.js"
     ]
   },
   "src/pages/VoorbeeldVenster.tsx": {
-    "file": "yapp-VoorbeeldVenster-j9t48k1I.js",
+    "file": "yapp-VoorbeeldVenster-BQp71lJw.js",
     "name": "VoorbeeldVenster",
     "src": "src/pages/VoorbeeldVenster.tsx",
     "isDynamicEntry": true,
@@ -4686,8 +4739,8 @@
       "_yapp-download-O82bpK5W.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-bijlage-soort-BH9yCLDh.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-bijlage-soort-zvcKr68V.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ],
     "dynamicImports": [
       "src/components/mail/IfcVoorbeeld.tsx",
@@ -4697,7 +4750,7 @@
     ]
   },
   "src/pages/Webmail.tsx": {
-    "file": "yapp-Webmail-kvyvM-zt.js",
+    "file": "yapp-Webmail-WACRKUg7.js",
     "name": "Webmail",
     "src": "src/pages/Webmail.tsx",
     "isDynamicEntry": true,
@@ -4709,63 +4762,64 @@
       "_yapp-arrow-right-u0nMurCj.js",
       "_yapp-at-sign-CXmlWMAh.js",
       "_yapp-underline-BeNGue8e.js",
-      "_yapp-ProjectOnderwerpKnop-B3-q-bz7.js",
+      "_yapp-ProjectOnderwerpKnop-BuGop5eO.js",
       "_yapp-reply-Mrap14vu.js",
       "_yapp-check-2XMzp0nH.js",
       "_yapp-chevron-left-BwIKRmIh.js",
       "_yapp-circle-alert-BnV0-M83.js",
       "_yapp-circle-question-mark-Cb5z2prz.js",
-      "_yapp-RichTextEditor-DIfM4N9K.js",
+      "_yapp-RichTextEditor-Cg_bBhqx.js",
       "_yapp-copy-DGO1-NeX.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-eye-off-CRazo5zo.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-file-image-BuLlz7l3.js",
-      "_yapp-file-Dk4mJ7GV.js",
-      "_yapp-folder-open-DewoO7_N.js",
-      "_yapp-folder-plus-Dws_Pq4L.js",
-      "_yapp-folder-BizDp_Tj.js",
-      "_yapp-funnel-DO3HesP2.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-eye-off-VKQR70sq.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-file-image-CntqQXVO.js",
+      "_yapp-file-BAkxovID.js",
+      "_yapp-folder-open-C60eYbzO.js",
+      "_yapp-folder-plus-cUDyWSPo.js",
+      "_yapp-folder-Bu9pzeSb.js",
+      "_yapp-funnel-CoJxpLqg.js",
       "src/components/mail/AfbeeldingVoorbeeld.tsx",
-      "_yapp-image-CXIiSwNb.js",
-      "_yapp-info-otVIeEEV.js",
-      "_yapp-link-2-MzpESIqQ.js",
-      "_yapp-link-iFFEtxxk.js",
-      "_yapp-table-C2NckOFg.js",
-      "_yapp-list-DHOIBpea.js",
-      "_yapp-maximize-2-DdW76F4G.js",
-      "_yapp-paperclip-Bb35aSu-.js",
-      "_yapp-pencil-BhQgbY5I.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-printer-CyeXknuo.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-mailOpmaak-Bev6hMw2.js",
-      "_yapp-send-Dsxf37do.js",
-      "_yapp-zap-Bbv86N1n.js",
-      "_yapp-square-pen-B3s5KPh_.js",
-      "_yapp-star-9z1LbSD-.js",
-      "_yapp-tag-BYy_x8Xe.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-type-DqHkyiyw.js",
-      "_yapp-undo-2-P2juoTk9.js",
-      "_yapp-user-plus-ClYvRQkr.js",
-      "_yapp-user-round-DInsbcqP.js",
-      "_yapp-user-FkHGtJan.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-image-SX4yRxUD.js",
+      "_yapp-info-C_-gFI1Z.js",
+      "_yapp-link-2-BzV0ZsHI.js",
+      "_yapp-link-DseZbxZh.js",
+      "_yapp-table-CxvHjAuI.js",
+      "_yapp-list-DJ96ScPG.js",
+      "_yapp-maximize-2-Cdk7quM1.js",
+      "_yapp-paperclip-DrVhvDzw.js",
+      "_yapp-pencil-C5XxhtIM.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-printer-IhWUvuqq.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-rotate-ccw-Df5gNUMw.js",
+      "_yapp-send-eoWuxcVa.js",
+      "_yapp-zap-ChVjozFp.js",
+      "_yapp-square-pen-DQE-3B-p.js",
+      "_yapp-star-8q8amP9n.js",
+      "_yapp-tag-BWoNcr-Z.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-type-Czkpv9kd.js",
+      "_yapp-undo-2-BgCphjoJ.js",
+      "_yapp-user-plus-BLBnWRX7.js",
+      "_yapp-user-round-D42wIxOe.js",
+      "_yapp-user-hdCs05wt.js",
+      "_yapp-mailOpmaak-CEllEPGz.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-ImageLightbox-D9Q85jEG.js",
-      "_yapp-LinkedText-BeHI8C4Q.js",
-      "_yapp-agenda-mailserver-CwD4WmOO.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-bijlage-soort-BH9yCLDh.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-contact-suggestions-DgxSK29_.js",
-      "_yapp-desktop-kH8rhjpH.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-permission-error-U105eUh5.js",
-      "_yapp-useIsMobile-CT9g06yK.js",
-      "_yapp-webmail-prefetch-CVg2-GU_.js"
+      "_yapp-ImageLightbox-C7gqbg4d.js",
+      "_yapp-LinkedText-iy4yuhtQ.js",
+      "_yapp-agenda-mailserver-6I0od-jy.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-bijlage-soort-zvcKr68V.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-contact-suggestions-BMnx_6zs.js",
+      "_yapp-desktop-DDN1_GRL.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-permission-error-lO265u-l.js",
+      "_yapp-useIsMobile-DXQ173r5.js",
+      "_yapp-webmail-prefetch-ENqzlaqC.js"
     ],
     "dynamicImports": [
       "src/components/mail/IfcVoorbeeld.tsx",
@@ -4774,21 +4828,21 @@
     ]
   },
   "src/pages/Weekplanning.tsx": {
-    "file": "yapp-Weekplanning-DyJljBEo.js",
+    "file": "yapp-Weekplanning-BHFzfeMT.js",
     "name": "Weekplanning",
     "src": "src/pages/Weekplanning.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_yapp-chunk-DiClddyL.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-instelling-CGaHy8ru.js"
+      "_yapp-instelling-74GvPH70.js"
     ]
   },
   "src/pages/Wiki.tsx": {
-    "file": "yapp-Wiki-BluzjgSU.js",
+    "file": "yapp-Wiki-B_qE5kyt.js",
     "name": "Wiki",
     "src": "src/pages/Wiki.tsx",
     "isDynamicEntry": true,
@@ -4797,22 +4851,22 @@
       "index.html",
       "_yapp-check-2XMzp0nH.js",
       "_yapp-chevron-left-BwIKRmIh.js",
-      "_yapp-RichTextEditor-DIfM4N9K.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-link-2-MzpESIqQ.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-refresh-cw-B1xA-OGb.js",
-      "_yapp-save-DFDVj8Zt.js",
-      "_yapp-star-9z1LbSD-.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-RichTextEditor-Cg_bBhqx.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-link-2-BzV0ZsHI.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-refresh-cw-Bsw63R99.js",
+      "_yapp-save-Cl-27HY5.js",
+      "_yapp-star-8q8amP9n.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-desktop-kH8rhjpH.js",
-      "_yapp-erpnext-D3MW3D4-.js"
+      "_yapp-desktop-DDN1_GRL.js",
+      "_yapp-erpnext-B1Nh1pil.js"
     ]
   },
   "src/pages/dashboard/index.tsx": {
-    "file": "yapp-dashboard-DzaD9XZ7.js",
+    "file": "yapp-dashboard-BAxeOD97.js",
     "name": "dashboard",
     "src": "src/pages/dashboard/index.tsx",
     "isDynamicEntry": true,
@@ -4822,26 +4876,27 @@
       "_yapp-createLucideIcon-BaPRLlQf.js",
       "_yapp-boxes-h85agBUv.js",
       "_yapp-cake-BAHBjZDj.js",
-      "_yapp-Tasks-COS-63sV.js",
-      "_yapp-external-link-Boqkp6XF.js",
-      "_yapp-eye-BnFZyYfz.js",
-      "_yapp-folder-BizDp_Tj.js",
-      "_yapp-layers-DS6egnWu.js",
-      "_yapp-layout-grid-kR9U8L3M.js",
-      "_yapp-plus-DQmAFAq1.js",
-      "_yapp-trash-2-BRxQiqcL.js",
-      "_yapp-tree-palm-CH84WFAu.js",
-      "_yapp-x-DPMv6zXI.js",
+      "_yapp-Tasks-DadGEqpi.js",
+      "_yapp-square-chart-gantt-CA8NeCft.js",
+      "_yapp-external-link-BbrZcq59.js",
+      "_yapp-eye-D8Maiekf.js",
+      "_yapp-folder-Bu9pzeSb.js",
+      "_yapp-layers-CDebIxGs.js",
+      "_yapp-layout-grid-C0rPtj_n.js",
+      "_yapp-plus-F2G2fIvo.js",
+      "_yapp-trash-2-D3dRY9k2.js",
+      "_yapp-tree-palm-BuyoSR-k.js",
+      "_yapp-x-70OBA6sc.js",
       "_yapp-useTranslation-XNJgytEB.js",
       "_yapp-jsx-runtime-B1TN9NKv.js",
-      "_yapp-TodoDetail-Bwqqy77k.js",
-      "_yapp-Timesheets-BbkQrHaM.js",
-      "_yapp-agenda-mailserver-CwD4WmOO.js",
-      "_yapp-instances-DlkwA_bz.js",
-      "_yapp-capabilities-DiO0riXf.js",
-      "_yapp-erpnext-D3MW3D4-.js",
-      "_yapp-webmail-prefetch-CVg2-GU_.js",
-      "_yapp-QuickKmBooking-CLJ-bisx.js"
+      "_yapp-TodoDetail-Baxt7scx.js",
+      "_yapp-Timesheets-DJEzHWPw.js",
+      "_yapp-agenda-mailserver-6I0od-jy.js",
+      "_yapp-instances-CMMd_zmx.js",
+      "_yapp-capabilities-Cn_1Mp_B.js",
+      "_yapp-erpnext-B1Nh1pil.js",
+      "_yapp-webmail-prefetch-ENqzlaqC.js",
+      "_yapp-QuickKmBooking-C5Fz-TMp.js"
     ]
   }
 }

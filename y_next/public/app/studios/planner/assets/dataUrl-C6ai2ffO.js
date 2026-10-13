@@ -1,0 +1,1 @@
+function s(n){const r=";base64,",a=n.indexOf(r);if(a===-1)throw new Error("Onverwacht data-URL-formaat (geen base64)");const e=atob(n.slice(a+r.length)),o=new Uint8Array(e.length);for(let t=0;t<e.length;t++)o[t]=e.charCodeAt(t);return o}export{s as d};

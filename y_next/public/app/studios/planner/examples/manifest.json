@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "examples": [
+    {
+      "file": "showcase-verbouwing-eengezinswoning.ifc",
+      "name": "Refurbishment & Extension of a Family Home",
+      "description": "Entry-level showcase: an extension to a family home with WBS phasing, a finish-start chain with one start-start overlap (walls/roof) and one finish-finish link (painting just after tiling), an SNET permit constraint, a start milestone and a mandatory handover milestone, a comfortable deadline (no conflict) and one baseline taken right after set-up. A small crew set from the shared demo resource library, without any overallocation of its own — the masonry crew is booked in the same week as the terraced houses showcase, so the occupancy overview shows a cross-project conflict that \"Distribute\" can resolve.",
+      "category": "showcase",
+      "tags": [
+        "residential",
+        "small",
+        "entry-level",
+        "milestones",
+        "constraints",
+        "baseline",
+        "resources"
+      ]
+    },
+    {
+      "file": "showcase-rijwoningen-de-akkers.ifc",
+      "name": "6 New Terraced Houses, De Akkers",
+      "description": "Mid-sized showcase: six terraced houses with a shared foundation (frost delay via extraHolidays), a masonry crew (CREW+LABOR) moving from house to house — the same crew as in the small refurbishment showcase, so the occupancy overview shows a cross-project conflict on it — fit-out with curve variation (UNIFORM/FRONT_LOADED/BACK_LOADED) and a visible over-allocation on the plasterers, a mandatory handover inspection per house plus a deliberately tight contract deadline (negative total float), activity codes House x Discipline, notes (open and completed), progress plus a status date halfway through, and a baseline before start.",
+      "category": "showcase",
+      "tags": [
+        "residential",
+        "medium",
+        "resources",
+        "over-allocation",
+        "progress",
+        "baseline",
+        "activity-codes",
+        "notes"
+      ]
+    },
+    {
+      "file": "showcase-appartementencomplex.ifc",
+      "name": "De Vaart Apartment Complex",
+      "description": "LARGE: apartment complex with three parallel towers (~250 tasks) — hard-pin MSO, secondary constraint, hammock (LOE), near-critical marking plus multiple critical paths (floatPaths), hourly scheduling for rebar fixing/pouring, all five resource types including a tower crane (EQUIPMENT) with a capacity step, all four relationship types (including START_FINISH), all six assignment curves, an external link to a separately delivered site file, two baselines (Contract then Re-baseline after a variation order) and progress plus a status date.",
+      "category": "showcase",
+      "tags": [
+        "residential",
+        "large",
+        "advanced",
+        "kitchen-sink",
+        "near-critical",
+        "float-paths",
+        "hammock",
+        "hourly-scheduling",
+        "external-link",
+        "baseline"
+      ]
+    },
+    {
+      "file": "03-kantoorgebouw-zuidas.ifc",
+      "name": "Zuidas Office Building",
+      "description": "Eight-storey office building with basement car park, BREEAM Excellent",
+      "category": "basic",
+      "tags": []
+    },
+    {
+      "file": "05-brugvervanging-n279.ifc",
+      "name": "N279 Bridge Replacement",
+      "description": "Replacement of the existing bridge with a new concrete bridge",
+      "category": "basic",
+      "tags": []
+    },
+    {
+      "file": "08-zorgcentrum-de-linde.ifc",
+      "name": "De Linde Care Centre",
+      "description": "New-build care centre with 60 rooms and treatment areas",
+      "category": "basic",
+      "tags": []
+    },
+    {
+      "file": "10-villa-wassenaar.ifc",
+      "name": "New-Build Villa, Wassenaar",
+      "description": "Detached luxury villa with swimming pool and guest house",
+      "category": "basic",
+      "tags": []
+    },
+    {
+      "file": "15-datacentrum-agriport.ifc",
+      "name": "Agriport A7 Data Centre",
+      "description": "5,000 m2 data centre with its own power supply",
+      "category": "basic",
+      "tags": []
+    }
+  ]
+}

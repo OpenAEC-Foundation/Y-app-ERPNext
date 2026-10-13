@@ -1,0 +1,3 @@
+Y-next local studio packaging
+Runtime wrappers enforce local asset fetching and account-scoped browser storage.
+CAD entry paths are relative; font requests resolve to bundled fonts and the supporter list is local.

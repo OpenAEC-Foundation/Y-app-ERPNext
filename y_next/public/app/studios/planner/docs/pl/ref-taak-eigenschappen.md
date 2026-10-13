@@ -1,0 +1,112 @@
+# Okno zadania i panel właściwości
+
+Zadanie możesz edytować na dwa sposoby: w oknie *Edytuj zadanie* i w panelu *Właściwości*. Prawie wszystkie pola są w obu miejscach. Ten artykuł opisuje dla każdego pola, co robi, jaka jest wartość domyślna i co zauważysz. Jak utworzyć zadanie i je ustawić, znajdziesz w [Dodawanie zadań i kamieni milowych](docs://howto-taken-en-mijlpalen-toevoegen). Dlaczego obliczenie wypada tak, a nie inaczej, wyjaśnia [Ścieżka krytyczna i zapas](docs://uitleg-kritiek-pad).
+
+## Dwa miejsca
+
+- **Edytuj zadanie** — okno dla pierwszego wybranego zadania. Otwierasz je klawiszem F2, dwukrotnym kliknięciem paska na wykresie Gantt albo kliknięciem prawym przyciskiem zadania na wykresie Gantt lub w tabeli i wyborem *Edytuj...*. Twoje zmiany zostają w wersji roboczej, dopóki nie klikniesz *Zapisz* (Enter). *Anuluj* (Esc) je odrzuca. *Zapisz* jest wyłączony, dopóki nazwa jest pusta. Zapisanie to jeden krok, który cofasz przyciskiem *Cofnij*. Dotyczy to także zmian w sekcjach *Reguła pracy*, *Zależności*, *Przydziały* i *Kody i pola*. Te sekcje wpływają już podczas edycji na projekt. *Anuluj* je cofa.
+- **Właściwości** — panel w prawej kolumnie, dla aktywnego zadania. Każda zmiana działa od razu. Kolejne zmiany w tym samym polu liczą się jako jeden krok w *Cofnij*. Bez zadania pokazuje *Wybierz zadanie, aby wyświetlić właściwości.* Włączasz lub wyłączasz go w *Widok › Panele › Właściwości*. Domyślnie: włączony. Panel znajduje się obok wykresu Gantt i na karcie *Tabela*, nie na karcie *IFC* ani na karcie *Raport* i nie pod pełnym panelem zasobów.
+
+Tylko w oknie: *Zadanie nadrzędne* oraz przyciski *Zapisz* i *Anuluj*. Tylko w panelu: kosz *Usuń zadanie*, przycisk *Oblicz* na dole, sekcja *Przerwy*, trzy znaczniki pod polem *Reguła pracy* (długie dni wolne od pracy, MS Project, zapisane daty) oraz dodawanie relacji i przechodzenie do połączonego zadania w sekcji *Zależności*. Wszystkie pozostałe pola są w obu miejscach. Okno pokazuje *Zależności*, *Przydziały* i *Kody i pola* tylko dla istniejącego zadania.
+
+Jeśli zmienisz coś, co wpływa na daty, kliknij *Oblicz*. Obliczenie nie uruchamia się samo, chyba że włączysz *Oblicz automatycznie*.
+
+## Ogólne
+
+- **Nazwa** (w oknie *Nazwa \**) — nazwa zadania na wykresie Gantt, w tabeli i w raportach. Pole jest wymagane: pusta nazwa nie zostaje zapisana. Domyślnie dla nowego zadania: *Nowe zadanie*.
+- **Kod WBS** — kod struktury zadania, na przykład `RB-301`. Pole jest wymagane. Przy ustawieniu *Planowanie › Struktura › WBS auto* pole jest wyłączone (podpowiedź: *Kody WBS są numerowane automatycznie (Planowanie → Struktura)*), bo aplikacja zarządza wtedy kodami.
+- **Opis** — dowolny tekst. Nie wpływa na obliczenia. Możesz go pokazać jako kolumnę *Opis* w tabeli.
+- **Typ** — typ zadania. Lista ma grupy *Typy wbudowane* (*Budowa*, *Instalacja*, *Rozbiórka*, *Logistyka*, *Inspekcja*, *Przeniesienie*, *Renowacja*, *Konserwacja*), *Moje typy zadań* i *Z tego projektu*. *Inne* pojawia się tylko wtedy, gdy zadanie ma już ten typ. Na dole są *+ Nowy typ zadania*… i *Zarządzaj typami zadań*… Domyślnie: typ zadania nadrzędnego, a jeśli go nie ma, *Budowa* (gdy tryb budowy jest włączony, to domyślnie) albo *Inne*. Wpływ: brak wpływu na obliczenia. Możesz grupować i filtrować po typie oraz kolorować paski według typu. Aplikacja trzyma własny typ na Twoim urządzeniu. Kiedy go wybierzesz, kopia trafia do projektu (*Z tego projektu*). Jeśli wpiszesz nazwę przy pozycji *+ Nowy typ zadania*…, a taka już jest w sekcji *Moje typy zadań*, nawet z inną wielkością liter, aplikacja nie utworzy drugiego typu, tylko wybierze istniejący. W pozycji *Zarządzaj typami zadań*… edytujesz lub usuwasz tylko własne typy. Pusta nazwa albo nazwa, która już istnieje, nie zostaje zapisana. Jeśli usuniesz typ, którego używa otwarty projekt, aplikacja najpierw zapyta. Kopia w projekcie zostaje. Typ z sekcji *Z tego projektu*, na przykład z cudzego pliku, trafia na Twoją listę dopiero po kliknięciu *Dodaj do moich typów zadań* w pozycji *Zarządzaj typami zadań*…
+- **Kalendarz** — kalendarz, w którym zadanie liczy czas trwania, datę zakończenia i zapas. Domyślnie: *Kalendarz projektu: {name}*. Wpływ: zadanie z własnym kalendarzem pracuje w innych dniach niż kalendarz projektu. Po zmianie *Oblicz* przelicza daty. Zobacz [Kalendarze i dni robocze](docs://uitleg-kalenders).
+- **Zadanie nadrzędne** (tylko w oknie) — przenosi zadanie pod inne zadanie. Domyślnie: obecne zadanie nadrzędne. *- Brak (korzeń) -* ustawia je na najwyższym poziomie. Wybór, który utworzyłby cykl w relacjach, zostaje odrzucony po kliknięciu *Zapisz* z komunikatem, a okno pozostaje otwarte.
+
+## Notatki
+
+- **Notatki** — lista kontrolna przy zadaniu. *Dodaj notatkę* dodaje wiersz. Znacznik wyboru (*Gotowe*) go przekreśla, a kosz (*Usuń*) go usuwa. Bez wierszy pokazuje *Brak notatek.* Nie wpływa na obliczenia. Kolumna *Notatki* w tabeli pokazuje je z ✓ albo ○ przed tekstem.
+
+## Kamień milowy
+
+- **Kamień milowy** — zamienia zadanie w kamień milowy. Domyślnie: wyłączone. Wpływ: czas trwania wynosi 0. Aplikacja tego nie przyjmie dla zadania sumarycznego (zadania z podzadaniami) ani dla zadania z przydziałami zasobów. Pojawi się komunikat. Najpierw usuń przydziały. Jeśli odznaczysz to pole, znikną *Rodzaj punktu kontrolnego* i *Obowiązkowy (umowny)*.
+- **Rodzaj punktu kontrolnego** (tylko dla kamienia milowego) — *Automatycznie*, *Kamień milowy początkowy* albo *Kamień milowy końcowy*. Domyślnie: *Automatycznie*. Wpływ: początkowy kamień milowy leży na początku dnia, a końcowy na końcu dnia. Przy ustawieniu *Automatycznie* kamień milowy, gdy jest poprzednikiem, działa jak początkowy i leży na początku dnia.
+- **Obowiązkowy (umowny)** (tylko dla kamienia milowego) — oznacza umowny kamień milowy, na przykład inspekcję albo odbiór. Domyślnie: wyłączone. Wpływ: znacznik na wykresie Gantt i w raportach. Nie chroni daty. Do tego służy ograniczenie albo termin ostateczny.
+
+## Czas
+
+- **Początek** (w oknie *Data rozpoczęcia*) — pokazuje obliczony początek, tę samą datę co pasek na wykresie Gantt i kolumna *Początek*, a nie surową datę planowania. Pole jest wymagane: puste pole wraca do poprzedniej wartości. Wpływ wpisania: nowa data staje się planowaną kotwicą (kolumna *Planowane rozpoczęcie*). Jeśli zadanie ma poprzednika i jeszcze się nie rozpoczęło, aplikacja zapisuje nowy początek jako ograniczenie *Rozpocznij nie wcześniej niż (SNET)* na tę datę (albo przesuwa istniejące SNET) i pokazuje komunikat. Po kliknięciu *Oblicz* zadanie więc nie zacznie się wcześniej. Jeśli jest ograniczenie inne niż *Jak najwcześniej (ASAP)* lub *SNET*, aplikacja nie zastosuje początku i powie, które ograniczenie wyznacza początek.
+- **Czas trwania** — jak długo zadanie trwa. Wpisz `5d` dla dni albo `12h` lub `1h 30m` dla godzin. Liczba bez jednostki liczy się w jednostce zadania. Dni zawsze są całe, godziny mogą mieć część dziesiętną. Nieprawidłowy wpis daje komunikat *Wprowadź całkowitą liczbę dni lub godzin, na przykład 2d albo 12h.*, a pole wraca do poprzedniej wartości. Domyślnie dla nowego zadania: 5 dni (kamień milowy: 0). Pole jest wyłączone dla zadania sumarycznego, hamaka i kamienia milowego z czasem trwania 0. Ich czas wynika z innych zadań albo wynosi zero. Zadanie w godzinach jest wyłączone, dopóki *Włącz planowanie godzinowe* jest wyłączone. Jest tam przycisk o tej nazwie. Wpływ: po kliknięciu *Oblicz* czas trwania wyznacza zakończenie w kalendarzu zadania. Jeśli zadanie ma zasoby i regułę pracy, reguła decyduje, czy przesuwa się praca, czy jednostki. Jeśli zadanie jest już częściowo wykonane, aplikacja nie przyjmie czasu krótszego niż wykonana praca. Zobacz [Dni i godziny](docs://uitleg-dagen-en-uren).
+- **Jednostka czasu trwania** — wybór *Dni* albo *Godziny*, z przyciskiem informacji obok. Widoczne tylko wtedy, gdy *Włącz planowanie godzinowe* i *Zezwól na mieszane planowanie dniowo-godzinowe* są włączone. To drugie jest domyślnie włączone, gdy planowanie godzinowe jest włączone. Wpływ: gdy wybierzesz inną jednostkę, aplikacja od razu przelicza czas trwania, jeśli wynik jest dokładny. *Cofnij* cofa to w jednym kroku. Jeśli wynik nie pasuje dokładnie, jednostka zostaje, a aplikacja to mówi. Kalendarz bez prawidłowych godzin pracy blokuje zmianę.
+- **Reguła pracy** — określa, która wielkość w równaniu czas trwania × jednostki = praca zostaje stała, gdy zmieni się jedna z trzech. Wybór: *Domyślna dla projektu (Stały czas trwania i jednostki)*, *Stały czas trwania i jednostki*, *Stały czas trwania i praca*, *Stała praca* i *Stałe jednostki*. Domyślnie: reguła domyślna projektu. Pod nią widać, co reguła chroni (*Chronione: …*), a przy zadaniu z MS Project *Z MS Project: sterowane nakładem pracy* albo *Z MS Project: niesterowane nakładem pracy*. Pole jest widoczne tylko wtedy, gdy *Pokaż reguły pracy i pracę* jest włączone (*Ustawienia*, karta *Planowanie*, nagłówek *Obliczanie*) albo gdy sam plik zawiera reguły pracy lub zapisaną pracę. Dotyczy tylko zwykłego zadania: nie zadania sumarycznego, kamienia milowego, hamaka ani zadania w czasie, który upłynął. Zobacz [Reguły pracy: czas trwania, jednostki i praca](docs://uitleg-werkregels).
+
+## Hamak
+
+- **Hamak (czas wyprowadzony)** — pozwala, aby czas trwania wynikał z dwóch innych zadań, zamiast mieć własny. Domyślnie: wyłączone. Dotyczy tylko zwykłego zadania, więc nie kamienia milowego ani zadania sumarycznego. Po włączeniu *Driver początku* pokazuje poprzedników z relacją zakończenie-rozpoczęcie albo rozpoczęcie-rozpoczęcie. *Driver końca* pokazuje te z relacją zakończenie-zakończenie albo rozpoczęcie-zakończenie. Za każdym jest typ relacji. Jeśli nie masz drivera końca, pojawi się komunikat *Brak drivera końca (FF/SF) — odstęp wraca do zerowej długości.*, a czas trwania wynosi zero. Zobacz [Tworzenie hamaka](docs://howto-hammock).
+
+## Ograniczenie i termin ostateczny
+
+Dla zadania sumarycznego ograniczenie albo termin ostateczny nie działają. Obliczenie dotyczy tylko zadań najniższego poziomu, a daty zadania sumarycznego wynikają z jego podzadań.
+
+- **Ograniczenie** — ograniczenie daty dla zadania. Wybór: *Jak najwcześniej (ASAP)*, *Jak najpóźniej (ALAP)*, *Rozpocznij nie wcześniej niż (SNET)*, *Rozpocznij nie później niż (SNLT)*, *Zakończ nie wcześniej niż (FNET)*, *Zakończ nie później niż (FNLT)*, *Musi rozpocząć się (MSO)* i *Musi zakończyć się (MFO)*. Domyślnie: *Jak najwcześniej (ASAP)*, czyli brak ograniczenia. Gdy wybierzesz ASAP, znikną wszystkie ograniczenia zadania. Gdy wybierzesz ALAP, zniknie ograniczenie drugorzędne. Wpływ po kliknięciu *Oblicz*: ograniczenie przesuwa zadanie albo daje ujemny zapas. Zobacz [Ograniczenia i terminy ostateczne](docs://uitleg-constraints).
+- **Data ograniczenia** — data należąca do ograniczenia. Widoczna przy każdym ograniczeniu oprócz *ALAP*. Pole jest wymagane. Nowe ograniczenie dostaje planowany początek jako datę.
+- **Obowiązkowy (logika przypięcia)** — tylko dla *MSO* i *MFO*. Domyślnie: wyłączone. Włączone: data jest twarda, ma pierwszeństwo przed relacjami i przypina pasek, nawet przed jego poprzednikami. Naruszenie daje ujemny zapas u poprzedników. Przy pierwszym włączeniu pojawia się raz wyjaśnienie.
+- **Ograniczenie drugorzędne** i **Data drugorzędna** — drugie ograniczenie, tylko jedno z *SNET*, *FNET*, *SNLT* albo *FNLT* (albo *(brak)*). Widoczne, gdy jest ograniczenie główne inne niż ASAP, ALAP lub twarde przypięcie. Zawsze jest miękkie. Niedozwolona kombinacja dostaje czerwoną ramkę i powód: ograniczenie drugorzędne nie może być twarde, nie może występować przy MSO/MFO ani przy twardym przypięciu, nie może występować przy ASAP/ALAP, musi być granicą, a główne i drugorzędne nie mogą ograniczać tej samej strony. Poprawna para to na przykład SNET z FNLT.
+- **Termin ostateczny** — docelowa data zakończenia. Puste pole oznacza brak terminu. Wpływ: zadanie się przez to nie przesuwa. Jeśli najwcześniejsze zakończenie jest późniejsze, zapas staje się ujemny, a aplikacja zgłasza *Termin … przekroczony — najwcześniejsze zakończenie …*.
+
+## Postęp
+
+- **Postęp (%)** — suwak od 0 do 100. Domyślnie: 0. Wpływ: powyżej 0 aplikacja uzupełnia brakujące *Rzeczywiste rozpoczęcie*, a 100 uzupełnia *Rzeczywiste zakończenie*. Status zmienia się tak: *Nierozpoczęte* bez rzeczywistego rozpoczęcia, *W toku* z rzeczywistym rozpoczęciem i *Ukończone* z rzeczywistym zakończeniem. Pozostały czas trwania (*Pozostało*) to czas trwania × (1 − postęp). Zaokrągla się go do pełnych dni dla zadania w dniach i do pełnych minut dla zadania w godzinach. Wykonana praca liczy się do daty statusu. Jeśli jeszcze jej nie ma, aplikacja ustawia ją na dzisiaj i to mówi. Dla zadania sumarycznego pole jest wyłączone. Jego postęp wynika z podzadań po kliknięciu *Oblicz* (*Wyliczane z podzadań: zmień postęp tam. Zadanie sumaryczne zaktualizuje się po przeliczeniu (F5).*).
+- **Rzeczywiste rozpoczęcie** — data, w której zadanie naprawdę się zaczęło. Data późniejsza niż rzeczywiste zakończenie albo późniejsza niż data statusu zostaje odrzucona. Jeśli planowany start zadania przypada dopiero po dacie statusu i teraz dostaje postęp, okno pyta: *Podaj rzeczywiste rozpoczęcie.* Dla kamienia milowego jest jedno pole *Rzeczywista data* zamiast pól *Rzeczywiste rozpoczęcie* i *Rzeczywiste zakończenie*.
+- **Rzeczywiste zakończenie** — data, w której zadanie naprawdę zostało wykonane. Wpisanie jej ustawia postęp na 100 i status na *Ukończone*. Wyczyszczenie ustawia postęp z powrotem na 0 i status na *W toku*. Obowiązują te same odrzucenia co przy polu *Rzeczywiste rozpoczęcie*.
+- **Pozostało** — tylko do odczytu (niedostępne dla kamienia milowego): ile czasu trwania zostało, w jednostce zadania.
+
+Okno stosuje te reguły do wersji roboczej. Liczą się dopiero po *Zapisz*. Zobacz [Postęp, data statusu i plan bazowy](docs://uitleg-voortgang).
+
+## Wynik CPM
+
+- **Wynik CPM** — widok tylko do odczytu ostatniego obliczenia: *Najwcześniejsze rozpoczęcie*, *Najwcześniejsze zakończenie*, *Najpóźniejsze rozpoczęcie*, *Najpóźniejsze zakończenie*, *Zapas całkowity*, *Zapas swobodny*, *Zapas zakłócający* i *Ścieżka krytyczna* (*Tak* albo *Nie*). Zapas jest podany w dniach roboczych, z dwoma miejscami po przecinku. Wynik jest nieaktualny albo jeszcze nie obliczony? Kliknij *Oblicz*.
+
+## Zależności
+
+- **Zależności** — relacje tego zadania, jedna linia na relację: połączone zadanie (w panelu kod WBS, a jeśli go brak, nazwa; w oknie nazwa), ikona błyskawicy, gdy relacja jest wiodąca (*Relacja wiodąca (driving)*, po obliczeniu), typ relacji (*FS*, *SS*, *FF* lub *SF*), opóźnienie i kosz. W panelu kod WBS jest przyciskiem: wskazanie pokazuje zadanie, kliknięcie przechodzi do niego. Mały znak przed kodem pokazuje rolę: złoty okrągły znak dla poprzednika i fioletowy kwadratowy dla następnika, w tych samych kolorach co w [Śledzenie ścieżki](docs://howto-pad-traceren). Rola jest też w nazwie przycisku, dla czytnika ekranu. W oknie to zwykły tekst, a sekcję widzisz tylko wtedy, gdy zadanie ma relacje.
+- **Opóźnienie** — wpisz liczbę z jednostką: `2d` dni roboczych, `3ed` dni kalendarzowych, `2u` albo `2h` godzin pracy, `3eu` albo `3eh` godzin kalendarzowych, `50%` procent czasu trwania poprzednika, `-25e%` procent w czasie kalendarzowym. Minus zamienia opóźnienie w wyprzedzenie. Bez jednostki liczy się jako dni robocze. Nieprawidłowy wpis zaznacza pole na czerwono i wraca do poprzedniej wartości. Zobacz [Relacje i opóźnienie](docs://uitleg-relaties).
+- **Dodaj relację** (tylko w panelu) — otwiera wiersz w wersji roboczej. W polu *Kierunek* wybierz *Poprzednik* albo *Następnik*. Znajdź zadanie przez pole *Szukaj zadania*… po WBS lub nazwie, wybierz typ i opóźnienie, a potwierdź przyciskiem *Utwórz zależność* (albo *Anuluj*). Duplikat albo relacja z zadaniem nadrzędnym tego zadania zostaje odrzucona z komunikatem, a wiersz zostaje.
+
+## Przerwy
+
+Tylko w panelu, nie dla kamienia milowego, zadania sumarycznego, hamaka, zadania z czasem, który upłynął, zadania planowanego ręcznie ani zadania za krótkiego na przerwę.
+
+- **Przerwy** — przerwy w pracy zadania. Jedna linia na przerwę: *po* (ile pracy jest przed przerwą), *przerwa* (długość) i jednostka (*dni robocze*, a dla zadania w godzinach *godziny*). Poniżej podano od–do fragmentu po przerwie. Przerwa wprowadzona przez *bilansowanie* ma odznakę *bilansowanie*. Przerwa o długości 0 usuwa ją. Kosz przy każdej linii (*Usuń przerwę*) też ją usuwa. Efekt: pasek zadania jest rysowany przerwany, a po *Oblicz* zakończenie przesuwa się o długość przerwy.
+- **Dodaj przerwę** — dodaje przerwę o długości jednej jednostki w środku najdłuższego fragmentu. Wyłączone, gdy na przerwę nie ma miejsca.
+- **Usuń wszystkie przerwy** — pojawia się, gdy przerwy pochodzą z pliku źródłowego w postaci, której nie można tutaj edytować (*Te przerwy pochodzą z pliku źródłowego w postaci, której nie można tutaj edytować.*). Wtedy widzisz tylko daty.
+
+Zobacz [Dzielenie zadania](docs://howto-taak-splitsen).
+
+## Przydziały
+
+- **Przydziały** — zasoby przy tym zadaniu. Dla każdego zasobu: nazwa z koszem (*Usuń*), *Jedn./dzień*, *Praca (pozost.)*, *Krzywa*, przycisk *Rozkład godzin…* i *Przenieś do…*. Na dole jest lista *Przydziel zasób*. Przydziela ona zasób z 1 jednostką dziennie. Bez zasobów pojawia się napis *Najpierw utwórz zasoby (karta Zasoby).*; gdy wszystkie są przydzielone, pojawia się napis *Wszystkie zasoby są już przydzielone.* Dla kamienia milowego lub zadania sumarycznego pojawia się napis, że przydzielanie nie jest możliwe.
+- **Jedn./dzień** — ile zasobu zadanie zużywa dziennie. Musi to być liczba większa niż 0. Efekt: obciążenie na histogramie oraz przeciążenie, a przy regule pracy także praca.
+- **Praca (pozost.)** — pozostała praca w godzinach dla tego zasobu. Widoczna tylko wtedy, gdy reguły pracy są widoczne i zadanie ma regułę pracy. Dla materiału widać myślnik. Kłódka pokazuje, którą część chroni reguła pracy (*Chronione przez regułę pracy …*). Trójkąt ostrzegawczy (*Różni się od jednostek × czasu trwania*) oznacza, że zapisana praca nie jest równa jednostkom × pozostały czas trwania. Histogram wtedy podąża za zapisaną pracą.
+- **Krzywa** — sposób, w jaki praca rozkłada się na czas trwania: *Jednolity*, *Obciążony na początku*, *Obciążony na końcu*, *Dzwonowy*, *Wczesny szczyt*, *Późny szczyt*, *Podwójny szczyt* lub *Żółw*. Domyślnie: *Jednolity*. Gdy przydział ma własny rozkład godzin, pojawia się napis *Kontur*, a lista jest wyłączona. Zaimportowana krzywa nazywa się *Zaimportowana krzywa*.
+- **Rozkład godzin…** — otwiera rozkład godzin dla każdego dnia roboczego tego przydziału. Zobacz [Dostosowywanie rozkładu godzin](docs://howto-urenverdeling-aanpassen).
+- **Przenieś do…** — przenosi przydział do innego zadania bez podzadań, które jeszcze nie ma tego zasobu. Widoczne tylko wtedy, gdy takie zadanie istnieje.
+
+## Kody i pola
+
+- **Kody i pola** — widoczne tylko wtedy, gdy projekt ma kody czynności lub pola niestandardowe. Każdy kod czynności to lista z wartością *(brak)* i wartościami w postaci `kod — opis`. Dla każdego typu wybierasz najwyżej jedną wartość. Każde pole niestandardowe ma pole wprowadzania pasujące do jego typu: *Tekst*, *Liczba*, *Liczba całkowita*, *Koszt*, *Data* lub *Tak/nie*. Efekt: brak wpływu na obliczenia. Możesz grupować i filtrować według nich oraz pokazywać je jako kolumny. Zobacz [Kody i pola niestandardowe](docs://howto-codes-en-velden).
+
+## Znaczniki przy regule pracy
+
+Tylko w panelu i tylko wtedy, gdy mają zastosowanie.
+
+- **Długi okres wolny od pracy** — *To zadanie obejmuje …-dniowy okres wolny od pracy (… do …).*, albo z dodaną nazwą święta lub przerwy budowlanej. Pojawia się, gdy zadanie przechodzi przez ciągły okres 8 dni lub dłuższy, który zawiera co najmniej jedno święto. To ostrzeżenie, a nie odmowa. Sprawdź, czy harmonogram ma tak wyglądać.
+- **Znacznik MS Project** — odznaka *Podąża za rozkładem godzin z MS Project*, *Okno dat MS Project nie jest już stosowane po edycji — …* lub *Własny rozkład godzin*, z *Dowiedz się więcej*. Pokazuje, czy rozkład godzin z pliku MS Project nadal określa daty.
+- **Zapisane daty** — odznaka dla zaimportowanego pliku z zapisanymi datami: *Pokazuje daty zapisane w pliku dla tego zadania* (dla pliku Primavera *Pokazuje własne daty zapisane przez Primaverę dla tego zadania*), *Odbiega od zapisanych dat* lub *Zapis jest częściowo niekompletny — zobacz kolumny późnego zakończenia/zapasu*, z *Dowiedz się więcej*. Zobacz [Daty zapisane](docs://uitleg-datums-zoals-opgeslagen).
+
+## Góra i dół panelu
+
+- **Usuń zadanie** — kosz obok nagłówka *Zadanie*. Usuwa to zadanie razem z jego podzadaniami, jako jeden krok, który cofniesz przyciskiem *Cofnij*. Harmonogram jest potem nieaktualny, aż naciśniesz *Oblicz*.
+- **Oblicz** — przycisk na dole. To samo obliczenie co *Start › Harmonogram › Oblicz*.
+
+## Czego tu nie znajdziesz
+
+- **Priorytet bilansowania** — nie ma go w oknie ani w panelu. Ustawiasz go, klikając prawym przyciskiem myszy i wybierając *Priorytet* (*Niski* = 100, *Normalny* = 500, *Wysoki* = 900), albo wpisując liczbę od 0 do 1000 w kolumnie *Priorytet bilansowania*. Domyślnie: 500. Efekt: bilansowanie najpierw nie przesuwa zadań o wyższym priorytecie. 1000 przypina zadanie, więc bilansowanie nigdy go nie przesunie. Zobacz [Bilansowanie](docs://uitleg-nivelleren).
+- **Pozostałe dane zadania** — reszta danych zadania, na przykład kolumny *Planowane ręcznie*, *Kolor* i kolumny techniczne, jest tylko w tabeli. Zobacz [Kolumny tabeli](docs://ref-tabelkolommen).

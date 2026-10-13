@@ -1,0 +1,112 @@
+# Finestra attività e pannello proprietà
+
+Puoi modificare un'attività in due punti: nella finestra *Modifica attività* e nel pannello *Proprietà*. Quasi tutti i campi sono uguali. Questo articolo spiega per ogni campo che cosa fa, qual è il valore predefinito e che cosa noti. Come crei e imposti un'attività è spiegato in [Aggiungere attività e cardini](docs://howto-taken-en-mijlpalen-toevoegen). Perché il calcolo dà quel risultato è spiegato in [Percorso critico e margine](docs://uitleg-kritiek-pad).
+
+## Le due posizioni
+
+- **Modifica attività** — la finestra per la prima attività selezionata. Aprila con F2, con un doppio clic su una barra nel Gantt, oppure con il tasto destro su un'attività nel Gantt o nella tabella e scegli *Modifica...*. Le modifiche restano in una bozza finché non fai clic su *Salva* (Invio). *Annulla* (Esc) elimina le modifiche. *Salva* è disattivato finché il nome è vuoto. Il salvataggio è un unico passo sotto *Annulla*, incluso ciò che hai fatto nelle sezioni *Regola di lavoro*, *Dipendenze*, *Assegnazioni* e *Codici e campi*. Quelle azioni agiscono già sul progetto mentre modifichi, e *Annulla* le annulla.
+- **Proprietà** — il pannello nella colonna a destra, per l'attività attiva. Ogni modifica ha effetto subito. Modifiche consecutive allo stesso campo contano come un unico passo sotto *Annulla*. Senza attività il pannello mostra *Seleziona un'attività per visualizzare le proprietà.* Attivalo o disattivalo con *Vista › Pannelli › Proprietà*. Predefinito: attivo. Il pannello si trova accanto al Gantt e nella scheda *Tabella*, non su *IFC* e *Rapporto* e non sotto il pannello risorse completo.
+
+Solo nella finestra: *Attività padre* e i pulsanti *Salva* e *Annulla*. Solo nel pannello: il cestino *Elimina attività*, il pulsante *Calcola* in basso, la sezione *Pause*, i tre contrassegni sotto *Regola di lavoro* (lungo periodo non lavorativo, MS Project, date registrate) e l'aggiunta di relazioni e il salto a un'attività collegata in *Dipendenze*. Tutti gli altri campi sono in entrambi i punti. La finestra mostra *Dipendenze*, *Assegnazioni* e *Codici e campi* solo per un'attività esistente.
+
+Se hai cambiato qualcosa che tocca le date, premi *Calcola*. Il calcolo non avviene da solo, a meno che *Calcola automaticamente* sia attivo.
+
+## Generale
+
+- **Nome** (nella finestra *Nome \**) — il nome dell'attività nel Gantt, nella tabella e nei report. Obbligatorio: un nome vuoto non viene salvato. Predefinito per una nuova attività: *Nuova attività*.
+- **Codice WBS** — il codice di struttura dell'attività, ad esempio `RB-301`. Obbligatorio. Con *Pianificazione › Struttura › WBS auto* il campo è disattivato (suggerimento: *I codici WBS vengono numerati automaticamente (Pianificazione → Struttura)*), perché in quel caso l'app gestisce i codici.
+- **Descrizione** — testo libero. Non influisce sul calcolo; puoi mostrarlo come colonna *Descrizione* nella tabella.
+- **Tipo** — il tipo di attività. L'elenco ha i gruppi *Tipi integrati* (*Costruzione*, *Installazione*, *Demolizione*, *Logistica*, *Ispezione*, *Trasferimento*, *Ristrutturazione*, *Manutenzione*), *I miei tipi di attività* e *Da questo progetto*. *Altro* compare solo se l'attività ha già quel tipo. In fondo ci sono *+ Nuovo tipo di attività…* e *Gestisci tipi di attività…*. Predefinito: il tipo dell'attività padre, altrimenti *Costruzione* (modalità costruzione attiva, impostazione predefinita) oppure *Altro*. Effetto: nessun effetto sul calcolo. Puoi raggruppare e filtrare su questo campo e colorare le barre in base ad esso. L'app conserva un tipo personalizzato sul tuo dispositivo. Quando lo scegli, una copia va nel progetto (*Da questo progetto*). Se digiti in *+ Nuovo tipo di attività…* un nome che esiste già in *I miei tipi di attività*, anche con maiuscole diverse, l'app non crea un secondo tipo. Sceglie quello esistente. In *Gestisci tipi di attività…* modifichi o rimuovi solo i tuoi tipi. Un nome vuoto o un nome che esiste già non viene salvato. Se rimuovi un tipo che il progetto aperto usa, l'app chiede prima conferma, e la copia nel progetto resta. Un tipo sotto *Da questo progetto*, per esempio da un file di un altro, entra nel tuo elenco solo quando fai clic su *Aggiungi ai miei tipi di attività* in *Gestisci tipi di attività…*.
+- **Calendario** — il calendario in cui l'attività conta la sua durata, la data di fine e il margine. Predefinito: *Calendario di progetto: {name}*. Effetto: un'attività con un calendario proprio lavora in giorni diversi dal calendario di progetto. Dopo una modifica, *Calcola* ricalcola le date. Vedi [Calendari e giorni lavorativi](docs://uitleg-kalenders).
+- **Attività padre** (solo nella finestra) — sposta l'attività sotto un'altra attività. Predefinito: il padre attuale. *- Nessuna (radice) -* la mette al livello più alto. Una scelta che creerebbe un ciclo nelle relazioni viene rifiutata quando fai clic su *Salva*, con un messaggio, e la finestra resta aperta.
+
+## Note
+
+- **Note** — una checklist sull'attività. *Aggiungi nota* aggiunge una riga. Con la spunta (*Fatto*) la riga viene barrata. Con il cestino (*Rimuovi*) la elimini. Senza righe mostra *Nessuna nota ancora.* Nessun effetto sul calcolo. La colonna *Note* nella tabella mostra le note con ✓ o ○ davanti.
+
+## Cardine
+
+- **Cardine** — rende l'attività un cardine. Predefinito: disattivato. Effetto: la durata diventa 0. L'app lo rifiuta per un'attività di riepilogo (un'attività con sottoattività) e per un'attività con assegnazioni di risorse, con un messaggio. Rimuovi prima le assegnazioni. Se lo deselezioni di nuovo, *Tipo di cardine* e *Obbligatoria (contrattuale)* scompaiono.
+- **Tipo di cardine** (solo per un cardine) — *Automatico*, *Attività cardine di inizio* o *Attività cardine di fine*. Predefinito: *Automatico*. Effetto: un cardine di inizio si trova all'inizio di un giorno, un cardine di fine alla fine. Con *Automatico* il cardine conta come cardine di inizio quando è predecessore, all'inizio del giorno.
+- **Obbligatoria (contrattuale)** (solo per un cardine) — contrassegna un cardine contrattuale, per esempio un'ispezione o una consegna. Predefinito: disattivato. Effetto: un contrassegno per il Gantt e per i report. Non protegge una data. Lo fai con un vincolo o una scadenza.
+
+## Tempo
+
+- **Inizio** (nella finestra *Data di inizio*) — mostra l'inizio calcolato, cioè la stessa data della barra nel Gantt e della colonna *Inizio*, non l'ancoraggio di pianificazione grezzo. Obbligatorio: un campo vuoto torna al valore precedente. Effetto della digitazione: la nuova data diventa l'ancoraggio pianificato (colonna *Inizio pianificato*). Se l'attività ha un predecessore e non è ancora iniziata, l'app registra il nuovo inizio come vincolo *Iniziare non prima del (SNET)* su quella data (oppure sposta un SNET esistente), con un messaggio. Dopo *Calcola* l'attività quindi non inizia prima. Se c'è un vincolo diverso da *ASAP* o *SNET*, l'app non applica l'inizio e indica quale vincolo determina l'inizio.
+- **Durata** — per quanto tempo lavora l'attività. Digita `5d` per giorni, oppure `12h` o `1h 30m` per ore. Un numero senza unità vale nell'unità dell'attività. I giorni sono sempre interi; le ore possono avere decimali. Un valore non valido mostra *Inserisci un numero intero di giorni o ore, ad esempio 2d o 12h.* e il campo torna indietro. Predefinito per una nuova attività: 5 giorni (un cardine 0). Il campo è disattivato per un'attività di riepilogo, un hammock e un cardine con durata 0: la loro durata deriva da altre attività oppure è zero. Un'attività in ore è disattivata finché *Attiva pianificazione oraria* è disattivato; c'è un pulsante con quel nome. Effetto: dopo *Calcola* la durata determina la fine nel calendario dell'attività. Se l'attività ha risorse e una regola di lavoro, la regola decide se si spostano lavoro o unità. Se l'attività è già in parte completata, l'app rifiuta una durata più corta del lavoro svolto. Vedi [Giorni e ore](docs://uitleg-dagen-en-uren).
+- **Unità di durata** — una scelta tra *Giorni* e *Ore*, con un pulsante info accanto. Visibile solo quando *Attiva pianificazione oraria* e *Consenti pianificazione mista giorno/ora* sono attivi. Quest'ultimo è attivo per impostazione predefinita quando la pianificazione oraria è attiva. Effetto: quando scegli un'altra unità, l'app converte subito la durata se il risultato è esatto. *Annulla* la riporta indietro in un solo passo. Se non torna esattamente, l'unità resta e l'app lo dice. Un calendario senza orari di lavoro validi rifiuta il cambio.
+- **Regola di lavoro** — quale parte di durata × unità = lavoro resta fissa quando una delle tre cambia. Scelte: *Predefinito del progetto (Durata e unità fisse)*, *Durata e unità fisse*, *Durata e lavoro fissi*, *Lavoro fisso* e *Unità fisse*. Predefinito: l'impostazione del progetto. Sotto c'è ciò che la regola protegge (*Protetto: …*) e, per un'attività da MS Project, *Da MS Project: basata sull'impegno* oppure *Da MS Project: non basata sull'impegno*. Visibile solo quando *Mostra regole di lavoro e lavoro* è attivo (*Impostazioni*, scheda *Pianificazione*, sezione *Calcolo*). Compare anche quando il file stesso contiene regole di lavoro o lavoro salvato, e solo per un'attività normale: non per un'attività di riepilogo, un cardine, un hammock o un'attività in tempo trascorso. Vedi [Regole di lavoro: durata, unità e lavoro](docs://uitleg-werkregels).
+
+## Hammock
+
+- **Hammock (durata derivata)** — fa derivare la durata da due altre attività invece di averne una propria. Predefinito: disattivato. Solo per un'attività normale, quindi non per un cardine o un'attività di riepilogo. Attivo: *Driver di inizio* mostra i predecessori con una relazione fine-inizio o inizio-inizio. *Driver di fine* mostra quelli con una relazione fine-fine o inizio-fine. Accanto a ciascuno è indicato il tipo di relazione. Se non hai un driver di fine, l'app mostra *Nessun driver di fine (FF/SF) — l'intervallo torna a lunghezza zero.* e la durata è zero. Vedi [Creare un hammock](docs://howto-hammock).
+
+## Vincolo e scadenza
+
+Su un'attività di riepilogo un vincolo o una scadenza non ha effetto: il calcolo calcola solo le attività foglia e deriva le date di un'attività di riepilogo dalle sue sottoattività.
+
+- **Vincolo** — un limite di data per l'attività. Scelte: *Il più presto possibile (ASAP)*, *Il più tardi possibile (ALAP)*, *Iniziare non prima del (SNET)*, *Iniziare non oltre il (SNLT)*, *Finire non prima del (FNET)*, *Finire non oltre il (FNLT)*, *Deve iniziare il (MSO)* e *Deve finire il (MFO)*. Predefinito: *ASAP*, cioè nessun vincolo. Scegli ASAP e tutti i vincoli dell'attività scompaiono. Scegli ALAP e il vincolo secondario scompare. Effetto dopo *Calcola*: un limite sposta l'attività oppure rende il margine negativo. Vedi [Vincoli e scadenze](docs://uitleg-constraints).
+- **Data del vincolo** — la data che appartiene al vincolo. Visibile per ogni vincolo tranne *ALAP*. Obbligatoria. Un nuovo vincolo riceve come data l'inizio pianificato.
+- **Obbligatorio (logica di ancoraggio)** — solo per *MSO* e *MFO*. Predefinito: disattivato. Attivo: la data è rigida, ha la precedenza sulle relazioni e fissa la barra anche prima dei suoi predecessori. Una violazione diventa margine negativo a monte. La prima volta che lo attivi compare una spiegazione, una sola volta.
+- **Vincolo secondario** e **Data secondaria** — un secondo limite, solo uno tra *SNET*, *FNET*, *SNLT* o *FNLT* (oppure *(nessuno)*). Visibile non appena c'è un vincolo primario che non è *ASAP*, *ALAP* o un ancoraggio rigido. È sempre flessibile. Una combinazione non ammessa riceve un bordo rosso e un motivo: un vincolo secondario non può essere rigido, non può stare con *MSO*/*MFO* o con un ancoraggio rigido, non può stare con *ASAP*/*ALAP*, deve essere un limite, e primario e secondario non possono limitare lo stesso lato. Una coppia valida è, per esempio, *SNET* con *FNLT*.
+- **Scadenza** — una data obiettivo per la fine. Vuota = nessuna scadenza. Effetto: l'attività non si sposta a causa sua. Se la fine anticipata è più tardi, il margine diventa negativo e l'app segnala *Scadenza … superata — fine anticipata …*.
+
+## Avanzamento
+
+- **Avanzamento (%)** — un cursore da 0 a 100. Predefinito: 0. Effetto: sopra 0 l'app compila un *Inizio effettivo* mancante, e 100 compila la *Fine effettiva*. Lo stato segue: *Non iniziata* senza inizio effettivo, *In corso* con un inizio effettivo e *Completata* con una fine effettiva. La durata rimanente (*Rimanente*) è durata × (1 − avanzamento), arrotondata a giorni interi per un'attività in giorni e a minuti interi per un'attività in ore. Il lavoro svolto si misura fino alla data di stato. Se non c'è ancora una data di stato, l'app la imposta a oggi e lo dice. Per un'attività di riepilogo il campo è disattivato: il suo avanzamento deriva dalle sottoattività dopo *Calcola*. *Derivato dalle sottoattività: modifica l'avanzamento lì. L'attività di riepilogo si aggiorna dopo il calcolo (F5).*
+- **Inizio effettivo** — la data in cui l'attività è davvero iniziata. Una data successiva alla fine effettiva o alla data di stato viene rifiutata. Se l'attività è pianificata per iniziare solo dopo la data di stato e ora riceve un avanzamento, la finestra chiede *Indica l’inizio effettivo*. Per un cardine c'è un unico campo *Data effettiva* al posto di *Inizio effettivo* e *Fine effettiva*.
+- **Fine effettiva** — la data in cui l'attività è davvero finita. Compilarla imposta l'avanzamento a 100 e lo stato a *Completata*. Cancellarla riporta l'avanzamento a 0 e lo stato a *In corso*. Valgono le stesse regole di *Inizio effettivo*.
+- **Rimanente** — sola lettura (non per un cardine): quanta durata resta, nell'unità dell'attività.
+
+La finestra applica queste regole alla bozza. Contano solo dopo *Salva*. Vedi [Avanzamento, data di stato e baseline](docs://uitleg-voortgang).
+
+## Risultato CPM
+
+- **Risultato CPM** — vista di sola lettura dell'ultimo calcolo: *Inizio anticipato*, *Fine anticipata*, *Inizio posticipato*, *Fine posticipata*, *Margine totale*, *Margine libero*, *Margine interferente* e *Percorso critico* (*Sì* oppure *No*). Il margine è in giorni lavorativi con due decimali. Non aggiornato o non ancora calcolato? Premi *Calcola*.
+
+## Dipendenze
+
+- **Dipendenze** — le relazioni di quest'attività, una riga per relazione: l'attività collegata (nel pannello il codice WBS, o il nome se manca; nella finestra il nome), un'icona a fulmine se la relazione è *Relazione determinante (driving)* dopo un calcolo, il tipo di relazione (*FS*, *SS*, *FF* o *SF*), il ritardo e un cestino. Nel pannello il codice WBS è un pulsante: passandoci sopra mostra l'attività, facendo clic ci salti. Un piccolo segno prima del codice indica il ruolo: un cerchio dorato per un predecessore e un quadrato viola per un successore, con gli stessi colori di [Tracciare un percorso](docs://howto-pad-traceren). Il ruolo è anche nel nome del pulsante, per uno screen reader. Nella finestra è testo semplice, e vedi la sezione solo se l'attività ha relazioni.
+- **Ritardo** — digita un numero con un'unità: `2d` giorni lavorativi, `3ed` giorni di calendario, `2u` o `2h` ore lavorative, `3eu` o `3eh` ore di calendario, `50%` una percentuale della durata del predecessore, `-25e%` una percentuale in tempo di calendario. Un segno meno lo rende un anticipo. Senza unità vale per giorni lavorativi. Un valore non valido colora il campo di rosso e torna al valore precedente. Vedi [Relazioni e ritardo](docs://uitleg-relaties).
+- **Aggiungi relazione** (solo nel pannello) — apre una riga in bozza. Sotto *Direzione* scegli *Predecessore* o *Successore*, cerca l'attività con *Cerca attività…* per WBS o nome, scegli il tipo e il ritardo, e conferma con *Crea relazione* (oppure *Annulla*). Un duplicato o una relazione con il padre dell'attività stessa viene rifiutato con un messaggio, e la riga resta.
+
+## Interruzioni
+
+Solo nel pannello, e non per un cardine, un'attività di riepilogo, un hammock, un'attività in tempo trascorso, un'attività pianificata manualmente o un'attività troppo breve per un'interruzione.
+
+- **Interruzioni** — pause nel lavoro dell'attività. Una riga per pausa: *dopo* (quanto lavoro c'è prima della pausa), *pausa* (la durata) e l'unità (*giorni lavorativi*, per un'attività in ore *ore*), con da–a del tratto successivo sotto. Una pausa creata dal *livellamento* ha il contrassegno *livellamento*. Un'interruzione di durata 0 la elimina; anche il cestino per riga (*Rimuovi l'interruzione*) la elimina. Effetto: la barra viene disegnata interrotta e dopo *Calcola* la fine si sposta della pausa.
+- **Aggiungi interruzione** — aggiunge un'interruzione di un'unità a metà del tratto più lungo. Disattivato quando non c'è spazio per una pausa.
+- **Rimuovi tutte le interruzioni** — compare quando le interruzioni provengono da un file di origine in una forma che qui non si può modificare (*Queste pause provengono dal file di origine in una forma che qui non può essere modificata.*). Allora vedi solo le date.
+
+Vedi [Suddividere un'attività](docs://howto-taak-splitsen).
+
+## Assegnazioni
+
+- **Assegnazioni** — le risorse su questa attività. Per risorsa: il nome con un cestino (*Rimuovi*), *Unità/giorno*, *Lavoro (rim.)*, *Curva*, un pulsante *Distribuzione ore…* e *Sposta in…*. In fondo c'è un elenco *Assegna risorsa*; assegna la risorsa con 1 unità al giorno. Senza risorse compare *Crea prima le risorse (scheda Risorse).*; quando tutte sono assegnate, *Tutte le risorse sono già assegnate.* Per un cardine o un'attività di riepilogo indica che l'assegnazione non è possibile.
+- **Unità/giorno** — quanto della risorsa usa l'attività al giorno, un numero maggiore di 0. Effetto: il carico nell'istogramma e le risorse sovrassegnate, e con una regola di lavoro il lavoro.
+- **Lavoro (rim.)** — lavoro rimanente in ore per questa risorsa. Visibile solo quando le regole di lavoro sono visibili e l'attività ne ha una; per il materiale c'è un trattino. Il lucchetto mostra quale angolo protegge la regola di lavoro (*Protetto dalla regola di lavoro …*). Il triangolo di avviso (*Diverge da unità × durata*) significa che il lavoro memorizzato non è uguale a unità × durata rimanente; l'istogramma segue allora il lavoro memorizzato.
+- **Curva** — come il lavoro si distribuisce sulla durata: *Uniforme*, *Caricato all'inizio*, *Caricato alla fine*, *A campana*, *Picco anticipato*, *Picco tardivo*, *Doppio picco* o *Tartaruga*. Predefinito: *Uniforme*. Se l'assegnazione ha una distribuzione oraria propria, indica *Contorno* e l'elenco è disattivato; una curva importata si chiama *Curva importata*.
+- **Distribuzione ore…** — apre la distribuzione ore per giorno lavorativo di questa assegnazione. Vedi [Regolare la distribuzione ore](docs://howto-urenverdeling-aanpassen).
+- **Sposta in…** — sposta l'assegnazione su un'altra attività foglia che non ha ancora la risorsa. Visibile solo quando esiste un'attività di questo tipo.
+
+## Codici e campi
+
+- **Codici e campi** — visibile solo quando il progetto ha codici attività o campi personalizzati. Ogni codice attività è un elenco con *(nessuno)* e i valori nel formato `codice — descrizione`; per tipo scegli al massimo un valore. Ogni campo personalizzato ha un campo di immissione adatto al suo tipo: *Testo*, *Numero*, *Numero intero*, *Costo*, *Data* o *Sì/no*. Effetto: nessun effetto sul calcolo; puoi raggruppare e filtrare in base a essi e mostrarli come colonne. Vedi [Codici e campi personalizzati](docs://howto-codes-en-velden).
+
+## Indicatori sotto la regola di lavoro
+
+Solo nel pannello, e solo quando si applicano.
+
+- **Periodo non lavorativo lungo** — *Questa attività attraversa un periodo non lavorativo di … giorni (… - …).*, oppure con il nome della festività o della festività di cantiere aggiunto. Compare quando l'attività attraversa un periodo continuo di 8 giorni o più che contiene almeno una festività. È un avviso, non un rifiuto; controlla se la pianificazione è intesa così.
+- **Indicatore MS Project** — un'etichetta *Segue la distribuzione oraria di MS Project*, *Finestra di date MS Project non più applicata dopo la modifica — …* o *Distribuzione ore propria*, con *Ulteriori informazioni*. Indica se la distribuzione oraria da un file MS Project guida ancora le date.
+- **Date registrate** — un'etichetta per un file importato con date registrate: *Mostra le date così come registrate nel file per questa attività* (per un file Primavera *Mostra le date registrate da Primavera per questa attività*), *Diverge dalle date registrate* o *Registrazione parzialmente incompleta — vedere le colonne di fine tardiva/margine*, con *Ulteriori informazioni*. Vedi [Date come registrate](docs://uitleg-datums-zoals-opgeslagen).
+
+## Intestazione e piè del pannello
+
+- **Elimina attività** — il cestino accanto all'intestazione *Attività*; elimina questa attività insieme alle sue sottoattività, come un unico passaggio sotto *Annulla*. Dopo, la tua pianificazione non è più aggiornata finché non premi *Calcola*.
+- **Calcola** — il pulsante in fondo; lo stesso calcolo di *Home › Pianificazione › Calcola*.
+
+## Qui non trovi
+
+- **Priorità di livellamento** — non si trova nella finestra o nel pannello. La imposti con il tasto destro scegliendo *Priorità* (*Bassa* = 100, *Normale* = 500, *Alta* = 900), oppure scrivendo un numero da 0 a 1000 nella colonna *Priorità di livellamento*. Predefinito: 500. Effetto: il livellamento mantiene prima ferme le attività con una priorità più alta; 1000 blocca l'attività, così il livellamento non la sposta mai. Vedi [Livellamento](docs://uitleg-nivelleren).
+- **Altri dati dell'attività** — il resto di ciò che un'attività contiene, come le colonne *Pianificata manualmente*, *Colore* e le colonne tecniche, si trova solo nella tabella; vedi [Colonne della tabella](docs://ref-tabelkolommen).

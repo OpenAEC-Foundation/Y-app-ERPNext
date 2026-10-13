@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<script src="./studio-scope.js"></script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open Planner Studio</title>
+    <script>
+      // Anti-thema-flits (issue #61): zet het opgeslagen thema op <html> vóór de eerste paint.
+      // Zonder dit valt de eerste paint op de :root-default (dark) en klapt de app pas ná de
+      // React-mount (App.tsx → data-theme-effect) naar het gekozen thema — een zichtbare flits bij
+      // Light. Dit script is bewust een minimale spiegel van `initTheme()`
+      // (src/utils/settingsStore.ts): dezelfde sleutel (`ops-theme`), dezelfde 7→3-legacy-mapping,
+      // dezelfde default 'dark'. `initTheme()` blijft de bron van waarheid en persisteert de
+      // migratie daarna alsnog; App.tsx zet het attribuut opnieuw (idempotent).
+      // De 'system'-voorkeur wordt hier net zo opgelost als in `resolveUITheme`
+      // (src/utils/theme.ts): prefers-color-scheme → 'dark' of 'light'. Zonder dat zou juist de
+      // systeemvolger de flits terugkrijgen die dit script wegneemt.
+      (function () {
+        var theme = 'dark';
+        try {
+          var map = {
+            'default': 'dark', 'light': 'light', 'dark': 'dark', 'blue': 'dark',
+            'amber-navy': 'dark', 'warm-ember': 'dark',
+            'highContrast': 'high-contrast', 'high-contrast': 'high-contrast',
+            'system': 'system',
+          };
+          var saved = localStorage.getItem('ops-theme');
+          if (saved && Object.prototype.hasOwnProperty.call(map, saved)) theme = map[saved];
+          if (theme === 'system') {
+            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            theme = dark ? 'dark' : 'light';
+          }
+        } catch (_e) { /* localStorage geblokkeerd ⇒ default dark, net als initTheme() */ }
+        // Alleen bereikbaar als matchMedia ontbreekt of gooit; 'light' spiegelt exact wat
+        // `resolveUITheme('system', false)` in TS doet, zodat er ook dán geen flits ontstaat.
+        if (theme === 'system') theme = 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/y_next/app/studios/planner/assets/index-_89FmCvs.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/react-vendor-GWr72Nl9.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/i18n-vendor-DU9Dv0jY.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/state-vendor-Ce774NuH.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/xer-reader-BVvJoTjJ.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/mpp-reader-ybm6cmh-.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/locale-en-CEXmRA1i.js">
+    <link rel="modulepreload" crossorigin href="/assets/y_next/app/studios/planner/assets/icons-vendor-BP74PMln.js">
+    <link rel="stylesheet" crossorigin href="/assets/y_next/app/studios/planner/assets/index-DnY_MHTv.css">
+  </head>
+  <body class="bg-surface text-text-primary">
+    <div id="root"></div>
+  </body>
+</html>
