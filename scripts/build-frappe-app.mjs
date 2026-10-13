@@ -27,6 +27,8 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeOfficeNotices } from "./lib/office-notices.mjs";
+import { prepareStudioAssets, validateStudioAssets } from "./lib/studio-assets.mjs";
+import { studioBuildInputs } from "./lib/studio-build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const APP_BASE = "/assets/y_next/app/";
@@ -58,8 +60,10 @@ export function findEntry(manifest) {
 }
 
 function main() {
+  const studioInputs = studioBuildInputs(process.env, ROOT);
   const frontendDir = resolveFrontendDir(process.env);
   const outDir = bundleOutDir();
+  validateStudioAssets({ ...studioInputs, outDir });
   const require = createRequire(join(frontendDir, "package.json"));
 
   let viteBin;
@@ -85,6 +89,7 @@ function main() {
   }
 
   writeOfficeNotices(frontendDir, outDir, join(ROOT, "scripts", "legal", "betteroffice-0.3.0"));
+  prepareStudioAssets({ ...studioInputs, outDir });
 
   const manifest = JSON.parse(readFileSync(join(outDir, ".vite", "manifest.json"), "utf8"));
   const entry = findEntry(manifest);

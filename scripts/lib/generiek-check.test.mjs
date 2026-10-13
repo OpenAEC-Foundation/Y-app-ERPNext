@@ -41,6 +41,74 @@ test("zoekTreffers: schone tekst en lege tekst geven niets", () => {
   assert.deepEqual(zoekTreffers("kadeveld", []), []);
 });
 
+test("zoekTreffers: openbare CAD-protocoltypes worden alleen als berichttype toegestaan", () => {
+  for (const tekst of [
+    'const message = { type: "domera.cad", version: 1 };',
+    'const reply = { type: "domera.cad.reply", version: 1 };',
+    "if (message.type !== 'domera.cad') return;",
+    'export interface Reply { type: "domera.cad.reply"; }',
+  ]) assert.deepEqual(zoekTreffers(tekst), [], tekst);
+});
+
+test("zoekTreffers: openbare CAD-ABI-namen blijven alleen code-identifiers", () => {
+  for (const tekst of [
+    'window.__domeraCadCommands = commands;',
+    'window.__domeraCadReply(id, true);',
+  ]) assert.deepEqual(zoekTreffers(tekst), [], tekst);
+});
+
+test("zoekTreffers: statische backticktypes uit de productiecompiler behouden het CAD-contract", () => {
+  const tekst = 'function e(e,t,n){return{type:`domera.cad`,version:1,id:e,action:`load`,name:t,bytes:n}}function t(e){if(e.type!==`domera.cad.reply`||e.version!==1)return null}';
+  assert.deepEqual(zoekTreffers(tekst), []);
+  for (const ongeldig of ['const label=`domera.cad`;', 'const x={type:`domera.cad${suffix}`};', 'const x={type:`domera.cad.reply.extra`};']) assert.ok(zoekTreffers(ongeldig).length > 0);
+});
+
+test("zoekTreffers: protocoluitzonderingen dekken geen domeinen, ruwe namen of klanttekst", () => {
+  for (const tekst of [
+    'const label = "domera";',
+    'const label = "domera.cad";',
+    'const host = "https://domera.cad";',
+    'const customer = "domera.cad.reply";',
+    'const message = { type: "prefixdomera.cad" };',
+    'const message = { type: "domera.cad.suffix" };',
+    'const message = { type: "domera.cad.reply.extra" };',
+    'const message = { type: "domera.other" };',
+    'window.prefix__domeraCadReply = reply;',
+    'window.__domeraCadReplySuffix = reply;',
+    'const label = "__domeraCadReply";',
+    'const label = "window.__domeraCadReply";',
+    'const label = "Public window.__domeraCadReply label";',
+    '// window.__domeraCadReply is a label',
+    '/* example type: "domera.cad" */',
+    'const config = { __domeraCadReply: "private" };',
+    'function __domeraCadReply(id, ok) { return ok; }',
+    'const config = { company: "domera", site: "https://domera.nl" };',
+    'const message = { type: "domera.cad", customer: "domera" };',
+  ]) assert.ok(zoekTreffers(tekst).length > 0, tekst);
+  // Andere verboden termen krijgen nooit de ABI-uitzondering.
+  assert.equal(zoekTreffers('const x = { type: "kadeveld.cad" };', [LANG]).length, 1);
+  assert.equal(zoekTreffers('window.__domeraCadReply(id);', VERBODEN, ".md").length, 1);
+  assert.equal(zoekTreffers('<p>window.__domeraCadReply</p>', VERBODEN, ".html").length, 1);
+});
+
+test("zoekTreffers: alleen de exacte lokale scriptreferentie hoort bij de CAD-ABI", () => {
+  for (const tekst of [
+    '<script src="domera-bridge.js"></script>',
+    "<script defer src='./domera-bridge.js'></script>",
+  ]) assert.deepEqual(zoekTreffers(tekst, VERBODEN, ".html"), [], tekst);
+  for (const tekst of [
+    '<script src="https://domera.nl/domera-bridge.js"></script>',
+    '<script src="/private/domera-bridge.js"></script>',
+    '<script src="domera-bridge.js?key=private"></script>',
+    '<script src="domera-bridge.js/malicious.html"></script>',
+    '<iframe src="domera-bridge.js"></iframe>',
+    '<img src="domera-bridge.js">',
+    'const company = "domera-bridge.js";',
+    'const ui = `<script src="domera-bridge.js"></script>`;',
+  ]) assert.ok(zoekTreffers(tekst).length > 0, tekst);
+  assert.equal(zoekTreffers('<script src="domera-bridge.js"></script>', VERBODEN, ".md").length, 1);
+});
+
 test("controleerMap: meldt bestand en regel, en slaat over wat geen tekst is", () => {
   const map = mkdtempSync(join(tmpdir(), "generiek-"));
   try {

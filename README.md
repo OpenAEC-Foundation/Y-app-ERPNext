@@ -102,11 +102,18 @@ Claude heeft dezelfde bench-toegang nodig als bij handmatige installatie.
 - **Apps:** Email, Berichten, Agenda, Open CAD Studio, Open Planner Studio,
   IFC Viewer, Calc en Writer.
 
-CAD gebruikt de lokale viewer wanneer die beschikbaar is, anders de online
-Open CAD Studio. Planner opent de online Open Planner Studio. Deze links
-openen in een nieuw tabblad; documenten en aanmeldgegevens worden niet
-automatisch aan de externe studio meegegeven. De IFC Viewer kan een lokaal
-model openen zonder het bestand naar de site te uploaden.
+CAD en Planner openen binnen Y-Next. De complete toolbundels worden met de
+Frappe-app meegeleverd en laden pas wanneer je de tool opent, vanaf dezelfde
+site. CAD gebruikt WebAssembly; Planner rekent browser-native en gebruikt
+WASM voor delen van de PDF-export. Er is geen externe websitelink of CDN.
+Standalone bestanden blijven lokaal; er is geen automatische upload of
+ERPNext-taaksynchronisatie. CAD-bijlagen openen met de bestaande ERPNext-rechten.
+De IFC Viewer kan eveneens een lokaal model openen zonder upload.
+
+De meegeleverde bronarchieven en toollicenties staan onder
+`y_next/public/app/studios/`. Planner-herstelopslag wordt per ERPNext-gebruiker
+gescheiden. Informatie over bouwen en beperkingen staat op de
+[ontwikkelbranch](https://github.com/OpenAEC-Foundation/Y-app-ERPNext/blob/codex/y-next-office-editors/docs/studios.md).
 
 ## Calc en Writer
 

@@ -74,6 +74,7 @@ const MailView = lazy(() => import("./pages/MailView"));
 const VoorbeeldVenster = lazy(() => import("./pages/VoorbeeldVenster"));
 const Office = lazy(() => import("./pages/Office"));
 const IfcViewer = lazy(() => import("./pages/IfcViewer"));
+const Studio = lazy(() => import("./pages/Studio"));
 import LoginScherm from "./components/LoginScherm";
 const MessengerView = lazy(() => import("./pages/MessengerView"));
 // Iframe-host voor extensies. Lazy (was statisch) zodat de host — inclusief
@@ -308,9 +309,8 @@ function gate(path: string, element: ReactElement): ReactElement {
  * (instant), plus a silent background refresh so the saved view is verified
  * against the server ("op de achtergrond checken").
  *
- * Scope is deliberately limited to Webmail — no generic keep-alive stack. One
- * extra mounted page is an acceptable memory cost; keeping all pages alive is
- * not.
+ * Dit is geen algemene keep-alive-stack. CAD heeft hieronder afzonderlijk
+ * hetzelfde patroon om onopgeslagen tekeningen tijdens navigatie te bewaren.
  *
  * Alleen gemount wanneer er een mail-databron is: `webmail` (de IMAP-brug via
  * de Express-server) of `erpnext-mail` (de Communication-variant). Staan beide
@@ -351,6 +351,18 @@ function KeepAliveWebmail({ active }: { active: boolean }) {
 }
 
 /* ── Main app layout ── */
+
+/** Bewaart het lokale tekenwerk bij zijbalk-, hash- en router-navigatie. */
+function KeepAliveCadStudio({ active }: { active: boolean }) {
+  const [mounted, setMounted] = useState(active);
+  useEffect(() => { if (active) setMounted(true); }, [active]);
+  if (!mounted) return null;
+  return <div className="h-full" style={{ display: active ? undefined : "none" }} aria-hidden={active ? undefined : true}>
+    <ErrorBoundary resetKey="cad-studio-keepalive">
+      <Suspense fallback={<PageLoader />}><Studio kind="cad" /></Suspense>
+    </ErrorBoundary>
+  </div>;
+}
 
 function AuthenticatedApp({ user }: { user: UserContext }) {
   const { t } = useTranslation();
@@ -522,6 +534,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   KeepAliveWebmail above. */}
               {(isFeatureEnabled("webmail") || isFeatureEnabled(ERPNEXT_MAIL))
                 && <KeepAliveWebmail active={activePage === "webmail"} />}
+              <KeepAliveCadStudio active={location.pathname === "/cad-studio"} />
               {/* Defense-in-depth against issue #103 (a page-level crash
                   used to blank the entire app with no way back): any
                   uncaught render error in the active route now shows a
@@ -542,6 +555,8 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/projects" element={gate("/projects", <Projects />)} />
                   <Route path="/office" element={gate("/office", <Office />)} />
                   <Route path="/ifc-viewer" element={gate("/ifc-viewer", <IfcViewer />)} />
+                  <Route path="/cad-studio" element={<></>} />
+                  <Route path="/planner-studio" element={<Studio kind="planner" />} />
                   <Route path="/tasks" element={gate("/tasks", <Tasks />)} />
                   <Route path="/subtasks" element={gate("/subtasks", <Subtasks />)} />
                   <Route path="/planning" element={gate("/planning", <Planning />)} />
