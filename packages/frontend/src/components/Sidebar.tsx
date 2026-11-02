@@ -4,7 +4,7 @@ import {
   FileBarChart, ClipboardCheck, Users, CalendarDays, Map as MapIcon, Search,
   TrendingUp, Clock, PieChart, BookOpen, Receipt, Truck, Timer,
   FileSpreadsheet, Wallet, CalendarCheck, Settings, BarChart3,
-  ListTodo, LayoutDashboard, UserCheck, Cloud, ListTree,
+  ListTodo, Lightbulb, LayoutDashboard, UserCheck, Cloud, ListTree,
   Calendar, CalendarRange, ChevronDown, ChevronRight, Landmark, BookMarked, Shield, MessageSquare, ClipboardList, Contact,
   Target, Banknote, PenLine, X, PanelLeftClose, PanelLeftOpen, Puzzle, NotebookPen,
 } from "lucide-react";
@@ -36,7 +36,7 @@ export type Page =
   | "calendar" | "weekplanning" | "ledgers" | "bank-transactions" | "booking-program"
   | "wiki" | "passwords" | "messenger" | "erpnext-overview" | "contacts"
   | "meeting-notes" | "notities" | "leads" | "liquidity-planning" | "letters"
-  | "release-notes" | "office"
+  | "release-notes" | "office" | "brainstorm"
   | "to-invoice";
 
 export type ViewMode = "employer" | "employee";
@@ -72,7 +72,7 @@ const ROLE_PAGE_MAP: Record<string, Set<Page>> = {
 
 /** Pages everyone can see regardless of roles */
 const UNIVERSAL_PAGES: Set<Page> = new Set([
-  "dashboard", "settings", "contacts", "calendar", "weekplanning", "todo", "wiki",
+  "dashboard", "settings", "contacts", "calendar", "weekplanning", "todo", "wiki", "brainstorm",
   "webmail", "messenger", "meeting-notes", "notities", "letters", "release-notes",
   "nextcloud-files", "nextcloud-talk", "passwords", "erpnext-overview", "office",
 ]);
@@ -174,6 +174,7 @@ function getSections(): NavSection[] {
         { id: "roadmap", labelKey: "nav.roadmap", icon: MapIcon },
         { id: "timesheets", labelKey: "nav.timesheets", icon: Timer },
         { id: "todo", labelKey: "nav.todo", icon: ListTodo },
+        { id: "brainstorm", labelKey: "nav.brainstorm", icon: Lightbulb },
       ],
     },
     {

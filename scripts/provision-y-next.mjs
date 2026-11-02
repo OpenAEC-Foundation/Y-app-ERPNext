@@ -226,6 +226,18 @@ async function safeFetch(url, options) {
  * @param {object} definition — moet een `name` bevatten
  * @returns {Promise<"created" | "existing">}
  */
+/**
+ * De drie doctypes van de brainstorm: ideeën, hun checklist (kindtabel) en de
+ * gedeelde labellijst. De kindtabel staat vooraan, want het idee heeft er een
+ * Table-veld naar. De standaardlabels zet de pagina zelf neer zodra de lijst
+ * leeg is, niet dit script: wie een label weghaalt, wil het niet bij de
+ * volgende provisionering terugzien.
+ * @returns {object[]}
+ */
+export function buildBrainstormDoctypes() {
+  return ["y_brainstorm_punt", "y_brainstorm_label", "y_brainstorm_idee"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
 async function ensureDoctype(baseUrl, token, definition) {
   const authHeader = `token ${token}`;
   const name = definition.name;
@@ -1025,6 +1037,7 @@ export async function provision({ baseUrl, token }) {
     buildOnkostensoortDoctype(),
     buildKmRegistratieDoctype(),
     buildOnkostenDoctype(),
+    ...buildBrainstormDoctypes(),
   ];
   const created = [];
   const existing = [];
