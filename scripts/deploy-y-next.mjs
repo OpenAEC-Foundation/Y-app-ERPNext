@@ -324,6 +324,14 @@ async function main() {
     const uploadBody = await uploadRes.json();
     const fileUrl = uploadBody?.message?.file_url;
     const expectedUrl = `/files/${asset.name}`;
+    // Een public/-bestand zonder build-prefix (manifest.json, y-logo.svg) waarvan
+    // al een oudere versie op de site staat, krijgt van Frappe een andere naam.
+    // Geen chunk en geen loader verwijst ernaar, dus dat breekt niets; de oude
+    // blijft gewoon staan.
+    if (fileUrl !== expectedUrl && !(buildTag && asset.name.startsWith(`y${buildTag}-`))) {
+      console.log(`Let op: ${asset.name} bestond al met andere inhoud; Frappe bewaarde hem als ${fileUrl}. Niet gebruikt door de pagina.`);
+      continue;
+    }
     if (fileUrl !== expectedUrl) {
       throw new Error(
         `HARD ABORT: upload van "${asset.name}" kreeg file_url "${fileUrl}" terug ` +
