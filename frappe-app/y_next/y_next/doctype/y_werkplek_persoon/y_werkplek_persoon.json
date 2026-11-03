@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:naam",
+ "creation": "2026-11-03 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naam",
+  "gebruiker",
+  "dag_ma",
+  "dag_di",
+  "dag_wo",
+  "dag_do",
+  "dag_vr",
+  "wisselend",
+  "af_en_toe",
+  "actief",
+  "volgorde",
+  "notitie"
+ ],
+ "fields": [
+  {
+   "fieldname": "naam",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Naam",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "gebruiker",
+   "fieldtype": "Data",
+   "options": "Email",
+   "in_list_view": 1,
+   "label": "ERP-gebruiker",
+   "description": "E-mailadres van het ERP-account. Leeg voor iemand zonder account: die krijgt geen taken."
+  },
+  {
+   "fieldname": "dag_ma",
+   "fieldtype": "Select",
+   "label": "Maandag",
+   "options": "\nKantoor\nThuis\nKeuze"
+  },
+  {
+   "fieldname": "dag_di",
+   "fieldtype": "Select",
+   "label": "Dinsdag",
+   "options": "\nKantoor\nThuis\nKeuze"
+  },
+  {
+   "fieldname": "dag_wo",
+   "fieldtype": "Select",
+   "label": "Woensdag",
+   "options": "\nKantoor\nThuis\nKeuze"
+  },
+  {
+   "fieldname": "dag_do",
+   "fieldtype": "Select",
+   "label": "Donderdag",
+   "options": "\nKantoor\nThuis\nKeuze"
+  },
+  {
+   "fieldname": "dag_vr",
+   "fieldtype": "Select",
+   "label": "Vrijdag",
+   "options": "\nKantoor\nThuis\nKeuze"
+  },
+  {
+   "default": "0",
+   "fieldname": "wisselend",
+   "fieldtype": "Check",
+   "label": "Wisselend",
+   "description": "Geen vast patroon: geeft per week door wanneer hij of zij komt."
+  },
+  {
+   "default": "0",
+   "fieldname": "af_en_toe",
+   "fieldtype": "Check",
+   "label": "Af en toe"
+  },
+  {
+   "default": "1",
+   "fieldname": "actief",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Actief"
+  },
+  {
+   "default": "0",
+   "fieldname": "volgorde",
+   "fieldtype": "Int",
+   "label": "Volgorde"
+  },
+  {
+   "fieldname": "notitie",
+   "fieldtype": "Data",
+   "label": "Notitie"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Y Werkplek Persoon",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Employee"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Projects User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "volgorde",
+ "sort_order": "ASC",
+ "states": []
+}

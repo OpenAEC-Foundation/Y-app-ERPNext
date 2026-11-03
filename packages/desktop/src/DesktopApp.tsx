@@ -62,6 +62,7 @@ const ManagementDashboard = lazy(() => import("@frontend/pages/ManagementDashboa
 const ExtensionHost = lazy(() => import("@frontend/components/ExtensionHost"));
 const Todo = lazy(() => import("@frontend/pages/Todo"));
 const Brainstorm = lazy(() => import("@frontend/pages/Brainstorm"));
+const Werkplekken = lazy(() => import("@frontend/pages/Werkplekken"));
 const Profitability = lazy(() => import("@frontend/pages/Profitability"));
 const NextCloudFiles = lazy(() => import("@frontend/pages/NextCloudFiles"));
 const NextCloudTalk = lazy(() => import("@frontend/pages/NextCloudTalk"));
@@ -940,6 +941,7 @@ function DesktopAuthenticatedApp({ user }: { user: { username: string; fullName:
                     <Route path="/x/:extId/*" element={<ExtensionHost />} />
                     <Route path="/todo" element={<Todo />} />
                     <Route path="/brainstorm" element={<Brainstorm />} />
+                    <Route path="/werkplekken" element={<Werkplekken />} />
                     <Route path="/wiki/*" element={<Wiki />} />
                     <Route path="/passwords" element={<Passwords />} />
                     <Route path="/contacts" element={<Contacts />} />

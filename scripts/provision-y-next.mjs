@@ -238,6 +238,17 @@ export function buildBrainstormDoctypes() {
   return ["y_brainstorm_punt", "y_brainstorm_label", "y_brainstorm_idee"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
 }
 
+/**
+ * De drie doctypes van de werkplekindeling: personen, werkplekken (met een
+ * link naar hun vaste persoon) en boekingen per dag. De personen staan
+ * vooraan, want de andere twee linken ernaar en Frappe weigert een Link naar
+ * een doctype dat nog niet bestaat.
+ * @returns {object[]}
+ */
+export function buildWerkplekDoctypes() {
+  return ["y_werkplek_persoon", "y_werkplek", "y_werkplek_boeking"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
 async function ensureDoctype(baseUrl, token, definition) {
   const authHeader = `token ${token}`;
   const name = definition.name;
@@ -1038,6 +1049,7 @@ export async function provision({ baseUrl, token }) {
     buildKmRegistratieDoctype(),
     buildOnkostenDoctype(),
     ...buildBrainstormDoctypes(),
+    ...buildWerkplekDoctypes(),
   ];
   const created = [];
   const existing = [];

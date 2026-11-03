@@ -46,6 +46,7 @@ const Leave = lazy(() => import("./pages/Leave"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const Todo = lazy(() => import("./pages/Todo"));
 const Brainstorm = lazy(() => import("./pages/Brainstorm"));
+const Werkplekken = lazy(() => import("./pages/Werkplekken"));
 const Profitability = lazy(() => import("./pages/Profitability"));
 const NextCloudFiles = lazy(() => import("./pages/NextCloudFiles"));
 const NextCloudTalk = lazy(() => import("./pages/NextCloudTalk"));
@@ -590,6 +591,7 @@ function AuthenticatedApp({ user }: { user: UserContext }) {
                   <Route path="/settings/:tab" element={gate("/settings", <SettingsPage />)} />
                   <Route path="/todo" element={gate("/todo", <Todo />)} />
                   <Route path="/brainstorm" element={gate("/brainstorm", <Brainstorm />)} />
+                  <Route path="/werkplekken" element={gate("/werkplekken", <Werkplekken />)} />
                   <Route path="/wiki/*" element={gate("/wiki", <Wiki />)} />
                   <Route path="/passwords" element={gate("/passwords", <Passwords />)} />
                   <Route path="/contacts" element={gate("/contacts", <Contacts />)} />
