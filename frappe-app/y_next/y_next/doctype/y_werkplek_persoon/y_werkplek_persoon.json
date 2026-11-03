@@ -16,6 +16,7 @@
   "dag_vr",
   "wisselend",
   "af_en_toe",
+  "geen_werkplek",
   "actief",
   "volgorde",
   "notitie"
@@ -81,6 +82,13 @@
    "label": "Af en toe"
   },
   {
+   "default": "0",
+   "fieldname": "geen_werkplek",
+   "fieldtype": "Check",
+   "label": "Geen werkplek",
+   "description": "Staat wel in de lijst met mensen (bijvoorbeeld bij de apps), maar krijgt geen bureau bij Werkplekken."
+  },
+  {
    "default": "1",
    "fieldname": "actief",
    "fieldtype": "Check",
@@ -102,7 +110,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-03 12:00:00.000000",
+ "modified": "2026-11-03 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Y Next",
  "name": "Y Werkplek Persoon",

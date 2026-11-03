@@ -47,6 +47,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
     sectionToggleable: true,
     items: [
       { id: "projects", label: "Projecten" },
+      { id: "ecosysteem", label: "Ecosysteem" },
       { id: "quotations", label: "Offertes" },
       { id: "salesorders", label: "Verkooporders" },
       { id: "leads", label: "Leads" },

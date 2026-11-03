@@ -99,7 +99,7 @@ function satisfiedPermsHandler(url) {
 }
 
 /** De DocTypes die dit script zelf aanmaakt (fase 1). */
-const OWN_DOCTYPES = ["Y Meeting Note", "Y Next Setting", "Y Onkostensoort", "Y Km Registratie", "Y Onkosten", "Y Brainstorm Punt", "Y Brainstorm Label", "Y Brainstorm Idee", "Y Werkplek Persoon", "Y Werkplek", "Y Werkplek Boeking"];
+const OWN_DOCTYPES = ["Y Meeting Note", "Y Next Setting", "Y Onkostensoort", "Y Km Registratie", "Y Onkosten", "Y Brainstorm Punt", "Y Brainstorm Label", "Y Brainstorm Idee", "Y Werkplek Persoon", "Y Werkplek", "Y Werkplek Boeking", "Y App Lid", "Y App"];
 
 /** true voor een GET op de DocType-meta van één van onze eigen doctypes. */
 function isOwnDoctypeUrl(url) {
@@ -256,7 +256,7 @@ test("provision: slaat bestaande DocTypes over (GET 200 -> geen POST)", async ()
   });
   try {
     const result = await provision({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
-    assert.deepEqual(result.existing.sort(), ["Y Brainstorm Idee", "Y Brainstorm Label", "Y Brainstorm Punt", "Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort", "Y Werkplek", "Y Werkplek Boeking", "Y Werkplek Persoon"]);
+    assert.deepEqual(result.existing.sort(), ["Y App", "Y App Lid", "Y Brainstorm Idee", "Y Brainstorm Label", "Y Brainstorm Punt", "Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort", "Y Werkplek", "Y Werkplek Boeking", "Y Werkplek Persoon"]);
     assert.deepEqual(result.created, []);
     const calls = doctypeCalls(mock.calls);
     assert.equal(calls.filter((c) => c.init?.method === "POST").length, 0);
@@ -283,7 +283,7 @@ test("provision: maakt een DocType aan wanneer GET 404 geeft", async () => {
   });
   try {
     const result = await provision({ baseUrl: "https://example.frappe.cloud", token: "key:secret" });
-    assert.deepEqual(result.created.sort(), ["Y Brainstorm Idee", "Y Brainstorm Label", "Y Brainstorm Punt", "Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort", "Y Werkplek", "Y Werkplek Boeking", "Y Werkplek Persoon"]);
+    assert.deepEqual(result.created.sort(), ["Y App", "Y App Lid", "Y Brainstorm Idee", "Y Brainstorm Label", "Y Brainstorm Punt", "Y Km Registratie", "Y Meeting Note", "Y Next Setting", "Y Onkosten", "Y Onkostensoort", "Y Werkplek", "Y Werkplek Boeking", "Y Werkplek Persoon"]);
     assert.deepEqual(result.existing, []);
     const postCalls = doctypeCalls(mock.calls).filter((c) => c.init?.method === "POST");
     assert.equal(postCalls.length, OWN_DOCTYPES.length);

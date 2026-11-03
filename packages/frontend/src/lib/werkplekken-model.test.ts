@@ -8,7 +8,7 @@ import {
 const persoon = (name: string, dagen: Partial<Persoon> = {}, volgorde = 0): Persoon => ({
   name, naam: name, gebruiker: `${name.toLowerCase()}@open-aec.com`,
   dag_ma: "", dag_di: "", dag_wo: "", dag_do: "", dag_vr: "",
-  wisselend: 0, af_en_toe: 0, actief: 1, volgorde, notitie: null, ...dagen,
+  wisselend: 0, af_en_toe: 0, geen_werkplek: 0, actief: 1, volgorde, notitie: null, ...dagen,
 });
 const plek = (name: string, volgorde: number, extra: Partial<Werkplek> = {}): Werkplek => ({
   name, plek: name, ruimte: "Hoofdkantoor", omschrijving: null, vaste_persoon: null, voorkeur_persoon: null,

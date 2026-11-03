@@ -249,6 +249,17 @@ export function buildWerkplekDoctypes() {
   return ["y_werkplek_persoon", "y_werkplek", "y_werkplek_boeking"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
 }
 
+/**
+ * De apps van het ecosysteem: per app wie productmanager en eindverantwoordelijke
+ * is, wie eraan werkt (kindtabel) en in welk project de taken staan. Na de
+ * werkplekdoctypes, want de mensen komen uit `Y Werkplek Persoon`; de
+ * kindtabel staat vooraan.
+ * @returns {object[]}
+ */
+export function buildAppDoctypes() {
+  return ["y_app_lid", "y_app"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
 async function ensureDoctype(baseUrl, token, definition) {
   const authHeader = `token ${token}`;
   const name = definition.name;
@@ -1050,6 +1061,7 @@ export async function provision({ baseUrl, token }) {
     buildOnkostenDoctype(),
     ...buildBrainstormDoctypes(),
     ...buildWerkplekDoctypes(),
+    ...buildAppDoctypes(),
   ];
   const created = [];
   const existing = [];

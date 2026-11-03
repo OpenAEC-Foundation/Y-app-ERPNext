@@ -22,6 +22,7 @@ import { QuickKmBooking } from "./QuickKmBooking";
 import { MyTodoList } from "./MyTodoList";
 import { TaskList } from "./TaskList";
 import { TodayAgendaWidget } from "./TodayAgendaWidget";
+import { MijnWerkplekWidget } from "./MijnWerkplekWidget";
 
 // Re-export QuickKmBooking so external imports keep working
 export { QuickKmBooking } from "./QuickKmBooking";
@@ -40,6 +41,7 @@ const ALL_WIDGET_DEFS: { id: string; labelKey: string; visibility: WidgetVisibil
   { id: "leave", labelKey: "dashboard.my_leave", visibility: "employee" },
   { id: "birthdays", labelKey: "dashboard.birthdays", visibility: "employee" },
   { id: "today-agenda", labelKey: "dashboard.todays_agenda", visibility: "all" },
+  { id: "my-workplace", labelKey: "widget.my_workplace", visibility: "all" },
 ];
 
 /**
@@ -66,6 +68,7 @@ const DEFAULT_EMPLOYER_LAYOUT: WidgetPlacement[] = [
   { id: "km-booking", col: 0 },
   { id: "my-tasks", col: 1 },
   { id: "today-agenda", col: 1 },
+  { id: "my-workplace", col: 1 },
   { id: "tasks", col: 0 },
   { id: "werkvoorraad", col: 0 },
   { id: "todos", col: 1 },
@@ -78,6 +81,7 @@ const DEFAULT_EMPLOYEE_LAYOUT: WidgetPlacement[] = [
   { id: "km-booking", col: 0 },
   { id: "my-tasks", col: 1 },
   { id: "today-agenda", col: 1 },
+  { id: "my-workplace", col: 1 },
   { id: "leave", col: 0 },
   { id: "todos", col: 1 },
   { id: "email", col: 1 },
@@ -177,6 +181,9 @@ function WidgetColumn({
         break;
       case "today-agenda":
         content = <TodayAgendaWidget onNavigate={onNavigate} />;
+        break;
+      case "my-workplace":
+        content = <MijnWerkplekWidget onNavigate={onNavigate} />;
         break;
       default:
         return null;

@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useTranslation } from "react-i18next";
 import { Armchair, ChevronLeft, ChevronRight, RefreshCw, Settings2 } from "lucide-react";
 import { useProjects } from "../lib/DataContext";
+import { listApps } from "../lib/apps";
+import { appsVanPersoon, type App } from "../lib/apps-model";
 import {
   listBoekingen, listOpenTaken, listPersonen, listWerkplekken, werkplekkenStand, type WerkplekkenStand,
 } from "../lib/werkplekken";
 import {
-  DAGEN, deelInWeek, groepVan, invulling, isoDatum, maandagVan, perRuimte, sorteerPersonen,
+  berekenWeek, groepVan, opKantoorTePlaatsen, isoDatum, maandagVan, perRuimte, sorteerPersonen,
   weekNummer, werkdagen,
-  type Boeking, type Dag, type DagInvulling, type Persoon, type PersoonGroep, type Plaatsing, type TaakRegel, type Werkplek,
+  type Boeking, type DagInvulling, type DagOverzicht, type Persoon, type PersoonGroep, type TaakRegel, type Werkplek,
 } from "../lib/werkplekken-model";
 import { Kader, PersoonVakje } from "../components/werkplekken/Vakje";
 import { VAKJE, persoonsKleur } from "../components/werkplekken/werkplekken-ui";
@@ -19,12 +21,6 @@ import Beheer from "../components/werkplekken/Beheer";
 type View = "plek" | "persoon";
 const VIEW_KEY = "pref_werkplekken_view";
 
-interface DagOverzicht {
-  datum: string;
-  dag: Dag;
-  standen: Map<string, DagInvulling>;
-  plaatsing: Map<string, Plaatsing>;
-}
 
 /**
  * Werkplekken: wie zit wanneer op welke plek, en waaraan werkt hij of zij.
@@ -45,6 +41,7 @@ export default function Werkplekken() {
   const [werkplekken, setWerkplekken] = useState<Werkplek[]>([]);
   const [boekingen, setBoekingen] = useState<Boeking[]>([]);
   const [taken, setTaken] = useState<TaakRegel[]>([]);
+  const [apps, setApps] = useState<App[]>([]);
   const [view, setView] = useState<View>(() => {
     try { return localStorage.getItem(VIEW_KEY) === "persoon" ? "persoon" : "plek"; } catch { return "plek"; }
   });
@@ -61,15 +58,18 @@ export default function Werkplekken() {
       setStand(s);
       setError(null);
       if (s !== "klaar") return;
-      const [p, w, b, tk] = await Promise.all([
+      const [p, w, b, tk, ap] = await Promise.all([
         listPersonen(), listWerkplekken(), listBoekingen(dagen[0], dagen[4]),
         // Zonder takenrechten blijft het overzicht bruikbaar, alleen zonder taken.
         listOpenTaken().catch(() => [] as TaakRegel[]),
+        // De apps zijn een extraatje: zonder doctype of rechten gewoon geen.
+        listApps().catch(() => [] as App[]),
       ]);
       setPersonen(p);
       setWerkplekken(w);
       setBoekingen(b);
       setTaken(tk);
+      setApps(ap);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     }
@@ -88,18 +88,15 @@ export default function Werkplekken() {
     try { localStorage.setItem(VIEW_KEY, v); } catch { /* alleen gemak */ }
   }
 
-  const actief = useMemo(() => sorteerPersonen(personen.filter((p) => p.actief)), [personen]);
+  // Kleuren over iedereen die actief is, zoals bij Ecosysteem; de rijen alleen wie een werkplek krijgt.
+  const alleActief = useMemo(() => sorteerPersonen(personen.filter((p) => p.actief)), [personen]);
+  const actief = useMemo(() => opKantoorTePlaatsen(personen), [personen]);
   // De hele week in één keer indelen, zodat iemand steeds op dezelfde plek zit.
-  const week: DagOverzicht[] = useMemo(() => {
-    const standen = dagen.map((datum, i) => new Map(actief.map((p) =>
-      [p.name, invulling(p, DAGEN[i], boekingen.find((b) => b.persoon === p.name && b.datum === datum))])));
-    const plaatsing = deelInWeek(actief, werkplekken, standen);
-    return dagen.map((datum, i) => ({ datum, dag: DAGEN[i], standen: standen[i], plaatsing: plaatsing[i] }));
-  }, [dagen, actief, werkplekken, boekingen]);
+  const week: DagOverzicht[] = useMemo(() => berekenWeek(personen, werkplekken, boekingen, maandag), [personen, werkplekken, boekingen, maandag]);
 
   const persoonVan = (name: string | null | undefined) => personen.find((p) => p.name === name);
   const plekNaam = (id: string) => werkplekken.find((w) => w.name === id)?.plek || id;
-  const kleurVan = (name: string) => persoonsKleur(actief.findIndex((p) => p.name === name));
+  const kleurVan = (name: string) => persoonsKleur(alleActief.findIndex((p) => p.name === name));
   const datumTekst = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString(i18n.language, { weekday: "short", day: "numeric", month: "short" });
   const verschuif = (weken: number) => setMaandag((m) => new Date(m.getFullYear(), m.getMonth(), m.getDate() + 7 * weken));
 
@@ -289,6 +286,7 @@ export default function Werkplekken() {
       {open && openPersoon && openDag && (
         <DagDialog key={`${open.persoon}-${open.datum}`} persoon={openPersoon} datum={open.datum} dag={openDag.dag}
           boekingen={boekingen.filter((b) => b.persoon === open.persoon && b.datum === open.datum)}
+          apps={appsVanPersoon(apps, open.persoon).map((x) => x.naam)}
           taken={taken} projecten={projecten} vrijdag={dagen[4]} datumTekst={datumTekst}
           onClose={() => setOpen(null)} onChanged={fetchAll} />
       )}

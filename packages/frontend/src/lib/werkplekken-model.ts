@@ -45,6 +45,8 @@ export interface Persoon {
   dag_vr: PatroonWaarde | null;
   wisselend: 0 | 1;
   af_en_toe: 0 | 1;
+  /** Staat in de lijst met mensen (bijvoorbeeld bij de apps), maar krijgt geen bureau. */
+  geen_werkplek: 0 | 1;
   actief: 0 | 1;
   volgorde: number;
   notitie: string | null;
@@ -250,6 +252,39 @@ export function deelInWeek(
     }
   });
   return uit;
+}
+
+export interface DagOverzicht {
+  datum: string;
+  dag: Dag;
+  standen: Map<string, DagInvulling>;
+  plaatsing: Map<string, Plaatsing>;
+}
+
+/**
+ * De hele week van maandag tot en met vrijdag: per dag hoe iedereen ervoor
+ * staat en waar wie zit. Dezelfde berekening voor de pagina en de widget op
+ * het dashboard, zodat ze nooit iets anders laten zien.
+ */
+export function berekenWeek(personen: Persoon[], werkplekken: Werkplek[], boekingen: Boeking[], maandag: Date): DagOverzicht[] {
+  const actief = opKantoorTePlaatsen(personen);
+  const dagen = werkdagen(maandag);
+  const standen = dagen.map((datum, i) => new Map(actief.map((p) =>
+    [p.name, invulling(p, DAGEN[i], boekingen.find((b) => b.persoon === p.name && b.datum === datum))])));
+  const plaatsing = deelInWeek(actief, werkplekken, standen);
+  return dagen.map((datum, i) => ({ datum, dag: DAGEN[i], standen: standen[i], plaatsing: plaatsing[i] }));
+}
+
+/** Wie bij Werkplekken meetelt: actief en niet met "geen werkplek". */
+export function opKantoorTePlaatsen(personen: Persoon[]): Persoon[] {
+  return sorteerPersonen(personen.filter((p) => p.actief && !p.geen_werkplek));
+}
+
+/** De persoon die bij een ERP-gebruiker hoort, of undefined. */
+export function persoonVanGebruiker(personen: Persoon[], gebruiker: string | null | undefined): Persoon | undefined {
+  if (!gebruiker) return undefined;
+  const wie = gebruiker.toLowerCase();
+  return personen.find((p) => p.actief && (p.gebruiker || "").toLowerCase() === wie);
 }
 
 /** Eén dag indelen; dezelfde regels als `deelInWeek`. */

@@ -28,7 +28,7 @@ export async function werkplekkenStand(): Promise<WerkplekkenStand> {
   }
 }
 
-const PERSOON_FIELDS = ["name", "naam", "gebruiker", "dag_ma", "dag_di", "dag_wo", "dag_do", "dag_vr", "wisselend", "af_en_toe", "actief", "volgorde", "notitie"];
+const PERSOON_FIELDS = ["name", "naam", "gebruiker", "dag_ma", "dag_di", "dag_wo", "dag_do", "dag_vr", "wisselend", "af_en_toe", "geen_werkplek", "actief", "volgorde", "notitie"];
 const WERKPLEK_FIELDS = ["name", "plek", "ruimte", "omschrijving", "vaste_persoon", "voorkeur_persoon", "volgorde", "actief"];
 const BOEKING_FIELDS = ["name", "persoon", "datum", "status", "werkplek", "notitie"];
 

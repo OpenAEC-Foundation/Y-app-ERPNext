@@ -66,6 +66,7 @@ export default function Beheer({ personen, werkplekken, onClose, onChanged }: {
                     <th className="py-2 pr-2 font-medium">{t("werkplekken.erp_account")}</th>
                     {DAGEN.map((d) => <th key={d} className="py-2 px-0.5 font-medium text-center">{t(`werkplekken.dag.${d}`)}</th>)}
                     <th className="py-2 px-1 font-medium text-center">{t("werkplekken.wisselend")}</th>
+                    <th className="py-2 px-1 font-medium text-center">{t("werkplekken.geen_werkplek")}</th>
                     <th className="py-2 px-1 font-medium text-center">{t("werkplekken.actief")}</th>
                     <th className="py-2 pr-2 font-medium">{t("werkplekken.notitie")}</th>
                     <th />
@@ -147,7 +148,7 @@ const DAGKNOP: Record<PatroonWaarde, string> = {
 function leegPersoon(volgorde: number): PersoonGegevens {
   return {
     naam: "", gebruiker: null, dag_ma: "", dag_di: "", dag_wo: "", dag_do: "", dag_vr: "",
-    wisselend: 0, af_en_toe: 0, actief: 1, volgorde, notitie: null,
+    wisselend: 0, af_en_toe: 0, geen_werkplek: 0, actief: 1, volgorde, notitie: null,
   };
 }
 
@@ -209,7 +210,7 @@ function PersoonRij({ persoon, gebruikers, volgorde = 0, onChanged, onCancel }: 
           </td>
         );
       })}
-      {(["wisselend", "actief"] as const).map((k) => (
+      {(["wisselend", "geen_werkplek", "actief"] as const).map((k) => (
         <td key={k} className="py-1.5 px-1 text-center">
           <input type="checkbox" checked={!!concept[k]} onChange={(e) => zet(k, e.target.checked ? 1 : 0)} aria-label={t(`werkplekken.${k}`)} className="accent-y-teal" />
         </td>
