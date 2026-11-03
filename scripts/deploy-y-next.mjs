@@ -251,6 +251,44 @@ export function addBuildMarker(name, data, buildTag) {
   return Buffer.concat([data, Buffer.from(marker, "utf8")]);
 }
 
+/** Tekst-assets: die krijgen een build-marker en kunnen verwijzingen bevatten. */
+const TEKST_EXTENSIES = [".js", ".mjs", ".css", ".svg", ".json", ".map"];
+
+function isTekstAsset(name) {
+  const match = /\.[^./\\]+$/.exec(name);
+  return TEKST_EXTENSIES.includes(match ? match[0].toLowerCase() : "");
+}
+
+/**
+ * Uploadvolgorde: eerst de binaire bestanden (lettertypen, wasm, plaatjes),
+ * dan de tekst. Zo weten we bij elke CSS/JS al onder welke naam Frappe de
+ * binaire bestanden waar die naar verwijst heeft bewaard.
+ * @template {{ name: string }} T
+ * @param {T[]} assets
+ * @returns {T[]}
+ */
+export function uploadVolgorde(assets) {
+  return [...assets.filter((a) => !isTekstAsset(a.name)), ...assets.filter((a) => isTekstAsset(a.name))];
+}
+
+/**
+ * Binaire assets (vooral de lettertypen) zijn tussen builds byte-identiek en
+ * krijgen geen marker. Frappe dedupliceert op inhoud en geeft dan de URL van
+ * de vorige upload terug, met de build-tag van toen. Dat bestand bestaat en
+ * heeft exact dezelfde inhoud, dus we gebruiken het gewoon: in de tekst-assets
+ * wordt de nieuwe naam vervangen door de bestaande.
+ * @param {string} name
+ * @param {Buffer} data
+ * @param {Map<string, string>} aliassen — nieuwe bestandsnaam → bestaande
+ * @returns {Buffer}
+ */
+export function pasVerwijzingenAan(name, data, aliassen) {
+  if (aliassen.size === 0 || !isTekstAsset(name)) return data;
+  let tekst = data.toString("utf8");
+  for (const [nieuw, bestaand] of aliassen) tekst = tekst.split(nieuw).join(bestaand);
+  return Buffer.from(tekst, "utf8");
+}
+
 /**
  * Bepaalt of de Web Page geüpdatet (PUT) of aangemaakt (POST) moet worden.
  * @param {{ name: string }[]} lookupRows
@@ -305,9 +343,10 @@ async function main() {
     `Gevonden ${assets.length} assets in dist/ (entry: ${entryJs}, css: ${cssFiles.length}, build-tag: ${buildTag || "onbekend"}).`
   );
 
-  // 3. Elk asset uploaden als publieke File.
-  for (const asset of assets) {
-    const data = addBuildMarker(asset.name, readFileSync(asset.path), buildTag);
+  // 3. Elk asset uploaden als publieke File; binaire eerst (zie uploadVolgorde).
+  const aliassen = new Map();
+  for (const asset of uploadVolgorde(assets)) {
+    const data = addBuildMarker(asset.name, pasVerwijzingenAan(asset.name, readFileSync(asset.path), aliassen), buildTag);
     const form = new FormData();
     form.append("file", new Blob([data], { type: mimeTypeFor(asset.name) }), asset.name);
     form.append("is_private", "0");
@@ -330,6 +369,13 @@ async function main() {
     // blijft gewoon staan.
     if (fileUrl !== expectedUrl && !(buildTag && asset.name.startsWith(`y${buildTag}-`))) {
       console.log(`Let op: ${asset.name} bestond al met andere inhoud; Frappe bewaarde hem als ${fileUrl}. Niet gebruikt door de pagina.`);
+      continue;
+    }
+    // Een binair bestand dat Frappe al had (zelfde inhoud, naam van een vorige
+    // build): hergebruiken en de verwijzingen ernaar omzetten.
+    if (fileUrl !== expectedUrl && !isTekstAsset(asset.name) && typeof fileUrl === "string" && fileUrl.startsWith("/files/")) {
+      aliassen.set(asset.name, fileUrl.slice("/files/".length));
+      console.log(`Hergebruikt: ${asset.name} -> ${fileUrl} (zelfde inhoud stond er al).`);
       continue;
     }
     if (fileUrl !== expectedUrl) {
