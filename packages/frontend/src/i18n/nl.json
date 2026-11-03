@@ -3640,5 +3640,7 @@
   "werkplekken.volgorde": "Volgorde",
   "werkplekken.iemand_neerzetten": "Iemand op deze plek neerzetten",
   "werkplekken.wie_zit_hier": "Wie zit hier die dag?",
-  "werkplekken.iedereen_heeft_plek": "Iedereen die op kantoor is, heeft al een plek."
+  "werkplekken.iedereen_heeft_plek": "Iedereen die op kantoor is, heeft al een plek.",
+  "werkplekken.soort.vast": "vast bureau",
+  "werkplekken.soort.flex": "flexplek"
 }

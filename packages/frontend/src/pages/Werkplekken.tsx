@@ -168,12 +168,13 @@ export default function Werkplekken() {
       {titel}{extra && <span className="ml-2 font-normal normal-case tracking-normal text-slate-400">{extra}</span>}
     </td></tr>
   );
-  const naamCel = (titel: string, kleur?: string) => (
+  const naamCel = (titel: string, kleur?: string, sub?: string) => (
     <td className="py-1.5 pr-2 align-middle">
       <span className="flex items-center gap-2 text-sm font-medium text-slate-800 truncate">
         {kleur && <span className={`inline-block w-3 h-3 shrink-0 rounded border ${kleur}`} />}
         {titel}
       </span>
+      {sub && <span className="block text-[11px] text-slate-400 truncate">{sub}</span>}
     </td>
   );
   const persoonVakje = (p: Persoon, d: DagOverzicht, titel?: string) => (
@@ -192,7 +193,7 @@ export default function Werkplekken() {
             const eigenaar = persoonVan(w.vaste_persoon);
             return (
               <tr key={w.name} className="border-b border-slate-100">
-                {naamCel(w.plek)}
+                {naamCel(w.plek, undefined, t(eigenaar ? "werkplekken.soort.vast" : "werkplekken.soort.flex"))}
                 {week.map((d) => {
                   const hier = [...d.plaatsing.values()].filter((pl) => pl.werkplek === w.name);
                   return (

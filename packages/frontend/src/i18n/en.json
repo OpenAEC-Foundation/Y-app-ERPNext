@@ -3640,5 +3640,7 @@
   "werkplekken.volgorde": "Order",
   "werkplekken.iemand_neerzetten": "Put someone at this desk",
   "werkplekken.wie_zit_hier": "Who sits here that day?",
-  "werkplekken.iedereen_heeft_plek": "Everyone at the office already has a desk."
+  "werkplekken.iedereen_heeft_plek": "Everyone at the office already has a desk.",
+  "werkplekken.soort.vast": "assigned desk",
+  "werkplekken.soort.flex": "flex desk"
 }

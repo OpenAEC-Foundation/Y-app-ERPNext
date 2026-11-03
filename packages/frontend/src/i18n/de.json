@@ -3640,5 +3640,7 @@
   "werkplekken.volgorde": "Reihenfolge",
   "werkplekken.iemand_neerzetten": "Jemanden an diesen Platz setzen",
   "werkplekken.wie_zit_hier": "Wer sitzt an diesem Tag hier?",
-  "werkplekken.iedereen_heeft_plek": "Alle im Büro haben schon einen Platz."
+  "werkplekken.iedereen_heeft_plek": "Alle im Büro haben schon einen Platz.",
+  "werkplekken.soort.vast": "fester Platz",
+  "werkplekken.soort.flex": "Flexplatz"
 }
