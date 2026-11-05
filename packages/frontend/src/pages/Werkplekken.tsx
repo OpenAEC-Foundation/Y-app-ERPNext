@@ -286,6 +286,7 @@ export default function Werkplekken() {
       {open && openPersoon && openDag && (
         <DagDialog key={`${open.persoon}-${open.datum}`} persoon={openPersoon} datum={open.datum} dag={openDag.dag}
           boekingen={boekingen.filter((b) => b.persoon === open.persoon && b.datum === open.datum)}
+          plaatsing={openDag.plaatsing.get(open.persoon)} plekNaam={plekNaam}
           apps={appsVanPersoon(apps, open.persoon).map((x) => x.naam)}
           taken={taken} projecten={projecten} vrijdag={dagen[4]} datumTekst={datumTekst}
           onClose={() => setOpen(null)} onChanged={fetchAll} />

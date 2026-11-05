@@ -7,7 +7,7 @@ import type { ProjectRecord } from "../../lib/DataContext";
 import { zetDag } from "../../lib/werkplekken";
 import {
   BOEKING_STATUSSEN, patroonVan, takenOpDag, teLaat,
-  type Boeking, type BoekingStatus, type Dag, type Persoon, type TaakRegel,
+  type Boeking, type BoekingStatus, type Dag, type Persoon, type Plaatsing, type TaakRegel,
 } from "../../lib/werkplekken-model";
 
 /**
@@ -17,12 +17,15 @@ import {
  * een te geven.
  */
 export default function DagDialog({
-  persoon, datum, dag, boekingen, apps, taken, projecten, vrijdag, datumTekst, onClose, onChanged,
+  persoon, datum, dag, boekingen, plaatsing, plekNaam, apps, taken, projecten, vrijdag, datumTekst, onClose, onChanged,
 }: {
   persoon: Persoon;
   datum: string;
   dag: Dag;
   boekingen: Boeking[];
+  /** Waar de indeling deze persoon die dag heeft neergezet. */
+  plaatsing: Plaatsing | undefined;
+  plekNaam: (id: string) => string;
   /** De apps waar deze persoon aan werkt (namen). */
   apps: string[];
   taken: TaakRegel[];
@@ -58,6 +61,8 @@ export default function DagDialog({
   }
 
   const patroon = patroonVan(persoon, dag);
+  // Met de hand neergezet: "Van deze plek halen" haalt de boeking weg, zodat het patroon weer geldt.
+  const handmatig = plaatsing?.reden === "gekozen" || plaatsing?.reden === "dubbel";
   const patroonLabel = patroon ? t(`werkplekken.patroon.${patroon}`) : persoon.wisselend ? t("werkplekken.wisselend") : t("werkplekken.patroon.leeg");
   const projectNaam = (id: string | null) => projecten.find((p) => p.name === id)?.project_name || id || "";
   const lopend = takenOpDag(taken, persoon.gebruiker, datum);
@@ -87,6 +92,21 @@ export default function DagDialog({
               </Keuze>
             ))}
           </div>
+          {plaatsing?.werkplek && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <span className="min-w-0">
+                <span className="text-slate-500">{t("werkplekken.plek")}: </span>
+                <span className="font-medium text-slate-800">{plekNaam(plaatsing.werkplek)}</span>
+                <span className="text-xs text-slate-400"> · {t(handmatig ? "werkplekken.plek_met_de_hand" : "werkplekken.plek_automatisch_gekozen")}</span>
+              </span>
+              {handmatig && (
+                <button type="button" disabled={busy} onClick={() => zet(null)}
+                  className="shrink-0 px-3 py-1.5 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer disabled:opacity-50">
+                  {t("werkplekken.van_plek_halen")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-4 space-y-3">

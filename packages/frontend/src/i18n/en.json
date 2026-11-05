@@ -3690,5 +3690,8 @@
   "ecosysteem.archief_other": "Archive: {{count}} apps",
   "ecosysteem.naar_ecosysteem": "Add to ecosystem",
   "werkplekken.geen_werkplek": "no desk",
-  "werkplekken.widget_geen_werkplek": "You don't have a desk in Workplaces; you are listed with the apps."
+  "werkplekken.widget_geen_werkplek": "You don't have a desk in Workplaces; you are listed with the apps.",
+  "werkplekken.plek_met_de_hand": "chosen by hand",
+  "werkplekken.plek_automatisch_gekozen": "assigned automatically",
+  "werkplekken.van_plek_halen": "Remove from this desk"
 }

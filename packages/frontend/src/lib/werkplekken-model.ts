@@ -156,8 +156,9 @@ export interface Plaatsing {
  * 2. wie op een dag met de hand op een plek is gezet, zit daar (staat er al
  *    iemand, dan "dubbel");
  * 3. de flexers krijgen per week één eigen flexplek: eerst wie een plek als
- *    "meestal voor" heeft of deze week ergens met de hand is neergezet (die
- *    plek dan), daarna wie het vaakst komt. Gekozen wordt de
+ *    "meestal voor" heeft, daarna wie het vaakst komt. Met de hand
+ *    neerzetten geldt alleen voor die ene dag en verandert de andere dagen
+ *    niet. Gekozen wordt de
  *    flexplek die op de meeste van zijn of haar dagen vrij is; een flexplek
  *    die meestal van een ander is, het laatst. Omdat de volgorde vastligt,
  *    komt iemand ook week na week op dezelfde plek uit;
@@ -211,22 +212,14 @@ export function deelInWeek(
     .filter((dag) => standenPerDag[dag].get(naam)?.stand === "kantoor" && !uit[dag].has(naam));
   const flexers = personen
     .filter((p) => openDagen(p.name).length > 0)
-    .map((p) => ({
-      p,
-      voorkeur: flex.find((w) => w.voorkeur_persoon === p.name),
-      // Een plek waar iemand deze week al met de hand is neergezet, telt als voorkeur.
-      gezet: flex.find((w) => uit.some((dag) => dag.get(p.name)?.werkplek === w.name && dag.get(p.name)?.reden === "gekozen")),
-      dagen: openDagen(p.name),
-    }))
-    .sort((a, b) => Number(!!(b.voorkeur || b.gezet)) - Number(!!(a.voorkeur || a.gezet))
-      || b.dagen.length - a.dagen.length || opVolgorde(a.p, b.p));
-  for (const { p, voorkeur, gezet, dagen } of flexers) {
+    .map((p) => ({ p, voorkeur: flex.find((w) => w.voorkeur_persoon === p.name), dagen: openDagen(p.name) }))
+    .sort((a, b) => Number(!!b.voorkeur) - Number(!!a.voorkeur) || b.dagen.length - a.dagen.length || opVolgorde(a.p, b.p));
+  for (const { p, voorkeur, dagen } of flexers) {
     const vrijOp = (w: Werkplek) => dagen.filter((dag) => !bezet[dag].has(w.name)).length;
     const vanEenAnder = (w: Werkplek) => (w.voorkeur_persoon && w.voorkeur_persoon !== p.name ? 1 : 0);
-    const eigen = (w: Werkplek) => Number(w === gezet) * 2 + Number(w === voorkeur);
     const kandidaten = flex
       .filter((w) => vrijOp(w) > 0)
-      .sort((a, b) => eigen(b) - eigen(a) || vrijOp(b) - vrijOp(a) || vanEenAnder(a) - vanEenAnder(b) || opVolgorde(a, b));
+      .sort((a, b) => Number(b === voorkeur) - Number(a === voorkeur) || vrijOp(b) - vrijOp(a) || vanEenAnder(a) - vanEenAnder(b) || opVolgorde(a, b));
     const thuisPlek = kandidaten[0];
     if (!thuisPlek) continue;
     for (const dag of dagen) {

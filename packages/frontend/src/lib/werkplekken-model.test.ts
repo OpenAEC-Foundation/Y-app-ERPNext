@@ -122,16 +122,17 @@ test("week: een flexer zit alle dagen op dezelfde plek, wie vaker komt kiest eer
   assert.equal(rDi.get("Bastian")?.werkplek, "Bureau 4");
 });
 
-test("week: de plek die op al iemands dagen vrij is, gaat voor", () => {
+test("week: met de hand neerzetten geldt alleen voor die dag", () => {
   const plekken = [plek("Bureau 3", 3), plek("Bureau 4", 4)];
-  const personen = [persoon("A", {}, 1), persoon("B", {}, 2)];
-  // A komt maandag en dinsdag, maar is dinsdag met de hand op Bureau 3 gezet...
-  const ma = new Map([["A", stand("kantoor")], ["B", stand("kantoor")]]);
-  const di = new Map([["A", stand("vrij")], ["B", stand("kantoor", "Bureau 3")]]);
-  const [rMa, rDi] = deelInWeek(personen, plekken, [ma, di]);
-  // ...dus B zit maandag ook op 3, en A krijgt 4.
-  assert.equal(rDi.get("B")?.reden, "gekozen");
-  assert.equal(rMa.get("A")?.werkplek, "Bureau 4");
+  const personen = [persoon("Alper", {}, 1)];
+  // Maandag en dinsdag automatisch, vrijdag met de hand op Bureau 4.
+  const ma = new Map([["Alper", stand("kantoor")]]);
+  const di = new Map([["Alper", stand("kantoor")]]);
+  const vr = new Map([["Alper", stand("kantoor", "Bureau 4")]]);
+  const [rMa, rDi, rVr] = deelInWeek(personen, plekken, [ma, di, vr]);
+  assert.equal(rMa.get("Alper")?.werkplek, "Bureau 3");
+  assert.equal(rDi.get("Alper")?.werkplek, "Bureau 3");
+  assert.deepEqual(rVr.get("Alper"), { persoon: "Alper", werkplek: "Bureau 4", reden: "gekozen" });
 });
 
 test("week: een vaste plek alleen als er echt geen flexplek meer is", () => {

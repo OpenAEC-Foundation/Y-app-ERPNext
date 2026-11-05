@@ -3690,5 +3690,8 @@
   "ecosysteem.archief_other": "Archiv: {{count}} Apps",
   "ecosysteem.naar_ecosysteem": "Ins Ökosystem",
   "werkplekken.geen_werkplek": "kein Platz",
-  "werkplekken.widget_geen_werkplek": "Du hast keinen Platz in Arbeitsplätze; du stehst aber bei den Apps."
+  "werkplekken.widget_geen_werkplek": "Du hast keinen Platz in Arbeitsplätze; du stehst aber bei den Apps.",
+  "werkplekken.plek_met_de_hand": "von Hand gewählt",
+  "werkplekken.plek_automatisch_gekozen": "automatisch zugeteilt",
+  "werkplekken.van_plek_halen": "Von diesem Platz nehmen"
 }

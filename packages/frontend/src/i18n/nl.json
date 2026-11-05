@@ -3690,5 +3690,8 @@
   "ecosysteem.archief_other": "Archief: {{count}} apps",
   "ecosysteem.naar_ecosysteem": "Naar ecosysteem",
   "werkplekken.geen_werkplek": "geen werkplek",
-  "werkplekken.widget_geen_werkplek": "Je hebt geen werkplek bij Werkplekken; je staat wel bij de apps."
+  "werkplekken.widget_geen_werkplek": "Je hebt geen werkplek bij Werkplekken; je staat wel bij de apps.",
+  "werkplekken.plek_met_de_hand": "met de hand gekozen",
+  "werkplekken.plek_automatisch_gekozen": "automatisch ingedeeld",
+  "werkplekken.van_plek_halen": "Van deze plek halen"
 }
