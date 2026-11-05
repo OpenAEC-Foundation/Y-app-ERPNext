@@ -13,6 +13,7 @@ import {
   extractBuildTag,
   addBuildMarker,
   uploadVolgorde,
+  webPageRoute,
   pasVerwijzingenAan,
 } from "./deploy-y-next.mjs";
 
@@ -249,4 +250,10 @@ test("pasVerwijzingenAan: vervangt in tekst de nieuwe naam door de bestaande", (
   const woff = Buffer.from([0, 1, 2]);
   assert.equal(pasVerwijzingenAan("ynieuw-x.woff2", woff, aliassen), woff);
   assert.equal(pasVerwijzingenAan("ynieuw-Word.css", css, new Map()), css);
+});
+
+test("webPageRoute: standaard y-next, met YNEXT_ROUTE een tweede adres", () => {
+  assert.equal(webPageRoute({}), "y-next");
+  assert.equal(webPageRoute({ YNEXT_ROUTE: "y-next-extra" }), "y-next-extra");
+  assert.throws(() => webPageRoute({ YNEXT_ROUTE: "../files" }), /geen geldige route/);
 });

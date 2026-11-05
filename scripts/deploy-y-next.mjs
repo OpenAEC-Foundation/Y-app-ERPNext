@@ -9,7 +9,9 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite.
+ * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite. Met YNEXT_ROUTE
+ * komt de app op een tweede adres op dezelfde site (bijvoorbeeld
+ * "y-next-extra"), zonder /y-next aan te raken.
  *
  * Gebruik: zie docs/deployment.md.
  *   npm run deploy
@@ -18,7 +20,21 @@ import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const WEB_PAGE_ROUTE = "y-next";
+/**
+ * De route van de Web Page: standaard "y-next". YNEXT_ROUTE zet de app op een
+ * tweede adres, bijvoorbeeld om onderdelen als extensie in een andere versie
+ * op /y-next te hangen.
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function webPageRoute(env) {
+  const route = (env.YNEXT_ROUTE || "y-next").trim();
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(route)) {
+    throw new Error(`YNEXT_ROUTE "${route}" is geen geldige route (alleen kleine letters, cijfers en streepjes).`);
+  }
+  return route;
+}
+
+const WEB_PAGE_ROUTE = webPageRoute(process.env);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /** Redigeert eventuele Authorization/token-fragmenten uit een string vóór logging. */
@@ -112,7 +128,9 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
   ].join("\n");
 
   return {
-    title: "Y-Next",
+    // Een tweede adres krijgt een eigen titel: Frappe leidt de documentnaam
+    // van een nieuwe Web Page af van de titel, en "y-next" bestaat al.
+    title: WEB_PAGE_ROUTE === "y-next" ? "Y-Next" : `Y-Next ${WEB_PAGE_ROUTE}`,
     route: WEB_PAGE_ROUTE,
     published: 1,
     content_type: "HTML",
