@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
+import { CalendarDays } from "lucide-react";
 import type { DagInvulling, Persoon, Plaatsing } from "../../lib/werkplekken-model";
 import { VAKJE } from "./werkplekken-ui";
 
@@ -29,16 +30,20 @@ export function PersoonVakje({ persoon, kleur, stand, plaatsing, plekNaam, titel
 }) {
   const { t } = useTranslation();
   const label = t("werkplekken.dag_aanpassen", { naam: persoon.naam });
+  // Komt het uit de eigen agenda, dan een klein agenda-icoontje voor de tekst.
+  const met = (tekst: string) => stand.uitAgenda
+    ? <span className="inline-flex items-center gap-1"><CalendarDays size={11} className="shrink-0" />{tekst}</span>
+    : tekst;
 
   if (stand.stand === "kantoor") {
     const plek = plaatsing?.werkplek ?? null;
     if (!plek || plaatsing?.reden === "dubbel") {
       return <Kader klasse={VAKJE.fout} titel={titel ?? t("werkplekken.geen_plek")} onClick={onClick} label={label} />;
     }
-    return <Kader klasse={kleur} titel={titel ?? plekNaam(plek)} onClick={onClick} label={label} />;
+    return <Kader klasse={kleur} titel={met(titel ?? plekNaam(plek))} onClick={onClick} label={label} />;
   }
-  if (stand.stand === "thuis") return <Kader klasse={VAKJE.thuis} titel={titel ?? t("werkplekken.thuis")} onClick={onClick} label={label} />;
-  if (stand.stand === "afwezig") return <Kader klasse={VAKJE.vrij} titel={titel ?? t("werkplekken.afwezig")} onClick={onClick} label={label} />;
+  if (stand.stand === "thuis") return <Kader klasse={VAKJE.thuis} titel={met(titel ?? t("werkplekken.thuis"))} onClick={onClick} label={label} />;
+  if (stand.stand === "afwezig") return <Kader klasse={VAKJE.vrij} titel={met(titel ?? t("werkplekken.afwezig"))} onClick={onClick} label={label} />;
   if (stand.stand === "keuze" || stand.stand === "onbekend") return <Kader klasse={VAKJE.open} titel={titel ?? "?"} onClick={onClick} label={label} />;
   return <Kader klasse={VAKJE.vrij} titel={titel ?? "—"} onClick={onClick} label={label} />;
 }

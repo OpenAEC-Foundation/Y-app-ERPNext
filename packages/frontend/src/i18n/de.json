@@ -3693,5 +3693,8 @@
   "werkplekken.widget_geen_werkplek": "Du hast keinen Platz in Arbeitsplätze; du stehst aber bei den Apps.",
   "werkplekken.plek_met_de_hand": "von Hand gewählt",
   "werkplekken.plek_automatisch_gekozen": "automatisch zugeteilt",
-  "werkplekken.van_plek_halen": "Von diesem Platz nehmen"
+  "werkplekken.van_plek_halen": "Von diesem Platz nehmen",
+  "werkplekken.legenda.agenda": "aus dem Kalender",
+  "werkplekken.volgens_agenda": "Laut Kalender: {{stand}}",
+  "werkplekken.kantoor": "Büro"
 }

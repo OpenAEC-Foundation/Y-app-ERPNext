@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Armchair, ChevronLeft, ChevronRight, RefreshCw, Settings2 } from "lucide-react";
+import { Armchair, CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Settings2 } from "lucide-react";
 import { useProjects } from "../lib/DataContext";
 import { listApps } from "../lib/apps";
 import { appsVanPersoon, type App } from "../lib/apps-model";
 import {
-  listBoekingen, listOpenTaken, listPersonen, listWerkplekken, werkplekkenStand, type WerkplekkenStand,
+  haalAgendaAanwezigheid, listBoekingen, listOpenTaken, listPersonen, listWerkplekken, werkplekkenStand, type WerkplekkenStand,
 } from "../lib/werkplekken";
 import {
   berekenWeek, groepVan, opKantoorTePlaatsen, isoDatum, maandagVan, perRuimte, sorteerPersonen,
   weekNummer, werkdagen,
-  type Boeking, type DagInvulling, type DagOverzicht, type Persoon, type PersoonGroep, type TaakRegel, type Werkplek,
+  type Boeking, type BoekingStatus, type DagInvulling, type DagOverzicht, type Persoon, type PersoonGroep, type TaakRegel, type Werkplek,
 } from "../lib/werkplekken-model";
 import { Kader, PersoonVakje } from "../components/werkplekken/Vakje";
 import { VAKJE, persoonsKleur } from "../components/werkplekken/werkplekken-ui";
@@ -42,6 +42,7 @@ export default function Werkplekken() {
   const [boekingen, setBoekingen] = useState<Boeking[]>([]);
   const [taken, setTaken] = useState<TaakRegel[]>([]);
   const [apps, setApps] = useState<App[]>([]);
+  const [agenda, setAgenda] = useState<Map<string, Map<string, BoekingStatus>>>(() => new Map());
   const [view, setView] = useState<View>(() => {
     try { return localStorage.getItem(VIEW_KEY) === "persoon" ? "persoon" : "plek"; } catch { return "plek"; }
   });
@@ -70,6 +71,8 @@ export default function Werkplekken() {
       setBoekingen(b);
       setTaken(tk);
       setApps(ap);
+      // De agenda's pas na de personen: we vragen alleen naar wie er meedoet.
+      setAgenda(await haalAgendaAanwezigheid(p, dagen));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     }
@@ -92,7 +95,7 @@ export default function Werkplekken() {
   const alleActief = useMemo(() => sorteerPersonen(personen.filter((p) => p.actief)), [personen]);
   const actief = useMemo(() => opKantoorTePlaatsen(personen), [personen]);
   // De hele week in één keer indelen, zodat iemand steeds op dezelfde plek zit.
-  const week: DagOverzicht[] = useMemo(() => berekenWeek(personen, werkplekken, boekingen, maandag), [personen, werkplekken, boekingen, maandag]);
+  const week: DagOverzicht[] = useMemo(() => berekenWeek(personen, werkplekken, boekingen, maandag, agenda), [personen, werkplekken, boekingen, maandag, agenda]);
 
   const persoonVan = (name: string | null | undefined) => personen.find((p) => p.name === name);
   const plekNaam = (id: string) => werkplekken.find((w) => w.name === id)?.plek || id;
@@ -286,7 +289,7 @@ export default function Werkplekken() {
       {open && openPersoon && openDag && (
         <DagDialog key={`${open.persoon}-${open.datum}`} persoon={openPersoon} datum={open.datum} dag={openDag.dag}
           boekingen={boekingen.filter((b) => b.persoon === open.persoon && b.datum === open.datum)}
-          plaatsing={openDag.plaatsing.get(open.persoon)} plekNaam={plekNaam}
+          plaatsing={openDag.plaatsing.get(open.persoon)} plekNaam={plekNaam} stand={openDag.standen.get(open.persoon)}
           apps={appsVanPersoon(apps, open.persoon).map((x) => x.naam)}
           taken={taken} projecten={projecten} vrijdag={dagen[4]} datumTekst={datumTekst}
           onClose={() => setOpen(null)} onChanged={fetchAll} />
@@ -312,6 +315,10 @@ function VrijePlek({ eigenaar, dag, onNeerzetten }: { eigenaar: Persoon | undefi
   const { t } = useTranslation();
   const s = eigenaar ? dag.standen.get(eigenaar.name)?.stand : undefined;
   if (eigenaar && (s === "keuze" || s === "onbekend")) return <Kader klasse={VAKJE.open} titel={`${eigenaar.naam}?`} />;
+  // Waarom een vaste plek leeg is, hoort zichtbaar te zijn; anders lijkt een
+  // ingestelde thuiswerkdag niet opgeslagen.
+  if (eigenaar && s === "thuis") return <Kader klasse={VAKJE.thuis} titel={`${eigenaar.naam} · ${t("werkplekken.thuis")}`} />;
+  if (eigenaar && s === "afwezig") return <Kader klasse={VAKJE.vrij} titel={`${eigenaar.naam} · ${t("werkplekken.afwezig")}`} />;
   return <Kader klasse={VAKJE.vrij} titel={t("werkplekken.vrij")} onClick={onNeerzetten} label={onNeerzetten ? t("werkplekken.iemand_neerzetten") : undefined} />;
 }
 
@@ -348,6 +355,7 @@ function Legenda() {
       {item(VAKJE.open, t("werkplekken.legenda.open"))}
       {item(VAKJE.vrij, t("werkplekken.legenda.vrij"))}
       {item(VAKJE.fout, t("werkplekken.geen_plek"))}
+      <span className="inline-flex items-center gap-1.5"><CalendarDays size={12} />{t("werkplekken.legenda.agenda")}</span>
     </div>
   );
 }

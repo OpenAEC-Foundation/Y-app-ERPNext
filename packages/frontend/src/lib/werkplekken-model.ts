@@ -87,6 +87,8 @@ export interface DagInvulling {
   geboekt: boolean;
   /** De plek uit de boeking, als die er een noemt. */
   gevraagdePlek: string | null;
+  /** Komt deze stand uit de eigen agenda (zie `werkplekken-agenda.ts`)? */
+  uitAgenda?: boolean;
 }
 
 /** Een datum als "2026-11-03", in lokale tijd. */
@@ -118,12 +120,17 @@ export function patroonVan(p: Persoon, dag: Dag): PatroonWaarde {
   return (p[`dag_${dag}`] || "") as PatroonWaarde;
 }
 
-/** De dag van een persoon: een boeking wint, anders het patroon. */
-export function invulling(p: Persoon, dag: Dag, boeking: Boeking | undefined): DagInvulling {
+const STAND_VAN: Record<BoekingStatus, DagStand> = { Kantoor: "kantoor", Thuis: "thuis", Afwezig: "afwezig" };
+
+/**
+ * De dag van een persoon: een boeking (met de hand in Werkplekken) wint, dan
+ * wat de eigen agenda zegt, en anders het vaste patroon.
+ */
+export function invulling(p: Persoon, dag: Dag, boeking: Boeking | undefined, agenda?: BoekingStatus): DagInvulling {
   if (boeking) {
-    const stand = boeking.status === "Kantoor" ? "kantoor" : boeking.status === "Thuis" ? "thuis" : "afwezig";
-    return { stand, geboekt: true, gevraagdePlek: boeking.status === "Kantoor" ? boeking.werkplek || null : null };
+    return { stand: STAND_VAN[boeking.status], geboekt: true, gevraagdePlek: boeking.status === "Kantoor" ? boeking.werkplek || null : null };
   }
+  if (agenda) return { stand: STAND_VAN[agenda], geboekt: false, gevraagdePlek: null, uitAgenda: true };
   const waarde = patroonVan(p, dag);
   if (waarde === "Kantoor") return { stand: "kantoor", geboekt: false, gevraagdePlek: null };
   if (waarde === "Thuis") return { stand: "thuis", geboekt: false, gevraagdePlek: null };
@@ -259,11 +266,16 @@ export interface DagOverzicht {
  * staat en waar wie zit. Dezelfde berekening voor de pagina en de widget op
  * het dashboard, zodat ze nooit iets anders laten zien.
  */
-export function berekenWeek(personen: Persoon[], werkplekken: Werkplek[], boekingen: Boeking[], maandag: Date): DagOverzicht[] {
+export function berekenWeek(
+  personen: Persoon[], werkplekken: Werkplek[], boekingen: Boeking[], maandag: Date,
+  /** Per e-mailadres (kleine letters) en datum wat de agenda zegt; zie `agendaPerDag`. */
+  agenda?: Map<string, Map<string, BoekingStatus>>,
+): DagOverzicht[] {
   const actief = opKantoorTePlaatsen(personen);
   const dagen = werkdagen(maandag);
   const standen = dagen.map((datum, i) => new Map(actief.map((p) =>
-    [p.name, invulling(p, DAGEN[i], boekingen.find((b) => b.persoon === p.name && b.datum === datum))])));
+    [p.name, invulling(p, DAGEN[i], boekingen.find((b) => b.persoon === p.name && b.datum === datum),
+      p.gebruiker ? agenda?.get(p.gebruiker.toLowerCase())?.get(datum) : undefined)])));
   const plaatsing = deelInWeek(actief, werkplekken, standen);
   return dagen.map((datum, i) => ({ datum, dag: DAGEN[i], standen: standen[i], plaatsing: plaatsing[i] }));
 }

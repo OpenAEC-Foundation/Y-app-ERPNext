@@ -160,8 +160,32 @@ function PersoonRij({ persoon, gebruikers, volgorde = 0, onChanged, onCancel }: 
   const begin = persoon ? { ...persoon } : leegPersoon(volgorde);
   const [concept, setConcept] = useState<PersoonGegevens>(begin);
   const [busy, setBusy] = useState(false);
-  const gewijzigd = !persoon || (Object.keys(concept) as (keyof PersoonGegevens)[]).some((k) => (concept[k] ?? "") !== (persoon[k] ?? ""));
   const zet = <K extends keyof PersoonGegevens>(k: K, v: PersoonGegevens[K]) => setConcept((c) => ({ ...c, [k]: v }));
+
+  // Een bestaande persoon slaat elke wijziging meteen op: een opslagknop achter
+  // de rij werd gemist, en dan was een aangeklikte werkdag bij het sluiten weg.
+  async function bewaarVeld(patch: Partial<PersoonGegevens>) {
+    if (!persoon) return;
+    try {
+      const gebruiker = "gebruiker" in patch ? { gebruiker: patch.gebruiker || "" } : {};
+      await savePersoon(persoon.name, { ...patch, ...gebruiker });
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("werkplekken.opslaan_mislukt"));
+      setConcept({ ...persoon });
+    }
+  }
+  /** Knoppen, keuzelijsten en vinkjes: meteen opslaan. */
+  const wijzig = <K extends keyof PersoonGegevens>(k: K, v: PersoonGegevens[K]) => {
+    zet(k, v);
+    void bewaarVeld({ [k]: v } as Partial<PersoonGegevens>);
+  };
+  /** Tekstvelden: opslaan als je het veld verlaat. */
+  const verlaat = (k: "naam" | "notitie") => {
+    if (!persoon || (concept[k] ?? "") === (persoon[k] ?? "")) return;
+    if (k === "naam" && !concept.naam.trim()) { setConcept((c) => ({ ...c, naam: persoon.naam })); return; }
+    void bewaarVeld({ [k]: k === "naam" ? concept.naam.trim() : concept.notitie });
+  };
   // Een adres dat (nog) niet bij een actieve medewerker hoort, blijft kiesbaar.
   const opties = concept.gebruiker && !gebruikers.some((g) => g.email === concept.gebruiker)
     ? [...gebruikers, { email: concept.gebruiker, naam: concept.gebruiker }] : gebruikers;
@@ -191,9 +215,9 @@ function PersoonRij({ persoon, gebruikers, volgorde = 0, onChanged, onCancel }: 
 
   return (
     <tr className="border-t border-slate-100 align-middle">
-      <td className="py-1.5 pr-2"><input value={concept.naam} onChange={(e) => zet("naam", e.target.value)} className={VELD} aria-label={t("werkplekken.naam")} /></td>
+      <td className="py-1.5 pr-2"><input value={concept.naam} onChange={(e) => zet("naam", e.target.value)} onBlur={() => verlaat("naam")} className={VELD} aria-label={t("werkplekken.naam")} /></td>
       <td className="py-1.5 pr-2">
-        <select value={concept.gebruiker || ""} onChange={(e) => zet("gebruiker", e.target.value || null)} className={VELD} aria-label={t("werkplekken.erp_account")}>
+        <select value={concept.gebruiker || ""} onChange={(e) => wijzig("gebruiker", e.target.value || null)} className={VELD} aria-label={t("werkplekken.erp_account")}>
           <option value="">{t("werkplekken.geen_account_kort")}</option>
           {opties.map((g) => <option key={g.email} value={g.email}>{g.naam}</option>)}
         </select>
@@ -202,7 +226,7 @@ function PersoonRij({ persoon, gebruikers, volgorde = 0, onChanged, onCancel }: 
         const w = (concept[`dag_${d}`] || "") as PatroonWaarde;
         return (
           <td key={d} className="py-1.5 px-0.5 text-center">
-            <button type="button" onClick={() => zet(`dag_${d}`, volgendePatroon(w))}
+            <button type="button" onClick={() => wijzig(`dag_${d}`, volgendePatroon(w))}
               title={t("werkplekken.dagknop_uitleg")}
               className={`w-16 px-1 py-1 text-xs rounded-md border cursor-pointer ${DAGKNOP[w]}`}>
               {w ? t(`werkplekken.patroon.${w}`) : "–"}
@@ -212,12 +236,12 @@ function PersoonRij({ persoon, gebruikers, volgorde = 0, onChanged, onCancel }: 
       })}
       {(["wisselend", "geen_werkplek", "actief"] as const).map((k) => (
         <td key={k} className="py-1.5 px-1 text-center">
-          <input type="checkbox" checked={!!concept[k]} onChange={(e) => zet(k, e.target.checked ? 1 : 0)} aria-label={t(`werkplekken.${k}`)} className="accent-y-teal" />
+          <input type="checkbox" checked={!!concept[k]} onChange={(e) => wijzig(k, e.target.checked ? 1 : 0)} aria-label={t(`werkplekken.${k}`)} className="accent-y-teal" />
         </td>
       ))}
-      <td className="py-1.5 pr-2"><input value={concept.notitie || ""} onChange={(e) => zet("notitie", e.target.value || null)} className={VELD} aria-label={t("werkplekken.notitie")} /></td>
+      <td className="py-1.5 pr-2"><input value={concept.notitie || ""} onChange={(e) => zet("notitie", e.target.value || null)} onBlur={() => verlaat("notitie")} className={VELD} aria-label={t("werkplekken.notitie")} /></td>
       <td className="py-1.5 whitespace-nowrap text-right">
-        {gewijzigd && (
+        {!persoon && (
           <button type="button" onClick={bewaar} disabled={busy} title={t("werkplekken.opslaan")}
             className="p-1.5 text-y-teal hover:bg-y-teal/10 rounded cursor-pointer disabled:opacity-50"><Save size={16} /></button>
         )}
@@ -244,8 +268,30 @@ function WerkplekRij({ werkplek, personen, volgorde = 0, onChanged, onCancel }: 
   const toast = useToast();
   const [concept, setConcept] = useState<WerkplekGegevens>(werkplek ? { ...werkplek } : leegWerkplek(volgorde));
   const [busy, setBusy] = useState(false);
-  const gewijzigd = !werkplek || (Object.keys(concept) as (keyof WerkplekGegevens)[]).some((k) => (concept[k] ?? "") !== (werkplek[k] ?? ""));
   const zet = <K extends keyof WerkplekGegevens>(k: K, v: WerkplekGegevens[K]) => setConcept((c) => ({ ...c, [k]: v }));
+
+  // Net als bij de mensen: een bestaande plek slaat elke wijziging meteen op.
+  async function bewaarVeld(patch: Partial<WerkplekGegevens>) {
+    if (!werkplek) return;
+    try {
+      await saveWerkplek(werkplek.name, patch);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("werkplekken.opslaan_mislukt"));
+      setConcept({ ...werkplek });
+    }
+  }
+  const wijzig = <K extends keyof WerkplekGegevens>(k: K, v: WerkplekGegevens[K]) => {
+    zet(k, v);
+    // Een lege Link moet als "" mee, anders laat Frappe de oude waarde staan.
+    void bewaarVeld({ [k]: v ?? "" } as Partial<WerkplekGegevens>);
+  };
+  const verlaat = (k: "plek" | "ruimte" | "omschrijving" | "volgorde") => {
+    if (!werkplek || (concept[k] ?? "") === (werkplek[k] ?? "")) return;
+    if ((k === "plek" || k === "ruimte") && !String(concept[k]).trim()) { setConcept((c) => ({ ...c, [k]: werkplek[k] })); return; }
+    const waarde = k === "volgorde" ? Number(concept.volgorde) || 0 : typeof concept[k] === "string" ? (concept[k] as string).trim() : concept[k];
+    void bewaarVeld({ [k]: waarde } as Partial<WerkplekGegevens>);
+  };
   const mensen = sorteerPersonen(personen.filter((p) => p.actief));
 
   async function bewaar() {
@@ -278,7 +324,7 @@ function WerkplekRij({ werkplek, personen, volgorde = 0, onChanged, onCancel }: 
   }
 
   const persoonSelect = (k: "vaste_persoon" | "voorkeur_persoon", label: string) => (
-    <select value={concept[k] || ""} onChange={(e) => zet(k, e.target.value || null)} className={VELD} aria-label={label}>
+    <select value={concept[k] || ""} onChange={(e) => wijzig(k, e.target.value || null)} className={VELD} aria-label={label}>
       <option value="">{k === "vaste_persoon" ? t("werkplekken.flexplek") : "–"}</option>
       {mensen.map((p) => <option key={p.name} value={p.name}>{p.naam}</option>)}
     </select>
@@ -286,17 +332,17 @@ function WerkplekRij({ werkplek, personen, volgorde = 0, onChanged, onCancel }: 
 
   return (
     <tr className="border-t border-slate-100 align-middle">
-      <td className="py-1.5 pr-2"><input value={concept.plek} onChange={(e) => zet("plek", e.target.value)} className={VELD} aria-label={t("werkplekken.plek")} /></td>
-      <td className="py-1.5 pr-2"><input value={concept.ruimte} list="werkplek-ruimtes" onChange={(e) => zet("ruimte", e.target.value)} className={VELD} aria-label={t("werkplekken.ruimte")} /></td>
-      <td className="py-1.5 pr-2"><input value={concept.omschrijving || ""} onChange={(e) => zet("omschrijving", e.target.value || null)} className={VELD} aria-label={t("werkplekken.omschrijving")} /></td>
+      <td className="py-1.5 pr-2"><input value={concept.plek} onChange={(e) => zet("plek", e.target.value)} onBlur={() => verlaat("plek")} className={VELD} aria-label={t("werkplekken.plek")} /></td>
+      <td className="py-1.5 pr-2"><input value={concept.ruimte} list="werkplek-ruimtes" onChange={(e) => zet("ruimte", e.target.value)} onBlur={() => verlaat("ruimte")} className={VELD} aria-label={t("werkplekken.ruimte")} /></td>
+      <td className="py-1.5 pr-2"><input value={concept.omschrijving || ""} onChange={(e) => zet("omschrijving", e.target.value || null)} onBlur={() => verlaat("omschrijving")} className={VELD} aria-label={t("werkplekken.omschrijving")} /></td>
       <td className="py-1.5 pr-2">{persoonSelect("vaste_persoon", t("werkplekken.vaste_plek_van"))}</td>
       <td className="py-1.5 pr-2">{persoonSelect("voorkeur_persoon", t("werkplekken.meestal_voor"))}</td>
-      <td className="py-1.5 pr-2 w-20"><input type="number" value={concept.volgorde} onChange={(e) => zet("volgorde", Number(e.target.value))} className={VELD} aria-label={t("werkplekken.volgorde")} /></td>
+      <td className="py-1.5 pr-2 w-20"><input type="number" value={concept.volgorde} onChange={(e) => zet("volgorde", Number(e.target.value))} onBlur={() => verlaat("volgorde")} className={VELD} aria-label={t("werkplekken.volgorde")} /></td>
       <td className="py-1.5 px-1 text-center">
-        <input type="checkbox" checked={!!concept.actief} onChange={(e) => zet("actief", e.target.checked ? 1 : 0)} aria-label={t("werkplekken.actief")} className="accent-y-teal" />
+        <input type="checkbox" checked={!!concept.actief} onChange={(e) => wijzig("actief", e.target.checked ? 1 : 0)} aria-label={t("werkplekken.actief")} className="accent-y-teal" />
       </td>
       <td className="py-1.5 whitespace-nowrap text-right">
-        {gewijzigd && (
+        {!werkplek && (
           <button type="button" onClick={bewaar} disabled={busy} title={t("werkplekken.opslaan")}
             className="p-1.5 text-y-teal hover:bg-y-teal/10 rounded cursor-pointer disabled:opacity-50"><Save size={16} /></button>
         )}

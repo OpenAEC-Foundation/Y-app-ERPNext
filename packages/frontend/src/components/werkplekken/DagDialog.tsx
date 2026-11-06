@@ -7,7 +7,7 @@ import type { ProjectRecord } from "../../lib/DataContext";
 import { zetDag } from "../../lib/werkplekken";
 import {
   BOEKING_STATUSSEN, patroonVan, takenOpDag, teLaat,
-  type Boeking, type BoekingStatus, type Dag, type Persoon, type Plaatsing, type TaakRegel,
+  type Boeking, type BoekingStatus, type Dag, type DagInvulling, type Persoon, type Plaatsing, type TaakRegel,
 } from "../../lib/werkplekken-model";
 
 /**
@@ -17,7 +17,7 @@ import {
  * een te geven.
  */
 export default function DagDialog({
-  persoon, datum, dag, boekingen, plaatsing, plekNaam, apps, taken, projecten, vrijdag, datumTekst, onClose, onChanged,
+  persoon, datum, dag, boekingen, plaatsing, plekNaam, stand, apps, taken, projecten, vrijdag, datumTekst, onClose, onChanged,
 }: {
   persoon: Persoon;
   datum: string;
@@ -26,6 +26,8 @@ export default function DagDialog({
   /** Waar de indeling deze persoon die dag heeft neergezet. */
   plaatsing: Plaatsing | undefined;
   plekNaam: (id: string) => string;
+  /** Hoe de dag nu uitvalt; zegt ook of dat uit de agenda komt. */
+  stand: DagInvulling | undefined;
   /** De apps waar deze persoon aan werkt (namen). */
   apps: string[];
   taken: TaakRegel[];
@@ -92,6 +94,9 @@ export default function DagDialog({
               </Keuze>
             ))}
           </div>
+          {stand?.uitAgenda && (
+            <p className="text-xs text-slate-500">{t("werkplekken.volgens_agenda", { stand: t(`werkplekken.${stand.stand}`) })}</p>
+          )}
           {plaatsing?.werkplek && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <span className="min-w-0">

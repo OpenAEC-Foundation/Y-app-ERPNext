@@ -9,6 +9,7 @@ import {
   updateDocument,
 } from "./erpnext";
 import { getActiveCompany } from "./instances";
+import { agendaPerDag, type AgendaAfspraak } from "./werkplekken-agenda";
 import {
   AFGERONDE_TAAKSTATUSSEN, DT_BOEKING, DT_PERSOON, DT_WERKPLEK,
   type Boeking, type BoekingStatus, type Persoon, type TaakRegel, type Werkplek,
@@ -168,5 +169,29 @@ export async function listGebruikers(): Promise<{ email: string; naam: string }[
       .sort((a, b) => a.naam.localeCompare(b.naam));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Wat de eigen agenda's (Stalwart) over deze dagen zeggen, per e-mailadres en
+ * datum. Via hetzelfde Server Script als de Agenda (`agenda_ophalen`, met één
+ * serviceaccount), maar zonder het geheugen daarvan: wat iemand net in zijn
+ * agenda zette, moet hier bij verversen meteen staan. Lukt het niet (koppeling
+ * uit, mailserver weg), dan geen agenda en blijft het patroon gelden.
+ */
+export async function haalAgendaAanwezigheid(personen: Persoon[], dagen: string[]): Promise<Map<string, Map<string, BoekingStatus>>> {
+  const gebruikers = [...new Set(personen
+    .filter((p) => p.actief && p.gebruiker && !p.geen_werkplek)
+    .map((p) => (p.gebruiker as string).toLowerCase()))];
+  if (!gebruikers.length || !dagen.length) return new Map();
+  try {
+    const res = (await callMethod("agenda_ophalen", {
+      van: `${dagen[0]}T00:00:00Z`,
+      tot: `${dagen[dagen.length - 1]}T23:59:59Z`,
+      gebruikers: gebruikers.join(","),
+    })) as { afspraken?: AgendaAfspraak[] } | null;
+    return agendaPerDag(Array.isArray(res?.afspraken) ? res.afspraken : [], dagen);
+  } catch {
+    return new Map();
   }
 }

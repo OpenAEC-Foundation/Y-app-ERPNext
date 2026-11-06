@@ -3693,5 +3693,8 @@
   "werkplekken.widget_geen_werkplek": "You don't have a desk in Workplaces; you are listed with the apps.",
   "werkplekken.plek_met_de_hand": "chosen by hand",
   "werkplekken.plek_automatisch_gekozen": "assigned automatically",
-  "werkplekken.van_plek_halen": "Remove from this desk"
+  "werkplekken.van_plek_halen": "Remove from this desk",
+  "werkplekken.legenda.agenda": "from the calendar",
+  "werkplekken.volgens_agenda": "According to the calendar: {{stand}}",
+  "werkplekken.kantoor": "office"
 }

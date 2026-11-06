@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Armchair, ChevronRight } from "lucide-react";
 import type { Page } from "../../components/Sidebar";
 import { resolveSessionUser } from "../../lib/session";
-import { listBoekingen, listPersonen, listWerkplekken, werkplekkenStand } from "../../lib/werkplekken";
+import { haalAgendaAanwezigheid, listBoekingen, listPersonen, listWerkplekken, werkplekkenStand } from "../../lib/werkplekken";
 import {
   berekenWeek, isoDatum, maandagVan, persoonVanGebruiker, sorteerPersonen, werkdagen,
-  type Boeking, type Persoon, type Werkplek,
+  type Boeking, type BoekingStatus, type Persoon, type Werkplek,
 } from "../../lib/werkplekken-model";
 import { VAKJE, persoonsKleur } from "../../components/werkplekken/werkplekken-ui";
 
@@ -15,6 +15,7 @@ interface Gegevens {
   personen: Persoon[];
   werkplekken: Werkplek[];
   boekingen: Boeking[];
+  agenda: Map<string, Map<string, BoekingStatus>>;
 }
 
 /**
@@ -36,7 +37,8 @@ export function MijnWerkplekWidget({ onNavigate }: { onNavigate: (page: Page) =>
         const [gebruiker, personen, werkplekken, boekingen] = await Promise.all([
           resolveSessionUser(), listPersonen(), listWerkplekken(), listBoekingen(dagen[0], dagen[4]),
         ]);
-        if (actief) setGegevens({ gebruiker, personen, werkplekken, boekingen });
+        const agenda = await haalAgendaAanwezigheid(personen, dagen);
+        if (actief) setGegevens({ gebruiker, personen, werkplekken, boekingen, agenda });
       } catch {
         if (actief) setGegevens("niet-ingesteld");
       }
@@ -63,7 +65,7 @@ export function MijnWerkplekWidget({ onNavigate }: { onNavigate: (page: Page) =>
   if (!ik) return kader(<p className="text-sm text-slate-500 py-2">{t("werkplekken.widget_niet_gekoppeld")}</p>);
   if (ik.geen_werkplek) return kader(<p className="text-sm text-slate-500 py-2">{t("werkplekken.widget_geen_werkplek")}</p>);
 
-  const week = berekenWeek(gegevens.personen, gegevens.werkplekken, gegevens.boekingen, maandag);
+  const week = berekenWeek(gegevens.personen, gegevens.werkplekken, gegevens.boekingen, maandag, gegevens.agenda);
   const actief = sorteerPersonen(gegevens.personen.filter((p) => p.actief));
   const kleur = persoonsKleur(actief.findIndex((p) => p.name === ik.name));
   const plek = (id: string | null | undefined) => gegevens.werkplekken.find((w) => w.name === id);

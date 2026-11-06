@@ -3693,5 +3693,8 @@
   "werkplekken.widget_geen_werkplek": "Je hebt geen werkplek bij Werkplekken; je staat wel bij de apps.",
   "werkplekken.plek_met_de_hand": "met de hand gekozen",
   "werkplekken.plek_automatisch_gekozen": "automatisch ingedeeld",
-  "werkplekken.van_plek_halen": "Van deze plek halen"
+  "werkplekken.van_plek_halen": "Van deze plek halen",
+  "werkplekken.legenda.agenda": "uit de agenda",
+  "werkplekken.volgens_agenda": "Volgens de agenda: {{stand}}",
+  "werkplekken.kantoor": "kantoor"
 }
