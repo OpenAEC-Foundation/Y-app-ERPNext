@@ -1,0 +1,138 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "autoincrement",
+ "creation": "2026-11-02 15:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "titel",
+  "status",
+  "volgorde",
+  "datum",
+  "deadline",
+  "koppeling",
+  "labels",
+  "beschrijving",
+  "punten",
+  "resultaat"
+ ],
+ "fields": [
+  {
+   "fieldname": "titel",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Titel",
+   "reqd": 1
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nBezig\nKlaar"
+  },
+  {
+   "default": "0",
+   "description": "Lager staat hoger in de lijst.",
+   "fieldname": "volgorde",
+   "fieldtype": "Float",
+   "label": "Volgorde"
+  },
+  {
+   "fieldname": "datum",
+   "fieldtype": "Date",
+   "label": "Datum"
+  },
+  {
+   "fieldname": "deadline",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Deadline"
+  },
+  {
+   "fieldname": "koppeling",
+   "fieldtype": "Data",
+   "label": "Project of repo"
+  },
+  {
+   "description": "JSON-lijst met namen van Y Brainstorm Label.",
+   "fieldname": "labels",
+   "fieldtype": "Small Text",
+   "label": "Labels"
+  },
+  {
+   "fieldname": "beschrijving",
+   "fieldtype": "Text",
+   "label": "Beschrijving"
+  },
+  {
+   "fieldname": "punten",
+   "fieldtype": "Table",
+   "label": "Checklist",
+   "options": "Y Brainstorm Punt"
+  },
+  {
+   "fieldname": "resultaat",
+   "fieldtype": "Small Text",
+   "label": "Resultaat"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-02 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Y Brainstorm Idee",
+ "naming_rule": "Autoincrement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Employee"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Projects User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "volgorde",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "titel",
+ "track_changes": 1
+}

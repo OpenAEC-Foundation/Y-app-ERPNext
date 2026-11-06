@@ -59,6 +59,15 @@ test("toCustomDoctype vult ontbrekende rechtenvlaggen met 0", () => {
   ]);
 });
 
+test("toCustomDoctype neemt een kindtabel en het titelveld over", () => {
+  // Zonder istable wordt de checklist van een brainstormidee een los doctype
+  // en weigert Frappe het Table-veld dat ernaar wijst.
+  const custom = toCustomDoctype({ name: "Y Kind", istable: 1, title_field: "titel", track_changes: 1, fields: [], permissions: [] });
+  assert.equal(custom.istable, 1);
+  assert.equal(custom.title_field, "titel");
+  assert.equal(custom.track_changes, 1);
+});
+
 test("toCustomDoctype neemt een enkelvoudig doctype over", () => {
   const custom = toCustomDoctype({ name: "Y Instelling", issingle: 1, fields: [], permissions: [] });
   assert.equal(custom.issingle, 1);

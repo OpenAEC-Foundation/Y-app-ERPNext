@@ -1,0 +1,142 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:naam",
+ "creation": "2026-11-03 15:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naam",
+  "status",
+  "in_ecosysteem",
+  "productmanager",
+  "team",
+  "project",
+  "repository",
+  "codeowners",
+  "beschrijving",
+  "volgorde"
+ ],
+ "fields": [
+  {
+   "fieldname": "naam",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Naam",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "In ontwikkeling",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Beschikbaar\nBeta\nIn ontwikkeling\nCommunity"
+  },
+  {
+   "default": "1",
+   "fieldname": "in_ecosysteem",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "In ecosysteem",
+   "description": "Uit = in het archief: staat niet in het overzicht, maar is er met één klik weer bij te zetten."
+  },
+  {
+   "fieldname": "productmanager",
+   "fieldtype": "Link",
+   "options": "Y Werkplek Persoon",
+   "in_list_view": 1,
+   "label": "Productmanager",
+   "description": "Ook de eindverantwoordelijke van de app."
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Table",
+   "options": "Y App Lid",
+   "label": "Werkt eraan"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "options": "Project",
+   "label": "Project",
+   "description": "Het ERP-project waarin de taken van deze app staan."
+  },
+  {
+   "fieldname": "repository",
+   "fieldtype": "Data",
+   "label": "Repository",
+   "description": "Bijvoorbeeld OpenAEC-Foundation/open-planner-studio"
+  },
+  {
+   "fieldname": "codeowners",
+   "fieldtype": "Data",
+   "label": "Codeowners (GitHub)"
+  },
+  {
+   "fieldname": "beschrijving",
+   "fieldtype": "Small Text",
+   "label": "Beschrijving"
+  },
+  {
+   "default": "0",
+   "fieldname": "volgorde",
+   "fieldtype": "Int",
+   "label": "Volgorde"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-03 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Y App",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Employee"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Projects User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "volgorde",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "naam"
+}
