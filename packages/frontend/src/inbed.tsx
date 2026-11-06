@@ -8,7 +8,7 @@
  * `initInstances()` (die zou het thema en de fetch van de gastversie overschrijven).
  *
  * Het blok heeft een eigen, kleine stylesheet (inbed.css, alleen de utilities
- * van deze pagina's); die komt één keer in de <head>.
+ * van deze pagina's). Die geldt alleen binnen het blok: zie `scopeerStijl`.
  */
 import { StrictMode, type ComponentType } from "react";
 import { createRoot } from "react-dom/client";
@@ -27,32 +27,75 @@ const PAGINAS: Record<string, ComponentType> = {
   brainstorm: Brainstorm,
 };
 
-function laadStijl(): void {
-  if (document.querySelector("link[data-ynext-inbed]")) return;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = cssUrl;
-  link.dataset.ynextInbed = "1";
-  document.head.appendChild(link);
+/** De klasse op het blok; alleen daarbinnen gelden onze stijlregels. */
+const SCOPE = "ynext-inbed";
+let stijl: Promise<void> | null = null;
+
+/**
+ * Herschrijft onze stylesheet zodat hij alleen binnen `.ynext-inbed` werkt.
+ * Zonder dat overschrijven onze utilities (bijvoorbeeld `.hidden`, die later
+ * in de pagina staat dan de `md:flex` van de gastversie) de rest van de app:
+ * de zijbalk verdween en formulieren vielen uit elkaar. De thema-variabelen
+ * komen op het blok zelf, de utilities in `@scope`.
+ */
+export function scopeerStijl(regels: CSSRuleList): string {
+  let uit = "";
+  for (const r of Array.from(regels)) {
+    if (r instanceof CSSLayerBlockRule && r.name === "utilities") {
+      uit += `@layer utilities{@scope (.${SCOPE}){${Array.from(r.cssRules).map((x) => x.cssText).join("")}}}`;
+    } else if (r instanceof CSSLayerBlockRule && r.name === "theme") {
+      const vars = Array.from(r.cssRules).map((x) => (x instanceof CSSStyleRule ? x.style.cssText : "")).join("");
+      uit += `@layer theme{.${SCOPE}{${vars}}}`;
+    } else if (!(r instanceof CSSLayerStatementRule)) {
+      uit += r.cssText;
+    }
+  }
+  return uit;
+}
+
+function laadStijl(): Promise<void> {
+  if (!stijl) {
+    // Een <link> uit een eerdere versie van deze module raakte de hele app.
+    document.querySelectorAll("link[data-ynext-inbed]").forEach((l) => l.remove());
+    stijl = fetch(cssUrl)
+      .then((r) => r.text())
+      .then((tekst) => {
+        const blad = new CSSStyleSheet();
+        blad.replaceSync(tekst);
+        const el = document.createElement("style");
+        el.dataset.ynextInbed = "1";
+        el.textContent = scopeerStijl(blad.cssRules);
+        document.head.appendChild(el);
+      });
+  }
+  return stijl;
 }
 
 /** Tekent een pagina in `el`; geeft een functie terug die hem weer opruimt. */
 function mount(el: HTMLElement, pagina: string): () => void {
   const Pagina = PAGINAS[pagina];
   if (!Pagina) throw new Error(`Onbekende pagina: ${pagina}`);
-  laadStijl();
   void ensureCsrfToken();
+  el.classList.add(SCOPE);
   const root = createRoot(el);
-  root.render(
-    <StrictMode>
-      <ToastProvider>
-        <DataProvider>
-          <Pagina />
-        </DataProvider>
-      </ToastProvider>
-    </StrictMode>,
-  );
-  return () => root.unmount();
+  let weg = false;
+  // Pas tekenen als de stijl er is, anders flitst de pagina ongestyled.
+  void laadStijl().catch(() => undefined).then(() => {
+    if (weg) return;
+    root.render(
+      <StrictMode>
+        <ToastProvider>
+          <DataProvider>
+            <Pagina />
+          </DataProvider>
+        </ToastProvider>
+      </StrictMode>,
+    );
+  });
+  return () => {
+    weg = true;
+    root.unmount();
+  };
 }
 
 declare global {
