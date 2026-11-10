@@ -52,6 +52,24 @@ async function metTaaknamen(todos: ToDo[]): Promise<TodoMetTaak[]> {
     });
 }
 
+let sessieCache = "";
+
+/** De ingelogde Frappe-gebruiker (e-mail), eenmalig opgehaald. */
+function useSessieGebruiker(): string {
+  const [gebruiker, setGebruiker] = useState(sessieCache);
+  useEffect(() => {
+    if (gebruiker) return;
+    fetch("/api/method/frappe.auth.get_logged_user", { credentials: "same-origin" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        const naam = j?.message;
+        if (naam && naam !== "Guest") { sessieCache = naam; setGebruiker(naam); }
+      })
+      .catch(() => {});
+  }, [gebruiker]);
+  return gebruiker;
+}
+
 /* ─── Main Todo page ─── */
 
 export default function Todo() {
@@ -62,10 +80,13 @@ export default function Todo() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"Open" | "Closed" | "">("Open");
   const myEmployeeId = getActiveEmployee();
+  const sessieGebruiker = useSessieGebruiker();
   const myEmail = useMemo(() => {
     const emp = allEmployees.find(e => e.name === myEmployeeId);
-    return emp?.user_id || emp?.company_email || localStorage.getItem("erpnext_username") || "";
-  }, [allEmployees, myEmployeeId]);
+    // Zonder gekozen medewerker in Instellingen: de ingelogde gebruiker,
+    // net als het dashboard (anders toont de pagina niets of iedereen).
+    return emp?.user_id || emp?.company_email || localStorage.getItem("erpnext_username") || sessieGebruiker || "";
+  }, [allEmployees, myEmployeeId, sessieGebruiker]);
   const [filterEmployee, setFilterEmployee] = useState("");
   const [userTouchedFilter, setUserTouchedFilter] = useState(false);
   const [selectedTodo, setSelectedTodo] = useState<ToDo | null>(null);
