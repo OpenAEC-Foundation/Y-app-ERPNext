@@ -18,12 +18,46 @@ const priorityColors: Record<string, string> = {
   Low: "text-slate-600 bg-slate-50",
 };
 
+type TodoMetTaak = ToDo & { _taak?: string };
+
+/**
+ * Taaktoewijzingen (reference_type = Task) horen er ook bij, net als op het
+ * dashboard. Ze krijgen de taaknaam als titel (de ToDo-omschrijving is alleen
+ * "Toewijzing voor Task …"); open toewijzingen van afgeronde of geannuleerde
+ * taken vallen weg.
+ */
+async function metTaaknamen(todos: ToDo[]): Promise<TodoMetTaak[]> {
+  const namen = [...new Set(todos.filter(t => t.reference_type === "Task" && t.reference_name).map(t => t.reference_name))];
+  if (namen.length === 0) return todos;
+  const taken = new Map<string, { subject?: string; status?: string; workflow_state?: string }>();
+  try {
+    const lijst = await fetchList<{ name: string; subject?: string; status?: string; workflow_state?: string }>("Task", {
+      fields: ["name", "subject", "status", "workflow_state"],
+      filters: [["name", "in", namen]],
+      limit_page_length: namen.length,
+    });
+    for (const taak of lijst) taken.set(taak.name, taak);
+  } catch {
+    return todos;
+  }
+  return todos
+    .filter(t => {
+      const taak = t.reference_type === "Task" ? taken.get(t.reference_name) : undefined;
+      const stand = taak?.workflow_state || taak?.status;
+      return !(taak && t.status === "Open" && (stand === "Completed" || stand === "Cancelled"));
+    })
+    .map(t => {
+      const taak = t.reference_type === "Task" ? taken.get(t.reference_name) : undefined;
+      return taak?.subject ? { ...t, _taak: taak.subject } : t;
+    });
+}
+
 /* ─── Main Todo page ─── */
 
 export default function Todo() {
   const { t } = useTranslation();
   const allEmployees = useEmployees();
-  const [todos, setTodos] = useState<ToDo[]>([]);
+  const [todos, setTodos] = useState<TodoMetTaak[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"Open" | "Closed" | "">("Open");
@@ -60,8 +94,6 @@ export default function Todo() {
     try {
       const filters: unknown[][] = [];
       if (filter) filters.push(["status", "=", filter]);
-      // Verberg taak-assignments voor iedereen.
-      filters.push(["reference_type", "!=", "Task"]);
       // Employees: server-side scopen op eigen todos. Employers zien alles
       // en filteren via de dropdown. Als myEmail nog leeg is (allEmployees
       // nog niet gehydrateerd) slaan we de fetch hier over — het effect
@@ -81,7 +113,7 @@ export default function Todo() {
         limit_page_length: 200,
         order_by: "modified desc",
       });
-      setTodos(list);
+      setTodos(await metTaaknamen(list));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.unknown_error"));
     } finally {
@@ -251,7 +283,7 @@ export default function Todo() {
               </button>
               <div className="flex-1 min-w-0">
                 <p className={`text-sm ${todo.status === "Closed" ? "line-through text-slate-400" : "text-slate-700"}`}>
-                  {stripHtml(todo.description)}
+                  {todo._taak || stripHtml(todo.description)}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`inline-block px-1.5 py-0.5 text-[10px] font-medium rounded ${priorityColors[todo.priority] || "text-slate-600 bg-slate-50"}`}>
