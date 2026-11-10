@@ -30,7 +30,7 @@ export function readAppDoctype(folder) {
 }
 
 /** De eigenschappen van een doctype die de REST-route overneemt. */
-const DOCTYPE_KEYS = ["autoname", "naming_rule", "issingle", "sort_field", "sort_order"];
+const DOCTYPE_KEYS = ["autoname", "naming_rule", "issingle", "istable", "title_field", "track_changes", "sort_field", "sort_order"];
 
 /**
  * Vlaggen die in elke rechtenrij expliciet moeten staan. In de app-definitie

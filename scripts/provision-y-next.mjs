@@ -226,6 +226,40 @@ async function safeFetch(url, options) {
  * @param {object} definition — moet een `name` bevatten
  * @returns {Promise<"created" | "existing">}
  */
+/**
+ * De drie doctypes van de brainstorm: ideeën, hun checklist (kindtabel) en de
+ * gedeelde labellijst. De kindtabel staat vooraan, want het idee heeft er een
+ * Table-veld naar. De standaardlabels zet de pagina zelf neer zodra de lijst
+ * leeg is, niet dit script: wie een label weghaalt, wil het niet bij de
+ * volgende provisionering terugzien.
+ * @returns {object[]}
+ */
+export function buildBrainstormDoctypes() {
+  return ["y_brainstorm_punt", "y_brainstorm_label", "y_brainstorm_idee"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
+/**
+ * De drie doctypes van de werkplekindeling: personen, werkplekken (met een
+ * link naar hun vaste persoon) en boekingen per dag. De personen staan
+ * vooraan, want de andere twee linken ernaar en Frappe weigert een Link naar
+ * een doctype dat nog niet bestaat.
+ * @returns {object[]}
+ */
+export function buildWerkplekDoctypes() {
+  return ["y_werkplek_persoon", "y_werkplek", "y_werkplek_boeking"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
+/**
+ * De apps van het ecosysteem: per app wie productmanager en eindverantwoordelijke
+ * is, wie eraan werkt (kindtabel) en in welk project de taken staan. Na de
+ * werkplekdoctypes, want de mensen komen uit `Y Werkplek Persoon`; de
+ * kindtabel staat vooraan.
+ * @returns {object[]}
+ */
+export function buildAppDoctypes() {
+  return ["y_app_lid", "y_app"].map((folder) => toCustomDoctype(readAppDoctype(folder)));
+}
+
 async function ensureDoctype(baseUrl, token, definition) {
   const authHeader = `token ${token}`;
   const name = definition.name;
@@ -1025,6 +1059,9 @@ export async function provision({ baseUrl, token }) {
     buildOnkostensoortDoctype(),
     buildKmRegistratieDoctype(),
     buildOnkostenDoctype(),
+    ...buildBrainstormDoctypes(),
+    ...buildWerkplekDoctypes(),
+    ...buildAppDoctypes(),
   ];
   const created = [];
   const existing = [];

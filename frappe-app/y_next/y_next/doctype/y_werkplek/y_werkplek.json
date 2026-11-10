@@ -1,0 +1,117 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:plek",
+ "creation": "2026-11-03 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "plek",
+  "ruimte",
+  "omschrijving",
+  "vaste_persoon",
+  "voorkeur_persoon",
+  "volgorde",
+  "actief"
+ ],
+ "fields": [
+  {
+   "fieldname": "plek",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Plek",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "ruimte",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ruimte",
+   "reqd": 1
+  },
+  {
+   "fieldname": "omschrijving",
+   "fieldtype": "Data",
+   "label": "Omschrijving"
+  },
+  {
+   "fieldname": "vaste_persoon",
+   "fieldtype": "Link",
+   "options": "Y Werkplek Persoon",
+   "in_list_view": 1,
+   "label": "Vaste plek van"
+  },
+  {
+   "fieldname": "voorkeur_persoon",
+   "fieldtype": "Link",
+   "options": "Y Werkplek Persoon",
+   "label": "Meestal voor",
+   "description": "Flexplek waar deze persoon bij voorkeur zit als hij of zij er is."
+  },
+  {
+   "default": "0",
+   "fieldname": "volgorde",
+   "fieldtype": "Int",
+   "label": "Volgorde"
+  },
+  {
+   "default": "1",
+   "fieldname": "actief",
+   "fieldtype": "Check",
+   "label": "Actief"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Y Next",
+ "name": "Y Werkplek",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Employee"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "share": 1,
+   "write": 1,
+   "role": "Projects User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "volgorde",
+ "sort_order": "ASC",
+ "states": []
+}

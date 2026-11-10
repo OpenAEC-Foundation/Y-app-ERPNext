@@ -742,12 +742,13 @@ export default function UrenBoekenWidget({
           <div className="flex items-end justify-center pb-1">
             <span className="text-sm font-bold text-slate-700 whitespace-nowrap">{hours > 0 ? `${hours}u` : "\u2014"}</span>
           </div>
-          {/* Omschrijving */}
+          {/* Omschrijving: een tekstvak van drie regels (op te rekken), zodat
+              wat je hebt gedaan overzichtelijk past. */}
           <div className="min-w-0">
             <label className="block h-[18px] leading-[18px] text-[10px] font-medium text-slate-500 uppercase tracking-wide">{t("hours_widget.description_label", { defaultValue: "Omschrijving" })}</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)}
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
               placeholder={t("hours_widget.description_placeholder")}
-              className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
+              className="block w-full min-h-[4.5rem] resize-y px-2 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-y-teal" />
           </div>
           {/* Boeken knop */}
           <div className="flex items-end">

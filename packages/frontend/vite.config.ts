@@ -63,6 +63,12 @@ export default defineConfig(({ command }) => ({
     // niet door deze pipeline en blijven ongewijzigd (identieke content
     // dedupliceert toch naar dezelfde /files/-URL).
     rolldownOptions: {
+      // Naast de app een tweede ingang: src/inbed.tsx tekent Werkplekken,
+      // Ecosysteem en Brainstorm in een andere Y-next-versie op dezelfde site.
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        inbed: fileURLToPath(new URL('./src/inbed.tsx', import.meta.url)),
+      },
       output: {
         entryFileNames: `y${buildTag}-[name]-[hash].js`,
         chunkFileNames: `y${buildTag}-[name]-[hash].js`,

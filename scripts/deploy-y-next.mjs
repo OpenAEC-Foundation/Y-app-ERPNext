@@ -9,7 +9,9 @@
  *
  * Auth komt UITSLUITEND uit de omgevingsvariabele YNEXT_API_TOKEN
  * (formaat "key:secret") — nooit in code, git, logs of buildoutput.
- * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite.
+ * Basis-URL uit YNEXT_BASE_URL; er is geen standaardsite. Met YNEXT_ROUTE
+ * komt de app op een tweede adres op dezelfde site (bijvoorbeeld
+ * "y-next-extra"), zonder /y-next aan te raken.
  *
  * Gebruik: zie docs/deployment.md.
  *   npm run deploy
@@ -18,7 +20,21 @@ import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const WEB_PAGE_ROUTE = "y-next";
+/**
+ * De route van de Web Page: standaard "y-next". YNEXT_ROUTE zet de app op een
+ * tweede adres, bijvoorbeeld om onderdelen als extensie in een andere versie
+ * op /y-next te hangen.
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function webPageRoute(env) {
+  const route = (env.YNEXT_ROUTE || "y-next").trim();
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(route)) {
+    throw new Error(`YNEXT_ROUTE "${route}" is geen geldige route (alleen kleine letters, cijfers en streepjes).`);
+  }
+  return route;
+}
+
+const WEB_PAGE_ROUTE = webPageRoute(process.env);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /** Redigeert eventuele Authorization/token-fragmenten uit een string vóór logging. */
@@ -112,7 +128,9 @@ export function buildWebPageFields({ entryJs, cssFiles }) {
   ].join("\n");
 
   return {
-    title: "Y-Next",
+    // Een tweede adres krijgt een eigen titel: Frappe leidt de documentnaam
+    // van een nieuwe Web Page af van de titel, en "y-next" bestaat al.
+    title: WEB_PAGE_ROUTE === "y-next" ? "Y-Next" : `Y-Next ${WEB_PAGE_ROUTE}`,
     route: WEB_PAGE_ROUTE,
     published: 1,
     content_type: "HTML",
@@ -251,6 +269,44 @@ export function addBuildMarker(name, data, buildTag) {
   return Buffer.concat([data, Buffer.from(marker, "utf8")]);
 }
 
+/** Tekst-assets: die krijgen een build-marker en kunnen verwijzingen bevatten. */
+const TEKST_EXTENSIES = [".js", ".mjs", ".css", ".svg", ".json", ".map"];
+
+function isTekstAsset(name) {
+  const match = /\.[^./\\]+$/.exec(name);
+  return TEKST_EXTENSIES.includes(match ? match[0].toLowerCase() : "");
+}
+
+/**
+ * Uploadvolgorde: eerst de binaire bestanden (lettertypen, wasm, plaatjes),
+ * dan de tekst. Zo weten we bij elke CSS/JS al onder welke naam Frappe de
+ * binaire bestanden waar die naar verwijst heeft bewaard.
+ * @template {{ name: string }} T
+ * @param {T[]} assets
+ * @returns {T[]}
+ */
+export function uploadVolgorde(assets) {
+  return [...assets.filter((a) => !isTekstAsset(a.name)), ...assets.filter((a) => isTekstAsset(a.name))];
+}
+
+/**
+ * Binaire assets (vooral de lettertypen) zijn tussen builds byte-identiek en
+ * krijgen geen marker. Frappe dedupliceert op inhoud en geeft dan de URL van
+ * de vorige upload terug, met de build-tag van toen. Dat bestand bestaat en
+ * heeft exact dezelfde inhoud, dus we gebruiken het gewoon: in de tekst-assets
+ * wordt de nieuwe naam vervangen door de bestaande.
+ * @param {string} name
+ * @param {Buffer} data
+ * @param {Map<string, string>} aliassen — nieuwe bestandsnaam → bestaande
+ * @returns {Buffer}
+ */
+export function pasVerwijzingenAan(name, data, aliassen) {
+  if (aliassen.size === 0 || !isTekstAsset(name)) return data;
+  let tekst = data.toString("utf8");
+  for (const [nieuw, bestaand] of aliassen) tekst = tekst.split(nieuw).join(bestaand);
+  return Buffer.from(tekst, "utf8");
+}
+
 /**
  * Bepaalt of de Web Page geüpdatet (PUT) of aangemaakt (POST) moet worden.
  * @param {{ name: string }[]} lookupRows
@@ -305,9 +361,10 @@ async function main() {
     `Gevonden ${assets.length} assets in dist/ (entry: ${entryJs}, css: ${cssFiles.length}, build-tag: ${buildTag || "onbekend"}).`
   );
 
-  // 3. Elk asset uploaden als publieke File.
-  for (const asset of assets) {
-    const data = addBuildMarker(asset.name, readFileSync(asset.path), buildTag);
+  // 3. Elk asset uploaden als publieke File; binaire eerst (zie uploadVolgorde).
+  const aliassen = new Map();
+  for (const asset of uploadVolgorde(assets)) {
+    const data = addBuildMarker(asset.name, pasVerwijzingenAan(asset.name, readFileSync(asset.path), aliassen), buildTag);
     const form = new FormData();
     form.append("file", new Blob([data], { type: mimeTypeFor(asset.name) }), asset.name);
     form.append("is_private", "0");
@@ -324,6 +381,21 @@ async function main() {
     const uploadBody = await uploadRes.json();
     const fileUrl = uploadBody?.message?.file_url;
     const expectedUrl = `/files/${asset.name}`;
+    // Een public/-bestand zonder build-prefix (manifest.json, y-logo.svg) waarvan
+    // al een oudere versie op de site staat, krijgt van Frappe een andere naam.
+    // Geen chunk en geen loader verwijst ernaar, dus dat breekt niets; de oude
+    // blijft gewoon staan.
+    if (fileUrl !== expectedUrl && !(buildTag && asset.name.startsWith(`y${buildTag}-`))) {
+      console.log(`Let op: ${asset.name} bestond al met andere inhoud; Frappe bewaarde hem als ${fileUrl}. Niet gebruikt door de pagina.`);
+      continue;
+    }
+    // Een binair bestand dat Frappe al had (zelfde inhoud, naam van een vorige
+    // build): hergebruiken en de verwijzingen ernaar omzetten.
+    if (fileUrl !== expectedUrl && !isTekstAsset(asset.name) && typeof fileUrl === "string" && fileUrl.startsWith("/files/")) {
+      aliassen.set(asset.name, fileUrl.slice("/files/".length));
+      console.log(`Hergebruikt: ${asset.name} -> ${fileUrl} (zelfde inhoud stond er al).`);
+      continue;
+    }
     if (fileUrl !== expectedUrl) {
       throw new Error(
         `HARD ABORT: upload van "${asset.name}" kreeg file_url "${fileUrl}" terug ` +

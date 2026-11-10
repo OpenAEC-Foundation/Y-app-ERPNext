@@ -1,0 +1,37 @@
+/*
+ * Stijl voor src/inbed.tsx: alleen de utilities die Werkplekken, Ecosysteem en
+ * Brainstorm gebruiken, met hetzelfde thema als de app. Geen preflight en
+ * geen werkplekstijl (workspace.css): de gastversie heeft die al, en ze
+ * mogen die niet overschrijven.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "./pages/Werkplekken.tsx";
+@source "./pages/Ecosysteem.tsx";
+@source "./pages/Brainstorm.tsx";
+@source "./components/werkplekken";
+@source "./components/ecosysteem";
+@source "./components/brainstorm";
+@source "./components/Toast.tsx";
+@source "./lib/werkplekken-model.ts";
+
+@theme {
+  --color-y-purple: #143d4b;
+  --color-y-purple-light: #205566;
+  --color-y-purple-dark: #142b35;
+  --color-y-teal: #087e82;
+  --color-y-teal-light: #b4efe0;
+  --color-y-teal-dark: #035a61;
+  --color-slate-50: #f8fbfc;
+  --color-slate-100: #f0f5f7;
+  --color-slate-200: #d6e2e8;
+  --color-slate-300: #adc1cc;
+  --color-slate-400: #6f8693;
+  --color-slate-500: #597180;
+  --color-slate-600: #415a67;
+  --color-slate-700: #27414e;
+  --color-slate-800: #162b35;
+  --color-slate-900: #10222c;
+}

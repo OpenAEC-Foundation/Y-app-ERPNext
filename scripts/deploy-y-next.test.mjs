@@ -12,6 +12,9 @@ import {
   mimeTypeFor,
   extractBuildTag,
   addBuildMarker,
+  uploadVolgorde,
+  webPageRoute,
+  pasVerwijzingenAan,
 } from "./deploy-y-next.mjs";
 
 test("requiredEnv: gooit een duidelijke fout zonder YNEXT_API_TOKEN", () => {
@@ -232,4 +235,25 @@ test("collectAssets: gooit bij een subdirectory in dist/", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("uploadVolgorde: binaire bestanden eerst, daarna tekst", () => {
+  const namen = uploadVolgorde([{ name: "ya-x.css" }, { name: "ya-f.woff2" }, { name: "ya-x.js" }, { name: "web-ifc.wasm" }]).map((a) => a.name);
+  assert.deepEqual(namen, ["ya-f.woff2", "web-ifc.wasm", "ya-x.css", "ya-x.js"]);
+});
+
+test("pasVerwijzingenAan: vervangt in tekst de nieuwe naam door de bestaande", () => {
+  const aliassen = new Map([["ynieuw-arimo-4q.woff2", "youd-arimo-4q.woff2"]]);
+  const css = Buffer.from("src:url(/files/ynieuw-arimo-4q.woff2) format('woff2')");
+  assert.equal(pasVerwijzingenAan("ynieuw-Word.css", css, aliassen).toString(), "src:url(/files/youd-arimo-4q.woff2) format('woff2')");
+  // Binaire bestanden en een lege lijst blijven ongemoeid.
+  const woff = Buffer.from([0, 1, 2]);
+  assert.equal(pasVerwijzingenAan("ynieuw-x.woff2", woff, aliassen), woff);
+  assert.equal(pasVerwijzingenAan("ynieuw-Word.css", css, new Map()), css);
+});
+
+test("webPageRoute: standaard y-next, met YNEXT_ROUTE een tweede adres", () => {
+  assert.equal(webPageRoute({}), "y-next");
+  assert.equal(webPageRoute({ YNEXT_ROUTE: "y-next-extra" }), "y-next-extra");
+  assert.throws(() => webPageRoute({ YNEXT_ROUTE: "../files" }), /geen geldige route/);
 });
